@@ -1,0 +1,5 @@
+* A POT OF DOTS
+
+What lies within is my pot of dots, built with Nix encompassing the Emacsularity and sending transmissions of pale blue bytes.
+
+I hope to move towards a literate config style but for now this short note will do.
