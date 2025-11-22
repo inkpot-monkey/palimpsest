@@ -1,0 +1,10 @@
+result
+result-*
+.direnv
+.envrc
+*.qcow2
+*.iso
+target/
+.DS_Store
+*.swp
+*~
