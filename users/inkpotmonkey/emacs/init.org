@@ -263,6 +263,17 @@ Managing windows is a constant task, here gathers the dust of my Sisyphean toil 
   (window-combination-resize t))
 #+end_src
 
+**** ACE WINDOWS
+#+begin_src emacs-lisp
+(use-package ace-window
+  :vc (:url "https://github.com/abo-abo/ace-window" :rev :newest)
+  :bind ("M-o" . ace-window)
+  :custom
+  (aw-keys '(?a ?s ?d ?f ?g ?h ?j ?k ?l))
+  :config
+  (ace-window-display-mode 1))
+#+end_src
+
 *** FRAMES
 
 [[https://github.com/tumashu/posframe][tumashu/posframe: Pop a posframe (just a child-frame) at point, posframe is a **GNU ELPA** package!]]
@@ -703,6 +714,25 @@ A pretty formatting of the form-feed character
   (dired-mode . nerd-icons-dired-mode))
 #+end_src
 
+*** SIDEBAR
+
+#+begin_src emacs-lisp
+(use-package dired-sidebar
+  :vc (:url "https://github.com/jojojames/dired-sidebar" :rev :newest)
+  :bind (("C-x C-n" . dired-sidebar-toggle-sidebar))
+  :ensure t
+  :commands (dired-sidebar-toggle-sidebar)
+  :custom
+  (dired-sidebar-theme 'nerd)
+  (dired-sidebar-use-term-integration t)
+  (dired-sidebar-use-custom-font t))
+
+(use-package ibuffer-sidebar
+  :vc (:url "https://github.com/jojojames/ibuffer-sidebar" :rev :newest)
+  :commands (ibuffer-sidebar-toggle-sidebar)
+  :bind ("C-x C-p" . ibuffer-sidebar-toggle-sidebar))
+#+end_src
+
 ** MOVEMENT
 *** AVY
 
@@ -726,6 +756,16 @@ For future work:
 (use-package link-hint
     :vc (:url "https://github.com/noctuid/link-hint.el" :rev :newest)
   :bind ("M-J" . link-hint-open-link))
+#+end_src
+
+*** MOVE TEXT
+[[https://github.com/emacsfodder/move-text][emacsfodder/move-text: move current line or region up or down]]
+
+#+begin_src emacs-lisp
+(use-package move-text
+  :vc (:url "https://github.com/emacsfodder/move-text" :rev :newest)
+  :config
+  (move-text-default-bindings))
 #+end_src
 
 *** MARK
@@ -1175,6 +1215,14 @@ Combining embark with avy is one of the break through moments of my usage of thi
 
 ** TOOLS
 
+*** PDF TOOLS
+#+begin_src emacs-lisp
+(use-package pdf-tools
+  :vc (:url "https://github.com/vedang/pdf-tools" :rev :newest)
+  :config
+  (pdf-tools-install))
+#+end_src
+
 *** AI :: LLM :: GPTEL
 **** AI CODE INTERFACE
 
@@ -1588,6 +1636,29 @@ This is the (spiritual) successor to [[https://github.com/pashky/restclient.el][
     (fancy-compilation-mode))
 #+end_src
 
+*** QUICK RUN
+[[https://github.com/emacsorphanage/quickrun][Run command quickly. This packages is inspired quickrun.vim]]
+
+#+begin_src emacs-lisp
+(use-package quickrun
+  :vc (:url "https://github.com/emacsorphanage/quickrun" :rev :newest)
+  :config
+  (quickrun-add-command "typescript/tsx"
+    '((:command . "tsx")
+      (:exec . "%c %s %a")
+      (:description . "Run TypeScript with tsx")
+      (:mode typescript-ts-mode))
+    :default "typescript"))
+#+end_src
+
+*** ENVRC :: DIRENV
+#+begin_src emacs-lisp
+(use-package envrc
+  :vc (:url "https://github.com/purcell/envrc" :rev :newest)
+  :config
+  (envrc-global-mode))
+#+end_src
+
 *** SHELL :: BASH
 
 #+begin_src emacs-lisp
@@ -1619,6 +1690,14 @@ This is the (spiritual) successor to [[https://github.com/pashky/restclient.el][
   (:map flymake-mode-map
         ("M-n" . flymake-goto-next-error)
         ("M-p" . flymake-goto-prev-error)))
+#+end_src
+
+** APPLICATIONS
+
+*** EMENT (MATRIX)
+#+begin_src emacs-lisp
+(use-package ement
+  :vc (:url "https://github.com/alphapapa/ement.el" :rev :newest))
 #+end_src
 
 *** LANGUAGES
