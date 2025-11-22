@@ -1,0 +1,126 @@
+/dts-v1/;
+
+/ {
+	compatible = "brcm,bcm2835";
+
+	fragment@0 {
+		target-path = "/";
+
+		__overlay__ {
+
+			dacpro_osc {
+				compatible = "hifiberry,dacpro-clk";
+				#clock-cells = <0x00>;
+				phandle = <0x01>;
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <0xffffffff>;
+		phandle = <0x05>;
+
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+	fragment@2 {
+		target = <0xffffffff>;
+
+		__overlay__ {
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+			status = "okay";
+
+			pcm5122@4d {
+				#sound-dai-cells = <0x00>;
+				compatible = "ti,pcm5122";
+				reg = <0x4d>;
+				clocks = <0x01>;
+				status = "okay";
+				phandle = <0x02>;
+			};
+
+			pcm186x@4a {
+				#sound-dai-cells = <0x00>;
+				compatible = "ti,pcm1863";
+				reg = <0x4a>;
+				clocks = <0x01>;
+				status = "okay";
+				phandle = <0x03>;
+			};
+
+			hpamp@60 {
+				compatible = "ti,tpa6130a2";
+				reg = <0x60>;
+				status = "disabled";
+				phandle = <0x06>;
+			};
+		};
+	};
+
+	fragment@3 {
+		target = <0xffffffff>;
+
+		__overlay__ {
+			compatible = "hifiberry,hifiberry-dacplusadcpro";
+			audio-codec = <0x02 0x03>;
+			i2s-controller = <0xffffffff>;
+			status = "okay";
+			phandle = <0x04>;
+		};
+	};
+
+	__overrides__ {
+		24db_digital_gain = [00 00 00 04 68 69 66 69 62 65 72 72 79 2d 64 61 63 70 6c 75 73 61 64 63 70 72 6f 2c 32 34 64 62 5f 64 69 67 69 74 61 6c 5f 67 61 69 6e 3f 00];
+		slave = [00 00 00 04 68 69 66 69 62 65 72 72 79 2d 64 61 63 70 6c 75 73 61 64 63 70 72 6f 2c 73 6c 61 76 65 3f 00 00 00 00 05 74 61 72 67 65 74 3a 30 3d 00 ff ff ff ff 00 00 00 04 69 32 73 2d 63 6f 6e 74 72 6f 6c 6c 65 72 3a 30 3d 00 ff ff ff ff];
+		leds_off = [00 00 00 04 68 69 66 69 62 65 72 72 79 2d 64 61 63 70 6c 75 73 61 64 63 70 72 6f 2c 6c 65 64 73 5f 6f 66 66 3f 00];
+	};
+
+	__symbols__ {
+		dacpro_osc = "/fragment@0/__overlay__/dacpro_osc";
+		frag1 = "/fragment@1";
+		hb_dac = "/fragment@2/__overlay__/pcm5122@4d";
+		hb_adc = "/fragment@2/__overlay__/pcm186x@4a";
+		hpamp = "/fragment@2/__overlay__/hpamp@60";
+		hifiberry_dacplusadcpro = "/fragment@3/__overlay__";
+	};
+
+	__fixups__ {
+		i2s_clk_consumer = "/fragment@1:target:0", "/fragment@3/__overlay__:i2s-controller:0";
+		i2c1 = "/fragment@2:target:0";
+		sound = "/fragment@3:target:0";
+		i2s_clk_producer = "/__overrides__:slave:49", "/__overrides__:slave:75";
+	};
+
+	__local_fixups__ {
+
+		fragment@2 {
+
+			__overlay__ {
+
+				pcm5122@4d {
+					clocks = <0x00>;
+				};
+
+				pcm186x@4a {
+					clocks = <0x00>;
+				};
+			};
+		};
+
+		fragment@3 {
+
+			__overlay__ {
+				audio-codec = <0x00 0x04>;
+			};
+		};
+
+		__overrides__ {
+			24db_digital_gain = <0x00>;
+			slave = <0x00 0x23 0x35>;
+			leds_off = <0x00>;
+		};
+	};
+};
