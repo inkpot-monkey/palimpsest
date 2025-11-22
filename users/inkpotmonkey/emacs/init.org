@@ -1636,6 +1636,18 @@ This is the (spiritual) successor to [[https://github.com/pashky/restclient.el][
     (fancy-compilation-mode))
 #+end_src
 
+**** XTERM COLOR
+
+#+begin_src emacs-lisp
+(use-package xterm-color
+  :vc (:url "https://github.com/atomontage/xterm-color" :rev :newest)
+  :config
+  (setq compilation-environment '("TERM=xterm-256color"))
+  (defun my/advice-compilation-filter (f proc string)
+    (funcall f proc (xterm-color-filter string)))
+  (advice-add 'compilation-filter :around #'my/advice-compilation-filter))
+#+end_src
+
 *** QUICK RUN
 [[https://github.com/emacsorphanage/quickrun][Run command quickly. This packages is inspired quickrun.vim]]
 
