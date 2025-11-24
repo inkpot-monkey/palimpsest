@@ -24,49 +24,46 @@ in
     RStudio-with-my-packages
 
     vesktop
+    signal-desktop
+    slack
+    zulip
+    zoom-us
+    beeper
 
     postman
-
-    gimp3
+    beekeeper-studio
 
     popcorntime
     miraclecast
 
-    calibre
     spotify
     yt-dlp
     youtube-tui
-    subsurface
+
     ledger-live-desktop
-    signal-desktop
-    lens
-    beeper
 
     anki-bin
 
     vscode-fhs
+
     distrobox
     quickemu
 
-    zoom-us
-
     vivaldi
     brave
+
     nss_latest
+    wl-clipboard
 
     ffmpeg
     whisper-cpp
     deepfilternet
 
-    zulip
-
-    wl-clipboard
-
+    gimp3
     blender
 
     # Need to start the pritunl-client-service manually
     pritunl-client
-
   ];
 
   programs.mpv = {

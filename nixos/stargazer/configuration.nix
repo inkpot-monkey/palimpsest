@@ -216,4 +216,8 @@ in
 
   system.stateVersion = "25.05";
 
+  nixpkgs.config.permittedInsecurePackages = [
+    "beekeeper-studio-5.3.4"
+  ];
+
 }
