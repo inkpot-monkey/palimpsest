@@ -39,6 +39,7 @@ in
   home.packages = with pkgs; [
     cursor-cli
     gemini-cli
+    claude-code
     n8n-mcp
     unstable.antigravity
     emcee
