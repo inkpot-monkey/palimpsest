@@ -1,6 +1,7 @@
 {
   pkgs,
   config,
+  lib,
   self,
   ...
 }:
@@ -12,6 +13,7 @@
     extraPackages = epkgs: [
       epkgs.vterm
       epkgs.treesit-grammars.with-all-grammars
+      epkgs.verb
     ];
   };
 
@@ -21,17 +23,30 @@
   };
 
   # Emacs configuration
-  home.file = {
-    ".config/emacs/init.org" = {
-      source = ./init.org;
-      onChange = ''
-        ${config.programs.emacs.finalPackage}/bin/emacs --batch --eval "(require 'org)" --eval '(org-babel-tangle-file "${config.xdg.configHome}/emacs/init.org")'
-        ${pkgs.gnused}/bin/sed -i \
-          -e "s|@sops-file@|${self.outPath}/secrets/secrets.yaml|g" \
-          '${config.xdg.configHome}/emacs/init.el'
-      '';
+  xdg.configFile = {
+    "emacs/init.el" = {
+      text =
+        builtins.replaceStrings
+          [ "@sops-file@" "@username@" "@email@" "@treesit-grammars@" ]
+          [
+            "${self.outPath}/secrets/secrets.yaml"
+            "inkpot-monkey"
+            "inkpot-monkey@palebluebytes.space"
+            "${pkgs.emacsPackages.treesit-grammars.with-all-grammars}"
+          ]
+          (builtins.readFile ./init.el);
+    };
+    "emacs/early-init.el" = {
+      source = ./early-init.el;
     };
   };
+
+  # doesnt work only tests before the new build
+  # home.activation = {
+  #   installEmacsConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+  #     ${config.programs.emacs.finalPackage}/bin/emacs --batch -l ${config.xdg.configHome}/emacs/init.el
+  #   '';
+  # };
 
   services.gpg-agent = {
     pinentry.package = config.programs.emacs.finalPackage;
@@ -60,6 +75,9 @@
     sqlite
     # :lang latex & :lang org (latex previews)
     texlive.combined.scheme-medium
+
+    # formatter
+    prettier
 
     # LSPs
     nil
