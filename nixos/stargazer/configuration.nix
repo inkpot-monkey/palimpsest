@@ -58,7 +58,7 @@ in
   networking.networkmanager.enable = true;
 
   # Set your time zone.
-  time.timeZone = "Europe/London";
+  time.timeZone = "Europe/Madrid";
 
   # Select internationalisation properties.
   i18n.defaultLocale = "en_GB.UTF-8";
