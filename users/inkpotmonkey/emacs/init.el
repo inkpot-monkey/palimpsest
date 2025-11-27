@@ -775,17 +775,19 @@
   ("s-w" . eww))
 
 (use-package recall
-    :ensure t
     :bind
-    ("C-x C-r" . recall-rerun)
-    :custom
-    ;; Consult completion based interface
-    (recall-completing-read-fn #'recall-consult-completing-read)
-    (recall-save-file (concat no-littering-var-directory "recall/history"))
-    (recall-directory (concat no-littering-var-directory "recall/"))
-    :init
-    ;; Enable process surveillance
-    (recall-mode t))
+  ("C-x C-r" . recall-rerun)
+  :custom
+  (recall-save-file (concat no-littering-var-directory "recall/history"))
+  (recall-directory (concat no-littering-var-directory "recall/"))
+  ;; Consult completion based interface
+  (recall-completing-read-fn #'recall-consult-completing-read)
+  :init
+  ;; Enable process surveillance
+  (recall-mode t)
+  (run-with-idle-timer 60 t (lambda ()
+			      (recall-save))))
+
 
 (use-package vterm)
 
