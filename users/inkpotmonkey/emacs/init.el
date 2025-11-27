@@ -1012,6 +1012,12 @@
     :hook
     (js-ts-mode . eglot-ensure))
 
+(use-package typescript-ts-mode
+    :ensure nil
+    :mode "\\.ts\\'"
+    :hook
+    (typescript-ts-mode . eglot-ensure))
+
 (use-package html-mode
     :ensure nil
     :mode ("\\.webc\\'" . html-ts-mode)
