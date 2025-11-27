@@ -1003,8 +1003,8 @@
 	     '((shell . t)))))
 
 (use-package js-ts-mode
-    :mode "\\.cjs\\'"
     :ensure nil
+    :mode "\\.cjs\\'"
     :init
     (push '(javascript-mode . js-ts-mode) major-mode-remap-alist)
     :custom
