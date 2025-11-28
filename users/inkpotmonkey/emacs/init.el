@@ -2,6 +2,7 @@
 
 (require 'package)
 (add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
+(setq package-install-upgrade-built-in t)
 
 (setq native-comp-async-report-warnings-errors 'silent)
 (package-initialize)
