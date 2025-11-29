@@ -13,7 +13,6 @@
     extraPackages = epkgs: [
       epkgs.vterm
       epkgs.treesit-grammars.with-all-grammars
-      epkgs.verb
     ];
   };
 
