@@ -1109,3 +1109,7 @@
     (json-ts-mode . eglot-ensure))
 
 (use-package php-mode)
+
+(use-package pritunl-connect
+    :load-path "~/code/nixos/users/inkpotmonkey/emacs/lisp/"
+    :ensure nil)
