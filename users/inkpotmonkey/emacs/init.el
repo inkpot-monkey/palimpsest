@@ -20,11 +20,9 @@
   (setq custom-file (no-littering-expand-etc-file-name "custom.el"))
   (when (file-exists-p custom-file)
     (load custom-file))
-  ;; Setup for backup files as well hopefully the precautions taken below
-  ;; address the concerns in the function documentation.
+  
   (no-littering-theme-backups)
 
-  ;; enable for recent files
   (require 'recentf)
   (add-to-list 'recentf-exclude
 	       (recentf-expand-file-name no-littering-var-directory))
@@ -263,9 +261,9 @@
       :default-weight regular
       :default-height 80
       :variable-pitch-family "Recursive Sans Casual Static")))
-  :config
-  (fontaine-mode 1)
-  (fontaine-set-preset (or (fontaine-restore-latest-preset) 'regular)))
+  :init
+  (fontaine-set-preset (or (fontaine-restore-latest-preset) 'regular))
+  (fontaine-mode 1))
 
 (use-package spacious-padding
     :custom
@@ -319,7 +317,7 @@
   (visual-fill-column-enable-sensible-window-split t)
   (visual-fill-column-adjust-for-text-scale t)  ;; Explicit is better
 
-  :config
+  :init
   (advice-add 'text-scale-adjust :after #'visual-fill-column-adjust))
 
 (use-package adaptive-wrap
@@ -681,7 +679,7 @@
     (add-to-list 'corfu-margin-formatters #'nerd-icons-corfu-formatter))
 
 (use-package pdf-tools
-    :config
+    :init
   (pdf-loader-install))
 
 ;; AI
@@ -805,6 +803,7 @@
   (run-with-idle-timer 60 t (lambda ()
 			      (recall-save))))
 
+;; https://github.com/sgpthomas/async-shell
 
 (use-package vterm
     :ensure nil ;; It's installed via Nix, so don't try to download it
@@ -1059,6 +1058,7 @@
 
 (use-package typescript-ts-mode
     :ensure nil
+    :demand
     :mode "\\.ts\\'"
     :hook
     (typescript-ts-mode . eglot-ensure))
