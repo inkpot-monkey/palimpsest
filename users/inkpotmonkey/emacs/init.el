@@ -707,43 +707,50 @@
       (ai-code-magit-setup-transients)))
 
 (use-package gptel
-    :after embark
-    :commands (gptel gptel-menu gptel-send gptel-request gptel-add)
-    :config
-    (require 'gptel-integrations)
-    
-    (gptel-make-anthropic "Claude"
-      :key gptel-api-key
-      :stream t)
-    
-    (gptel-make-gemini "Gemini" :key gptel-api-key :stream t)
+    :init
+  (add-hook 'gptel-mode-hook (lambda ()
+                               (setq local-abbrev-table gptel-mode-abbrev-table)))
+  (add-to-list 'auto-mode-alist '("\\.llm\\'" . org-mode))
+  
+  :config
+  (require 'gptel-integrations)
+  
+  (gptel-make-anthropic "Claude"
+    :stream t
+    :key gptel-api-key)
+  
+  (setq gptel-model 'gemini-pro-latest)
+  
+  (setq gptel-backend (gptel-make-gemini "Gemini"
+			:stream t
+			:key gptel-api-key))
+  
+  (setq gptel-default-mode 'org-mode)
 
-    (setq
-     gptel-model 'claude-sonnet-4-5-20250929
-     gptel-backend (cdr (assoc "Claude" gptel--known-backends)))
-    
-    (setq gptel-default-mode 'org-mode)
-    (add-to-list 'auto-mode-alist '("\\.llm\\'" . org-mode))
+  (define-abbrev-table 'gptel-mode-abbrev-table
+      '(("eyt" "explain your thinking step by step" nil :count 0)))
 
-    (define-abbrev-table 'gptel-mode-abbrev-table
-        '(("eyt" "explain your thinking step by step" nil :count 0)))
+  :bind
+  (
+   ("C-c RET" . gptel-send)
+   ("C-, s" . gptel-send)
+   ("C-, A" . gptel-abort)
+   ("C-, a" . gptel-add)
+   ("C-, m" . gptel-menu)
+   ("C-, q" . gptel-quick)
+   (:map gptel-mode-map
+         ("C-c RET" . gptel-send)
+         ("C-, s" . gptel-send)
+         ("C-, A" . gptel-abort)
+         ("C-, a" . gptel-add)
+         ("C-, m" . gptel-menu)
+         ("C-, q" . gptel-quick)))
 
-    (add-hook 'gptel-mode-hook (lambda ()
-                                 (setq local-abbrev-table gptel-mode-abbrev-table)))
-    
-    :bind
-    ("C-c RET" . gptel-send)
-    ("C-, s" . gptel-send)
-    ("C-, A" . gptel-abort)
-    ("C-, a" . gptel-add)
-    ("C-, m" . gptel-menu)
-    ("C-, q" . gptel-quick)
-
-    :hook
-    (org-mode . (lambda () 
-                  (when (and buffer-file-name
-                             (string-match-p "\\.llm\\'" buffer-file-name))
-                    (gptel-mode 1)))))
+  :hook
+  (org-mode . (lambda () 
+                (when (and buffer-file-name
+                           (string-match-p "\\.llm\\'" buffer-file-name))
+                  (gptel-mode t)))))
 
 (use-package gptel-quick
     :vc (:url "https://github.com/karthink/gptel-quick" :rev :newest)
