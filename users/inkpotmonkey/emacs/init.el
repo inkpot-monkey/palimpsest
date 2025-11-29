@@ -698,59 +698,60 @@
 
 (use-package ai-code-interface
     :vc (:url "https://github.com/tninja/ai-code-interface.el" :rev :newest)
+    ;; Enable global keybinding for the main menu
+    :bind
+    (("C-, g" . ai-code-menu))
     :config
     (ai-code-set-backend 'gemini) 
-    ;; Enable global keybinding for the main menu
-    (global-set-key (kbd "C-c a") #'ai-code-menu)
     ;; Optional: Set up Magit integration for AI commands in Magit popups
     (with-eval-after-load 'magit
       (ai-code-magit-setup-transients)))
 
 (use-package gptel
     :init
-  (add-hook 'gptel-mode-hook (lambda ()
-                               (setq local-abbrev-table gptel-mode-abbrev-table)))
   (add-to-list 'auto-mode-alist '("\\.llm\\'" . org-mode))
+  (with-eval-after-load 'nerd-icons
+    (add-to-list 'nerd-icons-extension-icon-alist
+                 '("llm" nerd-icons-mdicon "nf-md-robot" :face nerd-icons-lsilver)))
   
+  :hook
+  (org-mode . (lambda ()
+		(when (and buffer-file-name
+                           (string-suffix-p ".llm" buffer-file-name))
+                  (gptel-mode 1))))
+  ;; Ensure abbrevs work in gptel-mode
+  (gptel-mode . (lambda ()
+		  (setq local-abbrev-table gptel-mode-abbrev-table)))
+
   :config
   (require 'gptel-integrations)
-  
-  (gptel-make-anthropic "Claude"
-    :stream t
-    :key gptel-api-key)
-  
+
+  ;; Your API/Backend Setup
+  (gptel-make-anthropic "Claude" :stream t :key gptel-api-key)
   (setq gptel-model 'gemini-pro-latest)
+  (setq gptel-backend (gptel-make-gemini "Gemini" :stream t :key gptel-api-key))
   
-  (setq gptel-backend (gptel-make-gemini "Gemini"
-			:stream t
-			:key gptel-api-key))
-  
+  ;; Default mode for NEW buffers
   (setq gptel-default-mode 'org-mode)
 
+  ;; Custom Abbrevs
   (define-abbrev-table 'gptel-mode-abbrev-table
       '(("eyt" "explain your thinking step by step" nil :count 0)))
-
+  
   :bind
-  (
-   ("C-c RET" . gptel-send)
+  (("C-c RET" . gptel-send)
    ("C-, s" . gptel-send)
    ("C-, A" . gptel-abort)
    ("C-, a" . gptel-add)
    ("C-, m" . gptel-menu)
    ("C-, q" . gptel-quick)
-   (:map gptel-mode-map
-         ("C-c RET" . gptel-send)
-         ("C-, s" . gptel-send)
-         ("C-, A" . gptel-abort)
-         ("C-, a" . gptel-add)
-         ("C-, m" . gptel-menu)
-         ("C-, q" . gptel-quick)))
-
-  :hook
-  (org-mode . (lambda () 
-                (when (and buffer-file-name
-                           (string-match-p "\\.llm\\'" buffer-file-name))
-                  (gptel-mode t)))))
+   :map gptel-mode-map
+   ("C-c RET" . gptel-send)
+   ("C-, s" . gptel-send)
+   ("C-, A" . gptel-abort)
+   ("C-, a" . gptel-add)
+   ("C-, m" . gptel-menu)
+   ("C-, q" . gptel-quick)))
 
 (use-package gptel-quick
     :vc (:url "https://github.com/karthink/gptel-quick" :rev :newest)
