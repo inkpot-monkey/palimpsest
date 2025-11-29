@@ -248,9 +248,10 @@
          ("C-c C-d" . sops-edit-file)))
 
 (use-package auth-source-sops
+    :demand t
     :vc (:url "https://github.com/inkpot-monkey/auth-source-sops" :rev :newest)
     :custom
-    (auth-source-sops-file "/nix/store/lrcz9naa2ay7ani3f7xbqfgigh22xks5-source/secrets/secrets.yaml")
+    (auth-source-sops-file "@secrets@")
     :config
     (auth-source-sops-enable))
 
