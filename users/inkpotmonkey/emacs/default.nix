@@ -26,11 +26,16 @@
     "emacs/init.el" = {
       text =
         builtins.replaceStrings
-          [ "@sops-file@" "@username@" "@email@" "@treesit-grammars@" ]
           [
-            "${self.outPath}/secrets/secrets.yaml"
+            "@username@"
+            "@email@"
+            "@secrets@"
+            "@treesit-grammars@"
+          ]
+          [
             "inkpot-monkey"
             "inkpot-monkey@palebluebytes.space"
+            "${../secrets.yaml}"
             "${pkgs.emacsPackages.treesit-grammars.with-all-grammars}"
           ]
           (builtins.readFile ./init.el);
