@@ -775,9 +775,15 @@
 
 (use-package daemons)
 
-
 (use-package journalctl-mode
     :bind (("C-c t" . journalctl)))
+
+(use-package proced
+    :ensure nil
+    :defer t
+    :custom
+    (proced-enable-color-flag t)
+    (proced-tree-flag t))
 
 (use-package eww
     :bind
