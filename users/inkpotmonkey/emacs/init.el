@@ -804,7 +804,20 @@
 			      (recall-save))))
 
 
-(use-package vterm)
+(use-package vterm
+    :ensure nil ;; It's installed via Nix, so don't try to download it
+    :bind (:map vterm-mode-map
+		("C-y" . vterm-yank)       ;; Make paste work as expected
+		("M-y" . vterm-yank-pop)   ;; Yank-pop support
+		("C-q" . vterm-send-next-key)) ;; Pass next key to shell specifically
+    :config
+    (setq vterm-max-scrollback 10000)
+
+    (setq vterm-eval-cmds '(("find-file" find-file)
+                            ("message" message)
+                            ("vterm-clear-scrollback" vterm-clear-scrollback)))
+
+    (add-hook 'vterm-mode-hook (lambda () (set-window-fringes nil 0 0))))
 
 (use-package org
     :after (cape tempel)
@@ -901,12 +914,23 @@
 
 (use-package project
     :ensure nil
-    :after consult
-    :bind (:map project-prefix-map
-                ("m" . magit-project-status))
+    :hook
+    (vterm-copy-mode . (lambda ()
+			 (if vterm-copy-mode
+			     (progn (setq cursor-type 'box) (hl-line-mode 1))
+			   (setq cursor-type nil) (hl-line-mode -1))))
     :config
-    ;; Replace project-find-regexp with consult-ripgrep
-    (keymap-substitute project-prefix-map #'project-find-regexp #'consult-ripgrep))
+    (defun project-run-vterm+ ()
+      "Open vterm in the current project root."
+      (interactive)
+      (defvar vterm-buffer-name)
+      (let* ((default-directory (project-root (project-current t)))
+             (vterm-buffer-name (project-prefixed-buffer-name "vterm"))
+             (buffer (get-buffer vterm-buffer-name)))
+	
+	(if (and buffer (not current-prefix-arg))
+            (pop-to-buffer buffer (bound-and-true-p display-comint-buffer-action))
+          (vterm vterm-buffer-name))))
 
 (use-package apheleia
     :init (apheleia-global-mode))
