@@ -932,6 +932,19 @@
             (pop-to-buffer buffer (bound-and-true-p display-comint-buffer-action))
           (vterm vterm-buffer-name))))
 
+    (setq project-switch-commands
+          '((project-find-file "Find file" ?f)
+            (consult-ripgrep "Ripgrep" ?g)
+            (consult-project-buffer "Buffer" ?b)
+            (magit-project-status "Magit" ?m)
+            (project-find-dir "Find directory" ?d)
+            (project-run-vterm+ "Vterm" ?v)
+	    (project-any-command "Other" ?o)))
+
+    :bind (:map project-prefix-map
+                ("m" . magit-project-status)
+		("v" . project-run-vterm+)))
+
 (use-package apheleia
     :init (apheleia-global-mode))
 
