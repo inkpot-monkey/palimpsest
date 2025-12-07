@@ -67,6 +67,7 @@
   (column-number-mode t)
   (bidi-paragraph-direction 'left-to-right)
   (bidi-inhibit-bpa t)
+  (tab-width 2)
 
   ;; -- Behavior --
   (confirm-kill-emacs 'yes-or-no-p)
