@@ -49,6 +49,7 @@ in
     distrobox
     quickemu
 
+    google-chrome
     vivaldi
     brave
 

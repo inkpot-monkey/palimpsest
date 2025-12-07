@@ -1,4 +1,9 @@
-{ pkgs, config, ... }:
+{
+  pkgs,
+  config,
+  inputs,
+  ...
+}:
 let
   mcpConfig = {
     mcpServers = {
@@ -41,7 +46,7 @@ in
     gemini-cli
     claude-code
     n8n-mcp
-    unstable.antigravity
+    inputs.antigravity-nix.packages.x86_64-linux.default
     emcee
   ];
 
