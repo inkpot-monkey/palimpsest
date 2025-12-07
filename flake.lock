@@ -156,6 +156,7 @@
         "nixpkgs": "nixpkgs",
         "nixpkgs-unstable": "nixpkgs-unstable",
         "sops-nix": "sops-nix",
+        "tree-sitter-astro": "tree-sitter-astro",
         "vpsFree": "vpsFree"
       }
     },
@@ -191,6 +192,22 @@
       "original": {
         "owner": "nix-systems",
         "repo": "default",
+        "type": "github"
+      }
+    },
+    "tree-sitter-astro": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1745424178,
+        "narHash": "sha256-TpXs3jbYn39EHxTdtSfR7wLA1L8v9uyK/ATPp5v4WqE=",
+        "owner": "virchau13",
+        "repo": "tree-sitter-astro",
+        "rev": "213f6e6973d9b456c6e50e86f19f66877e7ef0ee",
+        "type": "github"
+      },
+      "original": {
+        "owner": "virchau13",
+        "repo": "tree-sitter-astro",
         "type": "github"
       }
     },

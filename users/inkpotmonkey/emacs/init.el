@@ -25,9 +25,9 @@
 
   (require 'recentf)
   (add-to-list 'recentf-exclude
-	       (recentf-expand-file-name no-littering-var-directory))
+							 (recentf-expand-file-name no-littering-var-directory))
   (add-to-list 'recentf-exclude
-	       (recentf-expand-file-name no-littering-etc-directory)))
+							 (recentf-expand-file-name no-littering-etc-directory)))
 
 (use-package gcmh
     :init (gcmh-mode)
@@ -41,7 +41,7 @@
   (set-default-coding-systems 'utf-8)
   (setq save-interprogram-paste-before-kill t)
 
-  (setq treesit-extra-load-path '("/nix/store/j47bigjsy5vkfc8jhbscgmrny8w0xgvv-emacs-treesit-grammars/lib"))
+  (setq treesit-extra-load-path '("@treesit-grammars@"))
 
   ;; -- Global Modes --
   (delete-selection-mode t)
@@ -56,8 +56,8 @@
 
   :custom
   ;; -- User Details --
-  (user-full-name "inkpot-monkey")
-  (user-mail-address "inkpot-monkey@palebluebytes.space")
+  (user-full-name "@username@")
+  (user-mail-address "@email@")
 
   ;; -- UI & Visuals --
   (visible-bell t)
@@ -128,7 +128,7 @@
     "If region is not active, go to the buffer start."
     (save-excursion
       (when (not (use-region-p))
-	(goto-char (point-min)))
+				(goto-char (point-min)))
       (apply orig-func args)))
 
   (advice-add 'query-replace :around #'goto-top-if-no-region+)
@@ -151,7 +151,7 @@
 (use-package prog-mode
     :ensure nil
     :bind (:map prog-mode-map
-		("C-c l" . display-line-numbers-mode)))
+								("C-c l" . display-line-numbers-mode)))
 
 (use-package savehist
     :ensure nil ; Built-in
@@ -233,10 +233,10 @@
     :custom (wgrep-auto-save-buffer t)
     :bind
     (:map embark-collect-mode-map
-	  ("i" . wgrep-change-to-wgrep-mode))
+					("i" . wgrep-change-to-wgrep-mode))
     (:map wgrep-mode-map
-	  ("s-e" . wgrep-finish-edit)
-	  ("s-k" . wgrep-abort-changes)))
+					("s-e" . wgrep-finish-edit)
+					("s-k" . wgrep-abort-changes)))
 
 (use-package sops
     :init
@@ -360,7 +360,7 @@
 
 (use-package dired-git-info
     :bind (:map dired-mode-map
-		(")" . dired-git-info-mode)))
+								(")" . dired-git-info-mode)))
 
 (use-package dired-subtree
     :after dired
@@ -415,7 +415,7 @@
     :init
   (defface visible-mark-active
       `((((type tty) (class mono)))
-	(t (:underline ,(face-attribute 'cursor :background))))
+				(t (:underline ,(face-attribute 'cursor :background))))
     "Active mark face."
     :group 'visible-mark)
   :custom
@@ -446,9 +446,9 @@
     :after vertico
     :ensure nil
     :bind (:map vertico-map
-		("RET" . vertico-directory-enter)
-		("DEL" . vertico-directory-delete-char)
-		("M-DEL" . vertico-directory-delete-word))
+								("RET" . vertico-directory-enter)
+								("DEL" . vertico-directory-delete-char)
+								("M-DEL" . vertico-directory-delete-word))
     :hook (rfn-eshadow-update-overlay . vertico-directory-tidy))
 
 (use-package corfu
@@ -493,7 +493,7 @@
 
 (use-package marginalia
     :bind (:map minibuffer-local-map
-		("M-A" . marginalia-cycle))
+								("M-A" . marginalia-cycle))
     :init
     (marginalia-mode t))
 
@@ -624,7 +624,7 @@
   :config
   ;; Hide the mode line of the Embark live/completions buffers
   (add-to-list 'display-buffer-alist
-	       '("\\`\\*Embark Collect \\(Live\\|Completions\\)\\*"
+							 '("\\`\\*Embark Collect \\(Live\\|Completions\\)\\*"
                  nil
                  (window-parameters (mode-line-format . none)))))
 
@@ -716,12 +716,12 @@
   
   :hook
   (org-mode . (lambda ()
-		(when (and buffer-file-name
+								(when (and buffer-file-name
                            (string-suffix-p ".llm" buffer-file-name))
                   (gptel-mode 1))))
   ;; Ensure abbrevs work in gptel-mode
   (gptel-mode . (lambda ()
-		  (setq local-abbrev-table gptel-mode-abbrev-table)))
+									(setq local-abbrev-table gptel-mode-abbrev-table)))
 
   :config
   (require 'gptel-integrations)
@@ -762,9 +762,9 @@
     (defun gptel-quick--update-posframe-with-custom-border (orig-fun &rest args)
       "Temporarily modify border for gptel-quick posframe during update."
       (let ((face-attribute-orig (face-attribute 'vertical-border :foreground)))
-	(set-face-attribute 'vertical-border nil :foreground (face-attribute 'child-frame-border :background))
-	(apply orig-fun args)
-	(set-face-attribute 'vertical-border nil :foreground face-attribute-orig)))
+				(set-face-attribute 'vertical-border nil :foreground (face-attribute 'child-frame-border :background))
+				(apply orig-fun args)
+				(set-face-attribute 'vertical-border nil :foreground face-attribute-orig)))
 
     (advice-add 'gptel-quick--update-posframe :around #'gptel-quick--update-posframe-with-custom-border))
 
@@ -802,16 +802,16 @@
   ;; Enable process surveillance
   (recall-mode t)
   (run-with-idle-timer 60 t (lambda ()
-			      (recall-save))))
+															(recall-save))))
 
 ;; https://github.com/sgpthomas/async-shell
 
 (use-package vterm
     :ensure nil ;; It's installed via Nix, so don't try to download it
     :bind (:map vterm-mode-map
-		("C-y" . vterm-yank)       ;; Make paste work as expected
-		("M-y" . vterm-yank-pop)   ;; Yank-pop support
-		("C-q" . vterm-send-next-key)) ;; Pass next key to shell specifically
+								("C-y" . vterm-yank)       ;; Make paste work as expected
+								("M-y" . vterm-yank-pop)   ;; Yank-pop support
+								("C-q" . vterm-send-next-key)) ;; Pass next key to shell specifically
     :config
     (setq vterm-max-scrollback 10000)
 
@@ -910,17 +910,17 @@
     
     (defun my/eglot-capf ()
       (add-hook 'completion-at-point-functions
-		(cape-capf-super #'eglot-completion-at-point #'cape-abbrev)
-		nil t))
+								(cape-capf-super #'eglot-completion-at-point #'cape-abbrev)
+								nil t))
     (add-hook 'eglot-managed-mode-hook #'my/eglot-capf))
 
 (use-package project
     :ensure nil
     :hook
     (vterm-copy-mode . (lambda ()
-			 (if vterm-copy-mode
-			     (progn (setq cursor-type 'box) (hl-line-mode 1))
-			   (setq cursor-type nil) (hl-line-mode -1))))
+												 (if vterm-copy-mode
+														 (progn (setq cursor-type 'box) (hl-line-mode 1))
+													 (setq cursor-type nil) (hl-line-mode -1))))
     :config
     (defun project-run-vterm+ ()
       "Open vterm in the current project root."
@@ -929,8 +929,8 @@
       (let* ((default-directory (project-root (project-current t)))
              (vterm-buffer-name (project-prefixed-buffer-name "vterm"))
              (buffer (get-buffer vterm-buffer-name)))
-	
-	(if (and buffer (not current-prefix-arg))
+				
+				(if (and buffer (not current-prefix-arg))
             (pop-to-buffer buffer (bound-and-true-p display-comint-buffer-action))
           (vterm vterm-buffer-name))))
 
@@ -941,11 +941,11 @@
             (magit-project-status "Magit" ?m)
             (project-find-dir "Find directory" ?d)
             (project-run-vterm+ "Vterm" ?v)
-	    (project-any-command "Other" ?o)))
+						(project-any-command "Other" ?o)))
 
     :bind (:map project-prefix-map
                 ("m" . magit-project-status)
-		("v" . project-run-vterm+)))
+								("v" . project-run-vterm+)))
 
 (use-package apheleia
     :init (apheleia-global-mode))
@@ -1000,22 +1000,22 @@
       "Build Nixos HOST. Defaults to function `system-name'."
       (interactive)
       (let ((compilation-scroll-output t)
-	    (default-directory "/sudo::/home/inkpotmonkey/code/nixos")
-	    (compilation-buffer-name-function
-	     (lambda (_) (concat "*" (symbol-name this-command) "*")))
-	    (show-trace (if current-prefix-arg "--show-trace" "")))
-	(envrc--clear (buffer-name))
-	(compile
-	 (format "nixos-rebuild switch %s --flake .#%s" show-trace system-name))))
+						(default-directory "/sudo::/home/inkpotmonkey/code/nixos")
+						(compilation-buffer-name-function
+						 (lambda (_) (concat "*" (symbol-name this-command) "*")))
+						(show-trace (if current-prefix-arg "--show-trace" "")))
+				(envrc--clear (buffer-name))
+				(compile
+				 (format "nixos-rebuild switch %s --flake .#%s" show-trace system-name))))
 
     (defun nix-update-system-flake+ (&optional flake-path)
       "Update a flake. Defaults to system flake."
       (interactive)
       (let ((default-directory "~/code/nixos")
-	    (compilation-buffer-name-function
-	     (lambda (_) (concat "*" (symbol-name this-command) "*"))))
-	(envrc--clear (buffer-name))
-	(compile (concat "nix flake update --flake " (or flake-path default-directory))))))
+						(compilation-buffer-name-function
+						 (lambda (_) (concat "*" (symbol-name this-command) "*"))))
+				(envrc--clear (buffer-name))
+				(compile (concat "nix flake update --flake " (or flake-path default-directory))))))
 
 (use-package pretty-sha-path
     :init
@@ -1028,10 +1028,10 @@
     
     :config
     (add-to-list 'eglot-server-programs
-		 '((rust-ts-mode rust-mode) .
+								 '((rust-ts-mode rust-mode) .
                    ("rust-analyzer"
-		    :initializationOptions
-		    (:check (:command "clippy")))))
+										:initializationOptions
+										(:check (:command "clippy")))))
     
     (add-to-list 'project-vc-extra-root-markers "Cargo.toml"))
 
@@ -1049,7 +1049,7 @@
     (org-babel-do-load-languages
      'org-babel-load-languages
      (append org-babel-load-languages
-	     '((shell . t)))))
+						 '((shell . t)))))
 
 (use-package js-ts-mode
     :ensure nil
@@ -1074,16 +1074,18 @@
     :init
     (push '(html-mode . html-ts-mode) major-mode-remap-alist)
     :bind (:map html-ts-mode-map
-		("M-o" . nil)
-		("C-c o O" . font-lock-fontify-block)
-		("C-c o b" . facemenu-set-bold)
-		("C-c o d" . facemenu-set-default)
-		("C-c o i" . facemenu-set-italic)
-		("C-c o l" . facemenu-set-bold-italic)
-		("M-O" . facemenu-set-face)
-		("C-c o u" . facemenu-set-underline))
+								("M-o" . nil)
+								("C-c o O" . font-lock-fontify-block)
+								("C-c o b" . facemenu-set-bold)
+								("C-c o d" . facemenu-set-default)
+								("C-c o i" . facemenu-set-italic)
+								("C-c o l" . facemenu-set-bold-italic)
+								("M-O" . facemenu-set-face)
+								("C-c o u" . facemenu-set-underline))
     :hook
     (html-ts-mode . eglot-ensure))
+
+(use-package astro-ts-mode)
 
 (use-package css-ts-mode
     :ensure nil

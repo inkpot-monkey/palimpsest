@@ -20,6 +20,7 @@
     # You can add overlays here
     overlays = [
       outputs.overlays.additions
+      outputs.overlays.modifications
       outputs.overlays.unstable-packages
     ];
     # Configure your nixpkgs instance

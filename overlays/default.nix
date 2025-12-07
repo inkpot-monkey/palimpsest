@@ -6,7 +6,13 @@
 
   # Custom package modifications
   modifications = final: prev: {
-    tree-sitter = final.unstable.tree-sitter;
+    tree-sitter = final.unstable.tree-sitter.override {
+      extraGrammars = {
+        tree-sitter-astro = {
+          src = inputs.tree-sitter-astro.outPath;
+        };
+      };
+    };
   };
 
   unstable-packages = final: _prev: {

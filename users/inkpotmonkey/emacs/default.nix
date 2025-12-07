@@ -36,7 +36,7 @@
             "inkpot-monkey"
             "inkpot-monkey@palebluebytes.space"
             "${../secrets.yaml}"
-            "${pkgs.emacsPackages.treesit-grammars.with-all-grammars}"
+            "${pkgs.emacsPackages.treesit-grammars.with-all-grammars}/lib"
           ]
           (builtins.readFile ./init.el);
     };

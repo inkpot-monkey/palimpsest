@@ -33,6 +33,11 @@
       url = "github:jacopone/antigravity-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    tree-sitter-astro = {
+      url = "github:virchau13/tree-sitter-astro";
+      flake = false;
+    };
   };
 
   outputs =
