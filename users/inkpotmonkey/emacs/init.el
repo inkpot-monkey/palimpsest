@@ -1016,6 +1016,10 @@
 	(envrc--clear (buffer-name))
 	(compile (concat "nix flake update --flake " (or flake-path default-directory))))))
 
+(use-package pretty-sha-path
+    :init
+  (global-pretty-sha-path-mode))
+
 (use-package rust-ts-mode
     :ensure nil
     :hook
