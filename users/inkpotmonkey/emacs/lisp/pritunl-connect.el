@@ -73,6 +73,25 @@ Returns a cons cell `(ID . PASSWORD)' or nil if not found."
       (remove-hook 'compilation-filter-hook #'pritunl--check-ready-hook t)
       (add-hook 'compilation-filter-hook #'pritunl--check-ready-hook nil t))))
 
+;;;###autoload
+(defun pritunl-disconnect ()
+  "Kills the `pritunl' process that was started by `pritunl-connect'."
+  (interactive)
+  (message "Disconnecting Pritunl...")
+
+  (let ((service-msg)
+	(proc (get-buffer-process pritunl--buffer-name)))
+    (if (and proc (process-live-p proc))
+        (progn
+          (kill-process proc)
+          (setq service-msg "service stopped"))
+      (setq service-msg "service not found"))
+
+    (when-let ((buf (get-buffer pritunl--buffer-name)))
+      (kill-buffer buf))
+
+    (message "Pritunl: %s." service-msg)))
+
 (provide 'pritunl-connect)
 
 ;;; pritunl-connect.el ends here
