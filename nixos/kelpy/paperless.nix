@@ -54,5 +54,8 @@ in
     '';
   };
 
-  environment.persistence."/persistent".directories = [ config.services.paperless.mediaDir ];
+  environment.persistence."/persistent".directories = [
+    config.services.paperless.mediaDir
+    config.services.paperless.dataDir
+  ];
 }
