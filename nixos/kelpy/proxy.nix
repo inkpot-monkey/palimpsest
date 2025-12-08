@@ -28,7 +28,7 @@ in
     inherit email;
     package = pkgs.caddy.withPlugins {
       plugins = [ "github.com/caddy-dns/cloudflare@v0.2.1" ];
-      hash = "sha256-XwZ0Hkeh2FpQL/fInaSq+/3rCLmQRVvwBM0Y1G1FZNU=";
+      hash = "sha256-aRMg7R0dBAy+LJeGCMPg6HKppM6NPX2NPwtc0CeSQLg=";
     };
     # https://caddyserver.com/docs/caddyfile/options#global-options
     globalConfig = ''
