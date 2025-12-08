@@ -33,7 +33,6 @@ in
     postman
     beekeeper-studio
 
-    popcorntime
     miraclecast
 
     spotify
@@ -63,8 +62,10 @@ in
     gimp3
     blender
 
-    # Need to start the pritunl-client-service manually
     pritunl-client
+    protonvpn-gui
+
+    qbittorrent-enhanced
   ];
 
   programs.mpv = {
