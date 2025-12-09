@@ -3,5 +3,5 @@
 
 {
   # List your module files here
-  git-annex = ./git-annex.nix;
+  git-annex = ./git-annex;
 }
