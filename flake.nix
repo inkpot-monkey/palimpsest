@@ -76,6 +76,13 @@
             # Devshell for bootstrapping
             # Accessible through 'nix develop' or 'nix-shell' (legacy)
             devShells = import ./shell.nix { inherit inputs pkgs system; };
+
+            checks = {
+              git-annex = pkgs.callPackage ./modules/nixos/git-annex/tests/git-annex.nix { };
+              git-annex-stateless = pkgs.callPackage ./modules/nixos/git-annex/tests/git-annex-stateless.nix { };
+              git-annex-hybrid = pkgs.callPackage ./modules/nixos/git-annex/tests/git-annex-hybrid.nix { };
+              git-annex-encryption = pkgs.callPackage ./modules/nixos/git-annex/tests/git-annex-encryption.nix { };
+            };
           };
 
         flake = {
