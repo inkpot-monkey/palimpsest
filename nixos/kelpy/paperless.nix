@@ -8,6 +8,8 @@ in
     group = config.users.users.${config.services.paperless.user}.group;
   };
 
+  users.users.${config.services.paperless.user}.extraGroups = [ "git-annex" ];
+
   services.paperless = {
     enable = true;
     consumptionDirIsPublic = true;
@@ -58,4 +60,27 @@ in
     config.services.paperless.mediaDir
     config.services.paperless.dataDir
   ];
+
+  services.git-annex.repositories.paperless = {
+    path = config.services.paperless.mediaDir;
+    description = "paperless";
+    user = config.services.paperless.user;
+    ownerGroup = config.users.users.${config.services.paperless.user}.group;
+    assistant = true;
+    wanted = "metadata=tag=paperless";
+    tags = [ "paperless" ];
+    remotes = [
+      (
+        let
+          gateway = config.services.git-annex.repositories.gateway;
+        in
+        {
+          name = "gateway";
+          url = gateway.path;
+          clusterNode = gateway.clusterName;
+          expectedUUID = gateway.uuid;
+        }
+      )
+    ];
+  };
 }

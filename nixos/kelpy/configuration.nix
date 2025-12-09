@@ -3,6 +3,7 @@
   pkgs,
   settings,
   self,
+  outputs,
   ...
 }:
 {
@@ -28,7 +29,12 @@
 
     # ../common/listener.nix
     # ../common/observability.nix
+    # ../common/listener.nix
+    # ../common/observability.nix
+    outputs.nixosModules.git-annex
+    ./git-annex.nix
   ];
+
 
   networking = {
     inherit (settings.host) hostName domain;
@@ -39,6 +45,12 @@
     git
     ripgrep
     fd
+    gnupg
+  ];
+
+  programs.git.config.safe.directory = [
+    "/var/lib/git-annex/gateway"
+    "/var/lib/git-annex/backup"
   ];
 
   nixpkgs.hostPlatform = "x86_64-linux";
