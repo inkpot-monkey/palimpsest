@@ -73,6 +73,63 @@ services.git-annex = {
 *   `group` (str): Standard group to assign to the remote.
 *   `clusterNode` (str): Configures `remote.<name>.annex-cluster-node`.
 
+## SSH Configuration & Automation
+
+For fully automated background syncing with the Assistant, it is highly recommended to use a **passwordless SSH key** dedicated to the automation, separate from your interactive user key.
+
+### The "Two-Key" Strategy
+1.  **Main Key** (`id_ed25519`): Password-protected. Used for interactive SSH sessions. Secure.
+2.  **Bot Key** (`id_annex_autostart`): **Passwordless**. Used *only* by the background `git-annex assistant`.
+
+### Setup Steps
+
+1.  **Generate the Bot Key** (on client):
+    ```bash
+    ssh-keygen -t ed25519 -f ~/.ssh/id_annex_autostart -N "" -C "git-annex-automation"
+    ```
+
+2.  **Configure SSH** (`~/.ssh/config`):
+    Tell SSH to offer the bot key when connecting to your server (e.g., `kelpy`).
+    ```ssh
+    Host kelpy
+      # Try the bot key first (for automation)
+      IdentityFile ~/.ssh/id_annex_autostart
+      # Fallback to your main key (for interactive use)
+      IdentityFile ~/.ssh/id_ed25519
+    ```
+
+3.  **Authorize the Key (Server Side)**:
+    *   Add `id_annex_autostart.pub` to the **git-annex user's** `authorized_keys` (e.g., `git-annex@kelpy`).
+    *   **DO NOT** add this key to your personal user's `authorized_keys` (e.g., `inkpotmonkey@kelpy`).
+
+This ensures that if the passwordless key is compromised, it can only access the git-annex repository, not your full user shell.
+
+### The "Single Key" Strategy (Simple but Insecure)
+If you are comfortable with the security implications, you can use a single, passwordless SSH key for everything.
+
+1.  **Generate Key**: `ssh-keygen -t ed25519 -N ""` (empty passphrase).
+2.  **Authorize**: Add the public key to `authorized_keys` on the server.
+3.  **Result**: Both interactive logins and the background assistant will work immediately without extra configuration.
+    *   **Risk**: If your private key is stolen, the attacker gains full shell access to your server.
+
+### The "Single Key" Strategy (Advanced)
+If you prefer to use a single, password-protected SSH key for both interactive sessions and the assistant:
+
+1.  **Requirement**: You must use an SSH agent (e.g., `ssh-agent`, `gpg-agent`, `keychain`).
+2.  **Challenge**: Systemd user services do not automatically inherit environment variables (like `SSH_AUTH_SOCK`) from your login shell.
+3.  **Solution**: You must ensure `SSH_AUTH_SOCK` is imported into the systemd user environment.
+
+Add this to your shell initialization (e.g., `.bashrc`, `.zshrc`) or use a tool like `keychain` with systemd integration:
+
+```bash
+# Example: Import SSH_AUTH_SOCK to systemd user session
+if [ -n "$SSH_AUTH_SOCK" ]; then
+    systemctl --user import-environment SSH_AUTH_SOCK
+fi
+```
+
+**Note**: If the agent is not running or the key is not added (`ssh-add`), the background assistant will fail to sync.
+
 ## Workflow
 
 ### 1. Deployment Order
