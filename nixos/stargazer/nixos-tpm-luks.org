@@ -1,0 +1,88 @@
+#+TITLE: NixOS TPM 2.0 LUKS Unlocking
+#+AUTHOR: inkpot-monkey
+#+DATE: 2025-12-14
+#+TAGS: nixos security tpm luks
+
+* Overview
+Configured the system to automatically unlock the LUKS encrypted root partition using the Trusted Platform Module (TPM 2.0).
+This allows the machine to boot to the login screen without typing a disk password, while ensuring the drive remains encrypted and inaccessible if removed from the chassis.
+
+* Prerequisites
+- [X] TPM 2.0 Chip present and enabled in BIOS (~/dev/tpm0~)
+- [X] UEFI Boot using systemd-boot
+- [X] Secure Boot enabled (Recommended for PCR 7 validation)
+
+* Configuration (configuration.nix)
+Add the following configuration to ~boot.nix~ (or ~configuration.nix~). This enables systemd in the boot process, links the specific LUKS device to the TPM, and creates a maintenance alias.
+
+#+BEGIN_SRC nix
+{ config, pkgs, ... }: {
+
+  # 1. Enable systemd in initrd (Required for TPM access during boot)
+  boot.initrd.systemd.enable = true;
+  
+  # 2. Ensure TPM kernel modules are loaded early
+  boot.initrd.availableKernelModules = [ "tpm_crb" "tpm_tis" ];
+
+  # 3. Configure LUKS to look for the TPM
+  # REPLACE "luks-uuid-..." with the EXACT name found in your hardware-configuration.nix
+  boot.initrd.luks.devices."luks-uuid-YOUR-UUID".crypttabExtraOpts = [ "tpm2-device=auto" ];
+
+  # 4. Create an alias for easier maintenance (Method 1: Nix-integrated)
+  environment.shellAliases = {
+    tpm-update = let
+      # This dynamically pulls the stable device path from your existing boot config
+      drive = config.boot.initrd.luks.devices."luks-uuid-YOUR-UUID".device;
+    in
+      "sudo systemd-cryptenroll ${drive} --wipe-slot=tpm2 && sudo systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+2+7 ${drive}";
+  };
+}
+#+END_SRC
+
+* Initial Setup
+After applying the configuration above (~sudo nixos-rebuild switch~), you must manually enroll the TPM *once* to generate the keys.
+
+#+BEGIN_SRC bash
+  # Replace with your actual partition path (e.g., /dev/nvme0n1p2)
+  # You only need to type this path once; future updates will use the alias.
+  sudo systemd-cryptenroll --tpm2-device=auto --tpm2-pcrs=0+2+7 /dev/nvme0n1p2
+#+END_SRC
+
+* Key Management
+
+** Changing the Manual Password (Slot 0)
+You can change your text-based backup password at any time. This *does not* affect the TPM unlocking; they are independent keys.
+
+1. Find your LUKS partition (usually the root partition):
+   #+BEGIN_SRC bash
+   lsblk
+   #+END_SRC
+2. Change the key:
+   #+BEGIN_SRC bash
+   # Replace /dev/nvme0n1p2 with your partition
+   sudo cryptsetup luksChangeKey /dev/nvme0n1p2
+   #+END_SRC
+   - You will be asked for the *current* password first.
+   - Then you will set the *new* password.
+
+** Adding a "Rescue" Key (Optional)
+It is best practice to add a high-entropy "Rescue Key" (like a long random string) to a separate slot, write it down, and store it physically offline (e.g., in a safe). This protects you if you forget your password AND the TPM fails.
+
+#+BEGIN_SRC bash
+  sudo cryptsetup luksAddKey /dev/nvme0n1p2
+#+END_SRC
+
+* Maintenance & Troubleshooting
+
+** Scenario: BIOS/Firmware Update
+If the BIOS, Firmware, or Bootloader is updated, the TPM measurements (PCR 0/7) will change. The TPM will refuse to unlock the drive on the next boot.
+
+1. *Boot:* When the TPM fails, type your manual text passphrase (Slot 0) to enter the system.
+2. *Re-enroll:* Open a terminal and run your configured alias:
+   #+BEGIN_SRC bash
+   tpm-update
+   #+END_SRC
+   This automatically wipes the old invalid signature and adds a new one based on the current system state.
+
+** Emergency Access
+*CRITICAL:* Never remove the text passphrase (Slot 0). If the TPM hardware fails, the motherboard dies, or you move the drive to a new PC, the text password is the *only* way to recover your data.
