@@ -1,7 +1,9 @@
-{ ... }:
+{ config, self, ... }:
 {
   services.git-annex = {
     enable = true;
+    sshKey = config.sops.secrets.git_annex_ssh_key.path;
+    gpgKey = config.sops.secrets.git_annex_gpg_key.path;
     repositories = {
       gateway = {
         path = "/var/lib/git-annex/gateway";
@@ -24,7 +26,10 @@
             name = "rsync_net";
             url = "zh2046@zh2046.rsync.net:annex";
             type = "rsync";
-            encryption = "none";
+            encryption = "hybrid";
+            params = {
+              keyid = "376F898EB2D7B0AC";
+            };
             group = "backup";
             wanted = "standard";
           }
@@ -42,4 +47,20 @@
   environment.persistence."/persistent".directories = [
     "/var/lib/git-annex"
   ];
+
+  sops.secrets.git_annex_gpg_key = {
+    key = "git-annex/gpg_key";
+    owner = "git-annex";
+    group = "git-annex";
+    mode = "0400";
+    sopsFile = "${self}/secrets/secrets.yaml";
+  };
+
+  sops.secrets.git_annex_ssh_key = {
+    key = "git-annex/ssh_key/private";
+    owner = "git-annex";
+    group = "git-annex";
+    mode = "0400";
+    sopsFile = "${self}/secrets/secrets.yaml";
+  };
 }

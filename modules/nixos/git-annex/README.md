@@ -19,6 +19,8 @@ The NixOS module allows you to declaratively configure `git-annex` repositories,
 ```nix
 imports = [ ./modules/nixos/git-annex.nix ];
 services.git-annex.enable = true;
+services.git-annex.sshKeyFile = config.sops.secrets.git_annex_ssh_key.path;
+services.git-annex.gpgKeyFile = config.sops.secrets.git_annex_gpg_key.path;
 ```
 
 ### Defining Repositories
@@ -68,6 +70,8 @@ services.git-annex.repositories = {
 ### Options Detail
 
 #### Repository Options
+*   `sshKeyFile` (path, optional): Path to the private SSH key file to use for git-annex operations (e.g. from `sops-nix`).
+*   `gpgKeyFile` (path, optional): Path to the GPG key file to import for git-annex.
 *   `path` (path): Absolute path to the repository.
 *   `description` (str): Description for `git annex init`.
 *   `uuid` (str, optional): The UUID of this repository. Useful for referencing it from other configs.

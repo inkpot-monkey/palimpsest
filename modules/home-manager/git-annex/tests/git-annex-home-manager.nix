@@ -147,7 +147,7 @@ pkgs.testers.nixosTest {
     client_full.succeed("chown bob:users /home/bob/Backup")
 
     # 2. Wait for Gateway
-    gateway.wait_for_unit("git-annex-init-gateway.service")
+
     gateway.wait_for_unit("git-annex-assistant-gateway.service")
 
     # 3. Wait for Client HM Activation

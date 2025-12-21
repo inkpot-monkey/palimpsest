@@ -11,6 +11,18 @@ in
   options.services.git-annex = {
     enable = lib.mkEnableOption "git-annex";
 
+    sshKeyFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Path to the private SSH key file to use for git-annex (e.g. /run/secrets/git-annex-key).";
+    };
+
+    gpgKeyFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Path to the GPG key file to import for git-annex (e.g. /run/secrets/gpg-key).";
+    };
+
     repositories = lib.mkOption {
       type = lib.types.attrsOf (lib.types.submodule {
         options = {
@@ -44,6 +56,11 @@ in
                     type = lib.types.nullOr lib.types.str;
                     default = null;
                     description = "URL of the git remote (for history syncing). Required for 'git' and hybrid remotes.";
+                  };
+                  fetchTimeout = lib.mkOption {
+                    type = lib.types.str;
+                    default = "30s";
+                    description = "Timeout for git fetch operations (e.g. '30s', '5m').";
                   };
                   type = lib.mkOption {
                     type = lib.types.str;
@@ -135,6 +152,14 @@ in
         pkgs.rsync
       ];
 
+      home.activation.importGitAnnexGpgKey = lib.mkIf (cfg.gpgKeyFile != null) (lib.hm.dag.entryAfter ["writeBoundary"] ''
+        if [ -f "${cfg.gpgKeyFile}" ]; then
+          ${pkgs.gnupg}/bin/gpg --batch --import ${cfg.gpgKeyFile} || true
+        else
+          echo "Warning: git-annex gpgKeyFile configured but not found at ${cfg.gpgKeyFile}"
+        fi
+      '');
+
       programs.git = {
         enable = true;
       };
@@ -198,7 +223,7 @@ in
                         git -C "${repo.path}" remote add "${remote.name}" "${remote.url}"
                         
                         # Fetch with timeout to avoid hangs
-                        timeout 30s git -C "${repo.path}" fetch "${remote.name}" || echo "Warning: Failed to fetch remote ${remote.name}. Check SSH keys."
+                        timeout ${remote.fetchTimeout} git -C "${repo.path}" fetch "${remote.name}"
                         
                         ${lib.optionalString (remote.expectedUUID != null) ''
                           # Verify UUID
@@ -235,7 +260,7 @@ in
                             (if remote.encryption != null then { encryption = remote.encryption; } else { }) //
                             remote.params
                           ))} \
-                          autoenable=true || echo "Warning: Failed to init special remote $SPECIAL_REMOTE_NAME. Check network/keys."
+                          autoenable=true
                       fi
                     ''}
 
@@ -244,7 +269,7 @@ in
                       TARGET_REMOTE_NAME="${remote.name}${if remote.type != "git" && remote.url != null then "-content" else ""}"
                       
                       ${lib.optionalString (remote.type == "git") ''
-                        git -C "${repo.path}" annex sync "$TARGET_REMOTE_NAME" --no-content >/dev/null 2>&1 || true
+                        git -C "${repo.path}" annex sync "$TARGET_REMOTE_NAME" --no-content
                       ''}
                       
                       ${lib.optionalString (remote.group != null) ''
@@ -259,13 +284,15 @@ in
               unitFile = pkgs.writeText "git-annex-init-${name}.service" ''
                 [Unit]
                 Description=Initialize git-annex repository ${name}
-                After=network.target
+                After=network-online.target
+                Wants=network-online.target
+                ${lib.optionalString (cfg.sshKeyFile != null) "ConditionPathExists=${cfg.sshKeyFile}"}
 
                 [Service]
                 Type=oneshot
                 RemainAfterExit=true
                 Environment="PATH=${lib.makeBinPath [ pkgs.git pkgs.git-annex pkgs.gnupg pkgs.openssh pkgs.rsync pkgs.coreutils pkgs.gnugrep pkgs.gawk ]}:/usr/bin:/bin"
-                Environment="GIT_SSH_COMMAND=ssh -o BatchMode=yes -o StrictHostKeyChecking=no"
+                Environment="GIT_SSH_COMMAND=ssh ${lib.optionalString (cfg.sshKeyFile != null) "-i ${cfg.sshKeyFile} "}-o BatchMode=yes -o StrictHostKeyChecking=no -o ServerAliveInterval=15 -o ServerAliveCountMax=3"
                 ExecStart=${script}
 
                 [Install]

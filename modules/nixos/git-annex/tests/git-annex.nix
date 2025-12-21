@@ -11,7 +11,7 @@ pkgs.testers.nixosTest {
           path = "/var/lib/git-annex/gateway";
           description = "gateway";
           gateway = true;
-          assistant = true;
+          assistant = false;
           wanted = "standard";
           group = "transfer";
         };
@@ -27,7 +27,7 @@ pkgs.testers.nixosTest {
         repositories.client = {
           path = "/var/lib/git-annex/client";
           description = "client";
-          assistant = true;
+          assistant = false;
           remotes = [{
             name = "origin";
             url = "git-annex@gateway:/var/lib/git-annex/gateway";
@@ -57,14 +57,27 @@ pkgs.testers.nixosTest {
     # Configure client to accept gateway host key (disable strict checking for test)
     client.succeed("mkdir -p /var/lib/git-annex/.ssh && echo 'Host *\n  StrictHostKeyChecking no\n' > /var/lib/git-annex/.ssh/config && chown git-annex:git-annex /var/lib/git-annex/.ssh/config")
     
+    # Restart init services now that keys are exchanged
+    # They would have failed on boot due to missing auth
+    gateway.succeed("systemctl restart git-annex-init-gateway.service")
+    client.succeed("systemctl restart git-annex-init-client.service")
+    
+    # Wait for them to succeed
+    gateway.wait_for_unit("git-annex-init-gateway.service")
+    client.wait_for_unit("git-annex-init-client.service")
+
+    # Verify repo initialization
+    client.succeed("test -d /var/lib/git-annex/client/.git")
+
     # Create file on client
     client.succeed("sudo -u git-annex bash -c 'cd /var/lib/git-annex/client && echo test > test.txt'")
-    
-    # Check environment
-    client.succeed("ls -l /run/current-system/sw/bin/git")
-    client.succeed("which git")
 
-    # Force sync manually to debug connectivity
+    # Force push to debug connectivity
+    client.succeed("sudo -u git-annex git -C /var/lib/git-annex/client add .")
+    client.succeed("sudo -u git-annex git -C /var/lib/git-annex/client commit -m 'test commit'")
+    client.succeed("sudo -u git-annex git -C /var/lib/git-annex/client push origin master")
+    
+    # Then try annex sync
     code, stdout = client.execute("sudo -u git-annex /run/current-system/sw/bin/git -C /var/lib/git-annex/client annex sync 2>&1")
     print(stdout)
     if code != 0:

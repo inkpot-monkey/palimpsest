@@ -30,6 +30,8 @@ This setup configures a repository at `~/Annex` that syncs to a gateway server (
 ```nix
 services.git-annex = {
   enable = true;
+  sshKeyFile = config.sops.secrets.git_annex_ssh_key.path;
+  gpgKeyFile = config.sops.secrets.git_annex_gpg_key.path;
   repositories = {
     annex = {
       path = "/home/user/Annex";
@@ -52,6 +54,8 @@ services.git-annex = {
 ### Options Detail
 
 #### Repository Options
+*   `sshKeyFile` (path, optional): Path to the private SSH key file to use for git-annex operations (e.g. from `sops-nix`).
+*   `gpgKeyFile` (path, optional): Path to the GPG key file to import for git-annex.
 *   `path` (path): Absolute path to the repository.
 *   `description` (str): Description for `git annex init`.
 *   `unlock` (bool): If true, runs `git annex adjust --unlock` after initialization. This makes files appear as normal files (not symlinks) and is recommended for general use.
@@ -63,6 +67,7 @@ services.git-annex = {
 
 #### Remote Options
 *   `name` (str): Name of the remote.
+*   `fetchTimeout` (str): Timeout for git fetch operations (default "30s").
 *   `url` (str): Git URL (optional for special remotes).
 *   `type` (str): Type of remote (default "git"). Use "rsync", "directory", "S3", etc. for special remotes.
 *   `encryption` (str): Encryption setting for special remotes (e.g., "none", "shared", "pubkey").

@@ -11,6 +11,18 @@ in
   options.services.git-annex = {
     enable = lib.mkEnableOption "git-annex";
 
+    sshKeyFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Path to the private SSH key file to use for git-annex (e.g. /run/secrets/git-annex-key).";
+    };
+
+    gpgKeyFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = "Path to the GPG key file to import for git-annex (e.g. /run/secrets/gpg-key).";
+    };
+
     repositories = lib.mkOption {
       type = lib.types.attrsOf (
         lib.types.submodule {
@@ -60,6 +72,11 @@ in
                       type = lib.types.str;
                       default = "git";
                       description = "Type of the remote. Defaults to 'git'. Use 'rsync', 'S3', etc. for special remotes.";
+                    };
+                    params = lib.mkOption {
+                      type = lib.types.attrsOf lib.types.str;
+                      default = { };
+                      description = "Additional parameters for special remotes (e.g. keyid, directory).";
                     };
 
                     encryption = lib.mkOption {
@@ -155,12 +172,39 @@ in
     users.groups.git-annex = { };
 
     system.activationScripts.git-annex-ssh-key = ''
-      if [ ! -f /var/lib/git-annex/.ssh/id_ed25519 ]; then
-        mkdir -p /var/lib/git-annex/.ssh
-        ${pkgs.openssh}/bin/ssh-keygen -t ed25519 -N "" -f /var/lib/git-annex/.ssh/id_ed25519 -C "git-annex@${config.networking.hostName}"
-        chown -R git-annex:git-annex /var/lib/git-annex/.ssh
-        chmod 700 /var/lib/git-annex/.ssh
-        chmod 600 /var/lib/git-annex/.ssh/id_ed25519
+      mkdir -p /var/lib/git-annex/.ssh
+      chown git-annex:git-annex /var/lib/git-annex/.ssh
+      chmod 700 /var/lib/git-annex/.ssh
+
+      ${if cfg.sshKeyFile != null then ''
+        # Install provided SSH key from file (runtime path)
+        if [ -f "${cfg.sshKeyFile}" ]; then
+          cp "${cfg.sshKeyFile}" /var/lib/git-annex/.ssh/id_ed25519
+          chown git-annex:git-annex /var/lib/git-annex/.ssh/id_ed25519
+          chmod 600 /var/lib/git-annex/.ssh/id_ed25519
+        else
+          echo "Warning: git-annex sshKeyFile configured but not found at ${cfg.sshKeyFile}"
+        fi
+      '' else ''
+        # Generate ephemeral key if none provided (fallback)
+        if [ ! -f /var/lib/git-annex/.ssh/id_ed25519 ]; then
+          ${pkgs.openssh}/bin/ssh-keygen -t ed25519 -N "" -f /var/lib/git-annex/.ssh/id_ed25519 -C "git-annex@${config.networking.hostName}"
+          chown git-annex:git-annex /var/lib/git-annex/.ssh/id_ed25519
+          chmod 600 /var/lib/git-annex/.ssh/id_ed25519
+        fi
+      ''}
+    '';
+
+    system.activationScripts.git-annex-gpg-key = lib.mkIf (cfg.gpgKeyFile != null) ''
+      mkdir -p /var/lib/git-annex/.gnupg
+      chown git-annex:git-annex /var/lib/git-annex/.gnupg
+      chmod 700 /var/lib/git-annex/.gnupg
+      
+      # Import the key if it exists
+      if [ -f "${cfg.gpgKeyFile}" ]; then
+        ${pkgs.sudo}/bin/sudo -u git-annex ${pkgs.gnupg}/bin/gpg --batch --import ${cfg.gpgKeyFile} || true
+      else
+        echo "Warning: git-annex gpgKeyFile configured but not found at ${cfg.gpgKeyFile}"
       fi
     '';
 
@@ -172,13 +216,15 @@ in
         lib.mapAttrsToList (name: repo: ''
           if [ ! -d "${repo.path}/.git" ]; then
             echo "Git Annex repository ${name} appears damaged or missing. Scheduling repair..."
-            # Only restart if the service is known to systemd (active or failed)
-            # This prevents errors during initial activation when the unit is not yet loaded.
-            if ${pkgs.systemd}/bin/systemctl is-active --quiet git-annex-init-${name}.service || \
-               ${pkgs.systemd}/bin/systemctl is-failed --quiet git-annex-init-${name}.service; then
+            # Check if the service unit exists (is loaded)
+            if ${pkgs.systemd}/bin/systemctl list-unit-files "git-annex-init-${name}.service" | grep -q "git-annex-init-${name}.service"; then
               ${pkgs.systemd}/bin/systemctl restart git-annex-init-${name}.service
+              ${lib.optionalString repo.assistant ''
+                # Ensure assistant is started after repair (since Conflicts stopped it)
+                ${pkgs.systemd}/bin/systemctl start git-annex-assistant-${name}.service || true
+              ''}
             else
-              echo "Service git-annex-init-${name}.service not found or not active. Assuming new deployment."
+              echo "Service git-annex-init-${name}.service not found. Assuming new deployment."
             fi
           fi
         '') cfg.repositories
@@ -203,6 +249,14 @@ in
               Type = "oneshot";
               RemainAfterExit = true;
             };
+            # Wait for SSH key file if configured (e.g. sops secret)
+            unitConfig.ConditionPathExists = lib.optional (cfg.sshKeyFile != null) cfg.sshKeyFile;
+            
+            # Prevent race conditions with assistant
+            # We use ExecStartPre to stop the assistant instead of Conflicts,
+            # because Conflicts cancels the assistant's pending start job during boot.
+            # We only stop if active to avoid cancelling the pending start job during boot.
+            serviceConfig.ExecStartPre = "+${pkgs.bash}/bin/sh -c '${pkgs.systemd}/bin/systemctl is-active --quiet git-annex-assistant-${name}.service && ${pkgs.systemd}/bin/systemctl stop git-annex-assistant-${name}.service || true'";
             path = with pkgs; [
               coreutils
               git
@@ -223,8 +277,8 @@ in
               fi
 
               if ! git -C "${repo.path}" annex info >/dev/null 2>&1; then
-                git -C "${repo.path}" config user.name "Git Annex Assistant"
                 git -C "${repo.path}" config user.email "git-annex@localhost"
+                git -C "${repo.path}" config receive.denyCurrentBranch updateInstead
                 git -C "${repo.path}" annex init "${repo.description}"
               fi
 
@@ -255,16 +309,20 @@ in
                 ${lib.optionalString (remote.url != null) ''
                   if ! git -C "${repo.path}" remote | grep -q "^${remote.name}$"; then
                     git -C "${repo.path}" remote add "${remote.name}" "${remote.url}"
+                    # Removed || echo warning to ensure we fail if network/keys are wrong
                     git -C "${repo.path}" fetch "${remote.name}"
                     
                     ${lib.optionalString (remote.expectedUUID != null) ''
                       # Verify UUID
-                      ACTUAL_UUID=$(git -C "${repo.path}" annex info "${remote.name}" | grep uuid | awk '{print $2}')
-                      if [ "$ACTUAL_UUID" != "${remote.expectedUUID}" ]; then
-                        echo "Error: UUID mismatch for remote ${remote.name}."
-                        echo "Expected: ${remote.expectedUUID}"
-                        echo "Actual:   $ACTUAL_UUID"
-                        exit 1
+                      if ACTUAL_UUID=$(git -C "${repo.path}" annex info "${remote.name}" 2>/dev/null | grep uuid | awk '{print $2}'); then
+                        if [ -n "$ACTUAL_UUID" ] && [ "$ACTUAL_UUID" != "${remote.expectedUUID}" ]; then
+                          echo "Error: UUID mismatch for remote ${remote.name}."
+                          echo "Expected: ${remote.expectedUUID}"
+                          echo "Actual:   $ACTUAL_UUID"
+                          exit 1
+                        fi
+                      else
+                        echo "Warning: Could not verify UUID for remote ${remote.name} (network issue?)"
                       fi
                     ''}
                   fi
@@ -286,7 +344,8 @@ in
                       type="${remote.type}" \
                       ${lib.concatStringsSep " " (lib.mapAttrsToList (k: v: "${k}=${v}") (
                         (if remote.type == "rsync" && remote.url != null then { rsyncurl = remote.url; } else { }) //
-                        (if remote.encryption != null then { encryption = remote.encryption; } else { })
+                        (if remote.encryption != null then { encryption = remote.encryption; } else { }) //
+                        remote.params
                       ))} \
                       autoenable=true
                   fi
@@ -298,20 +357,20 @@ in
                   
                   # Ensure git-annex knows about the remote's UUID (only needed for git remotes)
                   ${lib.optionalString (remote.type == "git") ''
-                    git -C "${repo.path}" annex sync "$TARGET_REMOTE_NAME" --no-content >/dev/null 2>&1 || true
+                    git -C "${repo.path}" annex sync "$TARGET_REMOTE_NAME" --no-content
                   ''}
                   
                   ${lib.optionalString (remote.group != null) ''
-                    git -C "${repo.path}" annex group "$TARGET_REMOTE_NAME" "${remote.group}"
+                    git -C "${repo.path}" annex group "$TARGET_REMOTE_NAME" "${remote.group}" || echo "Warning: Failed to set group for ${remote.name}"
                   ''}
                   ${lib.optionalString (remote.wanted != null) ''
-                    git -C "${repo.path}" annex wanted "$TARGET_REMOTE_NAME" "${remote.wanted}"
+                    git -C "${repo.path}" annex wanted "$TARGET_REMOTE_NAME" "${remote.wanted}" || echo "Warning: Failed to set wanted for ${remote.name}"
                   ''}
                 ''}
               '') repo.remotes}
 
               ${lib.optionalString (repo.gateway && (lib.any (r: r.clusterNode != null) repo.remotes)) ''
-                git -C "${repo.path}" annex updatecluster
+                git -C "${repo.path}" annex updatecluster || echo "Warning: Failed to update cluster"
               ''}
 
               ${lib.optionalString (repo.tags != [ ]) ''

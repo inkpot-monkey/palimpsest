@@ -16,6 +16,8 @@ pkgs.testers.nixosTest {
             url = "git-annex@backup:/var/lib/git-annex/backup";
             type = "rsync";
             encryption = "shared"; # <--- Testing this
+            wanted = "standard";
+            group = "backup";
           }];
         };
       };
@@ -95,10 +97,10 @@ pkgs.testers.nixosTest {
     
     # To make assistant transfer it, I'll set preferred content of backup to "include=*"
     # AND ensure we don't sync unencrypted content via the git remote
-    gateway.succeed("sudo -u git-annex git -C /var/lib/git-annex/gateway annex wanted encrypted-backup-content standard")
-    gateway.succeed("sudo -u git-annex git -C /var/lib/git-annex/gateway annex group encrypted-backup-content backup")
+    # Special remote 'encrypted-backup-content' should have wanted=standard and group=backup
+    # applied by the module.
     
-    # Disable content sync to the unencrypted git remote
+    # Disable content sync to the unencrypted git remote (manual step as module targets special remote for hybrid)
     gateway.succeed("sudo -u git-annex git -C /var/lib/git-annex/gateway annex wanted encrypted-backup nothing")
     
     # Now wait for file to appear on backup (encrypted)
