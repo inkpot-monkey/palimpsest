@@ -5,8 +5,10 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/staging-next";
 
-    home-manager.url = "github:nix-community/home-manager";
-    home-manager.inputs.nixpkgs.follows = "nixpkgs";
+    home-manager = {
+      url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
     impermanence.url = "github:nix-community/impermanence";
 
@@ -34,10 +36,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    tree-sitter-astro = {
-      url = "github:virchau13/tree-sitter-astro";
-      flake = false;
-    };
   };
 
   outputs =
@@ -81,7 +79,12 @@
               git-annex = pkgs.callPackage ./modules/nixos/git-annex/tests/git-annex.nix { };
               git-annex-stateless = pkgs.callPackage ./modules/nixos/git-annex/tests/git-annex-stateless.nix { };
               git-annex-hybrid = pkgs.callPackage ./modules/nixos/git-annex/tests/git-annex-hybrid.nix { };
-              git-annex-encryption = pkgs.callPackage ./modules/nixos/git-annex/tests/git-annex-encryption.nix { };
+              git-annex-encryption =
+                pkgs.callPackage ./modules/nixos/git-annex/tests/git-annex-encryption.nix
+                  { };
+              git-annex-home-manager =
+                pkgs.callPackage ./modules/home-manager/git-annex/tests/git-annex-home-manager.nix
+                  { inherit inputs; };
             };
           };
 
@@ -108,6 +111,8 @@
               modules = [
                 # > Our main nixos configuration file <
                 ./nixos/stargazer/configuration.nix
+                inputs.disko.nixosModules.disko
+                inputs.nixos-hardware.nixosModules.framework-13-7040-amd
               ];
             };
 
