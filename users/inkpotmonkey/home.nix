@@ -5,8 +5,10 @@
     email = "inkpot@palebluebytes.space";
     hashedPassword = "<SCRUBBED_PASSWORD>";
     sshPubKey = "<SCRUBBED_SSH_KEY>";
-    # A list of groups the user wants to belong to
-    # The final groups the user actually belongs to will depend on what the system allows
+
+    # =========================================
+    # User Permissions & Groups
+    # =========================================
     extraGroups = [
       "input"
       "uinput"
@@ -31,14 +33,52 @@
       ...
     }:
     {
+      # =========================================
+      # Imports
+      # =========================================
       imports = [
         inputs.sops-nix.homeManagerModule
 
         ./cli.nix
         ./gui.nix
         ./emacs
+        ./hyprland.nix
+        ./waybar.nix
+        ./swaync.nix
+
+        # inputs.self.homeManagerModules.git-annex
+        # ./git-annex.nix
       ];
 
+      # =========================================
+      # Home Manager Settings
+      # =========================================
+      home.stateVersion = "25.05";
+      home.sessionVariables = {
+        EMAIL = "inkpotmonkey@palebluebytes.space";
+        SOPS_AGE_KEY_FILE = "/run/user/1001/secrets.d/age-keys.txt";
+      };
+
+      # =========================================
+      # User Packages
+      # =========================================
+      home.packages = with pkgs; [
+        # Fonts
+        recursive
+        montserrat
+        libre-caslon
+
+        # System Utilities
+        brightnessctl
+        playerctl
+        grim
+        slurp
+        swayosd # OSD for volume/brightness
+      ];
+
+      # =========================================
+      # Secrets Management (SOPS)
+      # =========================================
       sops = {
         defaultSopsFile = ./secrets.yaml;
         age.sshKeyPaths = [ "/home/inkpotmonkey/.ssh/id_ed25519" ];
@@ -47,6 +87,9 @@
         };
       };
 
+      # =========================================
+      # XDG & Application Defaults
+      # =========================================
       xdg = {
         enable = true;
         mimeApps = {
@@ -62,16 +105,9 @@
         };
       };
 
-      # Nicely reload system units when changing configs
+      # =========================================
+      # Systemd Services
+      # =========================================
       systemd.user.startServices = "sd-switch";
-
-      # https://nixos.wiki/wiki/FAQ/When_do_I_update_stateVersion
-      home.stateVersion = "25.05";
-
-      home.packages = with pkgs; [ recursive ];
-
-      home.sessionVariables = {
-        EMAIL = "inkpotmonkey@palebluebytes.space";
-      };
     };
 }

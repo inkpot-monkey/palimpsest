@@ -44,7 +44,12 @@ in
     maxCacheTtl = 8 * hour;
   };
 
-  programs.ssh.enable = true;
+  services.ssh-agent.enable = true;
+
+  programs.ssh = {
+    enable = true;
+    addKeysToAgent = "yes";
+  };
 
   home.file.".ssh/config" = {
     target = ".ssh/config_source";
