@@ -1,10 +1,19 @@
 {
   pkgs,
   config,
-  lib,
-  self,
   ...
 }:
+
+let
+  tree-sitter-pkgs = pkgs.tree-sitter.withPlugins (
+    p:
+    builtins.attrValues (
+      builtins.removeAttrs p [
+        "tree-sitter-razor"
+      ]
+    )
+  );
+in
 
 {
   programs.emacs = {
@@ -12,13 +21,14 @@
     package = pkgs.emacs-pgtk;
     extraPackages = epkgs: [
       epkgs.vterm
-      epkgs.treesit-grammars.with-all-grammars
     ];
   };
 
   services.emacs = {
     enable = true;
     package = config.programs.emacs.finalPackage;
+    startWithUserSession = false; # Don't start at login
+    socketActivation.enable = true; # Wait for client connection
   };
 
   # Emacs configuration
@@ -36,7 +46,7 @@
             "inkpot-monkey"
             "inkpot-monkey@palebluebytes.space"
             "${../secrets.yaml}"
-            "${pkgs.emacsPackages.treesit-grammars.with-all-grammars}/lib"
+            "${tree-sitter-pkgs}"
           ]
           (builtins.readFile ./init.el);
     };

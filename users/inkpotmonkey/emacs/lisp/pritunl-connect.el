@@ -1,5 +1,10 @@
 ;;; -*- lexical-binding: t; -*-
 
+;; TODOs:
+;; add `pritunl-client list'
+;; if the user doesnt exist during pritunl-connect-client correctly report that error
+;; add `pritunl-client add' this should take in a ovpn or tar, start the pritunl-service, run `pritunl-client add ovpn|tar', shutdown pritunl-service
+
 (require 'auth-source)
 (require 'compile)
 
@@ -17,11 +22,11 @@ Prompts for the sudo password automatically via the minibuffer.
 The process output is sent to the buffer *pritunl*."
   (interactive)
   (let ((compilation-scroll-output t)
-	(compilation-buffer-name-function
-	 (lambda (_) pritunl--buffer-name))
-	(default-directory "/sudo::/")
-	(cmd (executable-find "pritunl-client-service"))
-	(display-buffer-alist 
+				(compilation-buffer-name-function
+				 (lambda (_) pritunl--buffer-name))
+				(default-directory "/sudo::/")
+				(cmd (executable-find "pritunl-client-service"))
+				(display-buffer-alist 
          '(("\\*pritunl\\*" display-buffer-no-window (allow-no-window . t)))))
     (envrc--clear (buffer-name))
     (compile cmd)))
@@ -55,12 +60,12 @@ Returns a cons cell `(ID . PASSWORD)' or nil if not found."
             (id (car creds))
             (password (cdr creds)))
       (progn
-	(start-process "pritunl-client"
+				(start-process "pritunl-client"
                        nil
                        "pritunl-client"
                        "start" id
                        "--password" password)
-	(message (format "Pritunl connected with client ID: %s" id)))
+				(message (format "Pritunl connected with client ID: %s" id)))
     (message "Error: No 'machine pritunl' entry found in auth-source.")))
 
 ;;;###autoload
@@ -80,7 +85,7 @@ Returns a cons cell `(ID . PASSWORD)' or nil if not found."
   (message "Disconnecting Pritunl...")
 
   (let ((service-msg)
-	(proc (get-buffer-process pritunl--buffer-name)))
+				(proc (get-buffer-process pritunl--buffer-name)))
     (if (and proc (process-live-p proc))
         (progn
           (kill-process proc)
