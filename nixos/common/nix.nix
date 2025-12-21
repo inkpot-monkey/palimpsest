@@ -1,14 +1,25 @@
-{ config, lib, pkgs, inputs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  inputs,
+  ...
+}:
 
 {
   nix = {
-    # This will additionally add your inputs to the system's legacy channels
-    # Making legacy nix commands consistent as well, awesome!
-    nixPath = lib.mapAttrsToList (key: value: "${key}=${value.to.path}")
-      config.nix.registry;
+    # ---------------------------------------------------------------------
+    # 1. Registry Pinning (The Speed Boost)
+    # ---------------------------------------------------------------------
+    # This makes `nix shell nixpkgs#...` use the same nixpkgs as your system
+    registry = lib.mapAttrs (_: value: { flake = value; }) inputs;
 
-    # Enable flakes and new 'nix' command
+    # Map registry inputs to legacy channels (for nix-shell/nix-env compatibility)
+    nixPath = lib.mapAttrsToList (key: value: "${key}=${value.to.path}") config.nix.registry;
 
+    # ---------------------------------------------------------------------
+    # 2. Garbage Collection
+    # ---------------------------------------------------------------------
     gc = {
       automatic = true;
       randomizedDelaySec = "14m";
@@ -16,13 +27,40 @@
     };
 
     settings = {
-      experimental-features = [ "nix-command" "flakes" ];
+      # ---------------------------------------------------------------------
+      # 3. Features & Cleanup
+      # ---------------------------------------------------------------------
+      experimental-features = [
+        "nix-command"
+        "flakes"
+        "recursive-nix"
+      ];
+      use-xdg-base-directories = true; # Use ~/.local/state/nix
 
-      # Deduplicate and optimize nix store
+      # Build config
+      keep-outputs = true; # Prevents GC of build outputs (good for dev)
+      keep-derivations = true; # REQUIRED for debugging .drv files
       auto-optimise-store = true;
-      # Users with special priviledges with the nix daemon
-      trusted-users = [ "root" "@wheel" ];
 
+      # ---------------------------------------------------------------------
+      # 4. Networking & Limits (The Performance Boost)
+      # ---------------------------------------------------------------------
+      max-jobs = "auto";
+      http-connections = 50;
+      connect-timeout = 5;
+      log-lines = 25;
+
+      # Auto-GC when low on space (Free 1GB if <100MB left)
+      min-free = toString (100 * 1024 * 1024);
+      max-free = toString (1024 * 1024 * 1024);
+
+      # ---------------------------------------------------------------------
+      # 5. Caches & Permissions
+      # ---------------------------------------------------------------------
+      trusted-users = [
+        "root"
+        "@wheel"
+      ];
       substituters = [
         "https://cache.nixos.org"
         "https://hyprland.cachix.org"
