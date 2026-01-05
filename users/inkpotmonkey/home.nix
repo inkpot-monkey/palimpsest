@@ -45,6 +45,7 @@
         ./hyprland.nix
         ./waybar.nix
         ./swaync.nix
+        ./finance.nix
 
         # inputs.self.homeManagerModules.git-annex
         # ./git-annex.nix
@@ -57,6 +58,8 @@
       home.sessionVariables = {
         EMAIL = "inkpotmonkey@palebluebytes.space";
         SOPS_AGE_KEY_FILE = "/run/user/1001/secrets.d/age-keys.txt";
+        # Spell Check
+        DICPATH = "$HOME/.nix-profile/share/hunspell";
       };
 
       # =========================================
@@ -74,6 +77,12 @@
         grim
         slurp
         swayosd # OSD for volume/brightness
+
+        # Spell Check
+        hunspell
+        enchant
+        hunspellDicts.en_GB-large
+        hunspellDicts.es_ES
       ];
 
       # =========================================
