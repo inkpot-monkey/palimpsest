@@ -1,19 +1,10 @@
 {
   pkgs,
   config,
+  lib,
+  self,
   ...
 }:
-
-let
-  tree-sitter-pkgs = pkgs.tree-sitter.withPlugins (
-    p:
-    builtins.attrValues (
-      builtins.removeAttrs p [
-        "tree-sitter-razor"
-      ]
-    )
-  );
-in
 
 {
   programs.emacs = {
@@ -21,6 +12,8 @@ in
     package = pkgs.emacs-pgtk;
     extraPackages = epkgs: [
       epkgs.vterm
+      epkgs.yaml
+      epkgs.treesit-grammars.with-all-grammars
     ];
   };
 
@@ -46,7 +39,7 @@ in
             "inkpot-monkey"
             "inkpot-monkey@palebluebytes.space"
             "${../secrets.yaml}"
-            "${tree-sitter-pkgs}"
+            "${pkgs.emacsPackages.treesit-grammars.with-all-grammars}/lib"
           ]
           (builtins.readFile ./init.el);
     };
