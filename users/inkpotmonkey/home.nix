@@ -45,9 +45,8 @@
         ./hyprland.nix
         ./waybar.nix
         ./swaync.nix
-        ./finance.nix
 
-        # inputs.self.homeManagerModules.git-annex
+        # ./finance
         # ./git-annex.nix
       ];
 
