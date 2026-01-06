@@ -45,6 +45,9 @@ buildNpmPackage (finalAttrs: {
 
   npmDepsHash = "sha256-qrZOshZP/pZTg3nIjQHfa519z+XeHV2HoCcdD0EowVQ=";
 
+  makeCacheWritable = true;
+  npmFlags = [ "--legacy-peer-deps" ];
+
   nativeBuildInputs = [
     (python3.withPackages (ps: [ ps.setuptools ]))
     pkg-config

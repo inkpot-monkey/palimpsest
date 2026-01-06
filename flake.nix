@@ -1,9 +1,18 @@
 {
   description = "I am config and my code is a string that will be run.";
 
+  nixConfig = {
+    extra-substituters = [ "https://nixos-raspberrypi.cachix.org" ];
+    extra-trusted-public-keys = [
+      "nixos-raspberrypi.cachix.org-1:4iMO9LXa8BqhU+Rpg6LQKiGa2lsNh/j2oiYLNOQ5sPI="
+    ];
+  };
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/staging-next";
+
+    nixos-raspberrypi.url = "github:nvmd/nixos-raspberrypi/main";
 
     home-manager = {
       url = "github:nix-community/home-manager";
@@ -32,7 +41,7 @@
     };
 
     antigravity-nix = {
-      url = "github:jacopone/antigravity-nix";
+      url = "github:tomycisco123/antigravity-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -116,16 +125,19 @@
               ];
             };
 
-            porcupineFish = nixpkgs.lib.nixosSystem {
-              system = "aarch64-linux";
-              modules = [ ./nixos/porcupineFish/configuration.nix ];
+            # nixos-rebuild switch --flake .#porcupineFish --target-host root@porporcupineFish
+            porcupineFish = inputs.nixos-raspberrypi.lib.nixosSystem {
+              modules = [
+                ./nixos/porcupineFish/configuration.nix
+              ];
               specialArgs = {
                 inherit inputs self;
+                nixos-raspberrypi = inputs.nixos-raspberrypi;
                 outputs = self;
               };
             };
 
-            # nixos-rebuild --target-host root@37.205.14.206 switch --flake .#kelpy
+            # nixos-rebuild --target-host root@kelpy switch --flake .#kelpy
             kelpy = nixpkgs.lib.nixosSystem {
               system = "x86_64-linux";
               specialArgs = {
@@ -159,7 +171,20 @@
             };
           };
 
-          images.porcupineFish = self.nixosConfigurations.porcupineFish.config.system.build.sdImage;
+          # Build via: nix build .#porcupineFish
+          packages.x86_64-linux.porcupineFish =
+            (inputs.nixos-raspberrypi.lib.nixosSystem {
+              system = "aarch64-linux";
+              modules = [
+                ./nixos/porcupineFish/configuration.nix
+                "${nixpkgs}/nixos/modules/installer/sd-card/sd-image-aarch64.nix"
+              ];
+              specialArgs = {
+                inherit inputs self;
+                outputs = self;
+                nixos-raspberrypi = inputs.nixos-raspberrypi;
+              };
+            }).config.system.build.sdImage;
 
           # Home-manager configuration entrypoint
           # Each home is an attribute set with 2 values defined in a directory <root>/users/<username>/home.nix

@@ -7,9 +7,9 @@
 let
   mcpConfig = {
     mcpServers = {
-      nixos = {
-        command = "${pkgs.mcp-nixos}/bin/mcp-nixos";
-      };
+      # nixos = {
+      # command = "${pkgs.mcp-nixos}/bin/mcp-nixos";
+      # };
       github = {
         command = "${pkgs.github-mcp-server}/bin/github-mcp-server";
         args = [ "stdio" ];
@@ -17,16 +17,16 @@ let
           GITHUB_PERSONAL_ACCESS_TOKEN = config.sops.placeholder.github_token;
         };
       };
-      n8n-mcp = {
-        command = "${pkgs.n8n-mcp}/bin/n8n-mcp";
-        env = {
-          MCP_MODE = "stdio";
-          LOG_LEVEL = "error";
-          DISABLE_CONSOLE_OUTPUT = true;
-          N8N_API_URL = "YOUR_API_URL";
-          N8N_API_KEY = "YOUR_API_KEY";
-        };
-      };
+      # n8n-mcp = {
+      #   command = "${pkgs.n8n-mcp}/bin/n8n-mcp";
+      #   env = {
+      #     MCP_MODE = "stdio";
+      #     LOG_LEVEL = "error";
+      #     DISABLE_CONSOLE_OUTPUT = true;
+      #     N8N_API_URL = "YOUR_API_URL";
+      #     N8N_API_KEY = "YOUR_API_KEY";
+      #   };
+      # };
       playwright = {
         command = "${pkgs.playwright-mcp}/bin/playwright-mcp";
       };
@@ -41,12 +41,17 @@ let
 in
 
 {
+  nixpkgs.overlays = [
+    inputs.antigravity-nix.overlays.default
+  ];
+
   home.packages = with pkgs; [
+    inputs.antigravity-nix.packages.${stdenv.hostPlatform.system}.google-antigravity
     cursor-cli
     gemini-cli
     claude-code
-    n8n-mcp
-    inputs.antigravity-nix.packages.x86_64-linux.default
+    # n8n-mcp
+    # pkgs.mcp-nixos
     emcee
   ];
 

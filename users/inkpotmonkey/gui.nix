@@ -86,15 +86,9 @@
   # MPV with plugins and high-quality settings
   programs.mpv = {
     enable = true;
-    package = (
-      pkgs.mpv-unwrapped.wrapper {
-        scripts = with pkgs.mpvScripts; [ modernz ];
-        mpv = pkgs.mpv-unwrapped.override {
-          waylandSupport = true;
-          ffmpeg = pkgs.ffmpeg-full;
-        };
-      }
-    );
+    package = pkgs.mpv.override {
+      scripts = [ pkgs.mpvScripts.modernz ];
+    };
     config = {
       profile = "high-quality";
       ytdl-format = "bestvideo+bestaudio";
@@ -116,7 +110,7 @@
     protonvpn-gui
 
     # --- Communication ---
-    vesktop # Discord client
+    # vesktop # Discord client
     signal-desktop
     slack
     zulip
