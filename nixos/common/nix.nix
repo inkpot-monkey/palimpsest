@@ -12,7 +12,7 @@
     # 1. Registry Pinning (The Speed Boost)
     # ---------------------------------------------------------------------
     # This makes `nix shell nixpkgs#...` use the same nixpkgs as your system
-    registry = lib.mapAttrs (_: value: { flake = value; }) inputs;
+    registry = lib.mkForce (lib.mapAttrs (_: value: { flake = value; }) inputs);
 
     # Map registry inputs to legacy channels (for nix-shell/nix-env compatibility)
     nixPath = lib.mapAttrsToList (key: value: "${key}=${value.to.path}") config.nix.registry;
@@ -65,10 +65,12 @@
         "https://cache.nixos.org"
         "https://hyprland.cachix.org"
         "https://nix-community.cachix.org"
+        "https://nixos-raspberrypi.cachix.org"
       ];
       trusted-public-keys = [
         "hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIBMioiJM7ypFP8PwtkuGc="
         "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+        "nixos-raspberrypi.cachix.org-1:4iMO9LXa8BqhU+Rpg6LQKiGa2lsNh/j2oiYLNOQ5sPI="
       ];
     };
   };

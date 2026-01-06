@@ -1,10 +1,39 @@
+# =========================================
+# Nix Build Artifacts
+# =========================================
 result
 result-*
+
+# =========================================
+# Environment & Secrets
+# =========================================
+# Direnv environment loader
 .direnv
+# Envrc configuration (often contains local env vars)
 .envrc
+# SSH keys generated for bootstrapping (should not be committed)
+keys/
+
+# =========================================
+# Virtualization & Disk Images
+# =========================================
+# QEMU disk images
 *.qcow2
+# ISO images (installers)
 *.iso
-target/
+
+# =========================================
+# Editor & OS Files
+# =========================================
+# macOS metadata
 .DS_Store
+# Vim swap files
 *.swp
+# Backup files
 *~
+
+# =========================================
+# Rust / Cargo
+# =========================================
+# Rust build directory
+target/
