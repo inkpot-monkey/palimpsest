@@ -104,12 +104,30 @@
         mimeApps = {
           enable = pkgs.stdenv.isLinux;
           defaultApplications = {
-            "text/html" = [ "vivaldi.desktop" "vivaldi-stable.desktop" ];
-            "x-scheme-handler/mailto" = [ "vivaldi.desktop" "vivaldi-stable.desktop" ];
-            "x-scheme-handler/http" = [ "vivaldi.desktop" "vivaldi-stable.desktop" ];
-            "x-scheme-handler/https" = [ "vivaldi.desktop" "vivaldi-stable.desktop" ];
-            "x-scheme-handler/about" = [ "vivaldi.desktop" "vivaldi-stable.desktop" ];
-            "x-scheme-handler/unknown" = [ "vivaldi.desktop" "vivaldi-stable.desktop" ];
+            "text/html" = [
+              "vivaldi.desktop"
+              "vivaldi-stable.desktop"
+            ];
+            "x-scheme-handler/mailto" = [
+              "vivaldi.desktop"
+              "vivaldi-stable.desktop"
+            ];
+            "x-scheme-handler/http" = [
+              "vivaldi.desktop"
+              "vivaldi-stable.desktop"
+            ];
+            "x-scheme-handler/https" = [
+              "vivaldi.desktop"
+              "vivaldi-stable.desktop"
+            ];
+            "x-scheme-handler/about" = [
+              "vivaldi.desktop"
+              "vivaldi-stable.desktop"
+            ];
+            "x-scheme-handler/unknown" = [
+              "vivaldi.desktop"
+              "vivaldi-stable.desktop"
+            ];
           };
         };
       };
