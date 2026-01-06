@@ -1,9 +1,14 @@
 {
   config,
   self,
+  inputs,
   ...
 }:
 {
+  imports = [
+    inputs.self.homeManagerModules.git-annex
+  ];
+
   services.git-annex = {
     enable = true;
     sshKey = config.sops.secrets.git_annex_ssh_key.path;
