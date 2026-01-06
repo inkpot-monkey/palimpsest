@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+find . -name "secrets.yaml" -exec echo "Updating {}..." \; -exec sops updatekeys -y {} \;

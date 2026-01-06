@@ -1,7 +1,12 @@
 # Shell for bootstrapping flake-enabled nix and home-manager
 # You can enter it through 'nix develop' or (legacy) 'nix-shell'
 
-{ inputs, pkgs, system }: {
+{
+  inputs,
+  pkgs,
+  system,
+}:
+{
   default = pkgs.mkShell {
 
     packages = with pkgs; [
@@ -9,6 +14,7 @@
       nixfmt
       statix
       nil
+      just
 
       nodejs
       vscode-langservers-extracted
@@ -26,6 +32,7 @@
 
       # Secrets
       sops
+      ssh-to-age
     ];
 
   };
