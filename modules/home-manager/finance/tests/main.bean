@@ -1,0 +1,17 @@
+option "title" "Personal Finance"
+option "operating_currency" "GBP"
+
+2025-01-01 custom "fava-extension" "finance_extensions.sync_ext"
+2025-01-01 custom "fava-extension" "finance_extensions.model_ext"
+
+2025-01-01 custom "fava-option" "auto-reload" "true"
+2025-01-01 custom "fava-option" "show-closed-accounts" "false"
+2025-01-01 custom "fava-option" "currency-column" "60"
+2025-01-01 custom "fava-option" "account-journal-include-children" "false"
+
+2024-01-01 open Assets:Revolut:Current     GBP
+2024-01-01 open Assets:N26:Current         EUR
+2024-01-01 open Assets:Santander:Current   GBP
+2024-01-01 open Expenses:Unknown           GBP
+
+include "new_entries.bean"

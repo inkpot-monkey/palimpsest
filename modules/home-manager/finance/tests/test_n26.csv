@@ -1,0 +1,3 @@
+"Date","Payee","Account number","Transaction type","Payment reference","Amount (EUR)","Amount (Foreign Currency)","Type Foreign Currency","Exchange Rate"
+"2025-01-10","Spotify","DE123456789","Direct Debit","Music Subscription","-14.99","","",""
+"2025-01-11","Client Payment","DE987654321","Credit Transfer","Invoice 2025-001","1200.00","","",""
