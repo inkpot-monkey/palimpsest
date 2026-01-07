@@ -1,0 +1,2 @@
+recursive-include finance_extensions/templates *.html
+recursive-include finance_extensions *.js
