@@ -1,0 +1,73 @@
+{% set extension_title = "Sync Data" %}
+<h1>Sync Finance Data</h1>
+<div style="max-width: 600px; margin: 20px 0;">
+    <p>Click the button below to fetch transactions from CSVs, analyze them with AI, and verify integrity.</p>
+
+    <button id="run-sync-btn" onclick="window.runSyncExtension(this)"
+        style="background-color: #18181b; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: 500; display: flex; align-items: center; gap: 8px;">
+        <span class="icon">🔄</span> Run Sync & Tag
+    </button>
+</div>
+
+<div id="sync-output"
+    style="margin-top: 20px; background: #f4f4f5; padding: 15px; border-radius: 6px; font-family: monospace; font-size: 0.9em; white-space: pre-wrap; display: none; max-height: 400px; overflow-y: auto;">
+</div>
+</div>
+</div>
+
+<script>
+    window.runSyncExtension = async function (btn) {
+        const out = document.getElementById('sync-output');
+
+        if (!btn || !out) {
+            console.error("Critical elements missing");
+            return;
+        }
+
+        btn.disabled = true;
+        btn.textContent = "Syncing...";
+        btn.style.opacity = 0.7;
+        out.style.display = 'block';
+        out.textContent = "Running ingestion pipeline...\n";
+        out.style.border = "1px solid #d4d4d8";
+
+        try {
+            // Use relative URL
+            const response = await fetch('sync', { method: 'POST' });
+
+            if (!response.body) {
+                throw new Error("ReadableStream not supported in this browser.");
+            }
+
+            // Read stream
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const text = decoder.decode(value, { stream: true });
+                out.textContent += text;
+                // Auto-scroll to bottom
+                out.scrollTop = out.scrollHeight;
+            }
+
+            // Check if final output suggests success/failure to style border
+            const fullText = out.textContent;
+            if (fullText.includes("SUCCESS:")) {
+                out.style.border = "1px solid green";
+            } else if (fullText.includes("FAILED:") || fullText.includes("ERROR:")) {
+                out.style.border = "1px solid red";
+            }
+
+        } catch (e) {
+            out.textContent += "\nNetwork Error: " + e;
+            out.style.border = "1px solid red";
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<span class="icon">🔄</span> Run Sync & Tag';
+            btn.style.opacity = 1;
+        }
+    };
+</script>
