@@ -46,7 +46,7 @@
         ./waybar.nix
         ./swaync.nix
 
-        # ./finance
+        inputs.self.homeManagerModules.finance
         # ./git-annex.nix
       ];
 
@@ -60,6 +60,9 @@
         # Spell Check
         DICPATH = "$HOME/.nix-profile/share/hunspell";
       };
+
+      # Enable Personal Finance Module
+      programs.finance.enable = true;
 
       # =========================================
       # User Packages

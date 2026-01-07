@@ -41,6 +41,7 @@
       keep-outputs = true; # Prevents GC of build outputs (good for dev)
       keep-derivations = true; # REQUIRED for debugging .drv files
       auto-optimise-store = true;
+      accept-flake-config = true;
 
       # ---------------------------------------------------------------------
       # 4. Networking & Limits (The Performance Boost)
