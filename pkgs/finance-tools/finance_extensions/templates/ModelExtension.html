@@ -1,0 +1,242 @@
+{% set extension_title = "AI Model Manager" %}
+<h1>AI Model Manager</h1>
+
+<div style="max-width: 600px; margin: 20px 0;">
+
+    <!-- Status Card -->
+    <div style="background: white; padding: 20px; border: 1px solid #e4e4e7; border-radius: 8px; margin-bottom: 20px;">
+        <h3 style="margin-top: 0;">Active Model</h3>
+        <p style="color: #666; font-size: 0.9em; margin-bottom: 10px;">Select the model to use for transaction tagging.
+        </p>
+        <select id="model-select"
+            style="width: 100%; padding: 8px; margin: 10px 0; border: 1px solid #d4d4d8; border-radius: 4px;">
+            <option value="" disabled selected>Loading status...</option>
+        </select>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+            <button id="save-model-btn"
+                style="background-color: #27272a; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer;">Save
+                Selection</button>
+            <span id="save-status" style="font-size: 0.9em;"></span>
+        </div>
+    </div>
+
+    <!-- Download Card -->
+    <div style="background: white; padding: 20px; border: 1px solid #e4e4e7; border-radius: 8px;">
+        <h3 style="margin-top: 0;">Download New Model</h3>
+        <p style="font-size: 0.9em; color: #666;">Choose a model from the recommended list or specify a custom tag.</p>
+
+        <div style="margin-bottom: 10px;">
+            <label style="display: block; font-weight: bold; margin-bottom: 5px; font-size: 0.9em;">Recommended
+                Models:</label>
+            <select id="download-select"
+                style="width: 100%; padding: 8px; border: 1px solid #d4d4d8; border-radius: 4px;">
+                <option value="" disabled selected>Select a model to download...</option>
+                <optgroup label="Recommended for Finance">
+                    <option value="qwen2.5:7b">Qwen 2.5 (7B) - Balanced (Recommended)</option>
+                    <option value="llama3:8b">Llama 3 (8B) - High Quality</option>
+                    <option value="mistral">Mistral (7B) - Fast & Capable</option>
+                </optgroup>
+                <optgroup label="Lightweight / Speed">
+                    <option value="qwen2.5:3b">Qwen 2.5 (3B) - Very Fast</option>
+                    <option value="phi3">Phi-3 (3.8B) - Compact</option>
+                    <option value="gemma:2b">Gemma (2B) - Ultra Light</option>
+                </optgroup>
+                <option value="custom">Custom Tag...</option>
+            </select>
+        </div>
+
+        <div id="custom-input-container" style="margin-bottom: 10px; display: none;">
+            <label style="display: block; font-weight: bold; margin-bottom: 5px; font-size: 0.9em;">Custom Tag:</label>
+            <input type="text" id="pull-input" placeholder="e.g. llama3.2:1b"
+                style="width: 100%; padding: 8px; border: 1px solid #d4d4d8; border-radius: 4px;">
+        </div>
+
+        <button id="pull-btn"
+            style="background-color: #4f46e5; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; width: 100%;"
+            disabled>Download Model</button>
+
+        <div id="pull-output"
+            style="margin-top: 15px; background: #f4f4f5; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 0.85em; white-space: pre-wrap; display: none;">
+        </div>
+    </div>
+
+</div>
+
+<!-- Hack to force script execution on AJAX load (using valid image to avoid 404) -->
+<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+    onload="if(window.initModelExtension) window.initModelExtension()" style="display:none">
+
+<script>
+    window.initModelExtension = function () {
+        const select = document.getElementById('model-select');
+        // Prevent multiple initializations on the same element
+        if (!select || select.dataset.bound) return;
+        select.dataset.bound = "true";
+
+        const saveBtn = document.getElementById('save-model-btn');
+        const saveStatus = document.getElementById('save-status');
+
+        const downloadSelect = document.getElementById('download-select');
+        const customContainer = document.getElementById('custom-input-container');
+        const pullInput = document.getElementById('pull-input');
+        const pullBtn = document.getElementById('pull-btn');
+        const pullOut = document.getElementById('pull-output');
+
+        function setupEventHandlers() {
+            // 1. Handle Download Selection
+            downloadSelect.addEventListener('change', function () {
+                if (this.value === 'custom') {
+                    customContainer.style.display = 'block';
+                    pullBtn.disabled = !pullInput.value;
+                } else {
+                    customContainer.style.display = 'none';
+                    pullBtn.disabled = !this.value;
+                }
+            });
+
+            pullInput.addEventListener('input', function () {
+                if (downloadSelect.value === 'custom') {
+                    pullBtn.disabled = !this.value;
+                }
+            });
+
+            // 3. Save Action
+            saveBtn.addEventListener('click', async () => {
+                if (!select.value) return;
+
+                saveBtn.disabled = true;
+                saveBtn.textContent = "Saving...";
+                saveStatus.textContent = "";
+
+                try {
+                    const res = await fetch('model', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ model: select.value })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        saveStatus.textContent = "✓ Saved";
+                        saveStatus.style.color = "green";
+                        setTimeout(() => saveStatus.textContent = "", 3000);
+                    } else {
+                        throw new Error(data.error);
+                    }
+                } catch (e) {
+                    alert("Error: " + e);
+                    saveStatus.textContent = "Error saving";
+                    saveStatus.style.color = "red";
+                } finally {
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = "Save Selection";
+                }
+            });
+
+            // 4. Pull Action
+            pullBtn.addEventListener('click', async () => {
+                let model = downloadSelect.value;
+                if (model === 'custom') model = pullInput.value;
+
+                if (!model) return;
+
+                pullBtn.disabled = true;
+                pullBtn.textContent = "Pulling Model (This takes time)...";
+                pullOut.style.display = 'block';
+                pullOut.textContent = `Requesting '${model}'...\nPlease wait, larger models can take several minutes.`;
+                pullOut.style.border = "1px solid #d4d4d8";
+                pullOut.style.color = "#666";
+
+                try {
+                    const res = await fetch('pull', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ model: model })
+                    });
+                    const data = await res.json();
+
+                    if (data.success) {
+                        pullOut.textContent = "SUCCESS:\n" + data.output;
+                        pullOut.style.border = "1px solid green";
+                        pullOut.style.color = "green";
+                        load(); // Refresh list to show new model
+                    } else {
+                        pullOut.textContent = "FAILED:\n" + data.error;
+                        pullOut.style.border = "1px solid red";
+                        pullOut.style.color = "red";
+                    }
+                } catch (e) {
+                    pullOut.textContent = "Network Error: " + e;
+                    pullOut.style.border = "1px solid red";
+                } finally {
+                    pullBtn.disabled = false;
+                    pullBtn.textContent = "Download Model";
+                }
+            });
+        }
+
+        // 2. Load Status and Update UI
+        async function load() {
+            select.innerHTML = '<option disabled selected>Refreshing...</option>';
+            try {
+                // Use relative URL to respect the <bfile> prefix in Fava
+                const res = await fetch('status');
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+                const data = await res.json();
+
+                // Update Active Model List
+                select.innerHTML = '';
+                const available = data.available_models || [];
+                const current = data.current_model;
+
+                if (available.length === 0) {
+                    const opt = document.createElement('option');
+                    opt.text = "No models found (Please download one)";
+                    opt.disabled = true;
+                    opt.selected = true;
+                    select.appendChild(opt);
+
+                    if (current && current !== "Loading...") {
+                        const currOpt = document.createElement('option');
+                        currOpt.value = current;
+                        currOpt.text = `${current} (Configured but missing)`;
+                        currOpt.selected = true;
+                        select.appendChild(currOpt);
+                    }
+                } else {
+                    available.forEach(m => {
+                        const opt = document.createElement('option');
+                        opt.value = m;
+                        opt.textContent = m;
+                        opt.selected = (m === current);
+                        select.appendChild(opt);
+                    });
+                }
+
+                // Update Recommended Models Dropdown to show installed status
+                if (downloadSelect) {
+                    const options = downloadSelect.querySelectorAll('option');
+                    options.forEach(opt => {
+                        const val = opt.value;
+                        if (val && val !== 'custom') {
+                            // Reset text first to avoid double appending
+                            opt.textContent = opt.textContent.replace(' ✓', '');
+                            if (available.includes(val)) {
+                                opt.textContent += ' ✓';
+                            }
+                        }
+                    });
+                }
+
+            } catch (e) {
+                console.error(e);
+                select.innerHTML = `<option disabled selected>Error: ${e.message}</option>`;
+            }
+        }
+
+        // Init
+        setupEventHandlers();
+        load();
+    };
+
+    // Attempt init immediately (for full page loads)
+    window.initModelExtension();
+</script>
