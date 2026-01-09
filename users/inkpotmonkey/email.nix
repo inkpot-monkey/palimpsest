@@ -6,21 +6,21 @@
 }:
 
 let
-  protonEmail = "your.email@proton.me";
+  protonEmail = "<SCRUBBED_EMAIL>";
   gmailEmail = "thomas@yeesshh.com";
-  myName = "Your Name";
+  myName = "Thomas Kelly";
 in
 {
 
   # ============================================================================
   # 1. SOPS SECRETS
   # ============================================================================
-  sops.secrets."proton_bridge/password" = {
+  sops.secrets."email/protonmail/password" = {
     sopsFile = ./secrets.yaml;
     format = "yaml";
   };
 
-  sops.secrets."gmail/password" = {
+  sops.secrets."email/yeesshh/password" = {
     sopsFile = ./secrets.yaml;
     format = "yaml";
   };
@@ -33,16 +33,19 @@ in
     isync
     notmuch
     coreutils
+    gcr # Prompter for unlocking keyring
   ];
 
-  # Keep your existing Proton Bridge Service config here...
+
+
   systemd.user.services.protonmail-bridge = {
-    # ... (same as before) ...
     Unit.Description = "ProtonMail Bridge";
     Service.ExecStart = "${pkgs.protonmail-bridge}/bin/protonmail-bridge --noninteractive --log-level info";
     Service.Environment = "PATH=${pkgs.gnome-keyring}/bin:$PATH";
     Install.WantedBy = [ "default.target" ];
   };
+
+  services.imapnotify.enable = true;
 
   # ============================================================================
   # 3. EMAIL ACCOUNTS
@@ -82,7 +85,7 @@ in
       smtp.port = 1025;
       smtp.tls.enable = false;
       passwordCommand = "${pkgs.coreutils}/bin/cat ${
-        config.sops.secrets."proton_bridge/password".path
+        config.sops.secrets."email/protonmail/password".path
       } | ${pkgs.coreutils}/bin/tr -d '\n'";
 
       mbsync = {
@@ -103,7 +106,7 @@ in
 
       # We override passwordCommand to use the Gmail secret
       passwordCommand = "${pkgs.coreutils}/bin/cat ${
-        config.sops.secrets."gmail/password".path
+        config.sops.secrets."email/yeesshh/password".path
       } | ${pkgs.coreutils}/bin/tr -d '\n'";
 
       # Custom mbsync settings for Gmail folders
