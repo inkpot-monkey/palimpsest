@@ -26,6 +26,7 @@ in
 
     # Desktop & Login (Added)
     ./login.nix
+    ./ai.nix
 
     # Shared Modules
     ../common/default.nix
@@ -166,6 +167,9 @@ in
 
   # Power
   services.upower.enable = true;
+
+  # Gnome Keyring (System Level for PAM Integration)
+  services.gnome.gnome-keyring.enable = true;
 
   # =========================================
   # Programs & Games
