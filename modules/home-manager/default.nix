@@ -4,8 +4,8 @@
 {
   # List your module files here
   imports = [
-    ./finance/default.nix
-    ./git-annex/default.nix
-    ./goose.nix
+    ./finance
+    ./git-annex
+    ./goose
   ];
 }
