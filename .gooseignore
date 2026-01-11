@@ -1,0 +1,10 @@
+result
+result-*
+.git
+.direnv
+node_modules
+target
+dist
+build
+*.qcow2
+*.iso

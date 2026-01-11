@@ -21,7 +21,7 @@
   programs.goose = {
     enable = true;
     provider = "ollama";
-    model = "qwen2.5-coder:32b";
+    model = "qwen2.5-coder:14b";
     extensions = [
       "developer"
       "computercontroller"
@@ -39,20 +39,21 @@
           BRAVE_API_KEY = config.sops.secrets."apikey@search.brave.com";
         };
       };
-      github = {
-        type = "stdio";
-        command = "${pkgs.github-mcp-server}/bin/github-mcp-server";
-        args = [ "stdio" ];
-        env = {
-          GITHUB_PERSONAL_ACCESS_TOKEN = config.sops.secrets.github_token;
-        };
-      };
 
-      weather-api = {
-        type = "stdio";
-        command = "${pkgs.emcee}/bin/emcee";
-        args = [ "https://api.weather.gov/openapi.json" ];
-      };
+      # github = {
+      #   type = "stdio";
+      #   command = "${pkgs.github-mcp-server}/bin/github-mcp-server";
+      #   args = [ "stdio" ];
+      #   env = {
+      #     GITHUB_PERSONAL_ACCESS_TOKEN = config.sops.secrets.github_token;
+      #   };
+      # };
+
+      # weather-api = {
+      #   type = "stdio";
+      #   command = "${pkgs.emcee}/bin/emcee";
+      #   args = [ "https://api.weather.gov/openapi.json" ];
+      # };
     };
   };
 
