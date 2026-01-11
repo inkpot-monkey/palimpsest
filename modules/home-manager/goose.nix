@@ -80,7 +80,7 @@ in
           enabled = true;
           name = name;
           type = server.type;
-          command = "${wrapper}";
+          cmd = "${wrapper}";
           args = server.args;
           env = {}; # Env is handled by wrapper
         }) cfg.mcpServers;
