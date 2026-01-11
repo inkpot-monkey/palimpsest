@@ -36,14 +36,14 @@
           "@brave/brave-search-mcp-server"
         ];
         env = {
-          BRAVE_API_KEY = "$(cat ${config.sops.secrets."apikey@search.brave.com".path})";
+          BRAVE_API_KEY = config.sops.secrets."apikey@search.brave.com";
         };
       };
       github = {
         type = "stdio";
         command = "${pkgs.github-mcp-server}/bin/github-mcp-server";
         env = {
-          GITHUB_PERSONAL_ACCESS_TOKEN = "$(cat ${config.sops.secrets.github_token.path})";
+          GITHUB_PERSONAL_ACCESS_TOKEN = config.sops.secrets.github_token;
         };
       };
 

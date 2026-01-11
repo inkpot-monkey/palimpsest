@@ -43,7 +43,11 @@ in
         options = {
           command = mkOption { type = types.str; };
           args = mkOption { type = types.listOf types.str; default = []; };
-          env = mkOption { type = types.attrsOf types.str; default = {}; };
+          env = mkOption {
+        type = types.attrsOf (types.either types.str types.attrs);
+        default = {};
+        description = "Environment variables to set for the MCP server. Supports string values or sops secret objects (which will be read via 'cat').";
+      };
           type = mkOption { type = types.str; default = "stdio"; };
         };
       });
@@ -64,7 +68,12 @@ in
         mcpExtensions = lib.mapAttrs (name: server: let
           # Generate a wrapper script that sets env vars before running the server
           wrapper = pkgs.writeShellScript "goose-mcp-${name}" ''
-            ${lib.concatStringsSep "\n" (lib.mapAttrsToList (k: v: "export ${k}=${v}") server.env)}
+            ${lib.concatStringsSep "\n" (lib.mapAttrsToList (k: v:
+              if builtins.isAttrs v && v ? path then
+                "export ${k}=$(cat ${v.path})"
+              else
+                "export ${k}=${toString v}"
+            ) server.env)}
             exec ${server.command} "$@"
           '';
         in {
