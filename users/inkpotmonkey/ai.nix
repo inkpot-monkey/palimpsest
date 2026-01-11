@@ -42,6 +42,7 @@
       github = {
         type = "stdio";
         command = "${pkgs.github-mcp-server}/bin/github-mcp-server";
+        args = [ "stdio" ];
         env = {
           GITHUB_PERSONAL_ACCESS_TOKEN = config.sops.secrets.github_token;
         };
