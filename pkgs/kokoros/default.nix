@@ -1,26 +1,26 @@
-{ lib
-, rustPlatform
-, fetchFromGitHub
-, fetchurl
-, pkg-config
-, clang
-, cmake
-, git
-, onnxruntime
-, espeak-ng
-, alsa-lib
-, openssl
-, libopus
-, stdenv
-, writeShellScriptBin
-, libclang
-, makeBinaryWrapper
-# Configuration
-, model ? "v1.0"
-, onnxName ? "kokoro-${model}.onnx"
-, voicesName ? "voices-${model}.bin"
-, onnxHash ? "sha256-fV347PfUsYeAFaMmhgU/0O6+K8N3I0YIdkzA7zY2psU="
-, voicesHash ? "sha256-vKYQuDCOjZnzLm/kGX5+wBZ5Jk7+0MrJFA/pwp8fv30="
+{
+  rustPlatform,
+  fetchFromGitHub,
+  fetchurl,
+  pkg-config,
+  clang,
+  cmake,
+  git,
+  onnxruntime,
+  espeak-ng,
+  alsa-lib,
+  openssl,
+  libopus,
+  stdenv,
+  writeShellScriptBin,
+  libclang,
+  makeBinaryWrapper,
+  # Configuration
+  model ? "v1.0",
+  onnxName ? "kokoro-${model}.onnx",
+  voicesName ? "voices-${model}.bin",
+  onnxHash ? "sha256-fV347PfUsYeAFaMmhgU/0O6+K8N3I0YIdkzA7zY2psU=",
+  voicesHash ? "sha256-vKYQuDCOjZnzLm/kGX5+wBZ5Jk7+0MrJFA/pwp8fv30=",
 }:
 
 let
@@ -28,7 +28,7 @@ let
   sonicSrc = fetchFromGitHub {
     owner = "waywardgeek";
     repo = "sonic";
-    rev = "master"; 
+    rev = "master";
     hash = "sha256-/AHkv7F7SH/BbQy6HFnaIj7znKbljLGwwnJ1HPv9k3A=";
   };
 
@@ -75,11 +75,11 @@ let
       owner = "lucasjinreal";
       repo = "Kokoros";
       rev = "main";
-      hash = "sha256-0Ig5g8MTyZwRHOdUzOZBo6ebgVtBXbTezdKyWh9AVK0="; 
+      hash = "sha256-0Ig5g8MTyZwRHOdUzOZBo6ebgVtBXbTezdKyWh9AVK0=";
     };
 
-    cargoHash = "sha256-SvhHAfvF/jGmq4kybWDTbYamfEQSgnVI81RDLgGD1pY="; 
-    doCheck = false; 
+    cargoHash = "sha256-SvhHAfvF/jGmq4kybWDTbYamfEQSgnVI81RDLgGD1pY=";
+    doCheck = false;
 
     nativeBuildInputs = [
       pkg-config
@@ -95,7 +95,7 @@ let
       openssl
       libopus
     ];
-    
+
     env = {
       ORT_STRATEGY = "system";
       LIBCLANG_PATH = "${libclang.lib}/lib";
@@ -106,27 +106,25 @@ let
       ${pkg-config}/bin/pkg-config --modversion opus || echo "pkg-config failed to find opus"
     '';
   };
-  
-
 
 in
-  stdenv.mkDerivation {
-    pname = "kokoros";
-    version = "1.0";
-    
-    nativeBuildInputs = [ makeBinaryWrapper ];
-    
-    unpackPhase = "true";
-    
-    installPhase = ''
-      mkdir -p $out/bin
-      # Copy or symlink the original binary
-      ln -s ${kokorosPkg}/bin/koko $out/bin/koko
-      
-      # Wrap it to supply the model/data paths by default
-      # This keeps the binary name 'koko' but ensures it works out of the box
-      wrapProgram $out/bin/koko \
-        --set ESPEAK_DATA_PATH "${espeak-ng}/share/espeak-ng-data" \
-        --add-flags "--model ${modelOnnx} --data ${modelVoices}"
-    '';
-  }
+stdenv.mkDerivation {
+  pname = "kokoros";
+  version = "1.0";
+
+  nativeBuildInputs = [ makeBinaryWrapper ];
+
+  unpackPhase = "true";
+
+  installPhase = ''
+    mkdir -p $out/bin
+    # Copy or symlink the original binary
+    ln -s ${kokorosPkg}/bin/koko $out/bin/koko
+
+    # Wrap it to supply the model/data paths by default
+    # This keeps the binary name 'koko' but ensures it works out of the box
+    wrapProgram $out/bin/koko \
+      --set ESPEAK_DATA_PATH "${espeak-ng}/share/espeak-ng-data" \
+      --add-flags "--model ${modelOnnx} --data ${modelVoices}"
+  '';
+}
