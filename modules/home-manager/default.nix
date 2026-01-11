@@ -3,6 +3,9 @@
 
 {
   # List your module files here
-  git-annex = ./git-annex;
-  finance = ./finance;
+  imports = [
+    ./finance/default.nix
+    ./git-annex/default.nix
+    ./goose.nix
+  ];
 }
