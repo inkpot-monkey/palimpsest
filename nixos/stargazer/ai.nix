@@ -1,23 +1,30 @@
+{ config, lib, pkgs, ... }:
+
 {
-  pkgs,
-  config,
-  lib,
-  ...
-}:
-{
+  imports = [
+  ];
+
+  # 1. Ollama (The Brain)
   services.ollama = {
     enable = true;
     package = pkgs.ollama-rocm;
-    # RDNA 3.5 / Radeon 890M override
-    rocmOverrideGfx = "11.0.0";
+    # Hardware Override for Radeon 890M (gfx1150) -> gfx1100
+    rocmOverrideGfx = "11.0.0"; 
     
-    # Enable model loading service
     loadModels = [
-      "deepseek-r1:32b"
-      "qwen2.5-coder:32b"
+      "qwen2.5-coder:14b"
     ];
-
-    # Open firewall for local access if needed (optional, keeping consistent with plan)
-    openFirewall = true;
   };
+
+  environment.systemPackages = with pkgs; [
+    kokoros # Default config (v1.0 model)
+    
+
+    
+    # Monitoring & Support
+    rocmPackages.rocm-smi
+    radeontop
+  ];
+
+
 }
