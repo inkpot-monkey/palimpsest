@@ -4,59 +4,55 @@
   inputs,
   ...
 }:
-let
-  mcpConfig = {
+
+{
+  home.packages = with pkgs; [
+    inputs.antigravity-nix.packages.${stdenv.hostPlatform.system}.default
+
+    gemini-cli
+    cursor-cli
+
+    # n8n-mcp
+    # pkgs.mcp-nixos
+
+    kokoros # Default config (v1.0 model)
+  ];
+
+  programs.goose = {
+    enable = true;
+    provider = "ollama";
+    model = "qwen2.5-coder:14b";
+    extensions = [
+      "developer"
+      "computercontroller"
+      "memory"
+    ];
     mcpServers = {
-      # nixos = {
-      # command = "${pkgs.mcp-nixos}/bin/mcp-nixos";
-      # };
-      github = {
-        command = "${pkgs.github-mcp-server}/bin/github-mcp-server";
-        args = [ "stdio" ];
+      brave-search = {
+        type = "stdio";
+        command = "npx";
+        args = [
+          "-y"
+          "@brave/brave-search-mcp-server"
+        ];
         env = {
-          GITHUB_PERSONAL_ACCESS_TOKEN = config.sops.placeholder.github_token;
+          BRAVE_API_KEY = "$(cat ${config.sops.secrets."apikey@search.brave.com".path})";
         };
       };
-      # n8n-mcp = {
-      #   command = "${pkgs.n8n-mcp}/bin/n8n-mcp";
-      #   env = {
-      #     MCP_MODE = "stdio";
-      #     LOG_LEVEL = "error";
-      #     DISABLE_CONSOLE_OUTPUT = true;
-      #     N8N_API_URL = "YOUR_API_URL";
-      #     N8N_API_KEY = "YOUR_API_KEY";
-      #   };
-      # };
-      playwright = {
-        command = "${pkgs.playwright-mcp}/bin/playwright-mcp";
+      github = {
+        type = "stdio";
+        command = "${pkgs.github-mcp-server}/bin/github-mcp-server";
+        env = {
+          GITHUB_PERSONAL_ACCESS_TOKEN = "$(cat ${config.sops.secrets.github_token.path})";
+        };
       };
+
       weather-api = {
+        type = "stdio";
         command = "${pkgs.emcee}/bin/emcee";
-        args = [
-          "https=//api.weather.gov/openapi.json"
-        ];
+        args = [ "https://api.weather.gov/openapi.json" ];
       };
     };
   };
-in
 
-{
-  nixpkgs.overlays = [
-    inputs.antigravity-nix.overlays.default
-  ];
-
-  home.packages = with pkgs; [
-    inputs.antigravity-nix.packages.${stdenv.hostPlatform.system}.google-antigravity
-    cursor-cli
-    gemini-cli
-    claude-code
-    # n8n-mcp
-    # pkgs.mcp-nixos
-    emcee
-  ];
-
-  sops.templates."mcp_config.json" = {
-    content = builtins.toJSON mcpConfig;
-    path = "${config.xdg.configHome}/mcp/mcp_config.json";
-  };
 }

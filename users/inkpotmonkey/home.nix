@@ -44,6 +44,7 @@
         ./email.nix
         ./emacs
         ./hyprland.nix
+        ../../modules/home-manager/default.nix
 
         # inputs.self.homeManagerModules.finance
         # ./git-annex.nix
@@ -94,6 +95,7 @@
         age.sshKeyPaths = [ "/home/inkpotmonkey/.ssh/id_ed25519" ];
         secrets = {
           "github_token" = { };
+          "apikey@search.brave.com" = { };
         };
       };
 

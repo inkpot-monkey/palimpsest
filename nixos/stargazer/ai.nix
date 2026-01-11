@@ -1,4 +1,7 @@
-{ config, lib, pkgs, ... }:
+{
+  pkgs,
+  ...
+}:
 
 {
   imports = [
@@ -9,22 +12,17 @@
     enable = true;
     package = pkgs.ollama-rocm;
     # Hardware Override for Radeon 890M (gfx1150) -> gfx1100
-    rocmOverrideGfx = "11.0.0"; 
-    
+    rocmOverrideGfx = "11.0.0";
+
     loadModels = [
       "qwen2.5-coder:14b"
     ];
   };
 
   environment.systemPackages = with pkgs; [
-    kokoros # Default config (v1.0 model)
-    
-
-    
     # Monitoring & Support
     rocmPackages.rocm-smi
     radeontop
   ];
-
 
 }
