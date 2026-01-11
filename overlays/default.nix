@@ -2,9 +2,7 @@
 { inputs, ... }:
 {
   # Import custom packages from 'pkgs' directory
-  additions = final: _prev: (import ../pkgs final) // {
-    kokoros = final.callPackage ../pkgs/kokoros { };
-  };
+  additions = final: _prev: import ../pkgs final;
 
   # Custom package modifications
   modifications = final: prev: {

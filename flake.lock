@@ -8,15 +8,15 @@
         ]
       },
       "locked": {
-        "lastModified": 1767646027,
-        "narHash": "sha256-68H3NrcyujkQek6jVRtX3Qc2GWPeza4o1gG+9tZwKiY=",
-        "owner": "tomycisco123",
+        "lastModified": 1766394679,
+        "narHash": "sha256-huyKMNTvsqawI1mHocntSV4UcthHNfg21J9PQ3fByHg=",
+        "owner": "jacopone",
         "repo": "antigravity-nix",
-        "rev": "f25bdb52ada2fb82e33bd6e62a4a642a071f5453",
+        "rev": "89f5f9da4a42f7af91cd941ed8d1b81e99c5007d",
         "type": "github"
       },
       "original": {
-        "owner": "tomycisco123",
+        "owner": "jacopone",
         "repo": "antigravity-nix",
         "type": "github"
       }
