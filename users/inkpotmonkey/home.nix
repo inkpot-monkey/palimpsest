@@ -1,8 +1,8 @@
 # This is your home-manager and os user configuration file
 {
   settings = {
+    name = "Thomas Kelly";
     username = "inkpotmonkey";
-    email = "inkpot@palebluebytes.space";
     hashedPassword = "<SCRUBBED_PASSWORD>";
     sshPubKey = "<SCRUBBED_SSH_KEY>";
 
@@ -41,12 +41,11 @@
 
         ./cli.nix
         ./gui.nix
+        ./email.nix
         ./emacs
         ./hyprland.nix
-        ./waybar.nix
-        ./swaync.nix
 
-        inputs.self.homeManagerModules.finance
+        # inputs.self.homeManagerModules.finance
         # ./git-annex.nix
       ];
 
@@ -62,7 +61,7 @@
       };
 
       # Enable Personal Finance Module
-      programs.finance.enable = true;
+      # programs.finance.enable = true;
 
       # =========================================
       # User Packages
