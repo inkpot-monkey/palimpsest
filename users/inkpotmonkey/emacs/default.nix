@@ -89,7 +89,7 @@
     texlive.combined.scheme-medium
 
     # formatter
-    prettier
+    prettierd
 
     # LSPs
     nil
