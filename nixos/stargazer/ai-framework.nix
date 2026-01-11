@@ -44,8 +44,9 @@ in
     path = "/home/inkpotmonkey/.config/goose/config.yaml";
     owner = "inkpotmonkey"; # Assuming user implementation details
     content = ''
-      provider: ${gooseConfig.provider}
-      model: ${gooseConfig.model}
+      GOOSE_PROVIDER: ${gooseConfig.provider}
+      GOOSE_MODEL: ${gooseConfig.model}
+      OLLAMA_HOST: ${gooseConfig.GOOSE_PROVIDER_OLLAMA_HOST}
       extensions:
       ${lib.concatMapStrings (ext: "  - ${ext}\n") gooseConfig.extensions}
       
