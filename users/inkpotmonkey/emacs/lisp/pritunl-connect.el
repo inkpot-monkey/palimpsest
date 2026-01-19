@@ -12,7 +12,7 @@
 (defconst pritunl--buffer-name "*pritunl*"
   "The name of the buffer used for Pritunl process output.")
 
-(defconst pritunl--ready-regexp "connection: Resolved remotes"
+(defconst pritunl--ready-regexp "Service starting"
   "The regex string indicating the service is ready for connections.")
 
 ;;;###autoload
@@ -37,6 +37,7 @@ The process output is sent to the buffer *pritunl*."
   (save-excursion
     (goto-char (point-min)) 
     (when (re-search-forward pritunl--ready-regexp nil t)
+      (sleep-for 2)
       (remove-hook 'compilation-filter-hook #'pritunl--check-ready-hook t)
       (pritunl-connect-client))))
 
@@ -61,7 +62,7 @@ Returns a cons cell `(ID . PASSWORD)' or nil if not found."
             (password (cdr creds)))
       (progn
 				(start-process "pritunl-client"
-                       nil
+                       pritunl--buffer-name
                        "pritunl-client"
                        "start" id
                        "--password" password)
