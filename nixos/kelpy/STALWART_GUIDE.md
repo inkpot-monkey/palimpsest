@@ -31,62 +31,46 @@ Verify the service is running:
 systemctl status stalwart-mail
 ```
 
-## 2. Initial DNS Setup
+## 2. DNS Setup
  
- Since we are managing DNS manually via Cloudflare:
+ Since we are managing DNS manually via Cloudflare, we will import the Stalwart zone file and then apply critical fixes.
  
- 1.  **Get Zone File**: Copy the zone definitions from your Stalwart Web Admin (or the text provided during setup).
+ ### Step 1: Import Zone File
+ 1.  **Get Zone File**: Copy the zone definitions from your Stalwart Web Admin (Management > Directory > Domains > DNS).
  2.  **Import to Cloudflare**:
      - Go to **Cloudflare Dashboard > DNS > Records**.
      - Click **Import and Export** -> **Import**.
-     - Upload your zone file (e.g. `stalwart.txt`).
- 3.  This configures A, MX, SPF, DKIM, and SRV records automatically.
-
-## 3. Configure Domain & DKIM
-
-Stalwart does not create the domain automatically. You must do this to generate keys.
-
-1.  **Create Domain:**
-    - Go to `https://mail.yourdomain.com` (e.g., `https://mail.palebluebytes.xyz`).
-    - Login with admin credentials (see step 5).
-    - Navigate to **Management > Directory > Domains**.
-    - Click **Create Domain**.
-    - Enter your domain name (e.g., `palebluebytes.xyz`) and Save.
-
-2.  **Retrieve DKIM Keys:**
-    - Click on the domain you just created.
-    - Click the **DNS** tab (or "DNS Records").
-    - You will see generated records (MX, SPF, DKIM).
-    - **Crucial:** Copy the **DKIM TXT records** (usually one or two, e.g., `202401r._domainkey`).
-
-3.  **Update Cloudflare:**
-    - The `setup-mail-dns` script handles A/MX/SPF.
-    - You must **manually add** the DKIM TXT records you just copied to Cloudflare.
-
-2.  **Update DNS:**
-    Add a TXT record to Cloudflare:
-    - **Name:** `<selector>._domainkey` (e.g., `default._domainkey`)
-    - **Content:** `v=DKIM1; k=rsa; p=YOUR_PUBLIC_KEY_HERE`
-
-6.  **Reverse DNS (PTR) - CRITICAL**
-    This cannot be configured in NixOS or Cloudflare.
-    - Log in to your **VPS Provider Dashboard** (e.g. vpsFree).
-    - Find the "Networking" or "IP" settings for this server (`37.205.14.206`).
-    - Set the **Reverse DNS / PTR Record** to `mail.palebluebytes.xyz`.
-    - *Without this, mostly emails will go to Spam.*
-
-7.  **MTA-STS Security (Manual DNS)**
-    These records enforce TLS encryption for incoming mail.
-    - **CNAME Record**:
-        - Name: `mta-sts`
-        - Target: `mail.palebluebytes.xyz` (or `kelpy`)
-        - Proxy Status: **DNS Only** (Grey Cloud)
-    - **TXT Record**:
-        - Name: `_mta-sts`
-        - Content: `v=STSv1; id=2026012001;` (Update ID if you change policy)
-
-> [!NOTE]
-> **TLSA (DANE) Records**: We explicitly **SKIP** these. Since we use Let's Encrypt (which rotates certs every 60 days), hardcoding a TLSA record in manual DNS would break email regularily. MTA-STS provides similar security without this risk.
+     - Upload or paste your zone file.
+     - This creates your MX, DKIM, DMARC, and SRV records.
+ 
+ ### Step 2: Critical Adjustments (Do this immediately)
+ 1.  **DELETE TLSA Records**:
+     - **Action:** Delete all records starting with `_25._tcp.mail`.
+     - **Reason:** These bind email security to your *current* certificate. Since Let's Encrypt rotates certs every 60 days, these records will expire and **break your email**. We use MTA-STS (Step 3) instead.
+ 
+ 2.  **FIX SPF Records**:
+     - Stalwart often generates invalid syntax (`ra=postmaster`).
+     - **Action**: Edit the **TXT** record for `@` (and `mail` if present).
+     - **Change**: `v=spf1 mx ra=postmaster -all`
+     - **To**: `v=spf1 mx ip4:37.205.14.206 -all`
+     - (Replace with your actual server IP).
+ 
+ ### Step 3: Add Advanced Security (MTA-STS)
+ Add these records manually to enforce TLS encryption safely:
+ - **CNAME Record**:
+     - Name: `mta-sts`
+     - Target: `mail.palebluebytes.xyz`
+     - Proxy Status: **DNS Only** (Grey Cloud)
+ - **TXT Record**:
+     - Name: `_mta-sts`
+     - Content: `v=STSv1; id=2026012001;`
+ 
+ ### Step 4: Reverse DNS (PTR) - Exterior
+ This cannot be configured in Cloudflare.
+ - Log in to your **VPS Provider Dashboard** (e.g. vpsFree).
+ - Find the "Networking" or "IP" settings for this server (`37.205.14.206`).
+ - Set the **Reverse DNS / PTR Record** to `mail.palebluebytes.xyz`.
+ - *Without this, mostly emails will go to Spam.*
 
 ## 4. Create Admin User & Mailboxes
 
