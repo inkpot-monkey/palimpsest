@@ -17,12 +17,13 @@
     ./proxy.nix
 
     ./matrix/matrix.nix
-    ./paperless.nix
+    # ./paperless.nix
     # ./immich.nix
     # ./searx.nix
     # ./archivebox.nix
     # ./actual-budget.nix
-    # ./stalwart.nix
+    # ./actual-budget.nix
+    ./mail.nix
 
     # ../potbelliedSeahorse/configuration.nix
     # ../common/nebula.nix
@@ -31,10 +32,9 @@
     # ../common/observability.nix
     # ../common/listener.nix
     # ../common/observability.nix
-    outputs.nixosModules.git-annex
-    ./git-annex.nix
+    # outputs.nixosModules.git-annex
+    # ./git-annex.nix
   ];
-
 
   networking = {
     inherit (settings.host) hostName domain;

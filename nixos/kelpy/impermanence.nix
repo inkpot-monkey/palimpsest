@@ -10,6 +10,8 @@
       "/etc/nixos"
       "/var/log"
       "/var/lib/nixos"
+      "/var/lib/stalwart-mail"
+      "/var/lib/acme"
     ];
     files = [
       "/etc/machine-id"

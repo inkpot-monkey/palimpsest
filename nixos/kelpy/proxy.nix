@@ -28,13 +28,10 @@ in
     inherit email;
     package = pkgs.caddy.withPlugins {
       plugins = [ "github.com/caddy-dns/cloudflare@v0.2.1" ];
-      hash = "sha256-aRMg7R0dBAy+LJeGCMPg6HKppM6NPX2NPwtc0CeSQLg=";
+      hash = "sha256-Zls+5kWd/JSQsmZC4SRQ/WS+pUcRolNaaI7UQoPzJA0=";
     };
     # https://caddyserver.com/docs/caddyfile/options#global-options
     globalConfig = ''
-      dns cloudflare {
-        api_token {$CLOUDFLARE_API_TOKEN}
-      }
       email ${email}
     '';
     environmentFile = config.sops.templates.caddy_env.path;
@@ -58,15 +55,13 @@ in
 
   };
 
-  services.caddy.virtualHosts."jmap-test.${domain}" = {
+  services.caddy.virtualHosts."mail.palebluebytes.xyz" = {
     extraConfig = ''
-      handle /jmap/ws {
-        reverse_proxy http://127.0.0.1:8080 {
-          header_up Host {host}
-          header_up X-Real-IP {remote}
-          header_up Connection {>Connection}
-          header_up Upgrade {>Upgrade}
-        }
+      reverse_proxy http://127.0.0.1:8080 {
+        header_up Host {host}
+        header_up X-Real-IP {remote}
+        header_up Connection {>Connection}
+        header_up Upgrade {>Upgrade}
       }
     '';
   };
