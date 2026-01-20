@@ -40,6 +40,26 @@ in
   services.stalwart-mail = {
     enable = true;
     settings = {
+      config.local-keys = [
+        "store.*"
+        "directory.*"
+        "tracer.*"
+        "!server.blocked-ip.*"
+        "!server.allowed-ip.*"
+        "server.*"
+        "cluster.*"
+        "config.local-keys.*"
+        "storage.data"
+        "storage.blob"
+        "storage.lookup"
+        "storage.fts"
+        "storage.directory"
+        "certificate.*"
+        "authentication.*"
+        "resolver.*" # Avoid warnings for default resolver settings
+        "spam-filter.*" # Avoid warnings for default spam settings
+        "webadmin.*"
+      ];
       authentication.fallback-admin = {
         user = "admin";
         secret = "%{file:/run/credentials/stalwart-mail.service/admin_password}%";
