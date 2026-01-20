@@ -66,6 +66,17 @@ in
     '';
   };
 
+  services.caddy.virtualHosts."mta-sts.palebluebytes.xyz" = {
+    extraConfig = ''
+      header Content-Type "text/plain"
+      respond /.well-known/mta-sts.txt "version: STSv1
+      mode: enforce
+      mx: mail.palebluebytes.xyz
+      max_age: 604800
+      " 200
+    '';
+  };
+
   # Open firewall ports
   networking.firewall.allowedTCPPorts = [
     80
