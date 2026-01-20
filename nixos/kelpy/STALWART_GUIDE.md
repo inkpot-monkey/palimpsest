@@ -75,6 +75,19 @@ Stalwart does not create the domain automatically. You must do this to generate 
     - Set the **Reverse DNS / PTR Record** to `mail.palebluebytes.xyz`.
     - *Without this, mostly emails will go to Spam.*
 
+7.  **MTA-STS Security (Manual DNS)**
+    These records enforce TLS encryption for incoming mail.
+    - **CNAME Record**:
+        - Name: `mta-sts`
+        - Target: `mail.palebluebytes.xyz` (or `kelpy`)
+        - Proxy Status: **DNS Only** (Grey Cloud)
+    - **TXT Record**:
+        - Name: `_mta-sts`
+        - Content: `v=STSv1; id=2026012001;` (Update ID if you change policy)
+
+> [!NOTE]
+> **TLSA (DANE) Records**: We explicitly **SKIP** these. Since we use Let's Encrypt (which rotates certs every 60 days), hardcoding a TLSA record in manual DNS would break email regularily. MTA-STS provides similar security without this risk.
+
 ## 4. Create Admin User & Mailboxes
 
 1.  **Get Initial Admin Password:**
