@@ -55,27 +55,7 @@ in
 
   };
 
-  services.caddy.virtualHosts."mail.palebluebytes.xyz" = {
-    extraConfig = ''
-      reverse_proxy http://127.0.0.1:8080 {
-        header_up Host {host}
-        header_up X-Real-IP {remote}
-        header_up Connection {>Connection}
-        header_up Upgrade {>Upgrade}
-      }
-    '';
-  };
 
-  services.caddy.virtualHosts."mta-sts.palebluebytes.xyz" = {
-    extraConfig = ''
-      header Content-Type "text/plain"
-      respond /.well-known/mta-sts.txt "version: STSv1
-      mode: enforce
-      mx: mail.palebluebytes.xyz
-      max_age: 604800
-      " 200
-    '';
-  };
 
   # Open firewall ports
   networking.firewall.allowedTCPPorts = [
