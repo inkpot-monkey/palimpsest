@@ -68,6 +68,13 @@ Stalwart does not create the domain automatically. You must do this to generate 
     - **Name:** `<selector>._domainkey` (e.g., `default._domainkey`)
     - **Content:** `v=DKIM1; k=rsa; p=YOUR_PUBLIC_KEY_HERE`
 
+6.  **Reverse DNS (PTR) - CRITICAL**
+    This cannot be configured in NixOS or Cloudflare.
+    - Log in to your **VPS Provider Dashboard** (e.g. vpsFree).
+    - Find the "Networking" or "IP" settings for this server (`37.205.14.206`).
+    - Set the **Reverse DNS / PTR Record** to `mail.palebluebytes.xyz`.
+    - *Without this, mostly emails will go to Spam.*
+
 ## 4. Create Admin User & Mailboxes
 
 1.  **Get Initial Admin Password:**
