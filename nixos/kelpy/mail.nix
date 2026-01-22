@@ -151,11 +151,17 @@ in
     '';
   };
 
-  # Open firewall ports
   networking.firewall.allowedTCPPorts = [
     25 # SMTP
     465 # SMTPS
     587 # Submission
     993 # IMAPS
   ];
+
+  # Map the mail domain to localhost internally so that:
+  # 1. The bridge can access http://mail.palebluebytes.xyz:8080 (advertised by Stalwart)
+  # 2. We don't hit the public firewall for internal traffic
+  networking.extraHosts = ''
+    127.0.0.1 mail.${domain}
+  '';
 }

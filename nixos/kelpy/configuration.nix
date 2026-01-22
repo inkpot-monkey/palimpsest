@@ -37,7 +37,8 @@
   ];
 
   networking = {
-    inherit (settings.host) hostName domain;
+    inherit (settings.host) hostName;
+    domain = "palebluebytes.xyz";
   };
 
   environment.systemPackages = with pkgs; [
