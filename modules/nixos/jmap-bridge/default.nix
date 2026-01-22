@@ -28,7 +28,7 @@ in
 
     databaseUrl = lib.mkOption {
       type = lib.types.str;
-      default = "sqlite:bridge.db";
+      default = "bridge.db?mode=rwc";
       description = "Database URL (defaults to relative path in StateDirectory)";
     };
 
@@ -124,7 +124,7 @@ in
       wantedBy = [ "multi-user.target" ];
       after = [ "network.target" ];
       environment = {
-        DATABASE_URL = cfg.databaseUrl;
+        DATABASE_URL = "sqlite:${cfg.databaseUrl}";
         JMAP_URL = cfg.url;
         JMAP_USERNAME = cfg.username;
         MATRIX_URL = cfg.matrixUrl;
@@ -135,7 +135,7 @@ in
       serviceConfig = {
         ExecStart = ''
           ${package}/bin/jmap-matrix-bridge run \
-            --db "${cfg.databaseUrl}" \
+            --db "sqlite:${cfg.databaseUrl}" \
             --port ${toString cfg.port}
         '';
         Restart = "always";

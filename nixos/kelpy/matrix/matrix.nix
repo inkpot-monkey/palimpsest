@@ -70,7 +70,6 @@ in
     url = "http://127.0.0.1:8080/jmap/session";
 
     matrixUrl = "http://127.0.0.1:${toString matrixSettings.port}";
-    databaseUrl = "sqlite:/var/lib/jmap-bridge/bridge.db";
     environmentFile = config.sops.templates."jmap-bridge.env".path;
 
     registration = {
