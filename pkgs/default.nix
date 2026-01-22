@@ -6,4 +6,6 @@ pkgs: {
   n8n-mcp = pkgs.callPackage ./n8n-mcp.nix { };
   finance-tools = pkgs.callPackage ./finance-tools/package.nix { };
   kokoros = pkgs.callPackage ./kokoros/default.nix { };
+  brave-search = pkgs.callPackage ./brave-search.nix { };
+  jmap-matrix-bridge = pkgs.callPackage ./jmap-matrix-bridge/default.nix { };
 }
