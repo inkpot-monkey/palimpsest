@@ -1,50 +1,62 @@
 # JMAP Matrix Bridge Module
 
-This NixOS module deploys the `jmap-matrix-bridge` service, managing the process, environment, and persistence.
+This NixOS module deploys the `jmap-matrix-bridge` service, managing the process, environment, and persistence. It supports the multi-user architecture where users authenticate themselves via Matrix commands.
 
 ## Options
 
 | Option | Type | Default | Description |
-|Service | --- | --- | --- |
+| --- | --- | --- | --- |
 | `services.jmap-bridge.enable` | bool | `false` | Enable the JMAP Bridge service. |
-| `services.jmap-bridge.jmapUrl` | str | `"http://127.0.0.1:8080"` | URL of the JMAP server. |
-| `services.jmap-bridge.jmapUsername` | str | - | Username for JMAP authentication. |
-| `services.jmap-bridge.jmapToken` | str | `""` | **Optional**. JMAP Password. If set, it is stored in the world-readable Nix store. Prefer using `sops` secrets via `environmentFile`. |
-| `services.jmap-bridge.matrixUrl` | str | `"http://127.0.0.1:6167"` | URL of the Matrix Homeserver (Client-Server API). |
-| `services.jmap-bridge.databaseUrl` | str | `"sqlite:/var/lib/jmap-bridge/bridge.db"` | Path to the SQLite database. |
-| `services.jmap-bridge.environmentFile` | path | `null` | Path to a file containing environment variables (e.g., from `sops-nix`). Used for secure secret injection (`JMAP_TOKEN`, `MATRIX_AS_TOKEN`). |
+| `services.jmap-bridge.url` | str | `"http://127.0.0.1:8080/jmap/session"` | **Default JMAP Session URL**. Used as a hint or default for the service. Users provide specific URLs during login. |
+| `services.jmap-bridge.matrixUrl` | str | `"http://127.0.0.1:6167"` | URL of the Matrix Homeserver (Client-Server API) for sending events. |
+| `services.jmap-bridge.databaseUrl` | str | `"sqlite:/var/lib/jmap-bridge/bridge.db"` | Path to the SQLite database. Ensure the directory exists and is writable. |
+| `services.jmap-bridge.environmentFile` | path | `null` | Path to a file containing environment variables (e.g., from `sops-nix`). Critical for secret injection (`MATRIX_AS_TOKEN`). |
+| `services.jmap-bridge.username` | str | `null` | **Deprecated**. Static JMAP username for single-user mode. |
+| `services.jmap-bridge.registration` | submodule | - | Configuration for generating/managing the App Service registration file. |
 
 ## Example Usage
+
+### Multi-User Setup (Recommended)
 
 ```nix
 { config, pkgs, ... }:
 {
   services.jmap-bridge = {
     enable = true;
-    jmapUsername = "user@example.com";
-    jmapUrl = "https://mail.example.com";
-    matrixUrl = "http://localhost:6167";
+    # Matrix server URL (from the bridge's perspective)
+    matrixUrl = "http://127.0.0.1:6167";
     
-    # Load secrets (JMAP_TOKEN, MATRIX_AS_TOKEN) from sops
+    # Load the App Service Token (MATRIX_AS_TOKEN) from sops
     environmentFile = config.sops.secrets.jmap_bridge_env.path;
+    
+    # Registration file management
+    registration = {
+        enable = true;
+        asToken = config.sops.placeholder.email_as_token;
+        hsToken = config.sops.placeholder.email_hs_token;
+        owner = "conduit"; # Ensure your Homeserver can read this
+        group = "conduit";
+    };
   };
 }
 ```
 
 ## Secrets Handling
 
-This module allows secure injection of sensitive tokens via `environmentFile`. 
+The bridge needs the **Application Service Token** to communicate with the Matrix Homeserver as a privileged app service.
 
-1.  **MATRIX_AS_TOKEN**: Required. Sourced from the `as_token` in your generated `registration.yaml`.
-2.  **JMAP_TOKEN**: Required. The password/token for the JMAP user.
-
-Define these in your `sops` secrets file:
+Define this in your `sops` secrets file and expose it via `environmentFile`:
 ```env
-MATRIX_AS_TOKEN=your_token_here
-JMAP_TOKEN=your_password_here
+MATRIX_AS_TOKEN=your_generated_token_here
 ```
 
-## Persistance
+*Note: User JMAP passwords are NOT configured here. They are provided by users via the `!login` command and stored encrypted in the local SQLite database.*
 
-The service runs with `DynamicUser = true` but persists data in `/var/lib/jmap-bridge/` (managed via `StateDirectory`).
-The SQLite database `bridge.db` stores sync mappings and is critical for idempotency.
+## User Onboarding
+
+Once the bridge is running:
+1.  Users open a DM with the bot user (defined in your registration, default `@_jmap_bot:<server_name>`).
+2.  Users authenticate:
+    ```
+    !login <jmap_username> <jmap_password> <jmap_session_url>
+    ```
