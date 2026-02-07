@@ -6,10 +6,10 @@
   ...
 }:
 let
-  inherit (config.networking) domain;
+  domain = "matrix.palebluebytes.space";
 
   matrixSettings = config.services.matrix-conduit.settings.global;
-  matrixSubdomain = "matrix.${matrixSettings.server_name}";
+  # matrixSubdomain is no longer needed as we run on the root domain
   address = "127.0.0.1";
 
   # Path to the separate secrets file relative to this nix file
@@ -125,31 +125,25 @@ in
   # Caddy Reverse Proxy
   # ----------------------------------------------------------------------------
 
-  # Root domain virtual host (Matrix Federation/Client Discovery)
-  services.caddy.virtualHosts.domain = {
+  # Matrix Server Virtual Host (Handles Federation, Client API, and Discovery)
+  services.caddy.virtualHosts."${domain}" = {
     hostName = domain;
     extraConfig = lib.mkAfter ''
-      # Matrix server discovery (Fed)
+      # Matrix server discovery (Fed) - Pointing to itself for correctness
       handle /.well-known/matrix/server {
         header Content-Type "application/json"
         header Access-Control-Allow-Origin "*"
-        respond `{"m.server":"${matrixSubdomain}:443"}`
+        respond `{"m.server":"${domain}:443"}`
       }
 
-      # Matrix client discovery
+      # Matrix client discovery - Pointing to itself
       handle /.well-known/matrix/client {
         header Content-Type "application/json"
         header Access-Control-Allow-Origin "*"
-        respond `{"m.homeserver":{"base_url":"https://${matrixSubdomain}"}}`
+        respond `{"m.homeserver":{"base_url":"https://${domain}"}}`
       }
-    '';
-  };
 
-  # Matrix Subdomain virtual host
-  services.caddy.virtualHosts.matrix = {
-    hostName = matrixSubdomain;
-    extraConfig = ''
-      # Proxy all requests to Tuwunel
+      # Proxy all requests to Conduit
       reverse_proxy /_matrix/* ${address}:${toString matrixSettings.port}
     '';
   };
