@@ -103,8 +103,16 @@
 
     # --- Internet & Browsers ---
     google-chrome
-    vivaldi
     brave
+
+    # Main browser
+    (vivaldi.override {
+      proprietaryCodecs = true;
+      enableWidevine = true;
+    })
+    # Also add this specifically for video playback support
+    vivaldi-ffmpeg-codecs
+
     qbittorrent-enhanced
     pritunl-client
     protonvpn-gui
