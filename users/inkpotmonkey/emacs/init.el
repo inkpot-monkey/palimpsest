@@ -677,19 +677,18 @@
 
 (use-package cape
 		:bind ("C-c p" . cape-prefix-map) 
+		:init
+		(add-hook 'prog-mode-hook (lambda () (add-hook 'completion-at-point-functions #'cape-file nil t)))
+		(add-hook 'comint-mode-hook (lambda () (add-hook 'completion-at-point-functions #'cape-file nil t)))
+		
 		:config
-		(require 'cape-char)
-		(require 'cape-keyword)
-
-		(defun my-completion-at-point ()
+		(defun my/completion-at-point ()
 			(cape-wrap-super
 			 #'cape-abbrev
 			 #'cape-dabbrev
-			 #'cape-dict
-			 #'cape-emoji))
+			 #'cape-keyword))
 
-		(add-hook 'completion-at-point-functions #'cape-file)
-		(add-hook 'completion-at-point-functions #'my-completion-at-point))
+		(add-hook 'completion-at-point-functions #'my/completion-at-point))
 
 (use-package tempel
 		
