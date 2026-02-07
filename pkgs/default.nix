@@ -7,5 +7,5 @@ pkgs: {
   finance-tools = pkgs.callPackage ./finance-tools { };
   kokoros = pkgs.callPackage ./kokoros { };
   brave-search = pkgs.callPackage ./brave-search.nix { };
-  jmap-matrix-bridge = pkgs.callPackage ./jmap-matrix-bridge/default.nix { };
+  jmap-matrix-bridge = pkgs.callPackage ./jmap-matrix-bridge { };
 }
