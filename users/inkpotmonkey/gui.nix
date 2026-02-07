@@ -87,7 +87,10 @@
   programs.mpv = {
     enable = true;
     package = pkgs.mpv.override {
-      scripts = [ pkgs.mpvScripts.modernz ];
+      scripts = [
+        pkgs.mpvScripts.modernz
+        pkgs.mpvScripts.mpvacious
+      ];
     };
     config = {
       profile = "high-quality";
