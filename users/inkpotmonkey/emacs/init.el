@@ -3,7 +3,8 @@
 (require 'package)
 (add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
 (setq package-install-upgrade-built-in t)
-(add-to-list 'package-pinned-packages '(vterm . "manual"))
+(add-to-list package-pinned-packages '((vterm . "manual")
+																			 (yaml . "manual")))
 
 (setq native-comp-async-report-warnings-errors 'silent)
 (setq warning-minimum-level :error)
