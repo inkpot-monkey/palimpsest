@@ -80,6 +80,9 @@
         slurp
         swayosd # OSD for volume/brightness
 
+        # Shell tools
+        to-av1
+
         # Spell Check
         hunspell
         enchant
