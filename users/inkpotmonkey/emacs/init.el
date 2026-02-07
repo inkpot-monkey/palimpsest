@@ -50,10 +50,13 @@
   
   ;; Force sending to wl-clipboard so cliphist can pick it up
   (defun my/copy-to-cliphist (text &optional push)
-    (let ((process-connection-type nil))
-      (let ((proc (start-process "wl-copy" nil "wl-copy")))
-        (process-send-string proc text)
-        (process-send-eof proc))))
+		(let ((process-connection-type nil)) 
+			(let ((proc (make-process :name "wl-copy" 
+																:command '("wl-copy") 
+																:connection-type 'pipe)))
+				(process-send-string proc text)
+				(process-send-eof proc))))
+	
   (setq interprogram-cut-function 'my/copy-to-cliphist)
 
   (setq treesit-extra-load-path '("@treesit-grammars@"))
