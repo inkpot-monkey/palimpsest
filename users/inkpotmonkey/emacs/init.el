@@ -382,6 +382,8 @@
 		:custom
 		(dired-dwim-target t)
 		(dired-auto-revert-buffer t)
+		;; -a (all), -l (long), -t (time/date), -h (human readable)
+		(dired-listing-switches "-alth")
 		:hook 
 		(dired-mode . dired-hide-details-mode)
 		(dired-mode . dired-omit-mode)
