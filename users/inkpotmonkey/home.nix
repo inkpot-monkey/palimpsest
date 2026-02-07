@@ -44,7 +44,7 @@
         ./email.nix
         ./emacs
         ./hyprland.nix
-        ../../modules/home-manager/default.nix
+        # ../../modules/home-manager/default.nix
 
         # inputs.self.homeManagerModules.finance
         # ./git-annex.nix
