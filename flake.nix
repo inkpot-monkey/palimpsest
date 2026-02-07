@@ -1,13 +1,6 @@
 {
   description = "I am config and my code is a string that will be run.";
 
-  nixConfig = {
-    extra-substituters = [ "https://nixos-raspberrypi.cachix.org" ];
-    extra-trusted-public-keys = [
-      "nixos-raspberrypi.cachix.org-1:4iMO9LXa8BqhU+Rpg6LQKiGa2lsNh/j2oiYLNOQ5sPI="
-    ];
-  };
-
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/staging-next";
@@ -94,6 +87,10 @@
               git-annex-home-manager =
                 pkgs.callPackage ./modules/home-manager/git-annex/tests/git-annex-home-manager.nix
                   { inherit inputs; };
+              goose-home-manager = pkgs.callPackage ./modules/home-manager/goose/tests/default.nix {
+                inherit inputs;
+              };
+              goose-brave = pkgs.callPackage ./modules/home-manager/goose/tests/brave.nix { inherit inputs; };
             };
           };
 
