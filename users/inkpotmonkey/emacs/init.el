@@ -1107,9 +1107,10 @@
 		:hook
 		(typescript-ts-mode . eglot-ensure))
 
-(use-package html-mode
+(use-package html-ts-mode
 		:ensure nil
-		:mode ("\\.webc\\'" . html-ts-mode)
+		:mode (("\\.webc\\'" . html-ts-mode)   
+					 ("\\.html?\\'" . html-ts-mode)) 
 		:init
 		(push '(html-mode . html-ts-mode) major-mode-remap-alist)
 		:bind (:map html-ts-mode-map
