@@ -284,7 +284,7 @@
 		:custom
 	(fontaine-presets 
 	 '((regular
-			:default-family "Rec Mono Linear"
+			:default-family ("Rec Mono Linear" "Monospace")
 			:default-weight regular
 			:default-height 120
 			:variable-pitch-family "Recursive Sans Casual Static")))
