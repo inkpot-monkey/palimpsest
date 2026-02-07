@@ -14,8 +14,6 @@
       epkgs.vterm
       epkgs.yaml
       epkgs.treesit-grammars.with-all-grammars
-      epkgs.notmuch
-      epkgs.consult-notmuch
     ];
   };
 
