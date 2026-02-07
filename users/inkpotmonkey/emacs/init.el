@@ -239,6 +239,7 @@
 	([remap describe-command] . helpful-command)
 	([remap describe-variable] . helpful-variable)
 	([remap describe-symbol] . helpful-symbol)
+	([remap display-local-help] . helpful-at-point)
 	([remap describe-key] . helpful-key))
 
 (use-package elisp-demos
