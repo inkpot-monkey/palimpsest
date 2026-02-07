@@ -3,9 +3,8 @@
 
 {
   # List your module files here
-  imports = [
-    ./finance
-    ./git-annex
-    ./goose
-  ];
+  finance = ./finance;
+  git-annex = ./git-annex;
+  goose = ./goose;
+  kokoro-tts = ./kokoro;
 }
