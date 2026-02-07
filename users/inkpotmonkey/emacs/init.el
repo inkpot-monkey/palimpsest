@@ -941,6 +941,9 @@
 					("C-c a" . eglot-code-actions)
 					("C-c i" . eglot-inlay-hints-mode))
 		:config
+		;; Drastically improves performance in large projects
+		(fset #'jsonrpc--log-event #'ignore)
+		
 		(setq completion-category-defaults nil)
 		(advice-add 'eglot-completion-at-point :around #'cape-wrap-buster)
 		
