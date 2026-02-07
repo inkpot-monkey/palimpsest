@@ -8,6 +8,10 @@
   boot.kernelModules = [
     "uinput"
   ];
+  boot.kernelParams = [
+    "ttm.pages_limit=5242880"
+    "ttm.page_pool_size=5242880"
+  ];
 
   # =========================================
   # Bootloader (Systemd-boot)
