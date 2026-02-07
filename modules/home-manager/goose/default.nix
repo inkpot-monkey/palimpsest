@@ -27,6 +27,8 @@ in
         "anthropic"
         "databricks"
         "cursor-agent"
+        "google"
+        "gemini-cli"
       ];
       default = "ollama";
       description = " The AI provider to use.";
@@ -77,10 +79,67 @@ in
       default = { };
       description = "MCP servers to configure as extensions.";
     };
+
+    env = mkOption {
+      type = types.attrsOf (types.either types.str types.attrs);
+      default = { };
+      description = "Environment variables to set for the Goose main process. Supports string values or sops secret objects (which will be read via 'cat').";
+    };
+
+    profiles = mkOption {
+      type = types.attrsOf (
+        types.submodule {
+          options = {
+            provider = mkOption {
+              type = types.nullOr types.str;
+              default = null;
+              description = "Override the provider for this profile.";
+            };
+            model = mkOption {
+              type = types.nullOr types.str;
+              default = null;
+              description = "Override the model for this profile.";
+            };
+          };
+        }
+      );
+      default = { };
+      description = "Define additional Goose profiles (e.g. 'flash' -> 'goose-flash').";
+    };
   };
 
   config = mkIf cfg.enable ({
-    home.packages = [ cfg.package ];
+    home.packages =
+      let
+        # Common logic to inject environment variables
+        envInjection = lib.concatStringsSep "\n" (
+          lib.mapAttrsToList (
+            k: v:
+            if builtins.isAttrs v && v ? path then
+              "export ${k}=$(cat ${v.path})"
+            else
+              "export ${k}=${toString v}"
+          ) cfg.env
+        );
+
+        # Main Goose Wrapper
+        gooseWrapped = pkgs.writeShellScriptBin "goose" ''
+          ${envInjection}
+          exec ${cfg.package}/bin/goose "$@"
+        '';
+
+        # Generate profile scripts (e.g. goose-flash)
+        profileScripts = lib.mapAttrsToList (
+          name: profile:
+          pkgs.writeShellScriptBin "goose-${name}" ''
+            ${envInjection}
+            ${if profile.provider != null then "export GOOSE_PROVIDER=${profile.provider}" else ""}
+            ${if profile.model != null then "export GOOSE_MODEL=${profile.model}" else ""}
+            exec ${cfg.package}/bin/goose "$@"
+          ''
+        ) cfg.profiles;
+      in
+      [ gooseWrapped ] ++ profileScripts;
 
     xdg.configFile."goose/config.yaml".text = builtins.toJSON {
       GOOSE_PROVIDER = cfg.provider;
