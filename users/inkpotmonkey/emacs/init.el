@@ -1340,3 +1340,22 @@ buffer (*App: Name*)."
 					("C-c C-o" . sclang-server-boot)
 					("C-." . sclang-stop)
 					("C-c C-d" . sclang-find-help)))
+
+(use-package notmuch
+		:bind ("C-c m" . notmuch)
+		:config
+		(setq notmuch-show-logo nil
+					notmuch-search-oldest-first nil
+					notmuch-hello-sections '(notmuch-hello-insert-saved-searches
+																	 notmuch-hello-insert-alltags))
+		(setq notmuch-saved-searches
+					'((:name "inbox" :query "tag:inbox" :key "i")
+						(:name "unread" :query "tag:unread" :key "u")
+						(:name "flagged" :query "tag:flagged" :key "f")
+						(:name "sent" :query "tag:sent" :key "t")
+						(:name "drafts" :query "tag:draft" :key "d")
+						(:name "all mail" :query "*" :key "a"))))
+;; Consult integration (searching mail with completion)
+(use-package consult-notmuch
+		:after (consult notmuch)
+		:bind ("C-c n" . consult-notmuch))
