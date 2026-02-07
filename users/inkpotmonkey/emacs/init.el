@@ -1263,3 +1263,80 @@ buffer (*App: Name*)."
 
 		:bind
 		("C-c s" . my/consult-omni-launcher))
+
+(use-package sly
+		(sly sly-connect)
+	
+	:custom
+	(inferior-lisp-program "sbcl")
+	
+	(sly-symbol-completion-mode 'radix)
+	
+	:config
+	(sly-setup '(sly-fancy))
+	
+	:bind
+	(:map sly-mode-map
+				("M-." . sly-edit-definition)
+				("C-c C-d h" . sly-documentation-lookup)))
+
+(use-package sly-quicklisp
+		:after sly)
+
+(use-package sly-asdf
+		:after sly)
+
+(use-package paredit
+		:hook
+	:disabled
+	;; Hook into Sly REPL and standard Lisp mode
+	((sly-mrepl-mode lisp-mode emacs-lisp-mode) . paredit-mode)
+	:bind
+	(:map paredit-mode-map
+				;; Unbind keys that might conflict with your window manager if needed
+				;; ("C-<left>" . nil) 
+				;; ("C-<right>" . nil)
+				))
+
+(use-package scel
+		:ensure nil
+		:defer t
+		:init
+		(when-let ((env-path (getenv "EMACSLOADPATH")))
+			(dolist (path (parse-colon-path env-path))
+				(add-to-list 'load-path path)))
+
+		:mode ("\\.scd\\'" . sclang-mode)
+		
+		:config
+		;; -- Core Setup --
+		(setq sclang-program "sclang")
+		(setq sclang-runtime-directory nil)
+		(setq sclang-max-post-buffer-size 16384)
+		(setq sclang-auto-scroll-post-buffer t)
+
+		;; -- Visuals --
+		(add-hook 'sclang-post-buffer-hook 
+							(lambda () 
+								(visual-line-mode 1)
+								(text-scale-set -1)))
+
+		(add-hook 'sclang-mode-hook 
+							(lambda () 
+								(setq-local completion-at-point-functions 
+														(list #'cape-dabbrev #'cape-file))))
+
+		;; -- Pulse Effect --
+		(advice-add 'sclang-eval-region-or-line :after
+								(lambda (&rest _)
+									(let ((beg (if (use-region-p) (region-beginning) (line-beginning-position)))
+												(end (if (use-region-p) (region-end) (line-end-position))))
+										(pulse-momentary-highlight-region beg end))))
+
+		:bind 
+		(:map sclang-mode-map
+					("s-<return>" . sclang-eval-line)
+					("C-c C-c" . sclang-eval-region-or-line)
+					("C-c C-o" . sclang-server-boot)
+					("C-." . sclang-stop)
+					("C-c C-d" . sclang-find-help)))
