@@ -8,4 +8,5 @@ pkgs: {
   kokoros = pkgs.callPackage ./kokoros { };
   brave-search = pkgs.callPackage ./brave-search.nix { };
   jmap-matrix-bridge = pkgs.callPackage ./jmap-matrix-bridge { };
+  to-av1 = pkgs.callPackage ./to-av1 { };
 }
