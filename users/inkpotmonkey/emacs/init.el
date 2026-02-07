@@ -114,6 +114,7 @@
   (kept-new-versions 10)
   (kept-old-versions 5)
   (version-control t)
+	(delete-by-moving-to-trash t)
 
   ;; -- Undo Limits --
   (undo-limit 67108864)
