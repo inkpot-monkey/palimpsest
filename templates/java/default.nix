@@ -1,44 +1,39 @@
-{ jre, makeWrapper, maven, xmlstarlet, runCommand }:
+{
+  jre,
+  makeWrapper,
+  maven,
+  runCommand,
+}:
 let
   parser = runCommand "parser" { } ''
-    #!/usr/bin/env nix
-    //! ```cargo
-    //! [dependencies]
-    //! time = "0.1.25"
-    //! ```
-    /*
-    #!nix shell nixpkgs#rustc nixpkgs#rust-script nixpkgs#cargo --command rust-script
-    */
-    use std::fs;
+     #!/usr/bin/env nix
+     //! ```cargo
+     //! [dependencies]
+     //! time = "0.1.25"
+     //! ```
+     /*
+     #!nix shell nixpkgs#rustc nixpkgs#rust-script nixpkgs#cargo --command rust-script
+     */
+     use std::fs;
 
-    fn main() {
-      let out_dir = env!("out");
-      fs::create_dir(out_dir)?;
+     fn main() {
+       let out_dir = env!("out");
+       fs::create_dir(out_dir)?;
 
-          let path = "pom.toml";
+           let path = "pom.toml";
 
-    let mut output = File::create(path)?;
-    write!(output, "pname=\"test\"\nversion=\"test\"")?;
+     let mut output = File::create(path)?;
+     write!(output, "pname=\"test\"\nversion=\"test\"")?;
 
-    Ok(())
-   }
-'';
-  
-  pom-parser = runCommand "pom-parser" { } ''
-    mkdir $out
-    touch pom.toml
-
-    echo "pname=\"$(${xmlstarlet}/bin/xml sel -t -m _:project -v _:artifactId ${./pom.xml})\"" >> pom.toml
-
-    echo "version=\"$(${xmlstarlet}/bin/xml sel -t -m _:project -v _:version ${./pom.xml})\"" >> pom.toml
-
-    mv pom.toml $out
+     Ok(())
+    }
   '';
 
-  packageDetails = (builtins.fromTOML (builtins.readFile "${parser}/pom.toml"));
+  packageDetails = builtins.fromTOML (builtins.readFile "${parser}/pom.toml");
 
   inherit (packageDetails) pname version;
-in maven.buildMavenPackage {
+in
+maven.buildMavenPackage {
   inherit pname version;
 
   src = ./.;

@@ -1,6 +1,9 @@
-{ inputs, self, ... }: {
-  imports =
-    [ inputs.sops-nix.nixosModules.sops (self + /nixos/common/nebula.nix) ];
+{ inputs, self, ... }:
+{
+  imports = [
+    inputs.sops-nix.nixosModules.sops
+    (self + /modules/nixos/common/nebula.nix)
+  ];
 
   sops = {
     # Both the user's SSH key and the system's SSH host key
@@ -20,7 +23,10 @@
       host = "192.168.100.1";
     };
     staticHostMap = { };
-    firewall.allowedUDPPorts = [ 4242 5353 ];
+    firewall.allowedUDPPorts = [
+      4242
+      5353
+    ];
     hostName = "lighthouse";
   };
 

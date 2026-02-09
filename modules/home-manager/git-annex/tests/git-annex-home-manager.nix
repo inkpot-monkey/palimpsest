@@ -1,124 +1,162 @@
-{ system ? builtins.currentSystem, pkgs, inputs }:
+{
+  pkgs,
+  inputs,
+}:
 let
-  inherit (pkgs) lib;
-  
+
   # Generate SSH keys dynamically
-  sshKeys = pkgs.runCommand "ssh-keys" {
-    nativeBuildInputs = [ pkgs.openssh ];
-  } ''
-    mkdir -p $out
-    ssh-keygen -t ed25519 -f $out/id_ed25519 -N "" -C "test-key"
-  '';
+  sshKeys =
+    pkgs.runCommand "ssh-keys"
+      {
+        nativeBuildInputs = [ pkgs.openssh ];
+      }
+      ''
+        mkdir -p $out
+        ssh-keygen -t ed25519 -f $out/id_ed25519 -N "" -C "test-key"
+      '';
 in
 pkgs.testers.nixosTest {
   name = "git-annex-home-manager-v28";
   nodes = {
-    gateway = { config, pkgs, ... }: {
-      imports = [ ../../../nixos/git-annex/default.nix ];
-      services.git-annex = {
-        enable = true;
-        repositories.gateway = {
-          path = "/var/lib/git-annex/gateway";
-          description = "gateway";
-          assistant = true;
+    gateway =
+      { ... }:
+      {
+        imports = [ (inputs.self + /modules/nixos/git-annex/default.nix) ];
+        services.git-annex = {
+          enable = true;
+          repositories.gateway = {
+            path = "/var/lib/git-annex/gateway";
+            description = "gateway";
+            assistant = true;
+          };
         };
-      };
-      networking.firewall.allowedTCPPorts = [ 22 ];
-      services.openssh.enable = true;
-      users.users.git-annex.openssh.authorizedKeys.keys = [
-        (builtins.readFile "${sshKeys}/id_ed25519.pub")
-      ];
-    };
-
-    client = { config, pkgs, ... }: {
-      imports = [ inputs.home-manager.nixosModules.home-manager ];
-      
-      users.users.alice = {
-        isNormalUser = true;
-        extraGroups = [ "wheel" ];
-        openssh.authorizedKeys.keys = [ (builtins.readFile "${sshKeys}/id_ed25519.pub") ];
+        networking.firewall.allowedTCPPorts = [ 22 ];
+        services.openssh.enable = true;
+        users.users.git-annex.openssh.authorizedKeys.keys = [
+          (builtins.readFile "${sshKeys}/id_ed25519.pub")
+        ];
       };
 
-      environment.systemPackages = [ pkgs.git pkgs.git-annex ];
+    client =
+      { pkgs, ... }:
+      {
+        imports = [ inputs.home-manager.nixosModules.home-manager ];
 
-      home-manager.useGlobalPkgs = true;
-      home-manager.useUserPackages = true;
-      home-manager.users.alice = { pkgs, lib, config, ... }: {
-        imports = [ ../default.nix ];
-        # Inline debug to verify option setting
-        config = {
-           home.stateVersion = "24.05";
-           programs.git = {
-             enable = true;
-             userName = "Alice";
-             userEmail = "alice@example.com";
-           };
-           services.git-annex = {
-             enable = true;
-             repositories = {
-               annex = {
-                 path = "/home/alice/Annex";
-                 description = "test-annex";
-                 unlock = true;
-                 remotes = [{
-                   name = "gateway";
-                   url = "git-annex@gateway:/var/lib/git-annex/gateway";
-                 }];
-               };
-             };
-             assistant.enable = false;
-           };
+        users.users.alice = {
+          isNormalUser = true;
+          extraGroups = [ "wheel" ];
+          openssh.authorizedKeys.keys = [ (builtins.readFile "${sshKeys}/id_ed25519.pub") ];
         };
+
+        environment.systemPackages = [
+          pkgs.git
+          pkgs.git-annex
+        ];
+
+        home-manager.useGlobalPkgs = true;
+        home-manager.useUserPackages = true;
+        home-manager.users.alice =
+          {
+            ...
+          }:
+          {
+            imports = [ ../default.nix ];
+            # Inline debug to verify option setting
+            config = {
+              home.stateVersion = "24.05";
+              programs.git = {
+                enable = true;
+                settings = {
+                  user = {
+                    name = "Alice";
+                    email = "alice@example.com";
+                  };
+                };
+              };
+              services.git-annex = {
+                enable = true;
+                repositories = {
+                  annex = {
+                    path = "/home/alice/Annex";
+                    description = "test-annex";
+                    unlock = true;
+                    remotes = [
+                      {
+                        name = "gateway";
+                        url = "git-annex@gateway:/var/lib/git-annex/gateway";
+                      }
+                    ];
+                  };
+                };
+                assistant.enable = false;
+              };
+            };
+          };
       };
-    };
-    client_full = { config, pkgs, ... }: {
-      imports = [ inputs.home-manager.nixosModules.home-manager ];
+    client_full =
+      { pkgs, ... }:
+      {
+        imports = [ inputs.home-manager.nixosModules.home-manager ];
 
-      users.users.bob = {
-        isNormalUser = true;
-        extraGroups = [ "wheel" ];
-        openssh.authorizedKeys.keys = [ (builtins.readFile "${sshKeys}/id_ed25519.pub") ];
-      };
-
-      environment.systemPackages = [ pkgs.git pkgs.git-annex ];
-
-      home-manager.useGlobalPkgs = true;
-      home-manager.useUserPackages = true;
-      home-manager.users.bob = { pkgs, lib, config, ... }: {
-        imports = [ ../default.nix ];
-        config = {
-           home.stateVersion = "24.05";
-           programs.git = {
-             enable = true;
-             userName = "Bob";
-             userEmail = "bob@example.com";
-           };
-           services.git-annex = {
-             enable = true;
-             repositories = {
-               annex = {
-                 path = "/home/bob/Annex";
-                 description = "bob-annex";
-                 assistant = true;
-                 remotes = [{
-                   name = "gateway";
-                   url = "git-annex@gateway:/var/lib/git-annex/gateway";
-                   type = "git";
-                 } {
-                   name = "backup";
-                   type = "directory";
-                   params = {
-                     directory = "/home/bob/Backup";
-                     encryption = "none";
-                   };
-                 }];
-               };
-             };
-             assistant.enable = true;
-           };
+        users.users.bob = {
+          isNormalUser = true;
+          extraGroups = [ "wheel" ];
+          openssh.authorizedKeys.keys = [ (builtins.readFile "${sshKeys}/id_ed25519.pub") ];
         };
+
+        environment.systemPackages = [
+          pkgs.git
+          pkgs.git-annex
+        ];
+
+        home-manager.useGlobalPkgs = true;
+        home-manager.useUserPackages = true;
+        home-manager.users.bob =
+          {
+            ...
+          }:
+          {
+            imports = [ ../default.nix ];
+            config = {
+              home.stateVersion = "24.05";
+              programs.git = {
+                enable = true;
+                settings = {
+                  user = {
+                    name = "Bob";
+                    email = "bob@example.com";
+                  };
+                };
+              };
+              services.git-annex = {
+                enable = true;
+                repositories = {
+                  annex = {
+                    path = "/home/bob/Annex";
+                    description = "bob-annex";
+                    assistant = true;
+                    remotes = [
+                      {
+                        name = "gateway";
+                        url = "git-annex@gateway:/var/lib/git-annex/gateway";
+                        type = "git";
+                      }
+                      {
+                        name = "backup";
+                        type = "directory";
+                        params = {
+                          directory = "/home/bob/Backup";
+                          encryption = "none";
+                        };
+                      }
+                    ];
+                  };
+                };
+                assistant.enable = true;
+              };
+            };
+          };
       };
-    };
   };
 
   testScript = ''
@@ -153,11 +191,11 @@ pkgs.testers.nixosTest {
     # 3. Wait for Client HM Activation
     client.wait_for_unit("user@1000.service")
     client_full.wait_for_unit("user@1000.service")
-    
+
     # Wait for git-annex-init-annex user service
     client.wait_until_succeeds("sudo -u alice XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active git-annex-init-annex.service")
     client_full.wait_until_succeeds("sudo -u bob XDG_RUNTIME_DIR=/run/user/1000 systemctl --user is-active git-annex-init-annex.service")
-    
+
     # 4. Verify Assistant Service
     # Client: Should be disabled
     client.fail("systemctl --user is-active git-annex-assistant.service")
@@ -179,10 +217,10 @@ pkgs.testers.nixosTest {
     client.succeed("sudo -u alice timeout 30s env GIT_PAGER=cat GIT_SSH_COMMAND='ssh -o BatchMode=yes -o StrictHostKeyChecking=no' git -C /home/alice/Annex annex info")
 
     client_full.succeed("test -d /home/bob/Annex/.git")
-    
+
     # 7. Verify Remotes
     client.succeed("sudo -u alice git -C /home/alice/Annex remote | grep gateway")
-    
+
     # Client Full: Verify special remote 'backup'
     client_full.succeed("sudo -u bob git -C /home/bob/Annex remote | grep gateway")
     # Check if special remote is known to annex
@@ -192,13 +230,13 @@ pkgs.testers.nixosTest {
     client.succeed("sudo -u alice touch /home/alice/Annex/test-file")
     client.succeed("test -f /home/alice/Annex/test-file")
     client.succeed("! test -L /home/alice/Annex/test-file")
-    
+
     # 10. Verify Auto Sync
     # Create a file on client_full (where assistant is enabled)
     client_full.succeed("sudo -u bob touch /home/bob/Annex/sync-test-file")
     # Wait for it to sync to gateway
     gateway.wait_until_succeeds("test -f /var/lib/git-annex/gateway/sync-test-file")
-    
+
     print("SUCCESS: File is unlocked (regular file) and auto-sync is working.")
   '';
 }

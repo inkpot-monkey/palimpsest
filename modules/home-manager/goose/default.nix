@@ -108,7 +108,7 @@ in
     };
   };
 
-  config = mkIf cfg.enable ({
+  config = mkIf cfg.enable {
     home.packages =
       let
         # Common logic to inject environment variables
@@ -167,10 +167,10 @@ in
             in
             {
               enabled = true;
-              name = name;
-              type = server.type;
+              inherit name;
+              inherit (server) type;
               cmd = "${wrapper}";
-              args = server.args;
+              inherit (server) args;
               env = { }; # Env is handled by wrapper
             }
           ) cfg.mcpServers;
@@ -178,11 +178,11 @@ in
           # Built-in extensions (enabled by default list)
           builtinExtensions = lib.genAttrs cfg.extensions (name: {
             enabled = true;
-            name = name;
+            inherit name;
             type = "builtin";
           });
         in
         builtinExtensions // mcpExtensions;
     };
-  });
+  };
 }

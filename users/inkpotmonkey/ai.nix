@@ -12,13 +12,13 @@
   ];
 
   home.packages = with pkgs; [
-    inputs.antigravity-nix.packages.${stdenv.hostPlatform.system}.default
+    inputs.antigravity-nix.packages.${pkgs.stdenv.hostPlatform.system}.default
 
     gemini-cli
     cursor-cli
 
     # n8n-mcp
-    # pkgs.mcp-nixos
+    mcp-nixos
 
     alpaca
   ];

@@ -1,6 +1,6 @@
-{ lib
-, python3Packages
-, fetchPypi
+{
+  lib,
+  python3Packages,
 }:
 
 python3Packages.buildPythonPackage {
@@ -10,7 +10,7 @@ python3Packages.buildPythonPackage {
 
   src = lib.cleanSourceWith {
     src = ./.;
-    filter = name: type: baseNameOf name != "result" && baseNameOf name != ".git";
+    filter = name: _type: baseNameOf name != "result" && baseNameOf name != ".git";
   };
 
   nativeBuildInputs = [
@@ -28,11 +28,11 @@ python3Packages.buildPythonPackage {
   ];
 
   # Allow no tests for now as we have a custom test script we might migrate later
-  doCheck = false; 
+  doCheck = false;
 
   meta = with lib; {
     description = "Personal finance ingestion tools";
     license = licenses.mit; # Assuming MIT, adjust if needed
-    maintainers = [];
+    maintainers = [ ];
   };
 }

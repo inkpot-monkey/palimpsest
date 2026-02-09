@@ -102,8 +102,8 @@ in
 
     # Define the template if enabled
     sops.templates."jmap-registration.yaml" = lib.mkIf cfg.registration.enable {
-      owner = cfg.registration.owner;
-      group = cfg.registration.group;
+      inherit (cfg.registration) owner;
+      inherit (cfg.registration) group;
       content = ''
         id: jmap-bridge
         url: http://127.0.0.1:${toString cfg.port}
@@ -159,7 +159,7 @@ in
       description = "JMAP Matrix Bridge service user";
     };
 
-    users.groups.jmap-bridge = {};
+    users.groups.jmap-bridge = { };
 
   };
 }

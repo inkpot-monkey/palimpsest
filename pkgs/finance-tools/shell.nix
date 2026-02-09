@@ -1,11 +1,13 @@
-{ pkgs ? import <nixpkgs> {} }:
+{
+  pkgs ? import <nixpkgs> { },
+}:
 
 let
-  finance-tools = pkgs.callPackage ./package.nix {};
+  finance-tools = pkgs.callPackage ./package.nix { };
 in
 pkgs.mkShell {
   inputsFrom = [ finance-tools ];
-  
+
   packages = with pkgs; [
     fava
     python3Packages.python-lsp-server

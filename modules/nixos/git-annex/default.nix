@@ -110,8 +110,16 @@ in
               default = [ ];
               description = "List of remotes (git, special, or hybrid) to add.";
               example = [
-                { name = "backup"; url = "/var/lib/git-annex/backup"; }
-                { name = "rsync_net"; url = "user@host:annex"; type = "rsync"; encryption = "none"; }
+                {
+                  name = "backup";
+                  url = "/var/lib/git-annex/backup";
+                }
+                {
+                  name = "rsync_net";
+                  url = "user@host:annex";
+                  type = "rsync";
+                  encryption = "none";
+                }
               ];
             };
             wanted = lib.mkOption {
@@ -155,7 +163,10 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    environment.systemPackages = [ pkgs.git pkgs.git-annex ];
+    environment.systemPackages = [
+      pkgs.git
+      pkgs.git-annex
+    ];
 
     users.users.git-annex = {
       isSystemUser = true;
@@ -176,30 +187,35 @@ in
       chown git-annex:git-annex /var/lib/git-annex/.ssh
       chmod 700 /var/lib/git-annex/.ssh
 
-      ${if cfg.sshKeyFile != null then ''
-        # Install provided SSH key from file (runtime path)
-        if [ -f "${cfg.sshKeyFile}" ]; then
-          cp "${cfg.sshKeyFile}" /var/lib/git-annex/.ssh/id_ed25519
-          chown git-annex:git-annex /var/lib/git-annex/.ssh/id_ed25519
-          chmod 600 /var/lib/git-annex/.ssh/id_ed25519
+      ${
+        if cfg.sshKeyFile != null then
+          ''
+            # Install provided SSH key from file (runtime path)
+            if [ -f "${cfg.sshKeyFile}" ]; then
+              cp "${cfg.sshKeyFile}" /var/lib/git-annex/.ssh/id_ed25519
+              chown git-annex:git-annex /var/lib/git-annex/.ssh/id_ed25519
+              chmod 600 /var/lib/git-annex/.ssh/id_ed25519
+            else
+              echo "Warning: git-annex sshKeyFile configured but not found at ${cfg.sshKeyFile}"
+            fi
+          ''
         else
-          echo "Warning: git-annex sshKeyFile configured but not found at ${cfg.sshKeyFile}"
-        fi
-      '' else ''
-        # Generate ephemeral key if none provided (fallback)
-        if [ ! -f /var/lib/git-annex/.ssh/id_ed25519 ]; then
-          ${pkgs.openssh}/bin/ssh-keygen -t ed25519 -N "" -f /var/lib/git-annex/.ssh/id_ed25519 -C "git-annex@${config.networking.hostName}"
-          chown git-annex:git-annex /var/lib/git-annex/.ssh/id_ed25519
-          chmod 600 /var/lib/git-annex/.ssh/id_ed25519
-        fi
-      ''}
+          ''
+            # Generate ephemeral key if none provided (fallback)
+            if [ ! -f /var/lib/git-annex/.ssh/id_ed25519 ]; then
+              ${pkgs.openssh}/bin/ssh-keygen -t ed25519 -N "" -f /var/lib/git-annex/.ssh/id_ed25519 -C "git-annex@${config.networking.hostName}"
+              chown git-annex:git-annex /var/lib/git-annex/.ssh/id_ed25519
+              chmod 600 /var/lib/git-annex/.ssh/id_ed25519
+            fi
+          ''
+      }
     '';
 
     system.activationScripts.git-annex-gpg-key = lib.mkIf (cfg.gpgKeyFile != null) ''
       mkdir -p /var/lib/git-annex/.gnupg
       chown git-annex:git-annex /var/lib/git-annex/.gnupg
       chmod 700 /var/lib/git-annex/.gnupg
-      
+
       # Import the key if it exists
       if [ -f "${cfg.gpgKeyFile}" ]; then
         ${pkgs.sudo}/bin/sudo -u git-annex ${pkgs.gnupg}/bin/gpg --batch --import ${cfg.gpgKeyFile} || true
@@ -231,8 +247,8 @@ in
       )}
     '';
 
-    systemd.tmpfiles.rules = lib.mapAttrsToList (name: repo:
-      "d '${repo.path}' 0770 ${repo.user} ${repo.ownerGroup} - -"
+    systemd.tmpfiles.rules = lib.mapAttrsToList (
+      _name: repo: "d '${repo.path}' 0770 ${repo.user} ${repo.ownerGroup} - -"
     ) cfg.repositories;
 
     systemd.services =
@@ -251,7 +267,7 @@ in
             };
             # Wait for SSH key file if configured (e.g. sops secret)
             unitConfig.ConditionPathExists = lib.optional (cfg.sshKeyFile != null) cfg.sshKeyFile;
-            
+
             # Prevent race conditions with assistant
             # We use ExecStartPre to stop the assistant instead of Conflicts,
             # because Conflicts cancels the assistant's pending start job during boot.
@@ -336,30 +352,36 @@ in
                   # For hybrid remotes (where url is set), we must use a different name for the special remote
                   # to avoid conflict with the git remote. We append "-content".
                   SPECIAL_REMOTE_NAME="${remote.name}${if remote.url != null then "-content" else ""}"
-                  
+
                   # Check if the special remote is already initialized
                   if ! git -C "${repo.path}" annex info "$SPECIAL_REMOTE_NAME" | grep -q "type: ${remote.type}"; then
                     echo "Initializing special remote $SPECIAL_REMOTE_NAME..."
                     git -C "${repo.path}" annex initremote "$SPECIAL_REMOTE_NAME" \
                       type="${remote.type}" \
-                      ${lib.concatStringsSep " " (lib.mapAttrsToList (k: v: "${k}=${v}") (
-                        (if remote.type == "rsync" && remote.url != null then { rsyncurl = remote.url; } else { }) //
-                        (if remote.encryption != null then { encryption = remote.encryption; } else { }) //
-                        remote.params
-                      ))} \
+                      ${
+                        lib.concatStringsSep " " (
+                          lib.mapAttrsToList (k: v: "${k}=${v}") (
+                            (if remote.type == "rsync" && remote.url != null then { rsyncurl = remote.url; } else { })
+                            // (if remote.encryption != null then { inherit (remote) encryption; } else { })
+                            // remote.params
+                          )
+                        )
+                      } \
                       autoenable=true
                   fi
                 ''}
 
                 # Apply Remote Policy
                 ${lib.optionalString (remote.group != null || remote.wanted != null) ''
-                  TARGET_REMOTE_NAME="${remote.name}${if remote.type != "git" && remote.url != null then "-content" else ""}"
-                  
+                  TARGET_REMOTE_NAME="${remote.name}${
+                    if remote.type != "git" && remote.url != null then "-content" else ""
+                  }"
+
                   # Ensure git-annex knows about the remote's UUID (only needed for git remotes)
                   ${lib.optionalString (remote.type == "git") ''
                     git -C "${repo.path}" annex sync "$TARGET_REMOTE_NAME" --no-content
                   ''}
-                  
+
                   ${lib.optionalString (remote.group != null) ''
                     git -C "${repo.path}" annex group "$TARGET_REMOTE_NAME" "${remote.group}" || echo "Warning: Failed to set group for ${remote.name}"
                   ''}
@@ -381,7 +403,7 @@ in
                 # Auto-tag files committed by the assistant
                 # We use git diff to find changed files in the last commit
                 # and apply the tag.
-                
+
                 # Check if there are any changes in the last commit
                 if git rev-parse --verify HEAD >/dev/null 2>&1; then
                     # Get list of added/modified files

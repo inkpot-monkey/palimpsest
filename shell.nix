@@ -2,9 +2,7 @@
 # You can enter it through 'nix develop' or (legacy) 'nix-shell'
 
 {
-  inputs,
   pkgs,
-  system,
 }:
 {
   default = pkgs.mkShell {

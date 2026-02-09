@@ -1,8 +1,6 @@
 {
   pkgs,
   config,
-  lib,
-  self,
   ...
 }:
 
@@ -70,10 +68,10 @@
     zip
     cmake
     ripgrep
-    aspell
-    aspellDicts.en
-    aspellDicts.en-computers
-    aspellDicts.en-science
+    # aspell
+    # aspellDicts.en
+    # aspellDicts.en-computers
+    # aspellDicts.en-science
     sops
 
     # :tools editorconfig
@@ -91,7 +89,7 @@
 
     # LSPs
     nil
-    nixfmt-rfc-style
+    nixfmt
     shfmt
     shellcheck
     nodePackages.bash-language-server

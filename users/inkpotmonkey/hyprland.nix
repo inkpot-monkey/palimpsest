@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+_:
 
 {
   # =========================================
@@ -35,16 +35,16 @@
       exec-once = [
         # Session Bus Setup
         "dbus-update-activation-environment --systemd --all"
-        
+
         # Core Services
-        "swaync"                              # Notification Daemon
-        "wl-paste --type text --watch cliphist store"  # Store text in history
+        "swaync" # Notification Daemon
+        "wl-paste --type text --watch cliphist store" # Store text in history
         "wl-paste --type image --watch cliphist store" # Store images in history
         "wl-clip-persist --clipboard regular" # Keep clipboard content after app close
-        "swayosd-server"                      # On-screen display server
+        "swayosd-server" # On-screen display server
 
         # Targeted Autostart
-        "[workspace 1 silent] vivaldi"        # Browser on WS 1
+        "[workspace 1 silent] vivaldi" # Browser on WS 1
         "[workspace 2 silent] emacsclient -c" # Editor on WS 2
       ];
 
@@ -72,7 +72,7 @@
 
       misc = {
         vfr = true; # Variable Frame Rate (power saving)
-        vrr = 1;    # Variable Refresh Rate (1=on)
+        vrr = 1; # Variable Refresh Rate (1=on)
       };
 
       # =========================================
@@ -128,7 +128,7 @@
         "float, title:^(emacs-launcher)$"
         "center, title:^(emacs-launcher)$"
         "size 60% 10%, title:^(emacs-launcher)$" # Modern compact launcher
-        "dimaround, title:^(emacs-launcher)$"   # Focus effect
+        "dimaround, title:^(emacs-launcher)$" # Focus effect
         "stayfocused, title:^(emacs-launcher)$"
       ];
 
@@ -145,20 +145,20 @@
       bind = [
         # Core Applications
         "$mod, Q, exec, kitty"
-        "$mod, R, exec, wofi --show drun"       # Application Launcher
+        "$mod, R, exec, wofi --show drun" # Application Launcher
         "$mod, space, exec, emacsclient -cn -F '((name . \"emacs-launcher\") (minibuffer . only) (undecorated . t))' -e '(my/consult-omni-launcher)'"
         "$mod, E, exec, vivaldi"
-        "$mod, N, exec, swaync-client -t -sw"  # Notifications center
+        "$mod, N, exec, swaync-client -t -sw" # Notifications center
         "$mod, L, exec, loginctl lock-session" # Screen lock
 
         # Window Operations
-        "$mod SHIFT, M, exit,"                # Quit Hyprland
-        "$mod, C, killactive,"                # Close window
-        "$mod SHIFT, V, togglefloating,"      # Float window
+        "$mod SHIFT, M, exit," # Quit Hyprland
+        "$mod, C, killactive," # Close window
+        "$mod SHIFT, V, togglefloating," # Float window
         "$mod, V, exec, cliphist list | wofi --dmenu | cliphist decode | wl-copy" # Clipboard
         "$mod, F, fullscreen,"
-        "$mod, P, pseudo,"                    # Dwindle pseudo-mode
-        "$mod, J, togglesplit,"               # Dwindle split toggle
+        "$mod, P, pseudo," # Dwindle pseudo-mode
+        "$mod, J, togglesplit," # Dwindle split toggle
 
         # Navigation (Arrows & Vim)
         "$mod, left, movefocus, l"
@@ -202,7 +202,7 @@
 
         # Screenshots
         ", Print, exec, grim -g \"$(slurp)\" - | wl-copy" # Region
-        "SHIFT, Print, exec, grim - | wl-copy"           # Screen
+        "SHIFT, Print, exec, grim - | wl-copy" # Screen
       ];
 
       # Extra Multimedia & Switches (Locked state support)

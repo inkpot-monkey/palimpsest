@@ -17,14 +17,14 @@ let
 
       src = fetchFromGitHub {
         owner = "henriquegemignani";
-        repo = prev.src.repo;
+        inherit (prev.src) repo;
         rev = "v${final.version}";
         hash = "sha256-tvM269xaKK5Emj8h8BZevR+++jD8OUK3tKfPpc3rMlg=";
       };
     }
   );
 
-  pymorphy3 = python3Packages.pymorphy3.overridePythonAttrs (old: {
+  pymorphy3 = python3Packages.pymorphy3.overridePythonAttrs (_old: {
     doCheck = false;
   });
 in
@@ -63,31 +63,33 @@ python3.pkgs.buildPythonApplication rec {
     python3Packages.setuptools
   ];
 
-  propagatedBuildInputs = (with python3Packages; [
-    markdownify
-    mobi
-    pymorphy3-dicts-uk
-    pymorphy3-dicts-ru
-    simplemma
-    requests
-    readmdict
-    slpp
-    python-lzo
-    packaging
-    sentence-splitter
-    lxml
-    pystardict
-    flask
-    pysubs2
-    bidict
-    markdown
-    ebooklib
-    flask-sqlalchemy
-    pyqt5-multimedia
-    pyqtgraph
-    waitress
-    pyqtdarktheme-fork
-  ]) ++ [ pymorphy3 ];
+  propagatedBuildInputs =
+    (with python3Packages; [
+      markdownify
+      mobi
+      pymorphy3-dicts-uk
+      pymorphy3-dicts-ru
+      simplemma
+      requests
+      readmdict
+      slpp
+      python-lzo
+      packaging
+      sentence-splitter
+      lxml
+      pystardict
+      flask
+      pysubs2
+      bidict
+      markdown
+      ebooklib
+      flask-sqlalchemy
+      pyqt5-multimedia
+      pyqtgraph
+      waitress
+      pyqtdarktheme-fork
+    ])
+    ++ [ pymorphy3 ];
 
   meta = with lib; {
     description = "Simple sentence mining tool for language learning";

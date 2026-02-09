@@ -6,13 +6,17 @@
     rust-overlay.url = "github:oxalica/rust-overlay";
   };
 
-  outputs = { self, nixpkgs, rust-overlay }:
+  outputs =
+    {
+      nixpkgs,
+      rust-overlay,
+    }:
     let
       inherit (builtins) attrValues;
-      
+
       overlays = [
         rust-overlay.overlays.default
-        (final: prev: {
+        (_final: prev: {
           rustToolchain =
             let
               rust = prev.rust-bin;
@@ -23,28 +27,43 @@
               rust.stable.latest.default;
         })
       ];
-      supportedSystems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
-      forEachSupportedSystem = f: nixpkgs.lib.genAttrs supportedSystems (system: f {
-        pkgs = import nixpkgs { inherit overlays system; };
-      });
+      supportedSystems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "x86_64-darwin"
+        "aarch64-darwin"
+      ];
+      forEachSupportedSystem =
+        f:
+        nixpkgs.lib.genAttrs supportedSystems (
+          system:
+          f {
+            pkgs = import nixpkgs { inherit overlays system; };
+          }
+        );
     in
     {
-      devShells = forEachSupportedSystem ({ pkgs }: {
-        default = pkgs.mkShell {
-          packages = attrValues {
-            inherit (pkgs.nodePackages)
-              bash-language-server;
-            
-            inherit (pkgs)
-              rustToolchain
-              openssl
-              pkg-config
-              cargo-deny
-              cargo-edit
-              cargo-watch
-              rust-analyzer;
+      devShells = forEachSupportedSystem (
+        { pkgs }:
+        {
+          default = pkgs.mkShell {
+            packages = attrValues {
+              inherit (pkgs.nodePackages)
+                bash-language-server
+                ;
+
+              inherit (pkgs)
+                rustToolchain
+                openssl
+                pkg-config
+                cargo-deny
+                cargo-edit
+                cargo-watch
+                rust-analyzer
+                ;
+            };
           };
-        };
-      });
+        }
+      );
     };
 }

@@ -1,4 +1,4 @@
-{ pkgs, ... }:
+_:
 
 {
   # =========================================
@@ -7,7 +7,7 @@
   programs.waybar = {
     enable = true;
     systemd.enable = true; # Autostart via systemd user session
-    
+
     # =========================================
     # Visual Styling (CSS)
     # =========================================
@@ -141,23 +141,23 @@
         position = "top";
         height = 36;
         spacing = 0;
-        
+
         modules-left = [
           "hyprland/workspaces"
           "hyprland/window"
         ];
-        
+
         modules-center = [
           "clock"
         ];
-        
+
         modules-right = [
           "pulseaudio"
           "network"
           "battery"
           "tray"
         ];
-        
+
         # =========================================
         # Module Configurations
         # =========================================
@@ -172,13 +172,13 @@
           max-length = 30;
           separate-outputs = true;
         };
-        
+
         "clock" = {
           tooltip-format = "<big>{:%Y %B}</big>\n<tt><small>{calendar}</small></tt>";
           format-alt = "{:%Y-%m-%d}";
           format = "{:%a %d %b %H:%M}";
         };
-        
+
         "pulseaudio" = {
           format = "{icon} {volume}%";
           format-bluetooth = "{icon} {volume}%";
@@ -190,11 +190,15 @@
             phone = "";
             portable = "";
             car = "";
-            default = ["" "" ""];
+            default = [
+              ""
+              ""
+              ""
+            ];
           };
           on-click = "pavucontrol";
         };
-        
+
         "network" = {
           format-wifi = "  {essid}";
           format-ethernet = " Wired";
@@ -214,9 +218,15 @@
           format-charging = " {capacity}%";
           format-plugged = " {capacity}%";
           format-alt = "{time} {icon}";
-          format-icons = ["" "" "" "" ""];
+          format-icons = [
+            ""
+            ""
+            ""
+            ""
+            ""
+          ];
         };
-        
+
         "tray" = {
           icon-size = 21;
           spacing = 10;

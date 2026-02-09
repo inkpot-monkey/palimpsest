@@ -5,17 +5,17 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     nixpkgs-unstable.url = "github:NixOS/nixpkgs/staging-next";
 
-    nixos-raspberrypi.url = "github:nvmd/nixos-raspberrypi/main";
-
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    impermanence.url = "github:nix-community/impermanence";
-
+    nixos-raspberrypi.url = "github:nvmd/nixos-raspberrypi/main";
+    impermanence = {
+      url = "github:nix-community/impermanence";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
     nixos-hardware.url = "github:nixos/nixos-hardware";
-
     vpsFree.url = "github:vpsfreecz/vpsadminos";
 
     sops-nix = {
@@ -38,161 +38,62 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    git-hooks = {
+      url = "github:cachix/git-hooks.nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
     inputs@{
       self,
-      nixpkgs,
       flake-parts,
       ...
     }:
     let
-      utils = import ./utils { lib = nixpkgs.lib; };
-      inherit (utils) importTemplates importHomes;
+      lib = import ./lib { inherit inputs self; };
     in
-    flake-parts.lib.mkFlake { inherit inputs; } (
-      { self, ... }:
-      {
-        systems = [
-          "x86_64-linux"
-          "aarch64-linux"
-        ];
 
-        perSystem =
-          {
-            config,
-            self',
-            inputs',
-            pkgs,
-            system,
-            ...
-          }:
-          {
-            # Your custom packages
-            # Accessible through 'nix build', 'nix shell', etc
-            packages = import ./pkgs pkgs;
+    flake-parts.lib.mkFlake { inherit inputs; } {
+      imports = [
+        inputs.git-hooks.flakeModule
+        ./parts/shells.nix
+        ./parts/git-hooks.nix
+        # ./modules/nixos/git-annex/flake-module.nix
+        # ./modules/home-manager/git-annex/flake-module.nix
+      ];
 
-            # Devshell for bootstrapping
-            # Accessible through 'nix develop' or 'nix-shell' (legacy)
-            devShells = import ./shell.nix { inherit inputs pkgs system; };
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+      ];
 
-            checks = {
-              git-annex = pkgs.callPackage ./modules/nixos/git-annex/tests/git-annex.nix { };
-              git-annex-stateless = pkgs.callPackage ./modules/nixos/git-annex/tests/git-annex-stateless.nix { };
-              git-annex-hybrid = pkgs.callPackage ./modules/nixos/git-annex/tests/git-annex-hybrid.nix { };
-              git-annex-encryption =
-                pkgs.callPackage ./modules/nixos/git-annex/tests/git-annex-encryption.nix
-                  { };
-              git-annex-home-manager =
-                pkgs.callPackage ./modules/home-manager/git-annex/tests/git-annex-home-manager.nix
-                  { inherit inputs; };
-              goose-home-manager = pkgs.callPackage ./modules/home-manager/goose/tests/default.nix {
-                inherit inputs;
-              };
-              goose-brave = pkgs.callPackage ./modules/home-manager/goose/tests/brave.nix { inherit inputs; };
-            };
-          };
+      perSystem =
+        {
+          pkgs,
+          system,
+          ...
+        }:
+        {
+          _module.args.pkgs = lib.mkPkgs system;
 
-        flake = {
-          # Your custom packages and modifications, exported as overlays
-          overlays = import ./overlays { inherit inputs; };
-          # Reusable nixos modules you might want to export
-          # These are usually stuff you would upstream into nixpkgs
-          nixosModules = import ./modules/nixos;
-          # Reusable home-manager modules you might want to export
-          # These are usually stuff you would upstream into home-manager
-          homeManagerModules = import ./modules/home-manager;
-
-          # NixOS configuration entrypoint
-          # Available through 'nixos-rebuild --flake .#your-hostname'
-          nixosConfigurations = {
-            stargazer = nixpkgs.lib.nixosSystem {
-              specialArgs = {
-                inherit inputs self;
-                outputs = self;
-                residents = [ self.homeConfigurations.inkpotmonkey ];
-              };
-
-              modules = [
-                # > Our main nixos configuration file <
-                ./nixos/stargazer/configuration.nix
-                inputs.disko.nixosModules.disko
-                inputs.nixos-hardware.nixosModules.framework-13-7040-amd
-              ];
-            };
-
-            # nixos-rebuild switch --flake .#porcupineFish --target-host root@porporcupineFish
-            porcupineFish = inputs.nixos-raspberrypi.lib.nixosSystem {
-              modules = [
-                ./nixos/porcupineFish/configuration.nix
-              ];
-              specialArgs = {
-                inherit inputs self;
-                nixos-raspberrypi = inputs.nixos-raspberrypi;
-                outputs = self;
-              };
-            };
-
-            # nixos-rebuild --target-host root@kelpy switch --flake .#kelpy
-            kelpy = nixpkgs.lib.nixosSystem {
-              system = "x86_64-linux";
-              specialArgs = {
-                inherit inputs nixpkgs self;
-                outputs = self;
-                settings = {
-                  admin = {
-                    email = "thomas@palebluebytes.xyz";
-                  };
-                  host = {
-                    ip4 = "37.205.14.206";
-                    ip6 = "2a03:3b40:fe:896::1";
-                    hostName = "kelpy";
-                    domain = "palebluebytes.space";
-                  };
-                };
-              };
-              modules = [
-                ./nixos/kelpy/configuration.nix
-              ];
-            };
-
-            # nixos-rebuild --target-host <tbd>@<tbd> switch --flake .#potbelliedSeahorse
-            potbelliedSeahorse = nixpkgs.lib.nixosSystem {
-              system = "aarch64-linux";
-              modules = [ ./nixos/potbelliedSeahorse/configuration.nix ];
-              specialArgs = {
-                inherit inputs self;
-                outputs = self;
-              };
-            };
-          };
-
-          # Build via: nix build .#porcupineFish
-          packages.x86_64-linux.porcupineFish =
-            (inputs.nixos-raspberrypi.lib.nixosSystem {
-              system = "aarch64-linux";
-              modules = [
-                ./nixos/porcupineFish/configuration.nix
-                "${nixpkgs}/nixos/modules/installer/sd-card/sd-image-aarch64.nix"
-              ];
-              specialArgs = {
-                inherit inputs self;
-                outputs = self;
-                nixos-raspberrypi = inputs.nixos-raspberrypi;
-              };
-            }).config.system.build.sdImage;
-
-          # Home-manager configuration entrypoint
-          # Each home is an attribute set with 2 values defined in a directory <root>/users/<username>/home.nix
-          # 1. settings = values for the nixosConfiguration
-          # 2. home = a function which is the input for the home-manager nixosModule
-          homeConfigurations = importHomes;
-
-          # This operates under the assumption that all templates are stored
-          # in the directory <root>/templates
-          templates = importTemplates;
+          formatter = pkgs.nixfmt;
+          packages = import ./pkgs pkgs;
         };
-      }
-    );
+
+      flake = {
+        overlays = lib.overlays.modifications;
+        nixosModules = import ./modules/nixos;
+        homeManagerModules = import ./modules/home-manager;
+
+        nixosConfigurations = import ./hosts {
+          inherit lib inputs self;
+        };
+
+        homeConfigurations = import ./users {
+          inherit lib inputs self;
+        };
+      };
+    };
+
 }

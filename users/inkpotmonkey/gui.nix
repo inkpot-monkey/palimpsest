@@ -104,6 +104,21 @@
   # ==========================================
   home.packages = with pkgs; [
 
+    # --- Fonts ---
+    recursive
+    montserrat
+    libre-caslon
+
+    # --- System Utilities ---
+    brightnessctl
+    playerctl
+    grim
+    slurp
+    swayosd # OSD for volume/brightness
+
+    # --- Shell tools ---
+    to-av1
+
     # --- Internet & Browsers ---
     google-chrome
     brave
@@ -130,7 +145,7 @@
 
     # --- Development ---
     postman
-    beekeeper-studio
+    # beekeeper-studio
     distrobox
     quickemu
     nss_latest # Cert tools
@@ -239,5 +254,38 @@
   services.cliphist = {
     enable = true;
     allowImages = true;
+  };
+
+  # =========================================
+  # XDG & Application Defaults
+  # =========================================
+  xdg.mimeApps = {
+    enable = pkgs.stdenv.isLinux;
+    defaultApplications = {
+      "text/html" = [
+        "vivaldi.desktop"
+        "vivaldi-stable.desktop"
+      ];
+      "x-scheme-handler/mailto" = [
+        "vivaldi.desktop"
+        "vivaldi-stable.desktop"
+      ];
+      "x-scheme-handler/http" = [
+        "vivaldi.desktop"
+        "vivaldi-stable.desktop"
+      ];
+      "x-scheme-handler/https" = [
+        "vivaldi.desktop"
+        "vivaldi-stable.desktop"
+      ];
+      "x-scheme-handler/about" = [
+        "vivaldi.desktop"
+        "vivaldi-stable.desktop"
+      ];
+      "x-scheme-handler/unknown" = [
+        "vivaldi.desktop"
+        "vivaldi-stable.desktop"
+      ];
+    };
   };
 }
