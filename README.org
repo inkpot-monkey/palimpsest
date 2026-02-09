@@ -1,5 +1,88 @@
-* A POT OF DOTS
+* 🌌 NixOS Configuration
 
-What lies within is my pot of dots, built with Nix encompassing the Emacsularity and sending transmissions of pale blue bytes.
+A structured, reproducible NixOS configuration managed with *Flakes*, *Home Manager*, and *SOPS* for secret management.
 
-I hope to move towards a literate config style but for now this short note will do.
+** 📂 Repository Structure
+
+The configuration is organized to be modular and explicit, minimizing boilerplate in the top-level flake.
+
+#+begin_src 
+├── flake.nix             # The entry point. Defines inputs and outputs.
+├── lib/                 # Flake-wide library and helpers (mkSystem, mkPkgs)
+├── hosts/                # System-level configurations (NixOS)
+│   ├── default.nix       # Exports the `nixosConfigurations` set
+│   └── [hostname]/       # One directory per machine (e.g., stargazer, kelpy)
+├── users/                # User-level configurations (Home Manager)
+│   ├── default.nix       # Exports the `homeConfigurations` set
+│   └── [username]/       # One directory per user (e.g., inkpotmonkey)
+├── modules/              # Reusable modules
+│   ├── nixos/            # NixOS modules (system services)
+│   ├── home-manager/     # Home Manager modules (user programs)
+│   └── shared/           # Shared logic (overlays, keys)
+├── pkgs/                 # Custom packages (overlay: additions)
+├── parts/                # Flake parts (dev shells, checks)
+└── secrets/              # Encrypted secrets (sops-nix)
+#+end_src
+
+** 🧠 Core Concepts
+
+*** 1. Externalized Configurations
+Instead of defining every host inside ~flake.nix~, we export them from ~hosts/default.nix~ and ~users/default.nix~.
+- *hosts/default.nix*: Uses a ~mkSystem~ helper to standardize arguments (~pkgs~, ~specialArgs~).
+- *users/default.nix*: Uses a ~mkPkgs~ helper to ensure Home Manager uses the same overlay adjustments as the system.
+
+*** 2. Overlays & Packaging
+We use a granular overlay system defined in ~modules/shared/overlays/default.nix~:
+- *additions*: Adds custom packages from ~./pkgs~.
+- *modifications*: Modifies existing packages (e.g., ~tree-sitter~ overrides).
+- *unstable-packages*: Provides access to ~pkgs.unstable~.
+
+The ~flake.nix~ exports *only* the ~modifications~ overlay, keeping the output clean, while systems use a composed ~default~ overlay that includes everything.
+
+*** 3. Secret Management
+Secrets are managed with [[https://github.com/Mic92/sops-nix][sops-nix]].
+- *System secrets*: Encrypted with host SSH keys (age).
+- *User secrets*: Encrypted with user SSH keys.
+
+*** 4. Flake Parts
+We use [[https://flake.parts/][flake-parts]] to modularize the flake logic.
+- *perSystem*: Automatically handles system-specific outputs like ~devShells~, ~formatter~, and ~packages~ for all supported architectures.
+- *modules*: Allows us to split flake logic into separate files (e.g., ~parts/shells.nix~).
+
+** 🚀 Usage
+
+*** Adding a New Host
+1. Create ~hosts/new-host/configuration.nix~.
+2. Add an entry to ~hosts/default.nix~:
+   #+begin_src nix
+   new-host = mkSystem {
+     modules = [ ./new-host/configuration.nix ];
+   };
+   #+end_src
+
+*** Adding a Custom Package
+1. Add the package expression to ~pkgs/[package-name]/default.nix~.
+2. Register it in ~pkgs/default.nix~.
+3. It is now available as ~pkgs.[package-name]~ in your system configuration.
+
+*** Deployment
+To apply the configuration to the current machine:
+
+** 🏛️ Architecture Notes
+
+*** Why nixos-raspberrypi does not follow nixpkgs?
+Currently, the ~nixos-raspberrypi~ input in ~flake.nix~ does not have ~inputs.nixpkgs.follows = "nixpkgs"~.
+- *Reason*: This pins the Raspberry Pi kernel and bootloader packages to the specific version tested by the ~nixos-raspberrypi~ maintainers.
+- *Trade-off*: This ensures stability for the hardware but causes duplication of packages in the Nix store (since it pulls its own instance of nixpkgs).
+
+*** Hardcoded Architecture in Home Manager (Solved)
+We have refactored ~users/default.nix~ to support multiple profiles:
+- ~inkpotmonkey~: Full desktop experience (x86_64).
+- ~inkpotmonkey-pi~: Lightweight CLI-only profile (aarch64) for Raspberry Pi.
+Modules are composed dynamically, sharing a common core (~cli.nix~, ~email.nix~) while keeping heavy GUI modules exclusive to the desktop profile.
+
+
+*** Why porcupineFish uses a different builder?
+~porcupineFish~ uses ~inputs.nixos-raspberrypi.lib.nixosSystem~ instead of our local ~lib.mkSystem~.
+- *Reason*: The upstream helper automatically imports necessary modules for SD card image generation and hardware-specific boot configuration.
+- *Why not mkSystem?*: Using our generic helper would require manually importing those modules and configuring the image build steps, which is complex and brittle. The upstream helper abstracts this complexity.
