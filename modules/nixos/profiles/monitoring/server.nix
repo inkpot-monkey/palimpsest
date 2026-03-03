@@ -50,6 +50,12 @@ in
             { targets = makeTargets config.services.prometheus.exporters.systemd.port; }
           ];
         }
+        {
+          job_name = "restic";
+          static_configs = [
+            { targets = makeTargets config.services.prometheus.exporters.restic.port; }
+          ];
+        }
       ];
     };
   };
