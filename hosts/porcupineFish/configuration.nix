@@ -16,6 +16,7 @@
     self.nixosProfiles.hifiberry
     self.nixosProfiles.tailscale
     self.nixosProfiles.monitoring.client
+    self.nixosProfiles.backup
   ];
 
   sops.age.sshKeyPaths = [

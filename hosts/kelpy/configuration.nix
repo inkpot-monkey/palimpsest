@@ -23,6 +23,7 @@
     self.nixosProfiles.transmission
     self.nixosProfiles.monitoring.server
     self.nixosProfiles.monitoring.client
+    self.nixosProfiles.backup
 
     # self.nixosProfiles.affine
     # ./git-annex.nix
