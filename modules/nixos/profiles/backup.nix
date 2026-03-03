@@ -32,7 +32,18 @@
     passwordFile = config.sops.secrets.restic_password.path;
     refreshInterval = 3600;
     extraFlags = [
-      "--restic-arguments=\"-o sftp.command='ssh -i /etc/ssh/ssh_host_ed25519_key -o StrictHostKeyChecking=accept-new zh2046@zh2046.rsync.net -s sftp'\""
+      "--restic-arguments=\"-o sftp.command='ssh -i /run/credentials/prometheus-restic-exporter.service/ssh_key -o StrictHostKeyChecking=accept-new zh2046@zh2046.rsync.net -s sftp'\""
+    ];
+  };
+
+  systemd.services.prometheus-restic-exporter.serviceConfig = {
+    RestrictAddressFamilies = lib.mkForce [
+      "AF_INET"
+      "AF_INET6"
+      "AF_UNIX"
+    ];
+    LoadCredential = [
+      "ssh_key:/etc/ssh/ssh_host_ed25519_key"
     ];
   };
 
