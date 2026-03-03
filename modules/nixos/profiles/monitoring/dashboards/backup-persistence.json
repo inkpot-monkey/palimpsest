@@ -1,0 +1,263 @@
+{
+  "title": "Backup & Persistence",
+  "uid": "backup-persistence",
+  "tags": ["restic", "persistence", "system"],
+  "timezone": "browser",
+  "schemaVersion": 30,
+  "refresh": "10s",
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Metrics Source",
+        "type": "datasource",
+        "query": "prometheus",
+        "refresh": 1
+      },
+      {
+        "name": "logs_datasource",
+        "label": "Logs Source",
+        "type": "datasource",
+        "query": "victoriametrics-logs-datasource",
+        "refresh": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "title": "Restic Backup Status",
+      "type": "stat",
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "systemd_unit_state{name=\"restic-backups-daily.service\", state=\"failed\"}",
+          "legendFormat": "Failures"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Healthy",
+                  "color": "green"
+                },
+                "1": {
+                  "text": "Failed",
+                  "color": "red"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "title": "Last Backup Run",
+      "type": "stat",
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "restic_backup_timestamp"
+        },
+        {
+          "expr": "systemd_timer_last_trigger_seconds{name=\"restic-backups-daily.timer\"}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeFromNow"
+        }
+      }
+    },
+    {
+      "title": "Persistence Storage (/persist)",
+      "type": "gauge",
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "100 - (node_filesystem_avail_bytes{device=\"/dev/sda2\"} / node_filesystem_size_bytes{device=\"/dev/sda2\"} * 100)",
+          "legendFormat": "Used %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": 0,
+                "color": "green"
+              },
+              {
+                "value": 80,
+                "color": "orange"
+              },
+              {
+                "value": 90,
+                "color": "red"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Ephemeral Root Storage (/)",
+      "type": "gauge",
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 6
+      },
+      "targets": [
+        {
+          "expr": "100 - (node_filesystem_avail_bytes{mountpoint=\"/run\"} / node_filesystem_size_bytes{mountpoint=\"/run\"} * 100)",
+          "legendFormat": "Used %"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100
+        }
+      }
+    },
+    {
+      "title": "Repository Size",
+      "type": "stat",
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 6
+      },
+      "targets": [
+        {
+          "expr": "restic_repository_total_size_bytes",
+          "legendFormat": "Size"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        }
+      }
+    },
+    {
+      "title": "Total Snapshots",
+      "type": "stat",
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 6
+      },
+      "targets": [
+        {
+          "expr": "restic_snapshots_count",
+          "legendFormat": "Count"
+        }
+      ]
+    },
+    {
+      "title": "Nix Store Size",
+      "type": "stat",
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 12
+      },
+      "targets": [
+        {
+          "expr": "nixos_store_size_bytes",
+          "legendFormat": "Size"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        }
+      }
+    },
+    {
+      "title": "Nix Configurations",
+      "type": "stat",
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 12
+      },
+      "targets": [
+        {
+          "expr": "nixos_generations_count",
+          "legendFormat": "Generations"
+        }
+      ]
+    },
+    {
+      "title": "Restic Logs",
+      "type": "logs",
+      "datasource": {
+        "uid": "$logs_datasource"
+      },
+      "gridPos": {
+        "h": 14,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "targets": [
+        {
+          "expr": "unit:restic-backups-daily.service"
+        }
+      ]
+    }
+  ]
+}

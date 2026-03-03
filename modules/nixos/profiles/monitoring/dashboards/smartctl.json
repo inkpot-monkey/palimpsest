@@ -1,0 +1,141 @@
+{
+  "title": "Smartctl / Disk Health",
+  "uid": "smartctl",
+  "tags": ["smartctl", "disk"],
+  "timezone": "browser",
+  "schemaVersion": 30,
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Datasource",
+        "type": "datasource",
+        "query": "prometheus",
+        "refresh": 1
+      },
+      {
+        "name": "device",
+        "label": "Device",
+        "type": "query",
+        "datasource": {
+          "uid": "$datasource"
+        },
+        "query": "label_values(smartctl_device_smart_status, device)",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "sort": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "title": "SMART Status",
+      "type": "stat",
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "smartctl_device_smart_status{device=~\"$device\"}",
+          "legendFormat": "{{device}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "Healthy",
+                  "color": "green"
+                },
+                "0": {
+                  "text": "Failed",
+                  "color": "red"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "title": "Temperature",
+      "type": "timeseries",
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "smartctl_device_temperature{device=~\"$device\", temperature_type=\"current\"}",
+          "legendFormat": "{{device}}"
+        },
+        {
+          "expr": "smartctl_device_nvme_temperature_celsius{device=~\"$device\"}",
+          "legendFormat": "{{device}} (NVMe)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius"
+        }
+      }
+    },
+    {
+      "title": "Device Info",
+      "type": "table",
+      "datasource": {
+        "uid": "$datasource"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "expr": "smartctl_device{device=~\"$device\"}",
+          "legendFormat": "Device Info",
+          "format": "table"
+        },
+        {
+          "expr": "smartctl_device_attribute{device=~\"$device\", attribute_value_type=\"value\"}",
+          "legendFormat": "Attribute: {{attribute_name}}",
+          "format": "table"
+        },
+        {
+          "expr": "smartctl_device_nvme_percentage_used{device=~\"$device\"}",
+          "legendFormat": "{{device}} - NVMe Percentage Used"
+        },
+        {
+          "expr": "smartctl_device_nvme_data_units_read_total{device=~\"$device\"}",
+          "legendFormat": "{{device}} - NVMe Data Units Read"
+        },
+        {
+          "expr": "smartctl_device_nvme_data_units_written_total{device=~\"$device\"}",
+          "legendFormat": "{{device}} - NVMe Data Units Written"
+        },
+        {
+          "expr": "smartctl_device_nvme_smart_critical_warning{device=~\"$device\"}",
+          "legendFormat": "{{device}} - NVMe Critical Warning"
+        }
+      ]
+    }
+  ]
+}
