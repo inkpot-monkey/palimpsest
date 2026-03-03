@@ -1,7 +1,8 @@
 keys:
   - &admin age1m5ahd365rg3tvdf7ewrnd0a7d4p75sjsentnz63cw8kfrekvg5pq7cmmdf
   - &kelpy age1dkaspaaf6edwzn9wqg9dfjacna3zqkg8rwzstuegqvnjma9fmdqqz0380g
-  - &porcupineFish age1g8sd9yd7emzyq5r8uuxyc30mtntmc7n46exuhdjl7g83hl2az56s8cwcvf
+  - &stargazer age1yypsg756str7zgpctxwtrrrlmlkfrh6l2nsaxl209n6xng5rl5dq54fdf0
+  - &porcupineFish age1lpalq6zmz2vrvj3zdjrkptwwc0f7eskm3vgnuf7ll5lantnvu9mqlhn34u
 creation_rules:
   - path_regex: users/inkpotmonkey/secrets.yaml$
     key_groups:
@@ -12,4 +13,5 @@ creation_rules:
       - age:
           - *admin
           - *kelpy
+          - *stargazer
           - *porcupineFish

@@ -1,43 +1,62 @@
 { inputs, self, ... }:
 let
   overlays = import ../modules/shared/overlays { inherit inputs; };
-  keys = import ../modules/shared/keys.nix;
+  helpers = inputs.nixpkgs.lib // {
+    inherit overlays;
 
-  mkPkgs =
-    system:
-    import inputs.nixpkgs {
-      inherit system;
-      overlays = [ overlays.default ];
-      config = {
-        allowUnfree = true;
+    mkPkgs =
+      system:
+      import inputs.nixpkgs {
+        inherit system;
+        overlays = [ overlays.default ];
+        config = {
+          allowUnfree = true;
+        };
       };
-    };
 
-  mkSystem =
-    {
-      modules,
-      system ? "x86_64-linux",
-      specialArgs ? { },
-    }:
-    inputs.nixpkgs.lib.nixosSystem {
-      inherit system;
-      specialArgs = {
-        inherit inputs self keys;
-      }
-      // specialArgs;
-      modules = modules ++ [
-        {
-          nixpkgs.overlays = [ overlays.default ];
-          nixpkgs.config.allowUnfree = true;
+    mkSystem =
+      {
+        modules,
+        specialArgs ? { },
+      }:
+      inputs.nixpkgs.lib.nixosSystem {
+        specialArgs = {
+          inherit (self) settings;
+          inherit inputs self;
+          homeManagerInput = inputs.home-manager;
         }
-      ];
-    };
+        // specialArgs;
+        modules = modules ++ [
+          {
+            nixpkgs.overlays = [ overlays.default ];
+            nixpkgs.config.allowUnfree = true;
+          }
+        ];
+      };
+
+    mkPiSystem =
+      {
+        modules,
+        specialArgs ? { },
+      }:
+      inputs.nixos-raspberrypi.lib.nixosSystem {
+        specialArgs = {
+          inherit (self) settings;
+          inherit inputs self;
+          inherit (inputs) nixos-raspberrypi;
+          homeManagerInput = inputs.home-manager;
+        }
+        // specialArgs;
+        modules = modules ++ [
+          {
+            nixpkgs.overlays = [ overlays.default ];
+            nixpkgs.config.allowUnfree = true;
+          }
+        ];
+      };
+  };
 in
 {
-  inherit
-    mkPkgs
-    mkSystem
-    keys
-    overlays
-    ;
+  flake.overlays = helpers.overlays.modifications;
+  flake.lib = helpers;
 }
