@@ -3,8 +3,8 @@
 (require 'package)
 (add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
 (setq package-install-upgrade-built-in t)
-(add-to-list package-pinned-packages '((vterm . "manual")
-																			 (yaml . "manual")))
+(add-to-list 'package-pinned-packages '(vterm . "manual"))
+(add-to-list 'package-pinned-packages '(yaml . "manual"))
 
 (setq native-comp-async-report-warnings-errors 'silent)
 (setq warning-minimum-level :error)
@@ -721,7 +721,6 @@
 		:init
 	(pdf-loader-install))
 
-;; AI
 (use-package popup)
 (use-package projectile)
 (use-package eat)
@@ -1127,6 +1126,13 @@
 		:hook
 		(html-ts-mode . eglot-ensure))
 
+(use-package svelte-ts-mode
+		:demand t
+		:vc (:url "https://github.com/leafOfTree/svelte-ts-mode" :rev :newest)
+		:after eglot
+		:config
+		(add-to-list 'eglot-server-programs '(svelte-ts-mode . ("svelteserver" "--stdio"))))
+
 (use-package astro-ts-mode)
 
 (use-package css-ts-mode
@@ -1160,7 +1166,7 @@
 (use-package php-mode)
 
 (use-package pritunl-connect
-		:load-path "~/code/nixos/users/inkpotmonkey/emacs/lisp/"
+		:load-path "~/code/nixos/users/inkpotmonkey/home/emacs/lisp/"
 		:ensure nil)
 
 ;;; Network Management
