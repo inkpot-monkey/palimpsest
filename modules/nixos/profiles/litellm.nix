@@ -25,7 +25,7 @@
     enable = true;
     environmentFile = config.sops.templates."litellm-env".path;
     host = "127.0.0.1";
-    port = settings.services.private.litellm.port;
+    inherit (settings.services.private.litellm) port;
 
     settings = {
       master_key = "os.environ/LITELLM_MASTER_KEY";

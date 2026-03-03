@@ -1,4 +1,4 @@
-{ ... }:
+_:
 
 {
   # 1. Disable PulseAudio (standard for PipeWire)

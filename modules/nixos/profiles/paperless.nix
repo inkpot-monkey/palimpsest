@@ -23,7 +23,7 @@ in
         enable = true;
         consumptionDirIsPublic = true;
         domain = "paperless.${domain}";
-        port = settings.services.private.paperless.port;
+        inherit (settings.services.private.paperless) port;
         passwordFile = config.sops.secrets.paperless_secret.path;
         settings = {
           PAPERLESS_CONSUMER_IGNORE_PATTERN = [
@@ -79,7 +79,7 @@ in
         remotes = [
           (
             let
-              gateway = config.services.git-annex.repositories.gateway;
+              inherit (config.services.git-annex.repositories) gateway;
             in
             {
               name = "gateway";

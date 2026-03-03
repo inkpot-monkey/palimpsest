@@ -1,7 +1,4 @@
-{
-  ...
-}:
-{
+_: {
   programs.bash = {
     enable = true;
     historyControl = [ "erasedups" ];

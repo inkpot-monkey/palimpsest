@@ -1,5 +1,4 @@
-{ ... }:
-{
+_: {
   flake.settings = {
     admin.email = "thomas@palebluebytes.xyz";
 

@@ -6,7 +6,7 @@
 }:
 let
   domain = "affine.${config.networking.domain}";
-  port = settings.services.private.affine.port;
+  inherit (settings.services.private.affine) port;
 in
 {
   # Assume you have this defined in your flake

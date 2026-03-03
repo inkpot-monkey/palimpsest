@@ -22,8 +22,8 @@ let
       echo "Dumping infrastructure settings to $DNS_DIR/$DATA_FILE..."
       echo '${
         builtins.toJSON {
-          services = self.settings.services;
-          nodes = self.settings.nodes;
+          inherit (self.settings) services;
+          inherit (self.settings) nodes;
         }
       }' | jq . > "$DNS_DIR/$DATA_FILE"
 

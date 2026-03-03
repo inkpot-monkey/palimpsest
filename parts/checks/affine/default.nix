@@ -10,7 +10,6 @@ pkgs.testers.nixosTest {
 
   nodes.machine =
     {
-      config,
       lib,
       pkgs,
       ...

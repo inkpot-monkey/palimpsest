@@ -1,13 +1,10 @@
 {
   config,
-  pkgs,
   self,
   settings,
   ...
 }:
-let
-  domain = config.networking.domain;
-in
+
 {
   imports = [ self.nixosProfiles.podman ];
 

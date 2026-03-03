@@ -6,7 +6,7 @@
 }:
 let
   cfg = config.profiles.mail;
-  domain = cfg.domain;
+  inherit (cfg) domain;
 in
 {
   options.profiles.mail = {

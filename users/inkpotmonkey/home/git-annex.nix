@@ -1,6 +1,6 @@
 {
   config,
-  self,
+  lib,
   inputs,
   ...
 }:

@@ -8,7 +8,6 @@
 let
   domain = "matrix.palebluebytes.space";
 
-  matrixSettings = config.services.matrix-conduit.settings.global;
   # matrixSubdomain is no longer needed as we run on the root domain
   address = "127.0.0.1";
 
@@ -86,7 +85,7 @@ in
     settings.global = {
       server_name = domain;
       inherit address;
-      port = settings.services.public.matrix.port;
+      inherit (settings.services.public.matrix) port;
 
       trusted_servers = [
         "matrix.org"

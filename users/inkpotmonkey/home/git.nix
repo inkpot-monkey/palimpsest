@@ -1,6 +1,5 @@
 {
   config,
-  pkgs,
   ...
 }:
 {
@@ -8,8 +7,8 @@
     enable = true;
     settings = {
       user = {
-        name = config.identity.name;
-        email = config.identity.email;
+        inherit (config.identity) name;
+        inherit (config.identity) email;
         signingkey = "${config.home.homeDirectory}/.ssh/id_ed25519.pub";
       };
       init.defaultBranch = "main";

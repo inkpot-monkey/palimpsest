@@ -52,8 +52,8 @@ in
     virtualHosts =
       let
         allServices =
-          (lib.mapAttrs (name: svc: svc // { isPublic = true; }) settings.services.public)
-          // (lib.mapAttrs (name: svc: svc // { isPublic = false; }) settings.services.private);
+          (lib.mapAttrs (_: svc: svc // { isPublic = true; }) settings.services.public)
+          // (lib.mapAttrs (_: svc: svc // { isPublic = false; }) settings.services.private);
         hostServices = lib.filterAttrs (_: svc: svc.node == config.networking.hostName) allServices;
       in
       lib.mkMerge [

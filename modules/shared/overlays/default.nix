@@ -41,7 +41,7 @@ let
     };
 
     antigravity = final: prev: {
-      antigravity = prev.antigravity.overrideAttrs (oldAttrs: {
+      antigravity = prev.antigravity.overrideAttrs (_: {
         version = "1.19.5";
         src = final.fetchurl {
           url = "https://edgedl.me.gvt1.com/edgedl/release2/j0qc3/antigravity/stable/1.19.5-5117559161880576/linux-x64/Antigravity.tar.gz";
