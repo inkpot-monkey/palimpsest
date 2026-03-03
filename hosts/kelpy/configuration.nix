@@ -1,72 +1,70 @@
 {
   inputs,
   pkgs,
-  settings,
   self,
-  keys,
+  settings,
   ...
 }:
 {
   imports = [
     inputs.vpsFree.nixosConfigurations.container
 
-    (self + /modules/nixos/common/base.nix)
+    self.nixosProfiles.base
+    self.nixosProfiles.impermanence
+    self.nixosProfiles.server
+    self.nixosProfiles.sops
+    self.nixosProfiles.mail
+    self.nixosProfiles.matrix
+    self.nixosProfiles.proxy
+    self.nixosProfiles.podman
+    self.nixosProfiles.tailscale
+    self.nixosProfiles.paperless
+    self.nixosProfiles.litellm
+    self.nixosProfiles.transmission
+    self.nixosProfiles.monitoring.server
+    self.nixosProfiles.monitoring.client
 
-    ./secrets.nix
-    ./impermanence.nix
-    ./proxy.nix
-
-    ./matrix/matrix.nix
-    # ./paperless.nix
-    # ./immich.nix
-    # ./searx.nix
-    # ./archivebox.nix
-    # ./actual-budget.nix
-    # ./actual-budget.nix
-    ./mail.nix
-
-    # ../potbelliedSeahorse/configuration.nix
-    # ../../modules/nixos/common/nebula.nix
-
-    # ../../modules/nixos/common/listener.nix
-    # ../../modules/nixos/common/observability.nix
-    # ../../modules/nixos/common/listener.nix
-    # ../../modules/nixos/common/observability.nix
-    # self.nixosModules.git-annex
+    # self.nixosProfiles.affine
     # ./git-annex.nix
   ];
 
-  networking = {
-    inherit (settings.host) hostName;
-    domain = "palebluebytes.xyz";
+  # Sops secrets configuration
+  sops = {
+    age.sshKeyPaths = [
+      "/home/inkpotmonkey/.ssh/id_ed25519" # User key
+      "/etc/ssh/ssh_host_ed25519_key" # System key
+    ];
   };
 
+  networking = {
+    inherit (settings.nodes.kelpy) hostName domain;
+  };
+
+  profiles.mail.domain = "palebluebytes.xyz";
+
+  nixpkgs.hostPlatform = "x86_64-linux";
+
   environment.systemPackages = with pkgs; [
-    git-annex
     git
     ripgrep
     fd
-    gnupg
+    jq
   ];
 
-  programs.git.config.safe.directory = [
-    "/var/lib/git-annex/gateway"
-    "/var/lib/git-annex/backup"
-  ];
-
-  # nixpkgs.hostPlatform is now handled by the pkgs instance in flake.nix
-
-  services.openssh.enable = true;
-  services.openssh.settings.PermitRootLogin = "prohibit-password";
-  users.extraUsers.root.openssh.authorizedKeys.keys = [
-    keys.personal.inkpotmonkey
-  ];
+  environment.persistence."/persistent" = {
+    hideMounts = true;
+    directories = [
+      "/etc/nixos"
+      "/var/log"
+      "/var/lib/nixos"
+      "/var/lib/stalwart-mail"
+      "/var/lib/acme"
+    ];
+  };
 
   systemd.settings.Manager = {
     DefaultTimeoutStartSec = "900s";
   };
-
-  time.timeZone = "Europe/Amsterdam";
 
   system.stateVersion = "25.11";
 }

@@ -3,16 +3,17 @@
 {
 
   imports = [
-    inputs.sops-nix.nixosModules.sops
+    self.nixosProfiles.sops
     inputs.nixos-hardware.nixosModules.raspberry-pi-4
     inputs.disko.nixosModules.disko
+
+    self.nixosProfiles.nebula
+
     ./disk-config.nix
-    (self + /modules/nixos/common/nebula.nix)
   ];
 
   sops = {
     age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
-    defaultSopsFile = self + "/secrets/secrets.yaml";
   };
 
   services.nebula.networks.mesh = {
@@ -25,7 +26,10 @@
   };
 
   # should change eventually
-  networking.hostName = "lighthouse";
+  networking.hostName = "potbelliedSeahorse";
+  nixpkgs.hostPlatform = "aarch64-linux";
 
   system.stateVersion = "25.11";
+
+  nixpkgs.config.allowBroken = true;
 }

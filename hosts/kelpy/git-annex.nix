@@ -1,9 +1,11 @@
 { config, self, ... }:
 {
+  imports = [ self.nixosModules.git-annex ];
+
   services.git-annex = {
     enable = true;
-    sshKey = config.sops.secrets.git_annex_ssh_key.path;
-    gpgKey = config.sops.secrets.git_annex_gpg_key.path;
+    sshKeyFile = config.sops.secrets.git_annex_ssh_key.path;
+    gpgKeyFile = config.sops.secrets.git_annex_gpg_key.path;
     repositories = {
       gateway = {
         path = "/var/lib/git-annex/gateway";
@@ -46,6 +48,11 @@
 
   environment.persistence."/persistent".directories = [
     "/var/lib/git-annex"
+  ];
+
+  programs.git.config.safe.directory = [
+    "/var/lib/git-annex/gateway"
+    "/var/lib/git-annex/backup"
   ];
 
   sops.secrets.git_annex_gpg_key = {

@@ -9,8 +9,9 @@
     "uinput"
   ];
   boot.kernelParams = [
-    "ttm.pages_limit=5242880"
-    "ttm.page_pool_size=5242880"
+    "amdgpu.gttsize=32768" # Boost GTT size for LLMs (32GB - Half of system RAM)
+    "ttm.pages_limit=8388608" # Increase pool size for better memory management
+    "ttm.page_pool_size=8388608"
   ];
 
   # =========================================
