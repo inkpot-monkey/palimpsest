@@ -2,9 +2,11 @@
 # These should be stuff you would like to share with others, not your personal configurations.
 
 {
-  # List your module files here
-  finance = ./finance;
-  git-annex = ./git-annex;
-  goose = ./goose;
-  kokoro-tts = ./kokoro;
+  flake.homeManagerModules = {
+    # List your module files here
+    finance = ./finance;
+    git-annex = ./git-annex;
+    goose = ./goose;
+    kokoro-tts = ./kokoro;
+  };
 }
