@@ -14,7 +14,7 @@ let
   # Or we can refer to it directly if we know the path, but that's messy.
   # We will assume it will be added to pkgs via overlay or similar.
   # Fallback: callPackage directly.
-  package = pkgs.callPackage ../../../pkgs/jmap-matrix-bridge/default.nix { };
+  package = pkgs.jmap-matrix-bridge;
 in
 {
   options.services.jmap-bridge = {

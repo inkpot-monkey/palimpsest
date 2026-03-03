@@ -1,21 +1,25 @@
 {
   pkgs,
+  lib,
   inputs,
   ...
 }:
 {
   imports = [
     inputs.nixos-raspberrypi.nixosModules.raspberry-pi-4.base
+    inputs.nixos-raspberrypi.nixosModules.sd-image
     inputs.nixos-raspberrypi.nixosModules.trusted-nix-caches
   ];
 
   # ==========================================
-  # Bootloader & Filesystem
+  # Filesystem & Boot
   # ==========================================
-  boot.loader.grub.enable = false;
-  boot.loader.generic-extlinux-compatible.enable = true;
+  # We use the official bootloader and SD image settings from the nixos-raspberrypi module.
+  # The module now defaults to a 1GB firmware partition (sdImage.firmwareSize = 1024).
 
-  # Required for uboot-builder updates
+  boot.loader.raspberry-pi.enable = true;
+
+  # Standard Pi 4 Labels
   fileSystems = {
     "/" = {
       device = "/dev/disk/by-label/NIXOS_SD";
@@ -33,15 +37,13 @@
     };
   };
 
+  # Ensure the mount point exists on the root filesystem for the image builder
+  systemd.tmpfiles.rules = [
+    "d /boot/firmware 0755 root root -"
+  ];
+
   # ==========================================
-  # Hardware & Power
+  # Hardware & Optimization
   # ==========================================
-  powerManagement.enable = false;
   hardware.enableRedistributableFirmware = true;
-
-  # Specific to RPi4
-  boot.kernelPackages = pkgs.linuxPackages_rpi4;
-
-  # Optimization for low-memory devices
-  zramSwap.enable = true;
 }
