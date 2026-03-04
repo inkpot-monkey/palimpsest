@@ -23,11 +23,6 @@ pkgs.testers.nixosTest {
         (self + /modules/nixos/profiles/affine.nix)
       ];
 
-      options.host.containers.internal = lib.mkOption {
-        type = lib.types.str;
-        default = "10.88.0.1";
-      };
-
       config = {
         # Provide dummy settings for the profile
         _module.args.settings = {
@@ -43,7 +38,7 @@ pkgs.testers.nixosTest {
         networking.domain = "local";
 
         # 1. Bypass SOPS for the sandbox environment
-        sops.secrets.affine_db_password.path = lib.mkForce "/etc/mock-db-password";
+        sops.secrets.affine_password.path = lib.mkForce "/etc/mock-db-password";
         sops.templates."affine-env".path = lib.mkForce "/etc/mock-affine-env";
 
         environment.etc."mock-db-password".text = "testpassword123";
@@ -65,6 +60,9 @@ pkgs.testers.nixosTest {
           (cloudflare_tls) {
           }
         '';
+
+        systemd.services.affine-migration.script = lib.mkForce "echo 'Migration mocked'";
+
         services.caddy.virtualHosts."http://affine.local" = lib.mkForce {
           extraConfig = ''
             reverse_proxy 127.0.0.1:3010
@@ -76,7 +74,7 @@ pkgs.testers.nixosTest {
         virtualisation.oci-containers.backend = "podman";
         virtualisation.oci-containers.containers.affine = lib.mkForce {
           # Use a dummy busybox image that NixOS can build offline
-          image = "localhost/busybox:latest";
+          image = "ghcr.io/toeverything/affine:stable";
           imageFile = pkgs.dockerTools.buildImage {
             name = "localhost/busybox";
             tag = "latest";
