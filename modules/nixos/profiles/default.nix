@@ -35,6 +35,7 @@
     monitoring = {
       client = ./monitoring/client.nix;
       server = ./monitoring/server.nix;
+      smartctl = ./monitoring/smartctl.nix;
     };
 
     # --- Hardware Specific (Pi) ---

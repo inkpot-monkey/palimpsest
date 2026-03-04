@@ -33,10 +33,8 @@
     self.nixosProfiles.zsa
     self.nixosProfiles.tailscale
     self.nixosProfiles.monitoring.client
-    self.nixosProfiles.backup
+    self.nixosProfiles.monitoring.smartctl
   ];
-
-  services.restic.backups.daily.paths = [ "/home/inkpotmonkey" ];
 
   system.stateVersion = "25.05";
 
