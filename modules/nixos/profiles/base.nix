@@ -39,4 +39,8 @@
   };
 
   zramSwap.enable = true;
+
+  # Trusted backup targets fleet-wide
+  programs.ssh.knownHosts."zh2046.rsync.net".publicKey =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJtclizeBy1Uo3D86HpgD3LONGVH0CJ0NT+YfZlldAJd";
 }
