@@ -41,6 +41,8 @@
     inherit (settings.nodes.kelpy) hostName domain;
   };
 
+  services.restic.backups.daily.paths = [ "/persistent" ];
+
   profiles.mail.domain = "palebluebytes.xyz";
 
   nixpkgs.hostPlatform = "x86_64-linux";

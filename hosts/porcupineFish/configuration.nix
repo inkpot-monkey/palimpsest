@@ -14,9 +14,16 @@
     self.nixosProfiles.sops
     self.nixosProfiles.wireless
     self.nixosProfiles.hifiberry
+    self.nixosProfiles.hifi
     self.nixosProfiles.tailscale
     self.nixosProfiles.monitoring.client
+    self.nixosProfiles.monitoring.smartctl
     self.nixosProfiles.backup
+  ];
+
+  services.restic.backups.daily.paths = [
+    "/var/lib"
+    "/home/inkpotmonkey"
   ];
 
   sops.age.sshKeyPaths = [
@@ -35,4 +42,6 @@
   system.stateVersion = "25.11";
 
   hardware.enableRedistributableFirmware = true;
+
+  services.mopidy.settings.audio.output = "alsasink device=hw:0,0";
 }

@@ -31,6 +31,8 @@
 
   sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
 
+  services.restic.backups.daily.paths = [ "/persistent" ];
+
   networking.hostName = "sawtoothShark";
   nixpkgs.hostPlatform = "x86_64-linux";
 
