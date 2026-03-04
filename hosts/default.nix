@@ -24,7 +24,7 @@ in
 
     # Note: To build the SD image for porcupineFish manually, run:
     # nix build '.#nixosConfigurations.porcupineFish.config.system.build.images.sd-card'
-    # nixos-rebuild --target-host inkpotmonkey@porcupineFish --sudo --ask-sudo-password switch --flake .#porcupineFish
+    # nixos-rebuild --target-host porcupineFish --sudo --ask-sudo-password switch --flake .#porcupineFish
     porcupineFish = mkPiSystem {
       specialArgs = {
         homeManagerInput = inputs.home-manager-25_11;
@@ -35,8 +35,7 @@ in
       ];
     };
 
-    # nixos-rebuild --target-host inkpotmonkey@kelpy --sudo --ask-sudo-password switch --flake .#kelpy
-    # 37.205.14.206
+    # nixos-rebuild --target-host kelpy --sudo --ask-sudo-password switch --flake .#kelpy
     kelpy = mkSystem {
       modules = [
         ./kelpy/configuration.nix

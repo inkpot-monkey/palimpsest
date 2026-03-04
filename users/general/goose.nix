@@ -8,8 +8,8 @@
 {
   home.packages = [
     inputs.llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.goose-cli
-    inputs.llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.backlog-md
-    inputs.llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.coding-agent-search
+    # inputs.llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.backlog-md
+    # inputs.llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.coding-agent-search
     # pkgs.mcp-nixos
     # pkgs.mcp-grafana
     pkgs.nodejs

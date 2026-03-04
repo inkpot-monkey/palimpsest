@@ -69,10 +69,6 @@ _: {
           node = "kelpy";
           port = 3010;
         };
-        mopidy = {
-          node = "porcupineFish";
-          port = 6680;
-        };
       };
     };
   };
