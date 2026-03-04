@@ -49,13 +49,15 @@
             ;
         };
         backupFileExtension = "backup";
-        users.inkpotmonkey = {
-          imports = [
-            ../home/default.nix
-          ];
-          # Explicitly pass the system identity to Home Manager user
-          config.identity = config.identity;
-        };
+        users.inkpotmonkey =
+          { osConfig, ... }:
+          {
+            imports = [
+              ../home/default.nix
+            ];
+            # Explicitly pass the system identity to Home Manager user
+            config.identity = osConfig.identity;
+          };
       };
 
       # Fix for XDG Desktop Portal with home-manager.useUserPackages
