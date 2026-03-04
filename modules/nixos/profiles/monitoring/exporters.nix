@@ -15,37 +15,6 @@
       ];
       extraFlags = [ "--collector.textfile.directory=/var/lib/prometheus-node-exporter-text-files" ];
     };
-    systemd = {
-      enable = true;
-      listenAddress = "0.0.0.0";
-    };
-    smartctl = {
-      enable = true;
-      listenAddress = "0.0.0.0";
-    };
-    blackbox = {
-      enable = true;
-      configFile = pkgs.writeText "blackbox.yml" (
-        builtins.toJSON {
-          modules = {
-            icmp = {
-              prober = "icmp";
-            };
-          };
-        }
-      );
-    };
-  };
-
-  # Fix for systemd-exporter failing to talk to dbus on some kernels (e.g. VPS)
-  systemd.services.prometheus-systemd-exporter.serviceConfig = {
-    PrivateDevices = lib.mkForce false;
-    ProtectSystem = lib.mkForce "no";
-    ProtectHome = lib.mkForce false;
-    PrivateTmp = lib.mkForce false;
-    NoNewPrivileges = lib.mkForce false;
-    RestrictAddressFamilies = lib.mkForce [ ];
-    RestrictNamespaces = lib.mkForce false;
   };
 
   # Similarly for node-exporter to ensure its systemd collector works
@@ -98,14 +67,6 @@
 
   # Delay exporter startup until Tailscale creates the interface
   systemd.services.prometheus-node-exporter = {
-    after = [ "tailscaled.service" ];
-    requires = [ "tailscaled.service" ];
-  };
-  systemd.services.prometheus-systemd-exporter = {
-    after = [ "tailscaled.service" ];
-    requires = [ "tailscaled.service" ];
-  };
-  systemd.services.prometheus-smartctl-exporter = {
     after = [ "tailscaled.service" ];
     requires = [ "tailscaled.service" ];
   };

@@ -13,10 +13,9 @@ let
   makeTargets = port: map (ip: "${ip}:${toString port}") senderNodes;
 in
 {
-  imports = [ ];
+  imports = [
+  ];
   sops.secrets = {
-    # restic-password.owner = "restic-exporter";
-    # restic_repo.owner = "restic-exporter";
     grafana_password.owner = "grafana";
     grafana_secret_key.owner = "grafana";
   };
@@ -26,7 +25,22 @@ in
     8428 # VictoriaMetrics
     9428 # VictoriaLogs
     3001 # Grafana
+    9115 # Blackbox Exporter
   ];
+
+  # Blackbox Exporter
+  services.prometheus.exporters.blackbox = {
+    enable = true;
+    configFile = pkgs.writeText "blackbox.yml" (
+      builtins.toJSON {
+        modules = {
+          icmp = {
+            prober = "icmp";
+          };
+        };
+      }
+    );
+  };
 
   # VictoriaLogs
   services.victorialogs.enable = true;
@@ -42,18 +56,6 @@ in
           job_name = "node";
           static_configs = [
             { targets = makeTargets config.services.prometheus.exporters.node.port; }
-          ];
-        }
-        {
-          job_name = "systemd";
-          static_configs = [
-            { targets = makeTargets config.services.prometheus.exporters.systemd.port; }
-          ];
-        }
-        {
-          job_name = "restic";
-          static_configs = [
-            { targets = makeTargets config.services.prometheus.exporters.restic.port; }
           ];
         }
       ];
