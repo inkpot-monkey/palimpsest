@@ -14,6 +14,7 @@
     ./waybar.nix
     ./swaync.nix
     ./hyprlock.nix
+    ./restic.nix
     ./emacs/default.nix
   ];
 }
