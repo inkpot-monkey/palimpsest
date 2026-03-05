@@ -42,6 +42,4 @@
   system.stateVersion = "25.11";
 
   hardware.enableRedistributableFirmware = true;
-
-  services.mopidy.settings.audio.output = "alsasink device=hw:0,0";
 }
