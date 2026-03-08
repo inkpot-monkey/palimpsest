@@ -19,6 +19,7 @@
     self.nixosProfiles.monitoring.client
     self.nixosProfiles.monitoring.smartctl
     self.nixosProfiles.backup
+    self.nixosProfiles.blocky
   ];
 
   services.restic.backups.daily.paths = [
