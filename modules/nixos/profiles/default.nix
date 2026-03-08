@@ -32,6 +32,7 @@
     litellm = ./litellm.nix;
     ai = ./ai.nix;
     backup = ./backup.nix;
+    blocky = ./blocky.nix;
     monitoring = {
       client = ./monitoring/client.nix;
       server = ./monitoring/server.nix;
