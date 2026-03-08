@@ -1,13 +1,13 @@
 _: {
   flake.settings = {
-    admin.email = "thomas@palebluebytes.xyz";
+    admin.email = "<SCRUBBED_EMAIL>";
 
     nodes.kelpy = {
       hostName = "kelpy";
       domain = "palebluebytes.space";
       tailscale = {
-        ip4 = "100.108.126.7";
-        ip6 = "fd7a:115c:a1e0::753b:7e07";
+        ip4 = "100.115.241.102";
+        ip6 = "fd7a:115c:a1e0::e23b:f166";
       };
       public = {
         ip4 = "37.205.14.206";
@@ -18,8 +18,8 @@ _: {
     nodes.porcupineFish = {
       hostName = "porcupineFish";
       tailscale = {
-        ip4 = "100.90.224.93";
-        ip6 = "fd7a:115c:a1e0::ab3b:e05d";
+        ip4 = "100.107.42.51";
+        ip6 = "fd7a:115c:a1e0::343b:2a33";
       };
     };
 
