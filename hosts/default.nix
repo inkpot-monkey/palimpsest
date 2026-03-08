@@ -32,6 +32,11 @@ in
       modules = [
         ./porcupineFish/configuration.nix
         self.users.inkpotmonkey.cli
+        # Replace the stable blocky module with the unstable one to use modern options (e.g. denylists)
+        {
+          disabledModules = [ "services/networking/blocky.nix" ];
+          imports = [ "${inputs.nixpkgs}/nixos/modules/services/networking/blocky.nix" ];
+        }
       ];
     };
 
