@@ -60,7 +60,6 @@ in
       };
 
       environment.persistence."/persistent".directories = [
-        config.services.paperless.mediaDir
         config.services.paperless.dataDir
         "/var/lib/redis-paperless"
       ];
