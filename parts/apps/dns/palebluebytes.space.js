@@ -6,18 +6,16 @@ var REG_NONE = NewRegistrar("none");
 var kelpyPub = infra.nodes.kelpy.public;
 
 var records = [
-	A("@", kelpyPub.ip4, CF_PROXY_ON),
-	AAAA("@", kelpyPub.ip6, CF_PROXY_ON),
-
-
-	MX("@", 11, "route1.mx.cloudflare.net."),
-	MX("@", 63, "route2.mx.cloudflare.net."),
-	MX("@", 94, "route3.mx.cloudflare.net."),
+	MX("@", 11, "route1.mx.cloudflare.net.", TTL(1)),
+	MX("@", 63, "route2.mx.cloudflare.net.", TTL(1)),
+	MX("@", 94, "route3.mx.cloudflare.net.", TTL(1)),
 
 	TXT("@", "v=spf1 include:_spf.mx.cloudflare.net ~all"),
+	ALIAS("@", "palebluebytes.palebluebytes.workers.dev.", CF_PROXY_ON),
 	TXT(
 		"cf2024-1._domainkey",
 		"v=DKIM1; h=sha256; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAiweykoi+o48IOGuP7GR3X0MOExCUDY/BCRHoWBnh3rChl7WhdyCxW3jgq1daEjPPqoi7sJvdg5hEQVsgVRQP4DcnQDVjGMbASQtrY4WmB1VebF+RPJB2ECPsEDTpeiI5ZyUAwJaVX7r6bznU67g7LvFq35yIo4sdlmtZGV+i0H4cpYH9+3JJ78km4KXwaf9xUJCWF6nxeD+qG6Fyruw1Qlbds2r85U9dkNDVAS3gioCvELryh1TxKGiVTkg4wqHTyHfWsp7KD3WQHYJn0RyfJJu6YEmL77zonn7p2SRMvTMP3ZEXibnC9gz3nnhR6wcYL8Q7zXypKTMD58bTixDSJwIDAQAB",
+		TTL(1),
 	),
 ];
 
@@ -45,4 +43,9 @@ function addServices(svcs, isPublic) {
 addServices(infra.services.public, true);
 addServices(infra.services.private, false);
 
-D("palebluebytes.space", REG_NONE, DnsProvider(CF), records);
+D("palebluebytes.space", REG_NONE, DnsProvider(CF), records,
+	IGNORE_NAME("@", "MX"),
+	IGNORE_NAME("@", "TXT"),
+	IGNORE_NAME("cf2024-1._domainkey", "TXT"),
+	DISABLE_IGNORE_SAFETY_CHECK
+);
