@@ -4,11 +4,25 @@
   lib,
   pkgs,
   inputs,
+  settings,
   ...
 }:
 let
   inherit (lib) mkIf;
   hasTailscale = config.services.tailscale.enable;
+
+  allServices =
+    (lib.mapAttrs (_: svc: svc // { isPublic = true; }) settings.services.public)
+    // (lib.mapAttrs (_: svc: svc // { isPublic = false; }) settings.services.private);
+
+  dnsMapping = lib.mapAttrs' (
+    name: svc:
+    let
+      node = settings.nodes.${svc.node};
+      ip = if svc.isPublic then node.public.ip4 else node.tailscale.ip4;
+    in
+    lib.nameValuePair "${name}.${settings.nodes.kelpy.domain}" ip
+  ) allServices;
 in
 {
   config = lib.mkMerge [
@@ -54,6 +68,11 @@ in
             clientGroupsBlock = {
               default = [ "ads" ];
             };
+          };
+
+          customDNS = {
+            customTTL = "1h";
+            mapping = dnsMapping;
           };
 
           prometheus.enable = true;
