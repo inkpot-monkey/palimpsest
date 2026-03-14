@@ -2,6 +2,8 @@
   config,
   options,
   lib,
+  pkgs,
+  inputs,
   settings,
   ...
 }:
@@ -21,6 +23,16 @@ let
     in
     lib.nameValuePair "${name}.${settings.nodes.kelpy.domain}" ip
   ) allServices;
+
+  currentNode = settings.nodes.${config.networking.hostName} or null;
+  tailscaleBind =
+    if currentNode != null && currentNode ? tailscale then
+      [
+        "${currentNode.tailscale.ip4}:53"
+      ]
+      ++ (lib.optional (currentNode.tailscale ? ip6) "[${currentNode.tailscale.ip6}]:53")
+    else
+      [ ];
 in
 {
   config = lib.mkMerge [
@@ -29,8 +41,10 @@ in
 
       services.blocky = {
         enable = true;
+        # Use the unstable package to ensure we have the latest binary.
+        package = inputs.nixpkgs.legacyPackages.${pkgs.stdenv.hostPlatform.system}.blocky;
         settings = {
-          ports.dns = 53; # Port for incoming DNS Queries.
+          ports.dns = [ "127.0.0.1:53" ] ++ (lib.optionals hasTailscale tailscaleBind);
 
           bootstrapDns = {
             upstream = "https://one.one.one.one/dns-query";
