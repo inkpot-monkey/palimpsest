@@ -32,6 +32,11 @@
     # ./git-annex.nix
   ];
 
+  custom.services.tailscale = {
+    enable = true;
+    tags = [ "tag:server" ];
+  };
+
   # Sops secrets configuration
   sops = {
     age.sshKeyPaths = [

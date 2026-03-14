@@ -22,6 +22,12 @@
     self.nixosProfiles.blocky
   ];
 
+  custom.services.tailscale = {
+    enable = true;
+    advertiseSubnet = "192.168.1.0/24";
+    tags = [ "tag:server" ];
+  };
+
   services.restic.backups.daily.paths = [
     "/var/lib"
     "/home/inkpotmonkey"

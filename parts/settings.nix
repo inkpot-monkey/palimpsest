@@ -6,8 +6,8 @@ _: {
       hostName = "kelpy";
       domain = "palebluebytes.space";
       tailscale = {
-        ip4 = "100.115.241.102";
-        ip6 = "fd7a:115c:a1e0::e23b:f166";
+        ip4 = "100.64.10.90";
+        ip6 = "fd7a:115c:a1e0::a13b:a5a";
       };
       public = {
         ip4 = "37.205.14.206";
@@ -25,6 +25,10 @@ _: {
 
     nodes.stargazer = {
       hostName = "stargazer";
+      tailscale = {
+        ip4 = "100.95.39.9";
+        ip6 = "fd7a:115c:a1e0::13b:2709";
+      };
     };
 
     nodes.sawtoothShark = {

@@ -36,6 +36,11 @@
     self.nixosProfiles.monitoring.smartctl
   ];
 
+  custom.services.tailscale = {
+    enable = true;
+    acceptDns = true;
+  };
+
   system.stateVersion = "25.05";
 
   # Disable command-not-found (handled by nix-index in home-manager)
