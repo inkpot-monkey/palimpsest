@@ -7,23 +7,25 @@
 }:
 {
   imports = [
-    inputs.vpsFree.nixosConfigurations.container
+    inputs.vpsFree.nixosModules.containerUnstable
 
     self.nixosProfiles.base
     self.nixosProfiles.impermanence
+    self.nixosProfiles.tailscale
     self.nixosProfiles.server
     self.nixosProfiles.sops
+    self.nixosProfiles.proxy
+    self.nixosProfiles.backup
+
+    self.nixosProfiles.monitoring.server
+    self.nixosProfiles.monitoring.client
+
     self.nixosProfiles.mail
     self.nixosProfiles.matrix
-    self.nixosProfiles.proxy
-    self.nixosProfiles.podman
-    self.nixosProfiles.tailscale
+
     self.nixosProfiles.paperless
     self.nixosProfiles.litellm
     self.nixosProfiles.transmission
-    self.nixosProfiles.monitoring.server
-    self.nixosProfiles.monitoring.client
-    self.nixosProfiles.backup
     self.nixosProfiles.blocky
 
     # self.nixosProfiles.affine
@@ -54,17 +56,6 @@
     fd
     jq
   ];
-
-  environment.persistence."/persistent" = {
-    hideMounts = true;
-    directories = [
-      "/etc/nixos"
-      "/var/log"
-      "/var/lib/nixos"
-      "/var/lib/stalwart-mail"
-      "/var/lib/acme"
-    ];
-  };
 
   systemd.settings.Manager = {
     DefaultTimeoutStartSec = "900s";
