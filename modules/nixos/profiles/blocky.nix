@@ -2,8 +2,6 @@
   config,
   options,
   lib,
-  pkgs,
-  inputs,
   settings,
   ...
 }:
@@ -31,8 +29,6 @@ in
 
       services.blocky = {
         enable = true;
-        # Use the unstable package to ensure we have the latest binary.
-        package = inputs.nixpkgs.legacyPackages.${pkgs.system}.blocky;
         settings = {
           ports.dns = 53; # Port for incoming DNS Queries.
 
