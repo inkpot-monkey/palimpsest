@@ -381,11 +381,11 @@
         "treefmt-nix": "treefmt-nix"
       },
       "locked": {
-        "lastModified": 1773519235,
-        "narHash": "sha256-JQfDCHaku14PhfPSZ/yY/+1ec0dX4f7foJiek63K1IY=",
+        "lastModified": 1773522746,
+        "narHash": "sha256-7QBLdUV7LYJh5fSHwn7YHQdy0JL/znooTw+4rqYzjog=",
         "owner": "numtide",
         "repo": "llm-agents.nix",
-        "rev": "ece832cef57ac66e9d2921c00a18c97bb71ffdcc",
+        "rev": "8d78ad9ba6178a6412c9d759e9b46a324e1c7ac1",
         "type": "github"
       },
       "original": {
@@ -443,16 +443,16 @@
         "nixpkgs": "nixpkgs_2"
       },
       "locked": {
-        "lastModified": 1773277501,
-        "narHash": "sha256-LoBRdiZhMEbG/Q4s1+6jp4FC60aqe80nxkxiWlrM4kk=",
+        "lastModified": 1771867771,
+        "narHash": "sha256-v4UIlzztrAll/NPjsi0xWa5+fWcI9A4p8MLonL9EUeg=",
         "owner": "nvmd",
         "repo": "nixos-raspberrypi",
-        "rev": "4845905b171c3ccb61ce914d3fb4d6a0efc7c441",
+        "rev": "6b30596bea9047a7cbb55cb58e6f8a3efa4012e2",
         "type": "github"
       },
       "original": {
         "owner": "nvmd",
-        "ref": "develop",
+        "ref": "main",
         "repo": "nixos-raspberrypi",
         "type": "github"
       }
@@ -507,11 +507,11 @@
     },
     "nixpkgs-unstable": {
       "locked": {
-        "lastModified": 1773513197,
-        "narHash": "sha256-nKe91HJ8uWjvfu7pZGd0jaZwaASdavOGZOS4p+0UpTM=",
+        "lastModified": 1773521067,
+        "narHash": "sha256-Ejo3hA98W+nB034bzz/8qNjdJ+x+vYI9TE9FjBwcd6k=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "97986bc069a48f209aedbf962e69e39cd0754f1c",
+        "rev": "3f184a734b2f6c91e108cc7c7e1e2fe6fef73f9c",
         "type": "github"
       },
       "original": {
@@ -539,16 +539,16 @@
     },
     "nixpkgs_2": {
       "locked": {
-        "lastModified": 1771714954,
-        "narHash": "sha256-nhZJPnBavtu40/L2aqpljrfUNb2rxmWTmSjK2c9UKds=",
-        "owner": "NixOS",
+        "lastModified": 1771867432,
+        "narHash": "sha256-KOb/xJgNRoUDD7y42/lh2a1+akUQ7OYuBdwX/CZevFY=",
+        "owner": "nvmd",
         "repo": "nixpkgs",
-        "rev": "afbbf774e2087c3d734266c22f96fca2e78d3620",
+        "rev": "2597cb7e564b9004c9d3182afb29b37ae842411a",
         "type": "github"
       },
       "original": {
-        "owner": "NixOS",
-        "ref": "nixos-25.11",
+        "owner": "nvmd",
+        "ref": "modules-with-keys-25.11",
         "repo": "nixpkgs",
         "type": "github"
       }
