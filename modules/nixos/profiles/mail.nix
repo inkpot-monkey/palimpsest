@@ -46,6 +46,13 @@ in
       };
     };
 
+    environment.persistence."/persistent" = {
+      directories = [
+        "/var/lib/acme"
+        "/var/lib/stalwart-mail"
+      ];
+    };
+
     services.stalwart = {
       enable = true;
       settings = {
@@ -167,5 +174,6 @@ in
     networking.extraHosts = ''
       127.0.0.1 mail.${domain}
     '';
+
   };
 }

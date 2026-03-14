@@ -13,6 +13,9 @@
         directory = "/var/lib/private";
         mode = "0700";
       }
+      "/etc/nixos"
+      "/var/log"
+      "/var/lib/nixos"
     ];
     files = [
       "/etc/machine-id"
