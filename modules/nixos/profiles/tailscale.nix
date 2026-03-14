@@ -5,43 +5,93 @@
   ...
 }:
 
+let
+  # Create a shorthand variable to access our custom options
+  cfg = config.custom.services.tailscale;
+in
 {
-  config = lib.mkMerge [
-    {
-      # 1. SOPS Secret for Tailscale Auth Key
-      sops.secrets.tailscale_key = {
-        sopsFile = config.sops.defaultSopsFile;
-      };
+  # --- MODULE OPTIONS ---
+  options.custom.services.tailscale = {
+    enable = lib.mkEnableOption "Tailscale with SOPS and Impermanence";
 
-      # 2. Tailscale Service Configuration
-      services.tailscale = {
-        enable = true;
+    advertiseSubnet = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "192.168.1.0/24";
+      description = "The local subnet to advertise to the Tailnet. If null, subnet routing is disabled.";
+    };
 
-        # Point to the decrypted secret path managed by SOPS
-        authKeyFile = config.sops.secrets.tailscale_key.path;
+    acceptDns = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Whether to accept DNS settings from Tailscale.";
+    };
 
-        # Accept Tailscale MagicDNS and route settings
-        extraUpFlags = [ "--accept-dns=true" ];
-      };
+    isExitNode = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Whether to act as an exit node.";
+    };
 
-      # 3. Firewall Rules
-      networking.firewall = {
-        # Always trust traffic coming over the Tailscale tunnel
-        trustedInterfaces = [ "tailscale0" ];
+    useExitNode = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "100.64.0.1";
+      description = "The IP address or name of the exit node to use. If null, no exit node is used.";
+    };
 
-        # Allow the Tailscale daemon to establish peer-to-peer connections
-        allowedUDPPorts = [ config.services.tailscale.port ];
-      };
-    }
-    (lib.optionalAttrs (options.environment ? persistence) {
-      # 4. Impermanence Configuration
-      # This guarantees Tailscale keeps its machine IP and identity across root wipes
-      environment.persistence."/persistent" = {
-        hideMounts = true;
-        directories = [
-          "/var/lib/tailscale"
-        ];
-      };
-    })
-  ];
+    tags = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      example = [ "tag:server" ];
+      description = "Tags to apply to the node. Often required for exit nodes or subnet routers in ACLs.";
+    };
+  };
+
+  # --- MODULE IMPLEMENTATION ---
+  config = lib.mkIf cfg.enable (
+    lib.mkMerge [
+      {
+        # 1. Conditionally enable IP forwarding ONLY if a subnet OR exit node is provided
+        boot.kernel.sysctl = lib.mkIf (cfg.advertiseSubnet != null || cfg.isExitNode) {
+          "net.ipv4.ip_forward" = 1;
+          "net.ipv6.conf.all.forwarding" = 1;
+        };
+
+        # 2. SOPS Secret for Tailscale Auth Key
+        sops.secrets.tailscale_key = {
+          sopsFile = config.sops.defaultSopsFile;
+        };
+
+        # 3. Tailscale Service Configuration
+        services.tailscale = {
+          enable = true;
+          authKeyFile = config.sops.secrets.tailscale_key.path;
+
+          extraUpFlags = [
+            "--accept-dns=${lib.boolToString cfg.acceptDns}"
+          ]
+          ++ lib.optional (cfg.advertiseSubnet != null) "--advertise-routes=${cfg.advertiseSubnet}"
+          ++ lib.optional cfg.isExitNode "--advertise-exit-node"
+          ++ lib.optional (cfg.useExitNode != null) "--exit-node=${cfg.useExitNode}"
+          ++ lib.optionals (cfg.tags != [ ]) (map (tag: "--advertise-tags=${tag}") cfg.tags);
+        };
+
+        # 4. Firewall Rules
+        networking.firewall = {
+          trustedInterfaces = [ "tailscale0" ];
+          allowedUDPPorts = [ config.services.tailscale.port ];
+        };
+      }
+      (lib.optionalAttrs (options.environment ? persistence) {
+        # 5. Impermanence Configuration
+        environment.persistence."/persistent" = {
+          hideMounts = true;
+          directories = [
+            "/var/lib/tailscale"
+          ];
+        };
+      })
+    ]
+  );
 }
