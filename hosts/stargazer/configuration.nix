@@ -10,7 +10,7 @@
   # =========================================
   imports = [
     inputs.disko.nixosModules.disko
-    inputs.nixos-hardware.nixosModules.framework-13-7040-amd
+    inputs.nixos-hardware.nixosModules.framework-amd-ai-300-series
 
     # Hardware & Boot
     ./hardware-configuration.nix
