@@ -56,18 +56,18 @@
   ];
 
   sops.secrets.git_annex_gpg_key = {
-    key = "git-annex/gpg_key";
+    key = "git_annex/gpg_key";
     owner = "git-annex";
     group = "git-annex";
     mode = "0400";
-    sopsFile = "${self}/secrets/secrets.yaml";
+    sopsFile = "${self}/secrets/git-annex.yaml";
   };
 
   sops.secrets.git_annex_ssh_key = {
-    key = "git-annex/ssh_key/private";
+    key = "git_annex/ssh_key/private";
     owner = "git-annex";
     group = "git-annex";
     mode = "0400";
-    sopsFile = "${self}/secrets/secrets.yaml";
+    sopsFile = "${self}/secrets/git-annex.yaml";
   };
 }

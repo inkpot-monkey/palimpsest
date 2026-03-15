@@ -14,9 +14,18 @@ in
 
   config = lib.mkIf cfg.enable {
     # The restic secrets
-    sops.secrets.restic_password.key = "restic/password";
-    sops.secrets.restic_repo.key = "restic/repo";
-    sops.secrets.restic_ssh_private.key = "restic/ssh/private";
+    sops.secrets.restic_password = {
+      key = "restic/password";
+      sopsFile = ../../../secrets/restic.yaml;
+    };
+    sops.secrets.restic_repo = {
+      key = "restic/repo";
+      sopsFile = ../../../secrets/restic.yaml;
+    };
+    sops.secrets.restic_ssh_private = {
+      key = "restic/ssh/private";
+      sopsFile = ../../../secrets/restic.yaml;
+    };
 
     sops.templates."restic-repo".content = ''
       ${config.sops.placeholder.restic_repo}:backups

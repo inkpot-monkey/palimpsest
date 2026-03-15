@@ -21,11 +21,18 @@ in
       {
         # In your sops configuration
         sops.secrets = {
-          "nebula/ca/crt" = { inherit owner; };
-          "nebula/${name}/crt" = { inherit owner; };
+          "nebula/ca/crt" = {
+            inherit owner;
+            sopsFile = ../../../secrets/nebula.yaml;
+          };
+          "nebula/${name}/crt" = {
+            inherit owner;
+            sopsFile = ../../../secrets/nebula.yaml;
+          };
           "nebula/${name}/key" = {
             inherit owner;
             mode = "0400";
+            sopsFile = ../../../secrets/nebula.yaml;
           };
         };
 
