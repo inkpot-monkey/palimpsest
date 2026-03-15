@@ -16,9 +16,9 @@ in
   };
 
   config = lib.mkMerge [
-    {
+    (lib.mkIf config.custom.home.profiles.email.enable {
       # ============================================================================
-      # 1. SOPS SECRETS - Defined globally to avoid missing attribute errors
+      # 1. SOPS SECRETS
       # ============================================================================
       sops.secrets."email/protonmail/password" = {
         sopsFile = ../secrets.yaml;
@@ -29,8 +29,6 @@ in
         sopsFile = ../secrets.yaml;
         format = "yaml";
       };
-    }
-    (lib.mkIf config.custom.home.profiles.email.enable {
       # ============================================================================
       # 2. PACKAGES & SERVICES
       # ============================================================================
