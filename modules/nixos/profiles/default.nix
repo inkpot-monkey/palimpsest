@@ -1,5 +1,9 @@
 {
   flake.nixosProfiles = {
+    # --- Bundle Profile ---
+    bundle = ./bundle.nix;
+    pi-bundle = ./pi/bundle.nix;
+
     # --- Core / System Profiles ---
     base = ./base.nix;
     nixConfig = ./nixConfig.nix;
@@ -30,13 +34,13 @@
     affine = ./affine.nix;
     transmission = ./transmission.nix;
     litellm = ./litellm.nix;
-    ai = ./ai.nix;
     backup = ./backup.nix;
     blocky = ./blocky.nix;
     monitoring = {
       client = ./monitoring/client.nix;
       server = ./monitoring/server.nix;
       smartctl = ./monitoring/smartctl.nix;
+      exporters = ./monitoring/exporters.nix;
     };
 
     # --- Hardware Specific (Pi) ---
