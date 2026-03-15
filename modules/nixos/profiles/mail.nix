@@ -1,15 +1,17 @@
 {
   config,
+  options,
   lib,
   settings,
   ...
 }:
+
 let
-  cfg = config.profiles.mail;
-  inherit (cfg) domain;
+  cfg = config.custom.profiles.mail;
 in
 {
-  options.profiles.mail = {
+  options.custom.profiles.mail = {
+    enable = lib.mkEnableOption "mail server configuration (Stalwart)";
     domain = lib.mkOption {
       type = lib.types.str;
       example = "example.com";
@@ -17,163 +19,166 @@ in
     };
   };
 
-  config = {
-
-    # Define the secret specifically for Stalwart, using the same source key
-    sops.secrets = {
-      cloudflare_dns_token_stalwart = {
-        owner = "stalwart-mail";
-        group = "stalwart-mail";
-        key = "cloudflare_dns_token";
-      };
-      stalwart_admin_password = {
-        owner = "stalwart-mail";
-        group = "stalwart-mail";
-      };
-    };
-
-    sops.templates.cloudflare_acme_env = {
-      content = "CLOUDFLARE_DNS_API_TOKEN=${config.sops.placeholder.cloudflare_dns_token_stalwart}";
-    };
-
-    security.acme = {
-      acceptTerms = true;
-      defaults.email = "admin@${domain}";
-      certs."mail.${domain}" = {
-        dnsProvider = "cloudflare";
-        environmentFile = config.sops.templates.cloudflare_acme_env.path;
-        group = "stalwart-mail";
-      };
-    };
-
-    environment.persistence."/persistent" = {
-      directories = [
-        "/var/lib/acme"
-        "/var/lib/stalwart-mail"
-      ];
-    };
-
-    services.stalwart = {
-      enable = true;
-      settings = {
-        config.local-keys = [
-          "store.*"
-          "directory.*"
-          "tracer.*"
-          "!server.blocked-ip.*"
-          "!server.allowed-ip.*"
-          "server.*"
-          "cluster.*"
-          "config.local-keys.*"
-          "storage.data"
-          "storage.blob"
-          "storage.lookup"
-          "storage.fts"
-          "storage.directory"
-          "certificate.*"
-          "authentication.*"
-          "resolver.*" # Avoid warnings for default resolver settings
-          "spam-filter.*" # Avoid warnings for default spam settings
-          "webadmin.*"
-        ];
-        authentication.fallback-admin = {
-          user = "admin";
-          secret = "%{file:/run/credentials/stalwart-mail.service/admin_password}%";
-        };
-        authentication.mechanisms = [
-          "plain"
-          "login"
-        ];
-        authentication.directory = "internal"; # Use the internal directory (defined below)
-
-        server = {
-          hostname = "mail.${domain}";
-          tls = {
-            enable = true;
-            implicit = false;
+  config = lib.mkIf cfg.enable (
+    lib.mkMerge [
+      {
+        # Define the secret specifically for Stalwart, using the same source key
+        sops.secrets = {
+          cloudflare_dns_token_stalwart = {
+            owner = "stalwart-mail";
+            group = "stalwart-mail";
+            key = "cloudflare_dns_token";
           };
-          listener = {
-            "smtp" = {
-              bind = [ "[::]:25" ];
-              protocol = "smtp";
-            };
-            "submission" = {
-              bind = [ "[::]:587" ];
-              protocol = "smtp";
-            };
-            "submissions" = {
-              bind = [ "[::]:465" ];
-              protocol = "smtp";
-              tls.implicit = true;
-              tls.certificate = "default";
-            };
-            "imaps" = {
-              bind = [ "[::]:993" ];
-              protocol = "imap";
-              tls.implicit = true;
-              tls.certificate = "default";
-            };
-            "management" = {
-              bind = [ "127.0.0.1:${toString settings.services.public.mail.port}" ];
-              protocol = "http";
-            };
+          stalwart_admin_password = {
+            owner = "stalwart-mail";
+            group = "stalwart-mail";
           };
         };
 
-        storage = {
-          directory = "internal";
-          data = "db";
-          blob = "db";
-          lookup = "db";
-          fts = "db";
+        sops.templates.cloudflare_acme_env = {
+          content = "CLOUDFLARE_DNS_API_TOKEN=${config.sops.placeholder.cloudflare_dns_token_stalwart}";
         };
 
-        storage.db = {
-          type = "rocksdb";
-          path = "/var/lib/stalwart-mail/db";
+        security.acme = {
+          acceptTerms = true;
+          defaults.email = "admin@${cfg.domain}";
+          certs."mail.${cfg.domain}" = {
+            dnsProvider = "cloudflare";
+            environmentFile = config.sops.templates.cloudflare_acme_env.path;
+            group = "stalwart-mail";
+          };
         };
 
-        directory."internal" = {
-          store = "db";
-          type = "internal";
+        environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
+          directories = [
+            "/var/lib/acme"
+            "/var/lib/stalwart-mail"
+          ];
         };
 
-        certificate."default" = {
-          cert = "%{file:/var/lib/acme/mail.${domain}/fullchain.pem}%";
-          private-key = "%{file:/var/lib/acme/mail.${domain}/key.pem}%";
+        services.caddy.virtualHosts."mta-sts.${cfg.domain}" = {
+          extraConfig = ''
+            header Content-Type "text/plain"
+            respond /.well-known/mta-sts.txt "version: STSv1
+            mode: enforce
+            mx: mail.${cfg.domain}
+            max_age: 604800
+            " 200
+          '';
         };
-      };
 
-      # Define credentials (secrets)
-      credentials = {
-        admin_password = config.sops.secrets.stalwart_admin_password.path;
-      };
-    };
+        networking.firewall.allowedTCPPorts = [
+          25 # SMTP
+          465 # SMTPS
+          587 # Submission
+          993 # IMAPS
+        ];
 
-    services.caddy.virtualHosts."mta-sts.${domain}" = {
-      extraConfig = ''
-        header Content-Type "text/plain"
-        respond /.well-known/mta-sts.txt "version: STSv1
-        mode: enforce
-        mx: mail.${domain}
-        max_age: 604800
-        " 200
-      '';
-    };
+        # Map the mail domain to localhost internally so that:
+        # 1. The bridge can access http://mail.palebluebytes.xyz:8080 (advertised by Stalwart)
+        # 2. We don't hit the public firewall for internal traffic
+        networking.extraHosts = ''
+          127.0.0.1 mail.${cfg.domain}
+        '';
+      }
+      (lib.optionalAttrs (options.services ? stalwart) {
+        services.stalwart = {
+          enable = true;
+          settings = {
+            config.local-keys = [
+              "store.*"
+              "directory.*"
+              "tracer.*"
+              "!server.blocked-ip.*"
+              "!server.allowed-ip.*"
+              "server.*"
+              "cluster.*"
+              "config.local-keys.*"
+              "storage.data"
+              "storage.blob"
+              "storage.lookup"
+              "storage.fts"
+              "storage.directory"
+              "certificate.*"
+              "authentication.*"
+              "resolver.*" # Avoid warnings for default resolver settings
+              "spam-filter.*" # Avoid warnings for default spam settings
+              "webadmin.*"
+            ];
+            authentication.fallback-admin = {
+              user = "admin";
+              secret = "%{file:/run/credentials/stalwart-mail.service/admin_password}%";
+            };
+            authentication.mechanisms = [
+              "plain"
+              "login"
+            ];
+            authentication.directory = "internal"; # Use the internal directory (defined below)
 
-    networking.firewall.allowedTCPPorts = [
-      25 # SMTP
-      465 # SMTPS
-      587 # Submission
-      993 # IMAPS
-    ];
+            server = {
+              hostname = "mail.${cfg.domain}";
+              tls = {
+                enable = true;
+                implicit = false;
+              };
+              listener = {
+                "smtp" = {
+                  bind = [ "[::]:25" ];
+                  protocol = "smtp";
+                };
+                "submission" = {
+                  bind = [ "[::]:587" ];
+                  protocol = "smtp";
+                };
+                "submissions" = {
+                  bind = [ "[::]:465" ];
+                  protocol = "smtp";
+                  tls.implicit = true;
+                  tls.certificate = "default";
+                };
+                "imaps" = {
+                  bind = [ "[::]:993" ];
+                  protocol = "imap";
+                  tls.implicit = true;
+                  tls.certificate = "default";
+                };
+                "management" = {
+                  bind = [ "127.0.0.1:${toString settings.services.public.mail.port}" ];
+                  protocol = "http";
+                };
+              };
+            };
 
-    # Map the mail domain to localhost internally so that:
-    # 1. The bridge can access http://mail.palebluebytes.xyz:8080 (advertised by Stalwart)
-    # 2. We don't hit the public firewall for internal traffic
-    networking.extraHosts = ''
-      127.0.0.1 mail.${domain}
-    '';
+            storage = {
+              directory = "internal";
+              data = "db";
+              blob = "db";
+              lookup = "db";
+              fts = "db";
+            };
 
-  };
+            storage.db = {
+              type = "rocksdb";
+              path = "/var/lib/stalwart-mail/db";
+            };
+
+            directory."internal" = {
+              store = "db";
+              type = "internal";
+            };
+
+            certificate."default" = {
+              cert = "%{file:/var/lib/acme/mail.${cfg.domain}/fullchain.pem}%";
+              private-key = "%{file:/var/lib/acme/mail.${cfg.domain}/key.pem}%";
+            };
+          };
+
+          # Define credentials (secrets)
+          credentials = {
+            admin_password = config.sops.secrets.stalwart_admin_password.path;
+          };
+        };
+      })
+    ]
+  );
 }

@@ -1,17 +1,14 @@
 {
   config,
   lib,
-  options,
   ...
 }:
 
 let
-  # Create a shorthand variable to access our custom options
-  cfg = config.custom.services.tailscale;
+  cfg = config.custom.profiles.tailscale;
 in
 {
-  # --- MODULE OPTIONS ---
-  options.custom.services.tailscale = {
+  options.custom.profiles.tailscale = {
     enable = lib.mkEnableOption "Tailscale with SOPS and Impermanence";
 
     advertiseSubnet = lib.mkOption {
@@ -48,7 +45,6 @@ in
     };
   };
 
-  # --- MODULE IMPLEMENTATION ---
   config = lib.mkIf cfg.enable (
     lib.mkMerge [
       {
@@ -83,15 +79,15 @@ in
           allowedUDPPorts = [ config.services.tailscale.port ];
         };
       }
-      (lib.optionalAttrs (options.environment ? persistence) {
-        # 5. Impermanence Configuration
-        environment.persistence."/persistent" = {
+      # 5. Impermanence Configuration
+      {
+        environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
           hideMounts = true;
           directories = [
             "/var/lib/tailscale"
           ];
         };
-      })
+      }
     ]
   );
 }

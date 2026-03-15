@@ -2,24 +2,29 @@
   config,
   lib,
   pkgs,
-  settings,
   ...
 }:
+
 let
+  cfg = config.custom.profiles.affine;
   domain = "affine.${config.networking.domain}";
-  inherit (settings.services.private.affine) port;
 in
 {
-  options.host.containers.internal = lib.mkOption {
-    type = lib.types.str;
-    default = "10.88.0.1";
-    description = "The internal IP of the container host, used for containers to reach host services.";
+  options.custom.profiles.affine = {
+    enable = lib.mkEnableOption "Affine self-hosted workspace configuration";
+    port = lib.mkOption {
+      type = lib.types.port;
+      default = 3010;
+      description = "The port Affine will listen on localhost.";
+    };
+    internalIp = lib.mkOption {
+      type = lib.types.str;
+      default = "10.88.0.1";
+      description = "The internal IP of the container host, used for containers to reach host services.";
+    };
   };
 
-  config = {
-    # Assume you have this defined in your flake
-    # imports = [ self.nixosProfiles.podman ];
-
+  config = lib.mkIf cfg.enable {
     # --- Secrets & Templates ---
     sops.secrets.affine_password = {
       owner = "postgres";
@@ -27,7 +32,7 @@ in
 
     sops.templates."affine-env" = {
       content = ''
-        DATABASE_URL=postgresql://affine:${config.sops.placeholder.affine_password}@${config.host.containers.internal}:5432/affine
+        DATABASE_URL=postgresql://affine:${config.sops.placeholder.affine_password}@${cfg.internalIp}:5432/affine
       '';
     };
 
@@ -40,7 +45,6 @@ in
 
       settings = {
         # Bind to all addresses but restrict via firewall.
-        # This avoids "Cannot assign requested address" if the podman bridge isn't up yet.
         listen_addresses = lib.mkForce "*";
       };
 
@@ -80,8 +84,6 @@ in
 
     # --- Affine Container ---
     systemd.tmpfiles.rules = [
-      # Assuming the container runs as root. If it runs as a non-root user (like UID 1000),
-      # change 'root root' to '1000 1000' to prevent EACCES errors.
       "d /var/lib/affine/storage 0755 root root -"
       "d /var/lib/affine/config 0755 root root -"
     ];
@@ -89,11 +91,11 @@ in
     virtualisation.oci-containers.containers.affine = {
       image = "ghcr.io/toeverything/affine:stable";
       # CRITICAL: Bind to 127.0.0.1 to prevent exposing the raw backend to the internet
-      ports = [ "127.0.0.1:${toString port}:3010" ];
+      ports = [ "127.0.0.1:${toString cfg.port}:3010" ];
       environmentFiles = [ config.sops.templates."affine-env".path ];
       environment = {
         AFFINE_SERVER_EXTERNAL_URL = "https://${domain}";
-        REDIS_SERVER_HOST = config.host.containers.internal;
+        REDIS_SERVER_HOST = cfg.internalIp;
         REDIS_SERVER_PORT = "6379";
       };
       volumes = [
@@ -139,7 +141,7 @@ in
           --name affine_migration \
           --runtime runc \
           --security-opt seccomp=unconfined \
-          -e REDIS_SERVER_HOST=${config.host.containers.internal} \
+          -e REDIS_SERVER_HOST=${cfg.internalIp} \
           -e REDIS_SERVER_PORT=6379 \
           --env-file ${config.sops.templates."affine-env".path} \
           ghcr.io/toeverything/affine:stable \
@@ -147,10 +149,8 @@ in
       '';
     };
 
-    # --- Network & Proxy ---
-
     # --- Persistence ---
-    environment.persistence."/persistent" = {
+    environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
       directories = [
         "/var/lib/affine"
         "/var/lib/postgresql"
