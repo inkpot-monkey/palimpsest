@@ -38,8 +38,8 @@ in
         experimental-features = [
           "nix-command"
           "flakes"
-          "recursive-nix"
-        ];
+        ]
+        ++ lib.optional (!config.custom.profiles.pi.enable or false) "recursive-nix";
         use-xdg-base-directories = true;
 
         # Performance & Optimization

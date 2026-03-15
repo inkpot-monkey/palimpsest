@@ -9,8 +9,9 @@ let
   cfg = config.custom.profiles.base;
 in
 {
-  options.custom.profiles.base = {
-    enable = lib.mkEnableOption "base system configuration";
+  options.custom.profiles = {
+    base.enable = lib.mkEnableOption "base system configuration";
+    pi.enable = lib.mkEnableOption "Raspberry Pi specific configuration";
   };
 
   config = lib.mkIf cfg.enable {

@@ -15,10 +15,6 @@ in
     inputs.nixos-raspberrypi.nixosModules.trusted-nix-caches
   ];
 
-  options.custom.profiles.pi = {
-    enable = lib.mkEnableOption "Raspberry Pi 4 base configuration (bootloader, SD image)";
-  };
-
   config = lib.mkIf cfg.enable {
     # ==========================================
     # Filesystem & Boot
