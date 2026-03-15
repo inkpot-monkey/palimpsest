@@ -1,18 +1,29 @@
 {
+  config,
+  lib,
   pkgs,
   ...
 }:
 
+let
+  cfg = config.custom.profiles.gaming;
+in
 {
-  programs.steam = {
-    enable = true;
-    remotePlay.openFirewall = true;
-    dedicatedServer.openFirewall = true;
-    extraCompatPackages = with pkgs; [
-      proton-ge-bin
-    ];
+  options.custom.profiles.gaming = {
+    enable = lib.mkEnableOption "gaming configuration (Steam, Gamemode)";
   };
 
-  programs.gamemode.enable = true;
-  hardware.steam-hardware.enable = true;
+  config = lib.mkIf cfg.enable {
+    programs.steam = {
+      enable = true;
+      remotePlay.openFirewall = true;
+      dedicatedServer.openFirewall = true;
+      extraCompatPackages = with pkgs; [
+        proton-ge-bin
+      ];
+    };
+
+    programs.gamemode.enable = true;
+    hardware.steam-hardware.enable = true;
+  };
 }

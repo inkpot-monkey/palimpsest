@@ -1,15 +1,25 @@
 {
   config,
+  lib,
   ...
 }:
 
+let
+  cfg = config.custom.profiles.monitoring-smartctl;
+in
 {
-  services.prometheus.exporters.smartctl = {
-    enable = true;
-    listenAddress = "0.0.0.0";
+  options.custom.profiles.monitoring-smartctl = {
+    enable = lib.mkEnableOption "smartctl exporter configuration";
   };
 
-  networking.firewall.interfaces."tailscale0".allowedTCPPorts = [
-    config.services.prometheus.exporters.smartctl.port
-  ];
+  config = lib.mkIf cfg.enable {
+    services.prometheus.exporters.smartctl = {
+      enable = true;
+      listenAddress = "0.0.0.0";
+    };
+
+    networking.firewall.interfaces."tailscale0".allowedTCPPorts = [
+      config.services.prometheus.exporters.smartctl.port
+    ];
+  };
 }

@@ -5,68 +5,77 @@
   ...
 }:
 
+let
+  cfg = config.custom.profiles.nixConfig;
+in
 {
-  # =========================================
-  # Nix & Global Package Configuration
-  # =========================================
-  nixpkgs.config.allowUnfree = true;
+  options.custom.profiles.nixConfig = {
+    enable = lib.mkEnableOption "Nix and global package configuration";
+  };
 
-  nix = {
-    # Registry Pinning (The Speed Boost)
-    registry = lib.mkForce (lib.mapAttrs (_: value: { flake = value; }) inputs);
+  config = lib.mkIf cfg.enable {
+    # =========================================
+    # Nix & Global Package Configuration
+    # =========================================
+    nixpkgs.config.allowUnfree = true;
 
-    # Map registry inputs to legacy channels
-    nixPath = lib.mapAttrsToList (key: value: "${key}=${value.to.path}") config.nix.registry;
+    nix = {
+      # Registry Pinning (The Speed Boost)
+      registry = lib.mkForce (lib.mapAttrs (_: value: { flake = value; }) inputs);
 
-    # Garbage Collection
-    gc = {
-      automatic = true;
-      dates = "weekly";
-      options = "--delete-older-than 30d";
-    };
+      # Map registry inputs to legacy channels
+      nixPath = lib.mapAttrsToList (key: value: "${key}=${value.to.path}") config.nix.registry;
 
-    settings = {
-      # Features
-      experimental-features = [
-        "nix-command"
-        "flakes"
-        "recursive-nix"
-      ];
-      use-xdg-base-directories = true;
+      # Garbage Collection
+      gc = {
+        automatic = true;
+        dates = "weekly";
+        options = "--delete-older-than 30d";
+      };
 
-      # Performance & Optimization
-      auto-optimise-store = true;
-      keep-outputs = true;
-      keep-derivations = true;
-      accept-flake-config = true;
-      max-jobs = "auto";
-      http-connections = 50;
-      connect-timeout = 5;
-      log-lines = 25;
+      settings = {
+        # Features
+        experimental-features = [
+          "nix-command"
+          "flakes"
+          "recursive-nix"
+        ];
+        use-xdg-base-directories = true;
 
-      # Auto-GC when low on space
-      min-free = toString (100 * 1024 * 1024);
-      max-free = toString (1024 * 1024 * 1024);
+        # Performance & Optimization
+        auto-optimise-store = true;
+        keep-outputs = true;
+        keep-derivations = true;
+        accept-flake-config = true;
+        max-jobs = "auto";
+        http-connections = 50;
+        connect-timeout = 5;
+        log-lines = 25;
 
-      # Substituters & Caches
-      trusted-users = [
-        "root"
-        "@wheel"
-      ];
-      substituters = [
-        "https://cache.nixos.org"
-        "https://hyprland.cachix.org"
-        "https://nix-community.cachix.org"
-        "https://nixos-raspberrypi.cachix.org"
-        "https://cache.numtide.com"
-      ];
-      trusted-public-keys = [
-        "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
-        "hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIBMioiJM7ypFP8PwtkuGc="
-        "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
-        "nixos-raspberrypi.cachix.org-1:4iMO9LXa8BqhU+Rpg6LQKiGa2lsNh/j2oiYLNOQ5sPI="
-        "niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g="
-      ];
+        # Auto-GC when low on space
+        min-free = toString (100 * 1024 * 1024);
+        max-free = toString (1024 * 1024 * 1024);
+
+        # Substituters & Caches
+        trusted-users = [
+          "root"
+          "@wheel"
+        ];
+        substituters = [
+          "https://cache.nixos.org"
+          "https://hyprland.cachix.org"
+          "https://nix-community.cachix.org"
+          "https://nixos-raspberrypi.cachix.org"
+          "https://cache.numtide.com"
+        ];
+        trusted-public-keys = [
+          "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+          "hyprland.cachix.org-1:a7pgxzMz7+chwVL3/pzj6jIBMioiJM7ypFP8PwtkuGc="
+          "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+          "nixos-raspberrypi.cachix.org-1:4iMO9LXa8BqhU+Rpg6LQKiGa2lsNh/j2oiYLNOQ5sPI="
+          "niks3.numtide.com-1:DTx8wZduET09hRmMtKdQDxNNthLQETkc/yaX7M4qK0g="
+        ];
+      };
     };
   };
 }
