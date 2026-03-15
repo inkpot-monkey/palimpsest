@@ -9,32 +9,30 @@
   imports = [
     inputs.vpsFree.nixosModules.containerUnstable
 
-    self.nixosProfiles.base
-    self.nixosProfiles.impermanence
-    self.nixosProfiles.tailscale
-    self.nixosProfiles.server
-    self.nixosProfiles.sops
-    self.nixosProfiles.proxy
-    self.nixosProfiles.backup
-
-    self.nixosProfiles.monitoring.server
-    self.nixosProfiles.monitoring.client
-
-    self.nixosProfiles.mail
-    self.nixosProfiles.matrix
-
-    self.nixosProfiles.paperless
-    self.nixosProfiles.litellm
-    self.nixosProfiles.transmission
-    self.nixosProfiles.blocky
-
-    # self.nixosProfiles.affine
-    # ./git-annex.nix
+    self.nixosProfiles.bundle
   ];
 
-  custom.services.tailscale = {
-    enable = true;
-    tags = [ "tag:server" ];
+  custom.profiles = {
+    base.enable = true;
+    impermanence.enable = true;
+    tailscale = {
+      enable = true;
+      tags = [ "tag:server" ];
+    };
+    server.enable = true;
+    proxy.enable = true;
+    backup.enable = true;
+    monitoring-server.enable = true;
+    monitoring-client.enable = true;
+    mail = {
+      enable = true;
+      domain = "palebluebytes.xyz";
+    };
+    matrix.enable = true;
+    paperless.enable = true;
+    litellm.enable = true;
+    transmission.enable = true;
+    blocky.enable = true;
   };
 
   # Sops secrets configuration
@@ -51,8 +49,6 @@
 
   services.restic.backups.daily.paths = [ "/persistent" ];
 
-  profiles.mail.domain = "palebluebytes.xyz";
-
   nixpkgs.hostPlatform = "x86_64-linux";
 
   environment.systemPackages = with pkgs; [
@@ -61,10 +57,6 @@
     fd
     jq
   ];
-
-  systemd.settings.Manager = {
-    DefaultTimeoutStartSec = "900s";
-  };
 
   system.stateVersion = "25.11";
 }

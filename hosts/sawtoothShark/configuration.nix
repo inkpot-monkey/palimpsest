@@ -13,21 +13,23 @@
     inputs.home-manager.nixosModules.home-manager
     self.users.general
     ./../../users/general/plasma.nix
-  ]
-  ++ (with self.nixosProfiles; [
-    # Capabilities
-    base
-    audio
-    gui-base
-    backup
-    direnv
-    fonts
-    gaming
-    impermanence
-    litellm
-    sops
-    monitoring.client
-  ]);
+
+    # Profiles
+    self.nixosProfiles.bundle
+  ];
+
+  custom.profiles = {
+    base.enable = true;
+    audio.enable = true;
+    gui-base.enable = true;
+    backup.enable = true;
+    direnv.enable = true;
+    fonts.enable = true;
+    gaming.enable = true;
+    impermanence.enable = true;
+    litellm.enable = true;
+    monitoring-client.enable = true;
+  };
 
   sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
 

@@ -1,16 +1,20 @@
 # The pot bellied seahorse has one role, to let the other fish talk
 { self, inputs, ... }:
 {
-
   imports = [
-    self.nixosProfiles.sops
     inputs.nixos-hardware.nixosModules.raspberry-pi-4
     inputs.disko.nixosModules.disko
 
-    self.nixosProfiles.nebula
+    # Profiles
+    self.nixosProfiles.bundle
 
     ./disk-config.nix
   ];
+
+  custom.profiles = {
+    base.enable = true;
+    nebula.enable = true;
+  };
 
   sops = {
     age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];

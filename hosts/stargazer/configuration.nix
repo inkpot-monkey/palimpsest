@@ -20,25 +20,26 @@
     ./ai.nix
 
     # Profiles
-    self.nixosProfiles.base
-    self.nixosProfiles.audio
-    self.nixosProfiles.wireless
-    self.nixosProfiles.gui-base
-    self.nixosProfiles.gaming
-    self.nixosProfiles.virtualization
-    self.nixosProfiles.fonts
-    self.nixosProfiles.sops
-    self.nixosProfiles.regreet
-    self.nixosProfiles.bluetooth
-    self.nixosProfiles.zsa
-    self.nixosProfiles.tailscale
-    self.nixosProfiles.monitoring.client
-    self.nixosProfiles.monitoring.smartctl
+    self.nixosProfiles.bundle
   ];
 
-  custom.services.tailscale = {
-    enable = true;
-    acceptDns = true;
+  custom.profiles = {
+    base.enable = true;
+    audio.enable = true;
+    wireless.enable = true;
+    gui-base.enable = true;
+    gaming.enable = true;
+    virtualization.enable = true;
+    fonts.enable = true;
+    regreet.enable = true;
+    bluetooth.enable = true;
+    zsa.enable = true;
+    tailscale = {
+      enable = true;
+      acceptDns = true;
+    };
+    monitoring-client.enable = true;
+    monitoring-smartctl.enable = true;
   };
 
   system.stateVersion = "25.05";

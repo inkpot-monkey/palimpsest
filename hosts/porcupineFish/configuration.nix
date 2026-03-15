@@ -8,24 +8,27 @@
   imports = [
     "${inputs.nixpkgs}/nixos/modules/profiles/headless.nix"
 
-    self.nixosProfiles.pi
-    self.nixosProfiles.base
-    self.nixosProfiles.server
-    self.nixosProfiles.sops
-    self.nixosProfiles.wireless
-    self.nixosProfiles.hifiberry
-    self.nixosProfiles.hifi
-    self.nixosProfiles.tailscale
-    self.nixosProfiles.monitoring.client
-    self.nixosProfiles.monitoring.smartctl
-    self.nixosProfiles.backup
-    self.nixosProfiles.blocky
+    # Profiles
+    self.nixosProfiles.bundle
+    self.nixosProfiles.pi-bundle
   ];
 
-  custom.services.tailscale = {
-    enable = true;
-    advertiseSubnet = "192.168.1.0/24";
-    tags = [ "tag:server" ];
+  custom.profiles = {
+    pi.enable = true;
+    base.enable = true;
+    server.enable = true;
+    wireless.enable = true;
+    hifiberry.enable = true;
+    hifi.enable = true;
+    tailscale = {
+      enable = true;
+      advertiseSubnet = "192.168.1.0/24";
+      tags = [ "tag:server" ];
+    };
+    monitoring-client.enable = true;
+    monitoring-smartctl.enable = true;
+    backup.enable = true;
+    blocky.enable = true;
   };
 
   services.restic.backups.daily.paths = [
