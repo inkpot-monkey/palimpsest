@@ -1,16 +1,17 @@
-{ config, lib, ... }:
-
 {
-  config = lib.mkIf (config.identity.profile == "gui") {
-    # =========================================
-    # SwayNC Notification Daemon
-    # =========================================
+  config,
+  lib,
+  ...
+}:
+{
+  options.custom.home.profiles.swaync = {
+    enable = lib.mkEnableOption "SwayNC notification daemon";
+  };
+
+  config = lib.mkIf config.custom.home.profiles.swaync.enable {
     services.swaync = {
       enable = true;
 
-      # =========================================
-      # Daemon Settings
-      # =========================================
       settings = {
         positionX = "right";
         positionY = "top";
@@ -56,9 +57,6 @@
         };
       };
 
-      # =========================================
-      # Visual Styling (CSS)
-      # =========================================
       style = ''
         /* Catppuccin Mocha Theme for SwayNC */
         * {

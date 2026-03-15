@@ -4,10 +4,12 @@
   lib,
   ...
 }:
-
 {
+  options.custom.home.profiles.gui = {
+    enable = lib.mkEnableOption "GUI base configuration (Kitty, Wofi, GTK, Fonts, Apps)";
+  };
 
-  config = lib.mkIf (config.identity.profile == "gui") {
+  config = lib.mkIf config.custom.home.profiles.gui.enable {
     services.poweralertd.enable = true;
 
     xdg.portal = {
@@ -286,5 +288,7 @@
         ];
       };
     };
+
+    xdg.configFile."mimeapps.list".force = true;
   };
 }

@@ -1,7 +1,14 @@
-{ config, lib, ... }:
-
 {
-  config = lib.mkIf (config.identity.profile == "gui") {
+  config,
+  lib,
+  ...
+}:
+{
+  options.custom.home.profiles.waybar = {
+    enable = lib.mkEnableOption "Waybar status bar";
+  };
+
+  config = lib.mkIf config.custom.home.profiles.waybar.enable {
     # =========================================
     # Waybar Configuration
     # =========================================

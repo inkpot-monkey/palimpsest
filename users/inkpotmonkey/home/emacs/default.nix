@@ -22,9 +22,12 @@ let
       };
     }).with-all-grammars;
 in
-
 {
-  config = lib.mkIf (config.identity.profile == "gui") {
+  options.custom.home.profiles.emacs = {
+    enable = lib.mkEnableOption "Emacs configuration (pgtk, tree-sitter, doom-inspired)";
+  };
+
+  config = lib.mkIf config.custom.home.profiles.emacs.enable {
     programs.emacs = {
       enable = true;
       package = pkgs.emacs-pgtk;
@@ -66,13 +69,6 @@ in
       };
     };
 
-    # doesnt work only tests before the new build
-    # home.activation = {
-    #   installEmacsConfig = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
-    #     ${config.programs.emacs.finalPackage}/bin/emacs --batch -l ${config.xdg.configHome}/emacs/init.el
-    #   '';
-    # };
-
     services.gpg-agent = {
       pinentry.package = config.programs.emacs.finalPackage;
       extraConfig = ''
@@ -88,11 +84,6 @@ in
       unzip
       zip
       cmake
-
-      # aspell
-      # aspellDicts.en
-      # aspellDicts.en-computers
-      # aspellDicts.en-science
 
       # :tools editorconfig
       editorconfig-core-c
@@ -134,7 +125,6 @@ in
       html-tidy
       stylelint
       jsbeautifier
-
     ];
 
     programs.bash.bashrcExtra = ''

@@ -3,9 +3,12 @@
   lib,
   ...
 }:
-
 {
-  config = lib.mkIf (config.identity.profile == "gui") {
+  options.custom.home.profiles.hyprland = {
+    enable = lib.mkEnableOption "Hyprland window manager";
+  };
+
+  config = lib.mkIf config.custom.home.profiles.hyprland.enable {
     # =========================================
     # Hyprland Base Configuration
     # =========================================
@@ -120,17 +123,6 @@
             "workspaces, 1, 6, default"
           ];
         };
-
-        # =========================================
-        # 5. Window Rules
-        # =========================================
-        # windowrulev2 = [
-        #   "float, title:^(emacs-launcher)$"
-        #   "center, title:^(emacs-launcher)$"
-        #   "size 60% 10%, title:^(emacs-launcher)$" # Modern compact launcher
-        #   "dimaround, title:^(emacs-launcher)$" # Focus effect
-        #   "stayfocused, title:^(emacs-launcher)$"
-        # ];
 
         dwindle = {
           pseudotile = true;

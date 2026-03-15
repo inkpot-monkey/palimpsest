@@ -1,64 +1,52 @@
 {
   pkgs,
-  inputs,
   lib,
   config,
   ...
 }:
 {
-  # =========================================
-  # Imports (Server)
-  # =========================================
-  imports = [
-    inputs.sops-nix.homeManagerModule
-    ../identity.nix
-    ./git.nix
-    ./shell.nix
-    ./ssh.nix
-  ];
+  options.custom.home.profiles.base = {
+    enable = lib.mkEnableOption "base home-manager configuration";
+  };
 
-  config = lib.mkMerge [
-    {
-      # =========================================
-      # Home Manager Settings
-      # =========================================
-      programs.home-manager.enable = true;
-      xdg.mimeApps.enable = lib.mkDefault false;
-      home = {
-        username = "inkpotmonkey";
-        homeDirectory = "/home/inkpotmonkey";
-        stateVersion = "25.05";
+  config = lib.mkIf config.custom.home.profiles.base.enable {
 
-        sessionVariables = {
-          SOPS_AGE_KEY_FILE = "/run/user/$(id -u)/secrets.d/age-keys.txt";
-        };
+    # =========================================
+    # Home Manager Settings
+    # =========================================
+    programs.home-manager.enable = true;
+    xdg.mimeApps.enable = lib.mkDefault false;
+    home = {
+      username = "inkpotmonkey";
+      homeDirectory = "/home/inkpotmonkey";
+      stateVersion = "25.05";
 
-        # =========================================
-        # User Packages (CLI Only)
-        # =========================================
-        packages = with pkgs; [
-          neovim
-          wget
-          git
-          ripgrep
-          fd
-        ];
+      sessionVariables = {
+        SOPS_AGE_KEY_FILE = "/run/user/$(id -u)/secrets.d/age-keys.txt";
       };
 
       # =========================================
-      # Sops Configuration (User)
+      # User Packages (CLI Only)
       # =========================================
-      sops.age.sshKeyPaths = [
-        "/home/inkpotmonkey/.ssh/id_ed25519"
-        "/etc/ssh/ssh_host_ed25519_key"
+      packages = with pkgs; [
+        neovim
+        wget
+        git
+        ripgrep
+        fd
       ];
+    };
 
-      # ================= :PROPER_PLACEMENT: =================
-      systemd.user.startServices = "sd-switch";
-    }
+    # =========================================
+    # Sops Configuration (User)
+    # =========================================
+    sops.age.sshKeyPaths = [
+      "/home/inkpotmonkey/.ssh/id_ed25519"
+      "/etc/ssh/ssh_host_ed25519_key"
+    ];
 
-    (lib.mkIf (config.identity.profile == "gui") {
-      xdg.configFile."mimeapps.list".force = true;
-    })
-  ];
+    # ================= :PROPER_PLACEMENT: =================
+    systemd.user.startServices = "sd-switch";
+
+  };
 }

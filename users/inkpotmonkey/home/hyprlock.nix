@@ -1,7 +1,14 @@
-{ config, lib, ... }:
-
 {
-  config = lib.mkIf (config.identity.profile == "gui") {
+  config,
+  lib,
+  ...
+}:
+{
+  options.custom.home.profiles.hyprlock = {
+    enable = lib.mkEnableOption "Hyprlock screen locker";
+  };
+
+  config = lib.mkIf config.custom.home.profiles.hyprlock.enable {
     # ============================================================================
     # Hyprlock - The Modern Lock Screen
     # ============================================================================
