@@ -53,9 +53,6 @@
 
   environment.systemPackages = with pkgs; [
     git
-    ripgrep
-    fd
-    jq
   ];
 
   system.stateVersion = "25.11";

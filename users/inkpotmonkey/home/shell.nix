@@ -1,5 +1,6 @@
 {
   config,
+  pkgs,
   lib,
   ...
 }:
@@ -28,5 +29,11 @@
     };
 
     programs.nix-index.enable = true;
+
+    home.packages = with pkgs; [
+      ripgrep
+      fd
+      jq
+    ];
   };
 }
