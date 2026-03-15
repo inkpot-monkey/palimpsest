@@ -11,7 +11,6 @@
 {
   imports = [
     homeManagerInput.nixosModules.home-manager
-    ../identity.nix
   ];
 
   config = lib.mkMerge [
@@ -54,7 +53,9 @@
           {
             imports = [
               ../home/default.nix
-            ];
+            ]
+            ++ lib.optional (osConfig.identity.profile == "gui") ../home/gui.nix;
+
             # Explicitly pass the system identity to Home Manager user
             config.identity = osConfig.identity;
 
@@ -62,24 +63,8 @@
             # Enable Home Manager Profiles
             # =========================================
             config.custom.home.profiles = {
-              base.enable = true;
-              shell.enable = true;
-              git.enable = true;
-              ssh.enable = true;
-              dev.enable = true;
-              goose.enable = true;
-
-              # GUI Specific Profiles
-              ai.enable = osConfig.identity.profile == "gui";
+              cli.enable = true;
               gui.enable = osConfig.identity.profile == "gui";
-              hyprland.enable = osConfig.identity.profile == "gui";
-              waybar.enable = osConfig.identity.profile == "gui";
-              swaync.enable = osConfig.identity.profile == "gui";
-              hyprlock.enable = osConfig.identity.profile == "gui";
-              email.enable = osConfig.identity.profile == "gui";
-              emacs.enable = osConfig.identity.profile == "gui";
-              restic.enable = osConfig.identity.profile == "gui";
-              git-annex.enable = osConfig.identity.profile == "gui";
             };
           };
       };

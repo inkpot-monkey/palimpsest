@@ -1,10 +1,10 @@
-{
-  gui = {
-    imports = [ ./nixos/default.nix ];
-    config.identity.profile = "gui";
-  };
-  cli = {
-    imports = [ ./nixos/default.nix ];
-    config.identity.profile = "cli";
-  };
+rec {
+  cli = ./bundle.nix;
+  gui =
+    { lib, ... }:
+    {
+      imports = [ cli ];
+      # Using mkForce to ensure it overrides the default in identity.nix
+      identity.profile = lib.mkForce "gui";
+    };
 }
