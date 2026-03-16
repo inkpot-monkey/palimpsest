@@ -2,6 +2,7 @@
   config,
   pkgs,
   lib,
+  self,
   ...
 }:
 
@@ -21,12 +22,12 @@ in
       # 1. SOPS SECRETS
       # ============================================================================
       sops.secrets."email/protonmail/password" = {
-        sopsFile = ../secrets.yaml;
+        sopsFile = self.lib.getUserSecretFile "inkpotmonkey";
         format = "yaml";
       };
 
       sops.secrets."email/yeesshh/password" = {
-        sopsFile = ../secrets.yaml;
+        sopsFile = self.lib.getUserSecretFile "inkpotmonkey";
         format = "yaml";
       };
       # ============================================================================

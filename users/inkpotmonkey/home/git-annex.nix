@@ -2,6 +2,7 @@
   config,
   lib,
   inputs,
+  self,
   ...
 }:
 {
@@ -16,12 +17,12 @@
   config = lib.mkIf config.custom.home.profiles.git-annex.enable {
     sops.secrets.git_annex_gpg_key = {
       key = "git_annex/gpg_key";
-      sopsFile = ../../../secrets/git-annex.yaml;
+      sopsFile = self.lib.getSecretFile "git-annex";
     };
 
     sops.secrets.git_annex_ssh_key = {
       key = "git_annex/ssh_key/private";
-      sopsFile = ../../../secrets/git-annex.yaml;
+      sopsFile = self.lib.getSecretFile "git-annex";
     };
 
     services.git-annex = {

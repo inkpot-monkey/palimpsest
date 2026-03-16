@@ -3,6 +3,7 @@
   pkgs,
   inputs,
   lib,
+  self,
   ...
 }:
 {
@@ -26,7 +27,7 @@
       ];
 
     sops.secrets."apikey@search.brave.com" = lib.mkIf (config.identity.profile == "gui") {
-      sopsFile = ../secrets.yaml;
+      sopsFile = self.lib.getUserSecretFile "inkpotmonkey";
       format = "yaml";
     };
   };
