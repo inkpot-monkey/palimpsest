@@ -2,6 +2,7 @@
   config,
   options,
   lib,
+  self,
   ...
 }:
 
@@ -23,16 +24,16 @@ in
         sops.secrets = {
           "nebula/ca/crt" = {
             inherit owner;
-            sopsFile = ../../../secrets/nebula.yaml;
+            sopsFile = self.lib.getSecretFile "nebula";
           };
           "nebula/${name}/crt" = {
             inherit owner;
-            sopsFile = ../../../secrets/nebula.yaml;
+            sopsFile = self.lib.getSecretFile "nebula";
           };
           "nebula/${name}/key" = {
             inherit owner;
             mode = "0400";
-            sopsFile = ../../../secrets/nebula.yaml;
+            sopsFile = self.lib.getSecretFile "nebula";
           };
         };
 

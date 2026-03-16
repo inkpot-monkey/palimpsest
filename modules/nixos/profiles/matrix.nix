@@ -15,7 +15,7 @@ let
 
   # Path to the separate secrets file relative to this nix file
   # Updated to use self for absolute path
-  matrixSecrets = self + "/secrets/matrix.yaml";
+  matrixSecrets = self.lib.getSecretFile "matrix";
 in
 {
   imports = [ self.nixosModules.jmap-bridge ];

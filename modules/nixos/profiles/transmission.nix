@@ -2,6 +2,7 @@
   config,
   lib,
   settings,
+  self,
   ...
 }:
 
@@ -22,7 +23,7 @@ in
     ];
 
     sops.secrets.protonvpn_env = {
-      sopsFile = config.sops.defaultSopsFile;
+      sopsFile = self.lib.getSecretFile "secrets";
     };
 
     environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {

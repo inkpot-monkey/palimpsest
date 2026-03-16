@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  self,
   ...
 }:
 
@@ -16,15 +17,15 @@ in
     # The restic secrets
     sops.secrets.restic_password = {
       key = "restic/password";
-      sopsFile = ../../../secrets/restic.yaml;
+      sopsFile = self.lib.getSecretFile "restic";
     };
     sops.secrets.restic_repo = {
       key = "restic/repo";
-      sopsFile = ../../../secrets/restic.yaml;
+      sopsFile = self.lib.getSecretFile "restic";
     };
     sops.secrets.restic_ssh_private = {
       key = "restic/ssh/private";
-      sopsFile = ../../../secrets/restic.yaml;
+      sopsFile = self.lib.getSecretFile "restic";
     };
 
     sops.templates."restic-repo".content = ''
