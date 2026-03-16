@@ -60,7 +60,7 @@
     owner = "git-annex";
     group = "git-annex";
     mode = "0400";
-    sopsFile = "${self}/secrets/git-annex.yaml";
+    sopsFile = self.lib.getSecretFile "git-annex";
   };
 
   sops.secrets.git_annex_ssh_key = {
@@ -68,6 +68,6 @@
     owner = "git-annex";
     group = "git-annex";
     mode = "0400";
-    sopsFile = "${self}/secrets/git-annex.yaml";
+    sopsFile = self.lib.getSecretFile "git-annex";
   };
 }
