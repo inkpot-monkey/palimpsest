@@ -14,6 +14,9 @@ let
         };
       };
 
+    getSecretFile = name: self + "/secrets/${name}.yaml";
+    getUserSecretFile = user: self + "/users/${user}/secrets.yaml";
+
     mkSystem =
       {
         modules,
