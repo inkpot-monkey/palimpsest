@@ -7,7 +7,9 @@
   homeManagerInput,
   ...
 }:
-
+let
+  inherit (config.identity) username hashedPassword;
+in
 {
   imports = [
     homeManagerInput.nixosModules.home-manager
@@ -18,9 +20,9 @@
     # Base User Configuration (runs on CLI & GUI)
     # =========================================
     {
-      users.users.inkpotmonkey = {
+      users.users.${username} = {
         isNormalUser = true;
-        hashedPassword = "<SCRUBBED_PASSWORD>";
+        inherit hashedPassword;
         extraGroups = [
           "podman"
           "docker"
@@ -28,6 +30,8 @@
           "audio"
           "video"
           "wheel"
+          "i2c"
+          "systemd-journal"
         ];
         shell = pkgs.bash;
         openssh.authorizedKeys.keys = [
@@ -48,13 +52,12 @@
             ;
         };
         backupFileExtension = "backup";
-        users.inkpotmonkey =
+        users.${username} =
           { osConfig, ... }:
           {
             imports = [
               ../home/default.nix
-            ]
-            ++ lib.optional (osConfig.identity.profile == "gui") ../home/gui.nix;
+            ];
 
             # Explicitly pass the system identity to Home Manager user
             config.identity = osConfig.identity;
@@ -91,7 +94,7 @@
 
       programs.hyprland.enable = true;
 
-      users.users.inkpotmonkey = {
+      users.users.${username} = {
         extraGroups = [
           "input"
           "uinput"
