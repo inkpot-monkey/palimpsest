@@ -15,7 +15,7 @@
     ./emacs/default.nix
   ];
 
-  config = lib.mkIf config.custom.home.profiles.gui.enable {
+  config = lib.mkIf (config.identity.profile == "gui") {
     custom.home.profiles = {
       cli.enable = lib.mkDefault true; # GUI implies CLI
 
