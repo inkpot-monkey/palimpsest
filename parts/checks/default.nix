@@ -19,6 +19,9 @@
         transmission = import ./transmission {
           inherit pkgs inputs self;
         };
+        flexget = import ./flexget {
+          inherit pkgs inputs self;
+        };
       };
     };
 }
