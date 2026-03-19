@@ -2,6 +2,7 @@
   config,
   lib,
   pkgs,
+  self,
   ...
 }:
 
@@ -62,6 +63,11 @@ in
       default = "/var/lib/media";
       description = "The base path for media storage.";
     };
+    testMode = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Enable test mode (mock secrets).";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -89,6 +95,12 @@ in
     ];
 
     # --- 3. FlexGet Automation Engine ---
+    sops.secrets.flexget_webui_password = lib.mkIf (!cfg.testMode) {
+      sopsFile = self.lib.getSecretFile "secrets";
+      key = "flexget/password";
+      owner = "flexget";
+    };
+
     services.flexget = {
       enable = true;
       user = "flexget";
@@ -106,6 +118,28 @@ in
           }
         )
       );
+    };
+
+    systemd.services.flexget-password-setup = {
+      description = "Set FlexGet WebUI password";
+      before = [ "flexget.service" ];
+      wantedBy = [ "multi-user.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        User = "flexget";
+        Group = "jellyfin";
+        StateDirectory = "flexget";
+        RemainAfterExit = true;
+      };
+      script = ''
+        if [ -f "${config.sops.secrets.flexget_webui_password.path}" ]; then
+          mkdir -p /var/lib/flexget
+          if [ ! -f /var/lib/flexget/flexget.yml ]; then
+            echo "tasks: {}" > /var/lib/flexget/flexget.yml
+          fi
+          ${pkgs.flexget}/bin/flexget -c /var/lib/flexget/flexget.yml web passwd "$(cat ${config.sops.secrets.flexget_webui_password.path})"
+        fi
+      '';
     };
 
     # --- 4. System Permissions ---
