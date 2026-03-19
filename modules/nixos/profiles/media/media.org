@@ -32,3 +32,10 @@ This profile is designed for *Impermanence*. State is persisted at:
 - =/var/cache/jellyfin=
 - =/var/lib/flexget=
 - The configured =mediaPath= (default: =/var/lib/media=)
+
+* Gotchas & Troubleshooting
+** Impermanence Permissions
+When using =impermanence=, state directories (especially for Jellyfin and FlexGet) must be initialized with the correct ownership (typically =jellyfin:jellyfin= or =flexget=) to prevent startup failures after a system wipe.
+
+** Automation Latency
+Subtitle generation is an asynchronous process managed via =taskspooler=. It may take several minutes after a download completes before the subtitles are available in the media library.

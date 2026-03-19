@@ -34,3 +34,16 @@ nix build .#checks.x86_64-linux.transmission -L
 
 ** Production Secrets
 In production, the VPN configuration is managed via =sops= at =/run/secrets/transmission-vpn=.
+
+* Gotchas & Troubleshooting
+** OCI Startup Races
+In automated tests (=nixosTest=), Systemd may attempt to start the containers before =podman load= has finished pre-loading the images.
+- *Solution*: Explicitly stop the services, load the images, and then restart them in the test script.
+
+** Offline Environment (Nix Sandbox)
+Gluetun's internal healthchecks and DNS-over-TLS (DoT) will fail without public internet access.
+- *Solution*: Set =HEALTH_ENABLED=off=, =DOT=off=, and =MTU_DISCOVERY=off= for verification tests.
+
+** Wireguard Key Math
+Manually constructing Base64 strings for keys can lead to "invalid key" errors if they are not mathematically valid Curve25519 keys.
+- *Solution*: Always use =wg genkey= to generate a valid pair.
