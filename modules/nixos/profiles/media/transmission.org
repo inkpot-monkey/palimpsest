@@ -1,0 +1,36 @@
+#+TITLE: Transmission Profile
+#+AUTHOR: Inkpotmonkey
+
+* Overview
+This profile provides a secure, containerized [[https://transmissionbt.com/][Transmission]] setup routed through a [[https://github.com/qdm12/gluetun][Gluetun]] VPN client.
+
+* Architecture
+The setup consists of two OCI containers running in a shared network namespace:
+1. *Gluetun*: Manages the VPN connection (Wireguard/OpenVPN) and implements a strict killswitch.
+2. *Transmission*: Runs Torrent services, attached to Gluetun's network.
+
+* Security
+** Hashed Image Digests
+We use pinned sha256 digests for all OCI images to ensure reproducibility and protection against supply-chain attacks.
+- *Gluetun*: =qmcgaw/gluetun@sha256:ac76df2012539350af983df85c6ba32952e77a35be4a054df7dca49af0afd1db=
+- *Transmission*: =lscr.io/linuxserver/transmission@sha256:77257882d2cfe847ce2482dd79858776cfc0eb91ce882544df32db442b31460c=
+
+** VPN Killswitch
+Gluetun is configured with a strict firewall that blocks all outgoing traffic except through the VPN tunnel. If the VPN connection drops, all Transmission traffic is immediately halted.
+
+* Configuration
+** testMode
+The =custom.profiles.transmission.testMode= option allows for verifying the setup without real production secrets.
+
+When enabled:
+1. It bypasses =sops= secret requirements for =transmission-vpn=.
+2. It allows overriding image tags (e.g., using =:latest=) for local developer testing.
+3. It facilitates the use of mock VPN endpoints in the automated test suite.
+
+To run a test build:
+#+begin_src shell
+nix build .#checks.x86_64-linux.transmission -L
+#+end_src
+
+** Production Secrets
+In production, the VPN configuration is managed via =sops= at =/run/secrets/transmission-vpn=.

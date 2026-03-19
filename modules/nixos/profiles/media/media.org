@@ -1,0 +1,34 @@
+#+TITLE: Media Profile
+#+AUTHOR: Inkpotmonkey
+
+* Overview
+The Media profile orchestrates a complete media stack including consumption (=Jellyfin=), automation (=FlexGet=), and acquisition (=Transmission=).
+
+* Components
+** Jellyfin
+The primary media server. It uses the =jellyfin= group to share access with automation tools.
+
+** FlexGet
+The automation engine that monitors feeds and sends download requests to Transmission.
+- *Configuration*: Located at =/var/lib/flexget/config.yml= (managed by Nix).
+- *Scheduling*: Integrated with systemd timers for periodic execution.
+
+** Transmission
+The secure download client. See [[file:transmission.org][transmission.org]] for details on VPN and security.
+
+* Automation Workflows
+** Subtitle Generation
+The profile includes a custom =auto-sub= script (wrapping Whisper/Transcriber) that automatically generates subtitles for downloaded content.
+
+** Permissions
+All services share the =jellyfin= group to ensure seamless file access:
+- *Jellyfin*: Reads media.
+- *FlexGet*: Moves files and triggers subbing.
+- *Transmission*: Writes downloads.
+
+* State Preservation
+This profile is designed for *Impermanence*. State is persisted at:
+- =/var/lib/jellyfin=
+- =/var/cache/jellyfin=
+- =/var/lib/flexget=
+- The configured =mediaPath= (default: =/var/lib/media=)
