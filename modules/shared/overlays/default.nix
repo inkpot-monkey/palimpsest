@@ -51,7 +51,10 @@ let
     };
   };
 
-  # 3. Unstable: Access to unstable channel
+  # 4. Flexget: Fix missing WebUI assets
+  flexget = import ./flexget.nix { inherit inputs; };
+
+  # 5. Unstable: Access to unstable channel
   pkgsUnstable = final: _prev: {
     unstable = import inputs.nixpkgs-unstable {
       inherit (final.stdenv.hostPlatform) system;
@@ -69,6 +72,7 @@ in
     (additions final prev)
     // (modifications.tree-sitter final prev)
     // (modifications.antigravity final prev)
+    // (flexget final prev)
     // (pkgsUnstable final prev);
 
 }
