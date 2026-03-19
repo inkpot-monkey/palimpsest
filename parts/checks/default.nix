@@ -16,6 +16,9 @@
         media = import ./media {
           inherit pkgs inputs self;
         };
+        transmission = import ./transmission {
+          inherit pkgs inputs self;
+        };
       };
     };
 }
