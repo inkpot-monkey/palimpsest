@@ -25,7 +25,7 @@
     ./proxy.nix
     ./podman.nix
     ./affine.nix
-    ./transmission.nix
+    ./media/transmission.nix
     ./litellm.nix
     ./backup.nix
     ./blocky.nix
@@ -33,5 +33,7 @@
     ./monitoring/server.nix
     ./monitoring/smartctl.nix
     ./monitoring/exporters.nix
+    ./media
+    ./transcriber.nix
   ];
 }

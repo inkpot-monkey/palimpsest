@@ -44,6 +44,11 @@
     monitoring-smartctl.enable = true;
   };
 
+  services.transcription-node = {
+    enable = true;
+    listenAddress = "100.95.39.9";
+  };
+
   system.stateVersion = "25.05";
 
   # Disable command-not-found (handled by nix-index in home-manager)

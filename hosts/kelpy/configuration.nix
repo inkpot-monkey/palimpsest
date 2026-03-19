@@ -33,6 +33,10 @@
     litellm.enable = true;
     transmission.enable = true;
     blocky.enable = true;
+    media = {
+      enable = true;
+      transcriptionServer.address = "100.95.39.9";
+    };
   };
 
   # Sops secrets configuration

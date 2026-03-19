@@ -32,7 +32,7 @@
     proxy = ./proxy.nix;
     podman = ./podman.nix;
     affine = ./affine.nix;
-    transmission = ./transmission.nix;
+    transmission = ./media/transmission.nix;
     litellm = ./litellm.nix;
     backup = ./backup.nix;
     blocky = ./blocky.nix;
@@ -42,6 +42,10 @@
       smartctl = ./monitoring/smartctl.nix;
       exporters = ./monitoring/exporters.nix;
     };
+    n8n = ./n8n.nix;
+    media = ./media;
+    owncloud = ./owncloud.nix;
+    transcriber = ./transcriber.nix;
 
     # --- Hardware Specific (Pi) ---
     pi = ./pi;

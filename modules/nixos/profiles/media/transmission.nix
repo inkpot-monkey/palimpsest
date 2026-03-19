@@ -19,7 +19,7 @@ in
 
     systemd.tmpfiles.rules = [
       "d /var/lib/transmission/config 0755 1000 100 -"
-      "d /var/lib/transmission/Downloads 0755 1000 100 -"
+      "d /var/lib/transmission/Downloads 0775 1000 100 -"
     ];
 
     sops.secrets.protonvpn_env = {

@@ -1,0 +1,45 @@
+web_server:
+  bind: 0.0.0.0
+  port: 5050
+  web_ui: true
+
+tasks:
+  organize-movies:
+    from_transmission:
+      host: "@TRANSMISSION_HOST@"
+      port: @TRANSMISSION_PORT@
+      only_complete: true
+    if:
+      - "transmission_category == 'movies'": accept
+    metainfo_movie: true
+
+    symlink:
+      to: "@MEDIA_PATH@/movies/"
+      rename: "{{ movie_name|pathscrub }} ({{ movie_year }}){{ location|pathext }}"
+      link_type: hard
+      existing: ignore
+
+    exec:
+      auto_escape: true
+      on_output:
+        for_accepted: "@TASKSPOOLER_BIN@ @AUTOSUB_BIN@ \"@MEDIA_PATH@/movies/{{ movie_name|pathscrub }} ({{ movie_year }}){{ location|pathext }}\""
+
+  organize-series:
+    from_transmission:
+      host: "@TRANSMISSION_HOST@"
+      port: @TRANSMISSION_PORT@
+      only_complete: true
+    if:
+      - "transmission_category == 'series' or transmission_category == 'tv'": accept
+    metainfo_series: true
+
+    symlink:
+      to: "@MEDIA_PATH@/series/{{ series_name|pathscrub }}/Season {{ series_season }}/"
+      rename: "{{ series_name|pathscrub }} - {{ series_id }}{{ location|pathext }}"
+      link_type: hard
+      existing: ignore
+
+    exec:
+      auto_escape: true
+      on_output:
+        for_accepted: "@TASKSPOOLER_BIN@ @AUTOSUB_BIN@ \"@MEDIA_PATH@/series/{{ series_name|pathscrub }}/Season {{ series_season }}/{{ series_name|pathscrub }} - {{ series_id }}{{ location|pathext }}\""

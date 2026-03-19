@@ -51,6 +51,14 @@ _: {
           port = 8080;
           proxy = false;
         };
+        jellyfin = {
+          node = "kelpy";
+          port = 8096;
+        };
+        flexget = {
+          node = "kelpy";
+          port = 5050;
+        };
       };
       private = {
         litellm = {
