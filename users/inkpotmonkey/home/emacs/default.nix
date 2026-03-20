@@ -34,6 +34,8 @@ in
       extraPackages = epkgs: [
         epkgs.vterm
         epkgs.yaml
+        epkgs.just-mode
+        epkgs.justl
         treesit-grammars-patched
       ];
     };

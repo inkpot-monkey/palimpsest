@@ -638,6 +638,12 @@
 					 ;; orig. previous-matching-history-element
 					 ("M-r" . consult-history)))
 
+(use-package just-mode
+  :mode ("\\Justfile\\'" . just-mode))
+
+(use-package justl
+  :bind (("C-c j" . justl)))
+
 (use-package embark
 		:bind
 	(("C-." . embark-act)         ;; pick some comfortable binding
