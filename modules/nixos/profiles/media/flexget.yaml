@@ -31,6 +31,9 @@ tasks:
       only_complete: true
     if:
       - "transmission_category == 'series' or transmission_category == 'tv'": accept
+    all_series:
+      id_regex:
+        - \[Cap\.(\d+)\]
     metainfo_series: true
 
     symlink:

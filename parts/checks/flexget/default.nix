@@ -8,55 +8,53 @@
 pkgs.testers.nixosTest {
   name = "flexget-webui-test";
 
-  nodes.machine =
-    { lib, ... }:
-    {
-      _module.args = {
-        inherit inputs self;
-      };
-      imports = [
-        self.nixosProfiles.media
-        inputs.impermanence.nixosModules.impermanence
-        inputs.sops-nix.nixosModules.sops
-        (_: {
-          options.custom.profiles.impermanence.enable = lib.mkEnableOption "dummy";
-          config = {
-            sops.validateSopsFiles = false;
-            sops.defaultSopsFile = pkgs.writeText "dummy.yaml" "{}";
-            sops.age.keyFile = "/tmp/dummy.age";
-            custom.profiles.impermanence.enable = lib.mkForce false;
-            # Force flexget on for the test
-            custom.profiles.media = {
-              enable = true;
-              testMode = true;
-            };
-
-            # Provide mock password for the test
-            sops.secrets.flexget_webui_password.path = "/tmp/flexget_password";
-          };
-        })
-      ];
-
-      # Ensure our overlay is applied locally for the test
-      nixpkgs.overlays = [
-        (import ../../../modules/shared/overlays/flexget.nix { inherit inputs; })
-      ];
-
-      # Mock SOPS secret for the test
-      sops.secrets.flexget_webui_password = {
-        # Using a dummy path for the test
-        path = "/tmp/flexget_password";
-      };
-
-      systemd.services.flexget-password-setup = {
-        # Ensure the mock password file exists before the setup runs
-        preStart = ''
-          echo "testpassword123" > /tmp/flexget_password
-        '';
-      };
-
-      virtualisation.memorySize = 2048;
+  nodes.machine = _: {
+    _module.args = {
+      inherit inputs self;
     };
+    imports = [
+      self.nixosProfiles.media
+      inputs.impermanence.nixosModules.impermanence
+      inputs.sops-nix.nixosModules.sops
+      (_: {
+        options.custom.profiles.impermanence.enable = lib.mkEnableOption "dummy";
+        config = {
+          sops.validateSopsFiles = false;
+          sops.defaultSopsFile = pkgs.writeText "dummy.yaml" "{}";
+          sops.age.keyFile = "/tmp/dummy.age";
+          custom.profiles.impermanence.enable = lib.mkForce false;
+          # Force flexget on for the test
+          custom.profiles.media = {
+            enable = true;
+            testMode = true;
+          };
+
+          # Provide mock password for the test
+          sops.secrets.flexget_webui_password.path = "/tmp/flexget_password";
+        };
+      })
+    ];
+
+    # Ensure our overlay is applied locally for the test
+    nixpkgs.overlays = [
+      (import ../../../modules/shared/overlays/flexget.nix { inherit inputs; })
+    ];
+
+    # Mock SOPS secret for the test
+    sops.secrets.flexget_webui_password = {
+      # Using a dummy path for the test
+      path = "/tmp/flexget_password";
+    };
+
+    systemd.services.flexget-password-setup = {
+      # Ensure the mock password file exists before the setup runs
+      preStart = ''
+        echo "testpassword123" > /tmp/flexget_password
+      '';
+    };
+
+    virtualisation.memorySize = 2048;
+  };
 
   testScript = ''
     machine.start()

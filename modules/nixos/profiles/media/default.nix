@@ -92,6 +92,7 @@ in
 
     systemd.tmpfiles.rules = [
       "Z /var/cache/jellyfin 0750 jellyfin jellyfin - -"
+      "d /var/lib/jellyfin 0750 jellyfin jellyfin -"
     ];
 
     # --- 3. FlexGet Automation Engine ---
