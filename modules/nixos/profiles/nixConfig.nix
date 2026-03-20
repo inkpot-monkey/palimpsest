@@ -18,6 +18,10 @@ in
     # Nix & Global Package Configuration
     # =========================================
     nixpkgs.config.allowUnfree = true;
+    programs.nh = {
+      enable = true;
+      flake = "/home/inkpotmonkey/code/nixos";
+    };
 
     nix = {
       # Registry Pinning (The Speed Boost)
