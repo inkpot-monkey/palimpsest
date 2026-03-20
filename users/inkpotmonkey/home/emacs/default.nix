@@ -35,6 +35,7 @@ in
         epkgs.vterm
         epkgs.yaml
         epkgs.just-mode
+        epkgs.just-ts-mode
         epkgs.justl
         treesit-grammars-patched
       ];

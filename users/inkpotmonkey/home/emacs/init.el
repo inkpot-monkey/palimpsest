@@ -641,6 +641,9 @@
 (use-package just-mode
   :mode ("\\Justfile\\'" . just-mode))
 
+(use-package just-ts-mode
+  :mode ("\\Justfile\\'" . just-ts-mode))
+
 (use-package justl
   :bind (("C-c j" . justl)))
 
