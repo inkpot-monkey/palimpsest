@@ -92,12 +92,12 @@ in
 
     systemd.tmpfiles.rules = [
       "Z /var/cache/jellyfin 0750 jellyfin jellyfin - -"
-      "d /var/lib/jellyfin 0750 jellyfin jellyfin -"
+      "d /var/lib/jellyfin 0700 jellyfin jellyfin -"
     ];
 
     # --- 3. FlexGet Automation Engine ---
     sops.secrets.flexget_webui_password = lib.mkIf (!cfg.testMode) {
-      sopsFile = self.lib.getSecretFile "secrets";
+      sopsFile = self.lib.getSecretFile "media";
       key = "flexget/password";
       owner = "flexget";
     };
@@ -116,6 +116,7 @@ in
             MEDIA_PATH = toString cfg.mediaPath;
             TASKSPOOLER_BIN = "${pkgs.taskspooler}/bin/tsp";
             AUTOSUB_BIN = "${subtitler}/bin/auto-sub";
+            TRANSCRIPTION_SERVER_ADDRESS = cfg.transcriptionServer.address;
           }
         )
       );
