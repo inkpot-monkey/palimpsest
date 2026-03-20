@@ -1,6 +1,7 @@
 {
   inputs,
   pkgs,
+  lib,
   self,
   settings,
   ...
@@ -45,6 +46,13 @@
       "/home/inkpotmonkey/.ssh/id_ed25519" # User key
       "/etc/ssh/ssh_host_ed25519_key" # System key
     ];
+  };
+
+  # Disable systemd hardening features that fail in vpsFree (LXC/OpenVZ) containers
+  systemd.services = {
+    podman-gluetun.serviceConfig.IPAddressDeny = lib.mkForce [ ];
+    podman-transmission.serviceConfig.IPAddressDeny = lib.mkForce [ ];
+    jellyfin.serviceConfig.RestrictAddressFamilies = lib.mkForce [ ];
   };
 
   networking = {
