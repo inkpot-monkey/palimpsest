@@ -18,6 +18,7 @@
         PAGER = "less -X";
         LESS = "-R";
         KEYTIMEOUT = 1;
+        NOM = "0";
       };
     };
 
