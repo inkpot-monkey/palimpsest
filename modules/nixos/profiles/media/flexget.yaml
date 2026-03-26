@@ -3,12 +3,37 @@ web_server:
   port: 5050
   web_ui: true
 
+templates:
+  global:
+    regexp:
+      reject:
+        - 'CAM'
+        - 'TS'
+        - 'HDCAM'
+        - 'TELESYNC'
+
+  tv:
+    metainfo_series: yes
+    all_series: yes
+    thetvdb_lookup: yes
+    exists_series:
+      - "@MEDIA_PATH@/series"
+
 tasks:
   organize-movies:
     from_transmission:
       host: "@TRANSMISSION_HOST@"
       port: @TRANSMISSION_PORT@
       only_complete: true
+    manipulate:
+      - location:
+          replace:
+            regexp: '^/downloads/'
+            format: '/var/lib/transmission/Downloads/'
+      - location:
+          replace:
+            regexp: '^/config/'
+            format: '/var/lib/transmission/config/'
     if:
       - "transmission_category == 'movies'": accept
     metainfo_movie: true
@@ -19,22 +44,25 @@ tasks:
       link_type: hard
       existing: ignore
 
-    exec:
-      auto_escape: true
-      on_output:
-        for_accepted: "@TASKSPOOLER_BIN@ @AUTOSUB_BIN@ \"@MEDIA_PATH@/movies/{{ movie_name|pathscrub }} ({{ movie_year }}){{ location|pathext }}\""
-
   organize-series:
+    template: tv
     from_transmission:
       host: "@TRANSMISSION_HOST@"
       port: @TRANSMISSION_PORT@
       only_complete: true
-    if:
-      - "transmission_category == 'series' or transmission_category == 'tv'": accept
-    all_series:
-      id_regex:
-        - \[Cap\.(\d+)\]
-    metainfo_series: true
+    manipulate:
+      - location:
+          replace:
+            regexp: '^/downloads/'
+            format: '/var/lib/transmission/Downloads/'
+      - location:
+          replace:
+            regexp: '^/config/'
+            format: '/var/lib/transmission/config/'
+      - title:
+          replace:
+            regexp: '\[Cap\.(\d+)\]'
+            format: 'S01E\1'
 
     symlink:
       to: "@MEDIA_PATH@/series/{{ series_name|pathscrub }}/Season {{ series_season }}/"
@@ -42,7 +70,28 @@ tasks:
       link_type: hard
       existing: ignore
 
+  transcribe-movies:
+    priority: 10
+    filesystem:
+      path: "@MEDIA_PATH@/movies"
+      recursive: yes
+      regexp: '.*\.(mkv|mp4|avi)$'
+    accept_all: yes
     exec:
-      auto_escape: true
+      on_start:
+        phase: ping -c 1 @TRANSCRIPTION_SERVER_ADDRESS@
       on_output:
-        for_accepted: "@TASKSPOOLER_BIN@ @AUTOSUB_BIN@ \"@MEDIA_PATH@/series/{{ series_name|pathscrub }}/Season {{ series_season }}/{{ series_name|pathscrub }} - {{ series_id }}{{ location|pathext }}\""
+        for_accepted: "filename=\"{{ location }}\"; [ ! -f \"${filename%.*}.srt\" ] && @TASKSPOOLER_BIN@ @AUTOSUB_BIN@ \"$filename\""
+
+  transcribe-series:
+    priority: 11
+    filesystem:
+      path: "@MEDIA_PATH@/series"
+      recursive: yes
+      regexp: '.*\.(mkv|mp4|avi)$'
+    accept_all: yes
+    exec:
+      on_start:
+        phase: ping -c 1 @TRANSCRIPTION_SERVER_ADDRESS@
+      on_output:
+        for_accepted: "filename=\"{{ location }}\"; [ ! -f \"${filename%.*}.srt\" ] && @TASKSPOOLER_BIN@ @AUTOSUB_BIN@ \"$filename\""

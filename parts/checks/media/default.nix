@@ -12,6 +12,7 @@ pkgs.testers.nixosTest {
     server =
       { lib, ... }:
       {
+        _module.args.self = self;
         _module.args.inputs = inputs;
         imports = [ self.nixosProfiles.transcriber ];
         services.transcription-node = {
@@ -30,9 +31,11 @@ pkgs.testers.nixosTest {
     client =
       { lib, ... }:
       {
+        _module.args.self = self;
         _module.args.inputs = inputs;
         imports = [
           self.nixosProfiles.media
+          inputs.sops-nix.nixosModules.sops
           inputs.impermanence.nixosModules.impermanence
           (
             { lib, ... }:
@@ -50,6 +53,10 @@ pkgs.testers.nixosTest {
             port = 9999;
           };
         };
+
+        # Mock SOPS for the test
+        sops.gnupg.home = "/var/lib/sops";
+        systemd.services.flexget.preStart = lib.mkForce "mkdir -p /var/lib/flexget";
 
         # Increased memory for client
         virtualisation.memorySize = 8192;

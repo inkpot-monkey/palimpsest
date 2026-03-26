@@ -53,7 +53,7 @@ in
     ];
 
     sops.secrets.protonvpn_env = lib.mkIf (!cfg.testMode) {
-      sopsFile = self.lib.getSecretFile "secrets";
+      sopsFile = self.lib.getSecretFile "media";
     };
 
     environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {

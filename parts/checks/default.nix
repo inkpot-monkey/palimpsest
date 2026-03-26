@@ -1,7 +1,7 @@
 { inputs, self, ... }:
 {
   perSystem =
-    { pkgs, ... }:
+    { pkgs, lib, ... }:
     {
       checks = {
         affine = import ./affine {
@@ -20,7 +20,12 @@
           inherit pkgs inputs self;
         };
         flexget = import ./flexget {
-          inherit pkgs inputs self;
+          inherit
+            pkgs
+            inputs
+            self
+            lib
+            ;
         };
       };
     };

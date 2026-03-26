@@ -39,3 +39,9 @@ When using =impermanence=, state directories (especially for Jellyfin and FlexGe
 
 ** Automation Latency
 Subtitle generation is an asynchronous process managed via =taskspooler=. It may take several minutes after a download completes before the subtitles are available in the media library.
+
+* Fast Configuration Validation
+To quickly validate the FlexGet configuration schema without running a full NixOS integration test, use the following one-liner:
+#+BEGIN_SRC bash
+nix-shell -p flexget -p coreutils --run "flexget -c \$(nix build .#nixosConfigurations.kelpy.config.services.flexget.configFile --no-link --print-out-paths) check"
+#+END_SRC
