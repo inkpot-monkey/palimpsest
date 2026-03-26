@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  pkgs,
   ...
 }:
 
@@ -33,7 +34,11 @@ in
         dt-overlays = {
           hifiberry-dacplusadcpro = {
             enable = true;
-            params = { };
+            params = {
+              slave = {
+                enable = true;
+              };
+            };
           };
           disable-bt = {
             enable = true;
@@ -57,5 +62,7 @@ in
 
     # Disable onboard audio to avoid conflicts
     boot.blacklistedKernelModules = [ "snd_bcm2835" ];
+
+    environment.systemPackages = [ pkgs.i2c-tools ];
   };
 }
