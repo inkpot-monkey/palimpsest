@@ -4,6 +4,6 @@ rec {
     { ... }:
     {
       imports = [ cli ];
-      identity.profile = "gui";
+      custom.users.inkpotmonkey.identity.profile = "gui";
     };
 }

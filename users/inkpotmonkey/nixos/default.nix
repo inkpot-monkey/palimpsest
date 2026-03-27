@@ -7,9 +7,6 @@
   homeManagerInput,
   ...
 }:
-let
-  inherit (config.identity) username hashedPassword;
-in
 {
   imports = [
     homeManagerInput.nixosModules.home-manager
@@ -20,24 +17,8 @@ in
     # Base User Configuration (runs on CLI & GUI)
     # =========================================
     {
-      users.users.${username} = {
-        isNormalUser = true;
-        inherit hashedPassword;
-        extraGroups = [
-          "podman"
-          "docker"
-          "networkmanager"
-          "audio"
-          "video"
-          "wheel"
-          "i2c"
-          "systemd-journal"
-        ];
-        shell = pkgs.bash;
-        openssh.authorizedKeys.keys = [
-          config.identity.sshKey
-        ];
-      };
+      # 1. User shell (Account creation handled by User Manager)
+      users.users.inkpotmonkey.shell = pkgs.bash;
 
       # =========================================
       # Home Manager Configuration
@@ -52,22 +33,26 @@ in
             ;
         };
         backupFileExtension = "backup";
-        users.${username} =
+        users.inkpotmonkey =
           { osConfig, ... }:
+          let
+            inherit (osConfig.custom.users.inkpotmonkey) identity;
+          in
           {
             imports = [
               ../home/default.nix
+              self.homeManagerModules.options
             ];
 
             # Explicitly pass the system identity to Home Manager user
-            config.identity = osConfig.identity;
+            inherit identity;
 
             # =========================================
             # Enable Home Manager Profiles
             # =========================================
-            config.custom.home.profiles = {
+            custom.home.profiles = {
               cli.enable = true;
-              gui.enable = osConfig.identity.profile == "gui";
+              gui.enable = osConfig.custom.users.inkpotmonkey.identity.profile == "gui";
             };
           };
       };
@@ -82,7 +67,7 @@ in
     # =========================================
     # GUI Configuration (Guarded by Profile)
     # =========================================
-    (lib.mkIf (config.identity.profile == "gui") {
+    (lib.mkIf (config.custom.users.inkpotmonkey.identity.profile == "gui") {
       hardware.uinput.enable = true;
       services.kanata = {
         enable = true;
@@ -94,7 +79,7 @@ in
 
       programs.hyprland.enable = true;
 
-      users.users.${username} = {
+      users.users.inkpotmonkey = {
         extraGroups = [
           "input"
           "uinput"

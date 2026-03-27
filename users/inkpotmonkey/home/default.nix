@@ -10,11 +10,6 @@
     ./gui.nix
   ];
 
-  options.custom.home.profiles = {
-    cli.enable = lib.mkEnableOption "CLI meta-profile (base tools)";
-    gui.enable = lib.mkEnableOption "GUI meta-profile (desktop environment)";
-  };
-
   config = lib.mkMerge [
     (lib.mkIf config.custom.home.profiles.cli.enable {
       custom.home.profiles = {
