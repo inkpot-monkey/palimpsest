@@ -28,7 +28,7 @@ in
     "general" = mkHome {
       system = "x86_64-linux";
       modules = [
-        ./general/default.nix
+        ./general/home/default.nix
       ];
     };
   };
@@ -39,6 +39,6 @@ in
   flake.users = {
     inkpotmonkey = import ./inkpotmonkey/default.nix;
 
-    general = ./general/default.nix;
+    general = import ./general/default.nix;
   };
 }

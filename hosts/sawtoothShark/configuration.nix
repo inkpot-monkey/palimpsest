@@ -1,18 +1,9 @@
-{
-  self,
-  inputs,
-  ...
-}:
+{ ... }:
 {
   imports = [
     # Hardware
     ./hardware-configuration.nix
     ./dell-latitude.nix
-
-    inputs.sops-nix.nixosModules.sops
-    inputs.home-manager.nixosModules.home-manager
-    self.users.general
-    ./../../users/general/plasma.nix
 
     # Profiles
     self.nixosProfiles.bundle

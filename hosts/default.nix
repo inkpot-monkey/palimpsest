@@ -18,7 +18,8 @@ in
     sawtoothShark = mkSystem {
       modules = [
         ./sawtoothShark/configuration.nix
-        self.users.general
+        self.users.inkpotmonkey.gui
+        self.users.general.gui
       ];
     };
 
