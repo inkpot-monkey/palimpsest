@@ -8,5 +8,6 @@
     git-annex = ./git-annex;
     goose = ./goose;
     kokoro-tts = ./kokoro;
+    options = ./options.nix;
   };
 }

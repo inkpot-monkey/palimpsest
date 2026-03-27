@@ -4,11 +4,14 @@
   pkgs,
   ...
 }:
-
 let
   cfg = config.custom.profiles.base;
 in
 {
+  imports = [
+    ../options/identity.nix
+  ];
+
   options.custom.profiles = {
     base.enable = lib.mkEnableOption "base system configuration";
     pi.enable = lib.mkEnableOption "Raspberry Pi specific configuration";
