@@ -2,6 +2,7 @@
 # You can build them using 'nix build .#example'
 
 pkgs: {
+  stump = pkgs.callPackage ./stump { };
   vocabsieve = pkgs.libsForQt5.callPackage ./vocabsieve.nix { };
   finance-tools = pkgs.callPackage ./finance-tools { };
   kokoros = pkgs.callPackage ./kokoros { };
