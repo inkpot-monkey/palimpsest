@@ -46,9 +46,11 @@
     };
   };
 
-  environment.persistence."/persistent".directories = [
-    "/var/lib/git-annex"
-  ];
+  environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
+    directories = [
+      "/var/lib/git-annex"
+    ];
+  };
 
   programs.git.config.safe.directory = [
     "/var/lib/git-annex/gateway"

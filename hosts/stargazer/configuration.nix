@@ -23,8 +23,6 @@
     self.nixosProfiles.bundle
   ];
 
-  identity.profile = "gui";
-
   custom.profiles = {
     base.enable = true;
     audio.enable = true;
