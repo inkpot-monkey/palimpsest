@@ -27,6 +27,10 @@ let
   };
 in
 {
+  imports = [
+    self.nixosModules.stump
+  ];
+
   options.custom.profiles.media = {
     enable = lib.mkEnableOption "Media server and automation configuration";
     transcriptionServer = {
@@ -78,6 +82,7 @@ in
         "/var/lib/jellyfin"
         "/var/cache/jellyfin"
         "/var/lib/flexget"
+        "/var/lib/stump"
         "${cfg.mediaPath}"
       ];
     };
@@ -89,6 +94,12 @@ in
     };
 
     users.users.jellyfin.extraGroups = [ "render" ];
+
+    # --- 3. Stump Media Server ---
+    services.stump = {
+      enable = true;
+      openFirewall = true;
+    };
 
     systemd.tmpfiles.rules = [
       "Z /var/cache/jellyfin 0750 jellyfin jellyfin - -"
