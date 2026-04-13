@@ -2,7 +2,7 @@
 {
 
   config.custom.users.inkpotmonkey.identity = {
-    profile = lib.mkDefault "cli";
+    profile = lib.mkForce "gui";
     username = "inkpotmonkey";
     hashedPassword = "<SCRUBBED_PASSWORD>";
     name = "thomassdk";

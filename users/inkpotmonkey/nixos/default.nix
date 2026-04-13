@@ -32,16 +32,18 @@
             self
             ;
         };
-        backupFileExtension = "backup";
+        backupFileExtension = "hm-backup";
         users.inkpotmonkey =
           { osConfig, ... }:
           let
             inherit (osConfig.custom.users.inkpotmonkey) identity;
           in
           {
+
             imports = [
               ../home/default.nix
               self.homeManagerModules.options
+              inputs.nix-index-database.homeModules.nix-index
             ];
 
             # Explicitly pass the system identity to Home Manager user
