@@ -13,6 +13,7 @@
       statix
       nil
       just
+      nh
 
       nodejs
       vscode-langservers-extracted
