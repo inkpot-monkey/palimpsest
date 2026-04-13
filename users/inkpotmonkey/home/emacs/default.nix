@@ -6,21 +6,7 @@
 }:
 
 let
-  filteredTreeSitterGrammars = pkgs.lib.filterAttrs (
-    n: v: n != "recurseForDerivations" && pkgs.lib.isDerivation v
-  ) pkgs.tree-sitter-grammars;
-
-  treesit-grammars-patched =
-    (pkgs.emacsPackages.treesit-grammars.override {
-      pkgs = pkgs // {
-        tree-sitter = pkgs.tree-sitter.overrideAttrs (old: {
-          passthru = old.passthru // {
-            allGrammars = pkgs.lib.attrValues filteredTreeSitterGrammars;
-            builtGrammars = filteredTreeSitterGrammars;
-          };
-        });
-      };
-    }).with-all-grammars;
+  treesit-grammars-patched = pkgs.emacsPackages.treesit-grammars.with-all-grammars;
 in
 {
   options.custom.home.profiles.emacs = {
@@ -30,15 +16,22 @@ in
   config = lib.mkIf config.custom.home.profiles.emacs.enable {
     programs.emacs = {
       enable = true;
-      package = pkgs.emacs-pgtk;
-      extraPackages = epkgs: [
-        epkgs.vterm
-        epkgs.yaml
-        epkgs.just-mode
-        epkgs.just-ts-mode
-        epkgs.justl
-        treesit-grammars-patched
-      ];
+      package = pkgs.emacsWithPackagesFromUsePackage {
+        config = builtins.readFile ./init.el;
+        package = pkgs.emacs-pgtk;
+        alwaysEnsure = false;
+        extraEmacsPackages =
+          epkgs:
+          [
+            epkgs.vterm
+            epkgs.yaml
+            epkgs.just-mode
+            epkgs.just-ts-mode
+            epkgs.justl
+            treesit-grammars-patched
+          ]
+          ++ (import ./packages.nix { inherit pkgs epkgs; });
+      };
     };
 
     services.emacs = {
@@ -110,6 +103,7 @@ in
       dockerfile-language-server
       nodePackages.typescript-language-server
       nodePackages.yaml-language-server
+      nodePackages.svelte-language-server
       vscode-langservers-extracted # html, css, json, eslint
       taplo # toml
 

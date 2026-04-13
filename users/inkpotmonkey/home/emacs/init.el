@@ -18,12 +18,6 @@
 
 (use-package no-littering
     :config
-  ;; Set for customisations though I never use them
-  (setq custom-file (no-littering-expand-etc-file-name "custom.el"))
-  (when (file-exists-p custom-file)
-    (load custom-file)
-    nil)
-  
   (no-littering-theme-backups)
 
   (require 'recentf)
@@ -118,6 +112,7 @@
   (kept-old-versions 5)
   (version-control t)
 	(delete-by-moving-to-trash t)
+  (backup-by-copying t)
 
   ;; -- Undo Limits --
   (undo-limit 67108864)
@@ -274,8 +269,8 @@
 				 ("C-c C-d" . sops-edit-file)))
 
 (use-package auth-source-sops
+		:ensure nil
 		:demand t
-		:vc (:url "https://github.com/inkpot-monkey/auth-source-sops" :rev :newest)
 		:custom
 		(auth-source-sops-file "@secrets@")
 		(auth-sources '(sops))
@@ -735,15 +730,15 @@
 (use-package eat)
 
 (use-package claude-code
-		:vc (:url "https://github.com/stevemolitor/claude-code.el" :rev :newest))
+  :ensure nil)
 
 (use-package gemini-cli
-		:vc (:url "https://github.com/linchen2chris/gemini-cli.el" :rev :newest)
+		:ensure nil
 		:config
 		(setq gemini-cli-terminal-backend 'eat))
 
 (use-package ai-code-interface
-		:vc (:url "https://github.com/tninja/ai-code-interface.el" :rev :newest)
+		:ensure nil
 		;; Enable global keybinding for the main menu
 		:bind
 		(("C-, g" . ai-code-menu))
@@ -800,7 +795,7 @@
 	 ("C-, q" . gptel-quick)))
 
 (use-package gptel-quick
-		:vc (:url "https://github.com/karthink/gptel-quick" :rev :newest)
+		:ensure nil
 		:after gptel embark
 		:bind (:map embark-general-map
 								("?" . gptel-quick))
@@ -923,6 +918,7 @@
 		:custom
 	;; Makes Ediff much more usable
 	(ediff-window-setup-function 'ediff-setup-windows-plain)
+	(ediff-split-window-function 'split-window-horizontally)
 	:bind (("s-m m" . magit-status)
 				 ("s-m j" . magit-dispatch)
 				 ("s-m k" . magit-file-dispatch)
@@ -944,6 +940,7 @@
 		 '(:documentFormattingProvider
 			 :documentRangeFormattingProvider
 			 :documentOnTypeFormattingProvider))
+		(eglot-events-buffer-size 0)
 		:bind
 		(:map eglot-mode-map
 					("C-c r" . eglot-rename)
@@ -1033,7 +1030,8 @@
 					("M-n" . flymake-goto-next-error)
 					("M-p" . flymake-goto-prev-error)))
 
-(use-package ement)
+(use-package ement
+  :defer t)
 
 
 (use-package nix-ts-mode
@@ -1136,8 +1134,8 @@
 		(html-ts-mode . eglot-ensure))
 
 (use-package svelte-ts-mode
+		:ensure nil
 		:demand t
-		:vc (:url "https://github.com/leafOfTree/svelte-ts-mode" :rev :newest)
 		:after eglot
 		:config
 		(add-to-list 'eglot-server-programs '(svelte-ts-mode . ("svelteserver" "--stdio"))))
@@ -1219,9 +1217,11 @@
 (use-package consult-omni
 		:ensure nil
 		:after consult
-		:load-path "~/.config/emacs/manual-packages/consult-omni"
 		:init
-		(add-to-list 'load-path "~/.config/emacs/manual-packages/consult-omni/sources")
+		(let ((dir (file-name-directory (locate-library "consult-omni"))))
+			(when dir
+				(add-to-list 'load-path (expand-file-name "sources" dir))
+				(add-to-list 'load-path (expand-file-name "apps" dir))))
 		(require 'consult-omni)
 		(require 'consult-omni-sources)
 		(require 'consult-omni-apps)
@@ -1282,7 +1282,7 @@ buffer (*App: Name*)."
 		("C-c s" . my/consult-omni-launcher))
 
 (use-package sly
-		(sly sly-connect)
+		:commands (sly sly-connect)
 	
 	:custom
 	(inferior-lisp-program "sbcl")
