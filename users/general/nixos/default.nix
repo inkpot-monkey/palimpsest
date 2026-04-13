@@ -1,6 +1,7 @@
 {
   pkgs,
   lib,
+  config,
   inputs,
   self,
   homeManagerInput,
@@ -67,7 +68,7 @@
       };
 
       # 4. Persistence
-      environment.persistence."/persistent" = {
+      environment.persistence."/persist" = lib.mkIf config.custom.profiles.impermanence.enable {
         # System-wide persistence migrated from general/default.nix (non-duplicates)
         directories = [
           "/var/lib/systemd/coredump"
@@ -100,8 +101,7 @@
             ".claude"
             ".screenrc"
           ];
-          files = [
-          ];
+          files = [ ];
         };
       };
     }

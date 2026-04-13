@@ -9,7 +9,7 @@ let
 in
 {
   imports = [
-    ../options/identity.nix
+    ../../../users/identity.nix
   ];
 
   options.custom.profiles = {
