@@ -54,25 +54,16 @@ let
   # 4. Flexget: Fix missing WebUI assets
   flexget = import ./flexget.nix { inherit inputs; };
 
-  # 5. Unstable: Access to unstable channel
-  pkgsUnstable = final: _prev: {
-    unstable = import inputs.nixpkgs-unstable {
-      inherit (final.stdenv.hostPlatform) system;
-      config.allowUnfree = true;
-    };
-  };
-
 in
 {
-  inherit additions pkgsUnstable modifications;
+  inherit additions modifications;
 
   # The "Single Overlay" that combines everything
-  default =
-    final: prev:
-    (additions final prev)
-    // (modifications.tree-sitter final prev)
-    // (modifications.antigravity final prev)
-    // (flexget final prev)
-    // (pkgsUnstable final prev);
-
+  # Using composeManyExtensions is more robust than manual attribute merging
+  default = inputs.nixpkgs.lib.composeManyExtensions [
+    additions
+    modifications.tree-sitter
+    modifications.antigravity
+    flexget
+  ];
 }
