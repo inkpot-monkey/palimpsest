@@ -58,6 +58,16 @@
       url = "github:nix-community/nix-index-database";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    eca = {
+      url = "github:editor-code-assistant/eca";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    openclaw-nix = {
+      url = "github:Scout-DJ/openclaw-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -95,6 +105,7 @@
         }:
         {
           _module.args.pkgs = self.lib.mkPkgs system;
+          _module.args.unstable = (self.lib.mkPkgs system).unstable;
           formatter = pkgs.nixfmt;
           packages = import ./pkgs pkgs;
         };

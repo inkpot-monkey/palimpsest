@@ -9,6 +9,7 @@ in
 {
   flake.nixosConfigurations = {
     stargazer = mkSystem {
+      system = "x86_64-linux";
       modules = [
         ./stargazer/configuration.nix
         self.users.inkpotmonkey.gui
@@ -16,6 +17,7 @@ in
     };
 
     sawtoothShark = mkSystem {
+      system = "x86_64-linux";
       modules = [
         ./sawtoothShark/configuration.nix
         self.users.inkpotmonkey.gui
@@ -28,6 +30,7 @@ in
     # just deploy porcupineFish
     # nixos-rebuild --target-host porcupineFish --sudo --ask-sudo-password switch --flake .#porcupineFish
     porcupineFish = mkPiSystem {
+      system = "aarch64-linux";
       specialArgs = {
         homeManagerInput = inputs.home-manager-25_11;
       };
@@ -45,6 +48,7 @@ in
     # just deploy kelpy
     # nixos-rebuild --target-host kelpy --sudo --ask-sudo-password switch --flake .#kelpy
     kelpy = mkSystem {
+      system = "x86_64-linux";
       modules = [
         ./kelpy/configuration.nix
         self.users.inkpotmonkey.cli
@@ -52,6 +56,7 @@ in
     };
 
     potbelliedSeahorse = mkSystem {
+      system = "x86_64-linux";
       modules = [
         ./potbelliedSeahorse/configuration.nix
         self.users.inkpotmonkey.cli
