@@ -14,6 +14,8 @@
 
   config = lib.mkMerge [
     {
+      nixpkgs.overlays = [ inputs.emacs-overlay.overlays.default ];
+
       # 1. User shell (Account creation handled by User Manager)
       users.users.general.shell = pkgs.bash;
 

@@ -2,6 +2,7 @@
   config,
   lib,
   pkgs,
+  inputs,
   ...
 }:
 let
@@ -72,6 +73,8 @@ in
   };
 
   config = {
+    nixpkgs.overlays = [ inputs.emacs-overlay.overlays.default ];
+
     # Emacs Service (Daemon)
     services.emacs = {
       enable = true;

@@ -28,14 +28,30 @@ in
   flake.homeConfigurations = {
     "inkpotmonkey" = mkHome {
       system = "x86_64-linux";
-      overlays = [ inputs.emacs-overlay.overlays.default ];
-      modules = [ ./inkpotmonkey/home/default.nix ];
+      modules = [
+        ./inkpotmonkey/home/default.nix
+        self.homeManagerModules.options
+        {
+          identity = {
+            profile = "gui";
+            name = "Inkpot Monkey";
+            email = "inkpot-monkey@palebluebytes.space";
+            username = "inkpotmonkey";
+          };
+          nixpkgs.config.allowUnfree = true;
+          nixpkgs.config.permittedInsecurePackages = [
+            "beekeeper-studio-5.5.7"
+          ];
+        }
+      ];
     };
 
     "general" = mkHome {
       system = "x86_64-linux";
       modules = [
         ./general/home/default.nix
+        self.homeManagerModules.options
+        { identity.profile = "gui"; }
       ];
     };
   };
