@@ -14,28 +14,34 @@ act as tab on quick tap, but change hjkl keys to arrow keys on hold.
   file while unmapping lctl and ralt from defsrc.
   |#
   process-unmapped-keys yes
+  danger-enable-cmd yes
 
   ;; Should only affect the laptop keyboard
-  ;; linux-dev /dev/input/by-path/platform-i8042-serio-0-event-kbd
+  linux-dev-names-include (
+    "AT Translated Set 2 keyboard"
+  )
 )
 
 (defsrc
   tab
-  caps         h    j    k    l
+  caps d  h    j    k    l
+  brdn
 )
 
 (deflayer default
   @tab
-  @cap         _    _    _    _
+  @cap @dim_zero _    _    _    _
+  brdn
 )
 
 (deflayer arrows
   _
-  _                
-              left down up rght
+  _    _    left down up rght
+  _
 )
 
 (defalias
   cap (tap-hold-press 200 200 esc lctl)
   tab (tap-hold-press 200 200 tab (layer-toggle arrows))
+  dim_zero (fork d (cmd "brightnessctl set 0") (lmet))
 )

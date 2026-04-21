@@ -22,9 +22,14 @@
     direnv.enable = true;
     fonts.enable = true;
     gaming.enable = false;
+    bluetooth.enable = true;
     impermanence.enable = false;
     litellm.enable = false;
     monitoring-client.enable = false;
+    tailscale = {
+      enable = true;
+      acceptDns = true;
+    };
   };
 
   # Graphics
@@ -62,12 +67,14 @@
   networking.hostName = "sawtoothShark";
   nixpkgs = {
     hostPlatform = "x86_64-linux";
-    overlays = [ inputs.emacs-overlay.overlays.default ];
   };
 
   # Input configuration (Kanata / uinput)
   services.udev.extraRules = ''
     KERNEL=="uinput", MODE="0660", GROUP="uinput", OPTIONS+="static_node=uinput"
+
+    # Disable power management for Intel Bluetooth adapter
+    ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="8087", ATTR{idProduct}=="0a2b", ATTR{power/control}="on"
   '';
 
   users.users.inkpotmonkey.extraGroups = [ "uinput" ];

@@ -1,17 +1,11 @@
 ;;; early-init.el --- Early Init File -*- lexical-binding: t; no-byte-compile: t -*-
 
 (setq gc-cons-threshold most-positive-fixnum)
-(setq inhibit-interaction t)
 (setq package-check-signature nil)
 
 ;; Force non-interactive answers for any prompts during initialization
 (setf (symbol-function 'yes-or-no-p) (lambda (&rest _) t))
 (setf (symbol-function 'y-or-n-p) (lambda (&rest _) t))
-
-;; Set custom file path early to avoid prompts when saving customizations
-(setq custom-file (expand-file-name "etc/custom.el" user-emacs-directory))
-(unless (file-exists-p (file-name-directory custom-file))
-  (make-directory (file-name-directory custom-file) t))
 
 ;; Push to alist is the most performant and correct way in early-init
 (push '(menu-bar-lines . 0) default-frame-alist)

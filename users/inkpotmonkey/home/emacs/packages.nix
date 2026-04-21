@@ -92,4 +92,21 @@
       cp -rv sources $out/share/emacs/site-lisp/
     '';
   })
+  (epkgs.trivialBuild {
+    pname = "eca";
+    version = "unstable-2026-04-17";
+    src = pkgs.fetchFromGitHub {
+      owner = "editor-code-assistant";
+      repo = "eca-emacs";
+      rev = "ecf9d229e012ceabb871b261c28cc06702d601a7";
+      hash = "sha256-nIvqXEccWG4lsgsHTyt7KmdSMS7Oq0Fl4Oo4GPoS9ck=";
+    };
+    packageRequires = [
+      epkgs.dash
+      epkgs.s
+      epkgs.f
+      epkgs.markdown-mode
+      epkgs.compat
+    ];
+  })
 ]

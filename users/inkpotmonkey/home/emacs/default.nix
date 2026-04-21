@@ -2,18 +2,18 @@
   pkgs,
   config,
   lib,
+  inputs,
   ...
 }:
 
-let
-  treesit-grammars-patched = pkgs.emacsPackages.treesit-grammars.with-all-grammars;
-in
 {
   options.custom.home.profiles.emacs = {
     enable = lib.mkEnableOption "Emacs configuration (pgtk, tree-sitter, doom-inspired)";
   };
 
   config = lib.mkIf config.custom.home.profiles.emacs.enable {
+    nixpkgs.overlays = [ inputs.emacs-overlay.overlays.default ];
+
     programs.emacs = {
       enable = true;
       package = pkgs.emacsWithPackagesFromUsePackage {
@@ -28,9 +28,15 @@ in
             epkgs.just-mode
             epkgs.just-ts-mode
             epkgs.justl
-            treesit-grammars-patched
+            epkgs.shell-command-plus
+            epkgs.xterm-color
+            epkgs.eshell-syntax-highlighting
+            # treesit-grammars-patched
+            epkgs.treesit-grammars.with-all-grammars
           ]
-          ++ (import ./packages.nix { inherit pkgs epkgs; });
+          ++ (import ./packages.nix {
+            inherit epkgs pkgs;
+          });
       };
     };
 
@@ -56,7 +62,7 @@ in
               "inkpot-monkey"
               "inkpot-monkey@palebluebytes.space"
               "${../../secrets.yaml}"
-              "${treesit-grammars-patched}/lib"
+              "${pkgs.emacsPackages.treesit-grammars.with-all-grammars}/lib"
             ]
             (builtins.readFile ./init.el);
       };
@@ -122,6 +128,9 @@ in
       html-tidy
       stylelint
       jsbeautifier
+
+      # ECA (Editor Code Assistant) server
+      inputs.eca.packages.${pkgs.system}.default
     ];
 
     programs.bash.bashrcExtra = ''

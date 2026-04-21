@@ -13,10 +13,9 @@
   ];
 
   config = lib.mkMerge [
-    # =========================================
-    # Base User Configuration (runs on CLI & GUI)
-    # =========================================
     {
+      nixpkgs.overlays = [ inputs.emacs-overlay.overlays.default ];
+
       # 1. User shell (Account creation handled by User Manager)
       users.users.inkpotmonkey.shell = pkgs.bash;
 
@@ -73,10 +72,20 @@
       hardware.uinput.enable = true;
       services.kanata = {
         enable = true;
+        package = pkgs.kanata-with-cmd;
         keyboards.default = {
           configFile = ../home/configs/kanata.kbd;
           extraDefCfg = "process-unmapped-keys yes";
         };
+      };
+
+      systemd.services.kanata-default = {
+        path = [ pkgs.brightnessctl ];
+        serviceConfig.SupplementaryGroups = [
+          "input"
+          "uinput"
+          "video"
+        ];
       };
 
       programs.hyprland.enable = true;

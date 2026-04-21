@@ -1,20 +1,15 @@
 ;;; init.el --- Init File -*- lexical-binding: t -*-
 
 (require 'package)
-(add-to-list 'package-archives '("melpa" . "https://melpa.org/packages/") t)
-(setq package-install-upgrade-built-in t)
-(add-to-list 'package-pinned-packages '(vterm . "manual"))
-(add-to-list 'package-pinned-packages '(yaml . "manual"))
 
 (setq native-comp-async-report-warnings-errors 'silent)
 (setq warning-minimum-level :error)
+
+;; Initialize the package system so Emacs can see the Nix-provided packages in load-path
 (package-initialize)
 
-(unless package-archive-contents
-  (package-refresh-contents))
-
 (require 'use-package)
-(setq use-package-always-ensure t)
+(setq use-package-always-ensure nil)
 
 (use-package no-littering
     :config
@@ -42,17 +37,6 @@
   (setq select-enable-clipboard t)
   (setq select-enable-primary t)
   
-  ;; Force sending to wl-clipboard so cliphist can pick it up
-  (defun my/copy-to-cliphist (text &optional push)
-		(let ((process-connection-type nil)) 
-			(let ((proc (make-process :name "wl-copy" 
-																:command '("wl-copy") 
-																:connection-type 'pipe)))
-				(process-send-string proc text)
-				(process-send-eof proc))))
-	
-  (setq interprogram-cut-function 'my/copy-to-cliphist)
-
   (setq treesit-extra-load-path '("@treesit-grammars@"))
 
   ;; -- Global Modes --
@@ -161,7 +145,9 @@
 
   :bind
   ("M-z" . zap-up-to-char)
-  ("M-%" . query-replace-regexp))
+  ("M-%" . query-replace-regexp)
+	("C-z" . undo)
+	("C-S-z" . undo-redo))
 
 (use-package prog-mode
     :ensure nil
@@ -176,13 +162,13 @@
     (savehist-mode))
 
 (use-package crux
-    :bind
+		:bind
+  ("M-o" . crux-other-window-or-switch-buffer)
   ("C-k" . crux-smart-kill-line)
   ("C-a" . crux-move-beginning-of-line)
   ("s-j" . crux-top-join-line)
   ("C-c e" . crux-eval-and-replace)
   ("C-<return>" . crux-smart-open-line-above)
-  ("M-o" . crux-other-window-or-switch-buffer)
   ("C-c r" . crux-rename-file-and-buffer)
   ("C-g" . crux-keyboard-quit-dwim)
   :config
@@ -207,14 +193,6 @@
   (dolist (var '("NIX_PATH" 
                  "NIX_SSL_CERT_FILE"))
     (add-to-list 'exec-path-from-shell-variables var)))
-
-
-(use-package undo-fu
-		:custom
-	(undo-fu-session-compression 'zst)
-	:bind
-	("C-z" . undo-fu-only-undo)
-	("C-S-z" . undo-fu-only-redo))
 
 (use-package vundo)
 
@@ -634,13 +612,13 @@
 					 ("M-r" . consult-history)))
 
 (use-package just-mode
-  :mode ("\\Justfile\\'" . just-mode))
+		:mode ("\\Justfile\\'" . just-mode))
 
 (use-package just-ts-mode
-  :mode ("\\Justfile\\'" . just-ts-mode))
+		:mode ("\\Justfile\\'" . just-ts-mode))
 
 (use-package justl
-  :bind (("C-c j" . justl)))
+		:bind (("C-c j" . justl)))
 
 (use-package embark
 		:bind
@@ -727,15 +705,12 @@
 
 (use-package popup)
 (use-package projectile)
-(use-package eat)
 
 (use-package claude-code
-  :ensure nil)
+		:ensure nil)
 
 (use-package gemini-cli
-		:ensure nil
-		:config
-		(setq gemini-cli-terminal-backend 'eat))
+		:ensure nil)
 
 (use-package ai-code-interface
 		:ensure nil
@@ -814,6 +789,11 @@
 		:config
 		(require 'mcp-hub)
 		:init (mcp-hub-start-all-server))
+
+(use-package eca
+		:ensure nil
+		:config
+		(setq eca-custom-command "eca"))
 
 (use-package daemons)
 
@@ -1009,13 +989,6 @@
 		:config
 		(eglot-tempel-mode t))
 
-(use-package fancy-compilation
-		:after compile
-		:custom
-		(fancy-compilation-override-colors nil)
-		(fancy-compilation-quiet-prelude nil)
-		:config
-		(fancy-compilation-mode))
 
 (use-package quickrun)
 
@@ -1030,8 +1003,76 @@
 					("M-n" . flymake-goto-next-error)
 					("M-p" . flymake-goto-prev-error)))
 
+;;; --- Shell & Compilation ---
+
+(use-package shell-command+
+		:bind (([remap shell-command] . shell-command+)))
+
+(use-package xterm-color
+		:init
+	(setq comint-terminfo-terminal "xterm-256color")
+	(setq compilation-environment '("TERM=xterm-256color"))
+	:config
+	(defun my/advice-compilation-filter (f proc string)
+		"Advice for `compilation-filter' to handle ANSI colors."
+		(funcall f proc (xterm-color-filter string)))
+
+	(advice-add 'compilation-filter :around #'my/advice-compilation-filter)
+
+	(defun my/advice-compile-sudo (orig-fun command &optional comint)
+		"Automatically enable comint-mode for sudo commands in `compile`."
+		(let ((cmd (string-trim command)))
+			(if (string-match-p "^sudo " cmd)
+					(funcall orig-fun command t)
+				(funcall orig-fun command comint))))
+
+	(advice-add 'compile :around #'my/advice-compile-sudo)
+
+	(defun my/ansi-colorize-buffer ()
+		(let ((inhibit-read-only t))
+			(xterm-color-colorize-buffer)))
+
+	(add-hook 'shell-mode-hook (lambda ()
+															 (setq-local xterm-color-preserve-properties t)
+															 (setq-local comint-inhibit-carriage-motion nil)
+															 (add-hook 'comint-preoutput-filter-functions 'xterm-color-filter nil t)))
+	
+	;; Carriage Return (CR) filter for clean progress bars (e.g. Nix builds)
+	(defun my/compilation-filter-cr-hook ()
+		(let ((inhibit-read-only t))
+			(save-excursion
+				(goto-char compilation-filter-start)
+				(while (search-forward "\r" nil t)
+					(delete-region (line-beginning-position) (point))))))
+	
+	(add-hook 'compilation-filter-hook #'my/compilation-filter-cr-hook))
+
+(use-package eshell
+		:ensure nil
+		:bind (("C-c e" . eshell))
+		:custom
+		(eshell-history-size 10000)
+		(eshell-buffer-maximum-lines 10000)
+		(eshell-hist-ignoredups t)
+		(eshell-scroll-to-bottom-on-input t)
+		(eshell-destroy-buffer-when-process-dies t)
+		(eshell-visual-commands '("top" "htop" "less" "more" "lynx" "ncdu" "vifm"))
+		:config
+		(use-package eshell-syntax-highlighting
+				:config
+			(eshell-syntax-highlighting-global-mode +1))
+
+		(defun my/eshell-setup ()
+			"Custom setup for Eshell."
+			(add-hook 'completion-at-point-functions #'cape-file nil t)
+			(add-hook 'completion-at-point-functions #'cape-history nil t)
+			(setq-local corfu-auto nil)
+			(corfu-mode +1))
+		
+		(add-hook 'eshell-mode-hook #'my/eshell-setup))
+
 (use-package ement
-  :defer t)
+		:defer t)
 
 
 (use-package nix-ts-mode
@@ -1140,7 +1181,8 @@
 		:config
 		(add-to-list 'eglot-server-programs '(svelte-ts-mode . ("svelteserver" "--stdio"))))
 
-(use-package astro-ts-mode)
+(use-package astro-ts-mode
+		:mode "\\.astro\\'")
 
 (use-package css-ts-mode
 		:ensure nil
@@ -1283,19 +1325,19 @@ buffer (*App: Name*)."
 
 (use-package sly
 		:commands (sly sly-connect)
-	
-	:custom
-	(inferior-lisp-program "sbcl")
-	
-	(sly-symbol-completion-mode 'radix)
-	
-	:config
-	(sly-setup '(sly-fancy))
-	
-	:bind
-	(:map sly-mode-map
-				("M-." . sly-edit-definition)
-				("C-c C-d h" . sly-documentation-lookup)))
+		
+		:custom
+		(inferior-lisp-program "sbcl")
+		
+		(sly-symbol-completion-mode 'radix)
+		
+		:config
+		(sly-setup '(sly-fancy))
+		
+		:bind
+		(:map sly-mode-map
+					("M-." . sly-edit-definition)
+					("C-c C-d h" . sly-documentation-lookup)))
 
 (use-package sly-quicklisp
 		:after sly)
@@ -1372,7 +1414,13 @@ buffer (*App: Name*)."
 						(:name "sent" :query "tag:sent" :key "t")
 						(:name "drafts" :query "tag:draft" :key "d")
 						(:name "all mail" :query "*" :key "a"))))
+
 ;; Consult integration (searching mail with completion)
 (use-package consult-notmuch
 		:after (consult notmuch)
 		:bind ("C-c n" . consult-notmuch))
+
+
+(add-hook 'emacs-startup-hook
+          (lambda ()
+            (setq gc-cons-threshold (* 16 1024 1024))))
