@@ -2,9 +2,8 @@
   config,
   options,
   lib,
-  pkgs,
-  inputs,
   settings,
+  unstable,
   ...
 }:
 
@@ -47,8 +46,8 @@ in
 
         services.blocky = {
           enable = true;
-          # Use the unstable package to ensure we have the latest binary.
-          package = inputs.nixpkgs.legacyPackages.${pkgs.stdenv.hostPlatform.system}.blocky;
+          # Use the injected unstable package safely via specialArgs.
+          package = unstable.blocky;
           settings = {
             ports.dns = [ "127.0.0.1:53" ] ++ (lib.optionals hasTailscale tailscaleBind);
 
