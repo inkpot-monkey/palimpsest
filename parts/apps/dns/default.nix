@@ -1,4 +1,9 @@
-{ pkgs, self, ... }:
+{
+  pkgs,
+  self,
+  inputs,
+  ...
+}:
 let
   dnsApp = pkgs.writeShellApplication {
     name = "dns";
@@ -14,45 +19,53 @@ let
       DNS_DIR=$(mktemp -d)
       trap 'rm -rf "$DNS_DIR"' EXIT
 
-      cp "${./palebluebytes.space.js}" "$DNS_DIR/dnsconfig.js"
+      # Copy JS config
+      cp "${./dnsconfig.js}" "$DNS_DIR/dnsconfig.js"
 
-      SECRETS_FILE="${self}/secrets/secrets.yaml"
-      DATA_FILE="dns-data.json"
+      # Fallback to local secrets directory if SECRETS_PATH is not set
+      DEFAULT_SECRETS="${inputs.secrets}/profiles/networking.yaml"
+      SECRETS_FILE="''${SECRETS_PATH:-$DEFAULT_SECRETS}"
+      DATA_FILE="$DNS_DIR/dns-data.json"
 
-      echo "Dumping infrastructure settings to $DNS_DIR/$DATA_FILE..."
+      echo "Dumping infrastructure settings to $DATA_FILE..."
       echo '${
         builtins.toJSON {
           inherit (self.settings) services;
           inherit (self.settings) nodes;
         }
-      }' | jq . > "$DNS_DIR/$DATA_FILE"
-
-      if [[ ! -f "$SECRETS_FILE" ]]; then
-        echo "Error: secrets.yaml not found at $SECRETS_FILE" >&2
-        exit 1
-      fi
-
-      echo "Decrypting Cloudflare token..."
-      TOKEN=$(sops --decrypt --extract '["cloudflare_dns_token"]' "$SECRETS_FILE")
-
-      CREDS_JSON=$(mktemp --suffix=.json)
-      trap 'rm -f "$CREDS_JSON"' EXIT
-
-      # Secure JSON construction
-      jq -n --arg token "$TOKEN" '{
-        "cloudflare": {
-          "TYPE": "CLOUDFLAREAPI",
-          "apitoken": $token
-        }
-      }' > "$CREDS_JSON"
+      }' | jq . > "$DATA_FILE"
 
       COMMAND="''${1:-preview}"
+
+      if [[ "$COMMAND" != "check" ]]; then
+        if [[ ! -f "$SECRETS_FILE" ]]; then
+          echo "Error: networking.yaml not found at $SECRETS_FILE" >&2
+          echo "Hint: You can override this path by setting SECRETS_PATH env var." >&2
+          exit 1
+        fi
+
+        echo "Decrypting Cloudflare token from $SECRETS_FILE..."
+        TOKEN=$(sops --decrypt --extract '["cloudflare_dns_token"]' "$SECRETS_FILE")
+
+        CREDS_JSON=$(mktemp --suffix=.json)
+        trap 'rm -f "$CREDS_JSON"' EXIT
+
+        # Secure JSON construction using jq to avoid shell injection
+        jq -n --arg token "$TOKEN" '{
+          "cloudflare": {
+            "TYPE": "CLOUDFLAREAPI",
+            "apitoken": $token
+          }
+        }' > "$CREDS_JSON"
+      fi
 
       echo "Executing: dnscontrol check..."
       dnscontrol check --config "$DNS_DIR/dnsconfig.js"
 
-      echo "Executing: dnscontrol $COMMAND..."
-      dnscontrol "$COMMAND" --config "$DNS_DIR/dnsconfig.js" --creds "$CREDS_JSON"
+      if [[ "$COMMAND" != "check" ]]; then
+        echo "Executing: dnscontrol $COMMAND..."
+        dnscontrol "$COMMAND" --config "$DNS_DIR/dnsconfig.js" --creds "$CREDS_JSON"
+      fi
 
       if [[ "$COMMAND" == "preview" ]]; then
         echo ""
