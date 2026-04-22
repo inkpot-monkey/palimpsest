@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  inputs,
   ...
 }:
 
@@ -14,8 +15,12 @@ in
 
   config = lib.mkIf cfg.enable {
     # 1. Declare the individual nested secrets
-    sops.secrets."wifi/home/ssid" = { };
-    sops.secrets."wifi/home/psk" = { };
+    sops.secrets."wifi/home/ssid" = {
+      sopsFile = inputs.secrets + "/profiles/wireless.yaml";
+    };
+    sops.secrets."wifi/home/psk" = {
+      sopsFile = inputs.secrets + "/profiles/wireless.yaml";
+    };
 
     # 2. Build the environment file using a SOPS template
     sops.templates."wifi_home_env" = {

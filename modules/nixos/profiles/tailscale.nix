@@ -1,7 +1,7 @@
 {
   config,
   lib,
-  self,
+  inputs,
   ...
 }:
 
@@ -57,7 +57,7 @@ in
 
         # 2. SOPS Secret for Tailscale Auth Key
         sops.secrets.tailscale_key = {
-          sopsFile = self.lib.getSecretFile "secrets";
+          sopsFile = inputs.secrets + "/profiles/tailscale.yaml";
         };
 
         # 3. Tailscale Service Configuration

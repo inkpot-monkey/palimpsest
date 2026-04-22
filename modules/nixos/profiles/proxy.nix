@@ -3,6 +3,7 @@
   lib,
   settings,
   pkgs,
+  inputs,
   ...
 }:
 
@@ -19,6 +20,7 @@ in
   config = lib.mkIf cfg.enable {
     sops = {
       secrets.cloudflare_dns_token = {
+        sopsFile = inputs.secrets + "/profiles/networking.yaml";
         owner = "caddy";
         group = "caddy";
       };
