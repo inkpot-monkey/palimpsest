@@ -23,7 +23,19 @@ in
       flake = "/home/inkpotmonkey/code/nixos";
     };
 
+    sops.secrets.github_token = {
+      sopsFile = inputs.secrets + "/profiles/github.yaml";
+    };
+
+    sops.templates."nix-github-token".content = ''
+      access-tokens = github.com=${config.sops.placeholder.github_token}
+    '';
+
     nix = {
+      extraOptions = ''
+        !include ${config.sops.templates."nix-github-token".path}
+      '';
+
       # Registry Pinning (The Speed Boost)
       registry = lib.mkForce (lib.mapAttrs (_: value: { flake = value; }) inputs);
 

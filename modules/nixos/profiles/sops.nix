@@ -2,7 +2,6 @@
   config,
   lib,
   inputs,
-  self,
   ...
 }:
 
@@ -18,9 +17,15 @@ in
 
   config = lib.mkIf cfg.enable {
     sops = {
-      defaultSopsFile = self + "/secrets/secrets.yaml";
       defaultSopsFormat = "yaml";
       useSystemdActivation = true;
+
+      age = {
+        # Automatically derive the age key from the host SSH key
+        sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
+        keyFile = "/var/lib/sops-nix/key.txt";
+        generateKey = true;
+      };
     };
   };
 }
