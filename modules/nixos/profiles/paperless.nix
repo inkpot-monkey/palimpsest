@@ -3,6 +3,7 @@
   lib,
   options,
   settings,
+  inputs,
   ...
 }:
 
@@ -22,6 +23,7 @@ in
     lib.mkMerge [
       {
         sops.secrets.paperless_secret = {
+          sopsFile = inputs.secrets + "/profiles/paperless.yaml";
           owner = config.services.paperless.user;
           inherit (config.users.users.${config.services.paperless.user}) group;
         };
