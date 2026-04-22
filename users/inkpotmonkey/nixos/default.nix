@@ -16,7 +16,19 @@
     {
       nixpkgs.overlays = [ inputs.emacs-overlay.overlays.default ];
 
-      # 1. User shell (Account creation handled by User Manager)
+      # 1. User shell and keys
+      custom.users.inkpotmonkey.identity.trustedKeys =
+        let
+          keyDir = ../keys;
+          # Read all .pub files in the keys directory
+          keyFiles =
+            if builtins.pathExists keyDir then
+              lib.filter (lib.hasSuffix ".pub") (lib.attrNames (builtins.readDir keyDir))
+            else
+              [ ];
+        in
+        map (file: builtins.readFile (keyDir + "/${file}")) keyFiles;
+
       users.users.inkpotmonkey.shell = pkgs.bash;
 
       # =========================================

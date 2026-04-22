@@ -1,8 +1,6 @@
-{ lib, ... }:
-{
+_: {
 
   config.custom.users.inkpotmonkey.identity = {
-    profile = lib.mkForce "gui";
     username = "inkpotmonkey";
     hashedPassword = "<SCRUBBED_PASSWORD>";
     name = "thomassdk";

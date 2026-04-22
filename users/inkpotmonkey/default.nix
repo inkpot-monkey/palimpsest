@@ -1,9 +1,14 @@
 rec {
-  cli = ./bundle.nix;
+  cli =
+    { ... }:
+    {
+      imports = [ ./bundle.nix ];
+      custom.users.inkpotmonkey.identity.profile = "cli";
+    };
   gui =
     { ... }:
     {
-      imports = [ cli ];
+      imports = [ ./bundle.nix ];
       custom.users.inkpotmonkey.identity.profile = "gui";
     };
 }

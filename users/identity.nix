@@ -42,6 +42,11 @@
             description = "Additional groups for the user";
             default = [ ];
           };
+          trustedKeys = lib.mkOption {
+            type = lib.types.listOf lib.types.str;
+            description = "List of trusted public SSH keys for this user";
+            default = [ ];
+          };
         };
       }
     );
@@ -68,7 +73,9 @@
       isNormalUser = true;
       inherit (userCfg.identity) hashedPassword extraGroups;
       description = userCfg.identity.name;
-      openssh.authorizedKeys.keys = lib.optional (userCfg.identity.sshKey != "") userCfg.identity.sshKey;
+      openssh.authorizedKeys.keys =
+        lib.optional (userCfg.identity.sshKey != "") userCfg.identity.sshKey
+        ++ userCfg.identity.trustedKeys;
     }) config.custom.users;
   };
 }

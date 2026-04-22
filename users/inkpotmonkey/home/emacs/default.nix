@@ -61,7 +61,7 @@
             [
               "inkpot-monkey"
               "inkpot-monkey@palebluebytes.space"
-              "${../../secrets.yaml}"
+              "${inputs.secrets + "/users/inkpotmonkey.yaml"}"
               "${pkgs.emacsPackages.treesit-grammars.with-all-grammars}/lib"
             ]
             (builtins.readFile ./init.el);
