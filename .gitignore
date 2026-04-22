@@ -13,6 +13,7 @@ result-*
 .envrc
 # SSH keys generated for bootstrapping (should not be committed)
 keys/
+!users/*/keys
 
 # =========================================
 # Virtualization & Disk Images
@@ -48,3 +49,4 @@ __pycache__/
 # Emacs / Temp
 # =========================================
 **/emacs/playground/
+secrets/
