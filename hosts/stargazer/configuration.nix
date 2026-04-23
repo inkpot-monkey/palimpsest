@@ -52,8 +52,6 @@
   # Disable command-not-found (handled by nix-index in home-manager)
   programs.command-not-found.enable = false;
 
-
-
   # =========================================
   # Hardware & Power Management
   # =========================================

@@ -16,8 +16,6 @@
     nebula.enable = true;
   };
 
-
-
   services.nebula.networks.mesh = {
     isLighthouse = true;
     lighthouses = [ ];

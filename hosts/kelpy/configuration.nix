@@ -46,7 +46,6 @@
     gatewayPort = 8001; # Default or custom port
   };
 
-
   networking = {
     inherit (settings.nodes.kelpy) hostName domain;
   };

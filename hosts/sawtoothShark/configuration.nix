@@ -57,8 +57,6 @@
   #       HOLD: KEY_LEFTCTRL
   # '';
 
-
-
   # services.restic.backups.daily.paths = lib.mkIf config.custom.profiles.backup.enable [ "/persist" ];
 
   networking.hostName = "sawtoothShark";
