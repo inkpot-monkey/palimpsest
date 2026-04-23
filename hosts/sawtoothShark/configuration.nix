@@ -57,10 +57,7 @@
   #       HOLD: KEY_LEFTCTRL
   # '';
 
-  sops.age.sshKeyPaths = [
-    "/home/inkpotmonkey/.ssh/id_ed25519"
-    # "/etc/ssh/ssh_host_ed25519_key"
-  ];
+
 
   # services.restic.backups.daily.paths = lib.mkIf config.custom.profiles.backup.enable [ "/persist" ];
 

@@ -52,13 +52,7 @@
   # Disable command-not-found (handled by nix-index in home-manager)
   programs.command-not-found.enable = false;
 
-  # Secrets Management
-  sops = {
-    age.sshKeyPaths = [
-      "/home/inkpotmonkey/.ssh/id_ed25519"
-      "/etc/ssh/ssh_host_ed25519_key"
-    ];
-  };
+
 
   # =========================================
   # Hardware & Power Management

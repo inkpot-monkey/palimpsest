@@ -27,7 +27,7 @@
     monitoring-client.enable = true;
     mail = {
       enable = true;
-      domain = "palebluebytes.xyz";
+      domain = "palebluebytes.space";
     };
     matrix.enable = true;
     paperless.enable = true;
@@ -46,13 +46,6 @@
     gatewayPort = 8001; # Default or custom port
   };
 
-  # Sops secrets configuration
-  sops = {
-    age.sshKeyPaths = [
-      "/home/inkpotmonkey/.ssh/id_ed25519" # User key
-      "/etc/ssh/ssh_host_ed25519_key" # System key
-    ];
-  };
 
   networking = {
     inherit (settings.nodes.kelpy) hostName domain;
