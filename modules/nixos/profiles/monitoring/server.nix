@@ -3,6 +3,7 @@
   lib,
   pkgs,
   settings,
+  inputs,
   ...
 }:
 
@@ -22,8 +23,14 @@ in
 
   config = lib.mkIf cfg.enable {
     sops.secrets = {
-      grafana_password.owner = "grafana";
-      grafana_secret_key.owner = "grafana";
+      grafana_password = {
+        sopsFile = self.lib.getSecretFile "monitoring";
+        owner = "grafana";
+      };
+      grafana_secret_key = {
+        sopsFile = self.lib.getSecretFile "monitoring";
+        owner = "grafana";
+      };
     };
 
     # Open ports for monitoring

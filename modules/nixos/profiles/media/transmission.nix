@@ -3,6 +3,7 @@
   lib,
   settings,
   self,
+  inputs,
   ...
 }:
 
