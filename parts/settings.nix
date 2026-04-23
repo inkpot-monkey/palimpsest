@@ -2,21 +2,24 @@
 let
   # Load node metadata from secrets if available, otherwise use placeholders
   # This keeps the repository public-ready while remaining functional for the user.
-  secretsNodes = 
-    if builtins.pathExists (inputs.secrets + "/nodes.nix") 
-    then import (inputs.secrets + "/nodes.nix")
-    else { };
+  secretsNodes =
+    if builtins.pathExists (inputs.secrets + "/nodes.nix") then
+      import (inputs.secrets + "/nodes.nix")
+    else
+      { };
 
   # Helper to get metadata with a safe fallback
-  getMeta = nodeName: path: default:
+  getMeta =
+    nodeName: path: default:
     let
       attrPath = [ nodeName ] ++ path;
     in
-    if lib.attrByPath attrPath null secretsNodes != null 
-    then lib.attrByPath attrPath null secretsNodes
-    else default;
+    if lib.attrByPath attrPath null secretsNodes != null then
+      lib.attrByPath attrPath null secretsNodes
+    else
+      default;
 
-  lib = inputs.nixpkgs.lib;
+  inherit (inputs.nixpkgs) lib;
   primaryDomain = "palebluebytes.space";
 in
 {
@@ -29,28 +32,28 @@ in
       hostName = "kelpy";
       domain = "palebluebytes.space";
       tailscale = {
-        ip4 = getMeta "kelpy" ["tailscale" "ip4"] "100.64.0.1";
-        ip6 = getMeta "kelpy" ["tailscale" "ip6"] "fd7a:115c:a1e0::1";
+        ip4 = getMeta "kelpy" [ "tailscale" "ip4" ] "100.64.0.1";
+        ip6 = getMeta "kelpy" [ "tailscale" "ip6" ] "fd7a:115c:a1e0::1";
       };
       public = {
-        ip4 = getMeta "kelpy" ["public" "ip4"] "0.0.0.0";
-        ip6 = getMeta "kelpy" ["public" "ip6"] "::1";
+        ip4 = getMeta "kelpy" [ "public" "ip4" ] "0.0.0.0";
+        ip6 = getMeta "kelpy" [ "public" "ip6" ] "::1";
       };
     };
 
     nodes.porcupineFish = {
       hostName = "porcupineFish";
       tailscale = {
-        ip4 = getMeta "porcupineFish" ["tailscale" "ip4"] "100.64.0.2";
-        ip6 = getMeta "porcupineFish" ["tailscale" "ip6"] "fd7a:115c:a1e0::2";
+        ip4 = getMeta "porcupineFish" [ "tailscale" "ip4" ] "100.64.0.2";
+        ip6 = getMeta "porcupineFish" [ "tailscale" "ip6" ] "fd7a:115c:a1e0::2";
       };
     };
 
     nodes.stargazer = {
       hostName = "stargazer";
       tailscale = {
-        ip4 = getMeta "stargazer" ["tailscale" "ip4"] "100.64.0.3";
-        ip6 = getMeta "stargazer" ["tailscale" "ip6"] "fd7a:115c:a1e0::3";
+        ip4 = getMeta "stargazer" [ "tailscale" "ip4" ] "100.64.0.3";
+        ip6 = getMeta "stargazer" [ "tailscale" "ip6" ] "fd7a:115c:a1e0::3";
       };
     };
 
