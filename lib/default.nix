@@ -23,8 +23,10 @@ let
         inherit unstable;
       };
 
-    getSecretFile = name: self + "/secrets/${name}.yaml";
-    getUserSecretFile = user: self + "/users/${user}/secrets.yaml";
+    getSecretFile = name: inputs.secrets + "/profiles/${name}.yaml";
+    getHostSecretFile = host: inputs.secrets + "/hosts/${host}/secrets.yaml";
+    getHostNamedSecretFile = host: name: inputs.secrets + "/hosts/${host}/${name}.yaml";
+    getUserSecretFile = user: inputs.secrets + "/users/${user}.yaml";
 
     mkSystem =
       {

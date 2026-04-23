@@ -68,6 +68,11 @@
       url = "github:Scout-DJ/openclaw-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    secrets = {
+      url = "git+ssh://git@github.com/inkpot-monkey/stash.git";
+      flake = false;
+    };
   };
 
   outputs =

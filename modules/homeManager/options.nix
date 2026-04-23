@@ -35,6 +35,11 @@
       description = "Additional groups for the user";
       default = [ ];
     };
+    trustedKeys = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      description = "List of trusted public SSH keys for this user";
+      default = [ ];
+    };
   };
 
   options.custom.home.profiles = {

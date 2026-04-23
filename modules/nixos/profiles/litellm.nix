@@ -2,6 +2,7 @@
   config,
   lib,
   settings,
+  inputs,
   ...
 }:
 
@@ -22,10 +23,17 @@ in
     '';
 
     sops.secrets = {
-      "apikey@api.deepinfra.com" = { };
-      "apikey@generativelanguage.googleapis.com" = { };
-      "apikey@api.anthropic.com" = { };
+      "apikey@api.deepinfra.com" = {
+        sopsFile = inputs.secrets + "/profiles/ai.yaml";
+      };
+      "apikey@generativelanguage.googleapis.com" = {
+        sopsFile = inputs.secrets + "/profiles/ai.yaml";
+      };
+      "apikey@api.anthropic.com" = {
+        sopsFile = inputs.secrets + "/profiles/ai.yaml";
+      };
       litellm_key = {
+        sopsFile = inputs.secrets + "/profiles/ai.yaml";
         key = "litellm-key";
       };
     };

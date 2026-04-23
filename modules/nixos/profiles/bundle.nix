@@ -19,12 +19,12 @@
     ./gaming.nix
     ./direnv.nix
     ./virtualization.nix
-    ./matrix.nix
-    ./mail.nix
+    ./matrix
+    ./mail
     ./paperless.nix
     ./proxy.nix
     ./podman.nix
-    ./affine.nix
+    ./affine
     ./media/transmission.nix
     ./litellm.nix
     ./backup.nix
