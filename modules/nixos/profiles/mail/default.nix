@@ -3,6 +3,7 @@
   options,
   lib,
   settings,
+  inputs,
   ...
 }:
 
@@ -22,14 +23,15 @@ in
   config = lib.mkIf cfg.enable (
     lib.mkMerge [
       {
-        # Define the secret specifically for Stalwart, using the same source key
         sops.secrets = {
           cloudflare_dns_token_stalwart = {
+            sopsFile = inputs.secrets + "/profiles/mail.yaml";
             owner = "stalwart-mail";
             group = "stalwart-mail";
             key = "cloudflare_dns_token";
           };
           stalwart_admin_password = {
+            sopsFile = inputs.secrets + "/profiles/mail.yaml";
             owner = "stalwart-mail";
             group = "stalwart-mail";
           };
@@ -62,8 +64,35 @@ in
             respond /.well-known/mta-sts.txt "version: STSv1
             mode: enforce
             mx: mail.${cfg.domain}
-            max_age: 604800
+            max_age: 15778800
             " 200
+          '';
+        };
+
+        # HTTPS Proxy for Stalwart Web Admin and JMAP
+        services.caddy.virtualHosts."mail.${cfg.domain}" = {
+          useACMEHost = "mail.${cfg.domain}";
+          extraConfig = ''
+            reverse_proxy 127.0.0.1:${toString settings.services.public.mail.port}
+          '';
+        };
+
+        # Mail Client Autodiscovery/Autoconfig
+        services.caddy.virtualHosts."autoconfig.${cfg.domain}" = {
+          extraConfig = ''
+            header Content-Type "application/xml"
+            respond /mail/config-v1.1.xml "<?xml version='1.0' encoding='UTF-8'?><clientConfig version='1.1'><emailProvider id='${cfg.domain}'><domain>${cfg.domain}</domain><displayName>Stalwart Mail</displayName><displayShortName>Stalwart</displayShortName><incomingServer type='imap'><hostname>mail.${cfg.domain}</hostname><port>993</port><socketType>SSL</socketType><authentication>password-cleartext</authentication><username>%EMAILADDRESS%</username></incomingServer><outgoingServer type='smtp'><hostname>mail.${cfg.domain}</hostname><port>465</port><socketType>SSL</socketType><authentication>password-cleartext</authentication><username>%EMAILADDRESS%</username></outgoingServer></emailProvider></clientConfig>" 200
+          '';
+        };
+
+        services.caddy.virtualHosts."autodiscover.${cfg.domain}" = {
+          extraConfig = ''
+            header Content-Type "text/xml"
+            @post {
+                method POST
+                path /autodiscover/autodiscover.xml
+            }
+            respond @post "<?xml version='1.0' encoding='utf-8'?><Autodiscover xmlns='http://schemas.microsoft.com/exchange/autodiscover/responseschema/2006'><Response xmlns='http://schemas.microsoft.com/exchange/autodiscover/outlook/responseschema/2006a'><Account><AccountType>email</AccountType><Action>settings</Action><Protocol><Type>IMAP</Type><Server>mail.${cfg.domain}</Server><Port>993</Port><SSL>on</SSL><AuthRequired>on</AuthRequired><LoginName>%EmailAddress%</LoginName></Protocol><Protocol><Type>SMTP</Type><Server>mail.${cfg.domain}</Server><Port>465</Port><SSL>on</SSL><AuthRequired>on</AuthRequired><LoginName>%EmailAddress%</LoginName></Protocol></Account></Response></Autodiscover>" 200
           '';
         };
 
@@ -145,6 +174,11 @@ in
                 "management" = {
                   bind = [ "127.0.0.1:${toString settings.services.public.mail.port}" ];
                   protocol = "http";
+                  url = "https://mail.${cfg.domain}";
+                };
+                "jmap" = {
+                  bind = [ "127.0.0.1:8081" ]; # Internal JMAP port
+                  protocol = "jmap";
                 };
               };
             };

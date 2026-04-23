@@ -33,44 +33,26 @@ systemctl status stalwart-mail
 
 ## 2. DNS Setup
  
- Since we are managing DNS manually via Cloudflare, we will import the Stalwart zone file and then apply critical fixes.
+ Since we are managing DNS programmatically via `dnscontrol`, the manual import is no longer necessary.
  
- ### Step 1: Import Zone File
- 1.  **Get Zone File**: Copy the zone definitions from your Stalwart Web Admin (Management > Directory > Domains > DNS).
- 2.  **Import to Cloudflare**:
-     - Go to **Cloudflare Dashboard > DNS > Records**.
-     - Click **Import and Export** -> **Import**.
-     - Upload or paste your zone file.
-     - This creates your MX, DKIM, DMARC, and SRV records.
+ ### Step 1: Push DNS configuration
+ Run the following command from your nix directory:
+ ```bash
+ nix run .#dns -- push
+ ```
+ This will automatically create or update your MX, SPF, DMARC, and MTA-STS records for `palebluebytes.xyz`.
  
- ### Step 2: Critical Adjustments (Do this immediately)
- 1.  **DELETE TLSA Records**:
-     - **Action:** Delete all records starting with `_25._tcp.mail`.
-     - **Reason:** These bind email security to your *current* certificate. Since Let's Encrypt rotates certs every 60 days, these records will expire and **break your email**. We use MTA-STS (Step 3) instead.
+ ### Step 2: DKIM Records
+ Stalwart generates DKIM keys internally. 
+ 1. Check your Stalwart Web Admin (**Management > Directory > Domains > DNS**) for the DKIM `stalwart._domainkey` record.
+ 2. If it differs from what is in your DNS, you can either update it manually in Cloudflare or add it to `parts/apps/dns/dnsconfig.js`.
  
- 2.  **FIX SPF Records**:
-     - Stalwart often generates invalid syntax (`ra=postmaster`).
-     - **Action**: Edit the **TXT** record for `@` (and `mail` if present).
-     - **Change**: `v=spf1 mx ra=postmaster -all`
-     - **To**: `v=spf1 mx ip4:37.205.14.206 -all`
-     - (Replace with your actual server IP).
- 
- ### Step 3: Add Advanced Security (MTA-STS)
- Add these records manually to enforce TLS encryption safely:
- - **CNAME Record**:
-     - Name: `mta-sts`
-     - Target: `mail.palebluebytes.xyz`
-     - Proxy Status: **DNS Only** (Grey Cloud)
- - **TXT Record**:
-     - Name: `_mta-sts`
-     - Content: `v=STSv1; id=2026012001;`
- 
- ### Step 4: Reverse DNS (PTR) - Exterior
- This cannot be configured in Cloudflare.
+ ### Step 3: Reverse DNS (PTR) - Exterior
+ This cannot be configured in Cloudflare or DnsControl.
  - Log in to your **VPS Provider Dashboard** (e.g. vpsFree).
  - Find the "Networking" or "IP" settings for this server (`37.205.14.206`).
  - Set the **Reverse DNS / PTR Record** to `mail.palebluebytes.xyz`.
- - *Without this, mostly emails will go to Spam.*
+ - *Without this, most emails will go to Spam.*
 
 ## 4. Create Admin User & Mailboxes
 
@@ -85,13 +67,16 @@ systemctl status stalwart-mail
     - Go to **Directory > Accounts**.
     - Create a new account (e.g., `me@yourdomain.com`).
 
-## 5. Verify Email
+## 5. Verify Email & Features
 
-1.  **Send a Test Email:**
+1.  **Check Autodiscovery:**
+    Add your account to Thunderbird or Outlook using only your email address. It should automatically find the correct IMAP and SMTP settings.
+
+2.  **JMAP Access:**
+    You can now use JMAP clients at `https://mail.palebluebytes.xyz/alt/jmap`.
+
+3.  **Send a Test Email:**
     Send an email from your new account to [check-auth@verifier.port25.com](mailto:check-auth@verifier.port25.com) or use [mail-tester.com](https://www.mail-tester.com).
     
-2.  **Check Score:**
-    Ensure you get a 10/10 score. If SPF or DKIM fails, check your DNS records.
-
-3.  **Receive Email:**
-    Reply to the test email and verify you receive it in Stalwart.
+4.  **Check Score:**
+    Ensure you get a 10/10 score. If SPF or DKIM fails, verify your DNS records via `dnscontrol`.

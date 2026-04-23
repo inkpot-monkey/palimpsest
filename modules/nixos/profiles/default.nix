@@ -26,12 +26,12 @@
     virtualization = ./virtualization.nix;
 
     # --- Application / Service Profiles ---
-    matrix = ./matrix.nix;
-    mail = ./mail.nix;
+    matrix = ./matrix;
+    mail = ./mail;
     paperless = ./paperless.nix;
     proxy = ./proxy.nix;
     podman = ./podman.nix;
-    affine = ./affine.nix;
+    affine = ./affine;
     transmission = ./media/transmission.nix;
     litellm = ./litellm.nix;
     backup = ./backup.nix;
