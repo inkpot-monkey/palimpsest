@@ -20,6 +20,9 @@ build host="":
 check:
   nix flake check -L
 
+check-all:
+  @nix flake show --json . 2>/dev/null | jq -r '.nixosConfigurations | keys[]' | xargs -I{} sh -c 'echo "Checking host: {}" && nixos-rebuild dry-run --flake .#{}'
+
 # Format all Nix files
 fmt:
   nix fmt
