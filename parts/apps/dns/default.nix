@@ -32,6 +32,7 @@ let
         builtins.toJSON {
           inherit (self.settings) services;
           inherit (self.settings) nodes;
+          inherit (self.settings) primaryDomain mailDomain;
         }
       }' | jq . > "$DATA_FILE"
 
