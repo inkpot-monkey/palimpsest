@@ -12,6 +12,9 @@ builds:
     # Build devShells to populate binary cache
     - devShells.*
     
+    # Build Home Manager configurations
+    - homeConfigurations.*
+    
     # Build NixOS configurations
     - nixosConfigurations.*
 
