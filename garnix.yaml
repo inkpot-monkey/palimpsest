@@ -1,0 +1,21 @@
+# Garnix CI Configuration
+# For more info: https://garnix.io/docs/yaml_config
+
+builds:
+  include:
+    # Build all packages defined in perSystem
+    - packages.*
+    
+    # Check all systems
+    - checks.*
+    
+    # Build devShells to populate binary cache
+    - devShells.*
+    
+    # Build NixOS configurations
+    - nixosConfigurations.*
+
+# You can also exclude specific items if they fail or are too large
+# builds:
+#   exclude:
+#     - nixosConfigurations.porcupineFish # Arm builds can be slow
