@@ -54,6 +54,15 @@ in
         { identity.profile = "gui"; }
       ];
     };
+
+    "eyeofalligator" = mkHome {
+      system = "x86_64-linux";
+      modules = [
+        ./eyeofalligator/home/default.nix
+        self.homeManagerModules.options
+        { identity.profile = "gui"; }
+      ];
+    };
   };
 
   # =========================================
@@ -63,5 +72,7 @@ in
     inkpotmonkey = import ./inkpotmonkey/default.nix;
 
     general = import ./general/default.nix;
+
+    eyeofalligator = import ./eyeofalligator/default.nix;
   };
 }
