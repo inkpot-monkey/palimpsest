@@ -58,6 +58,7 @@ in
           ];
         };
 
+        users.groups.stalwart-mail.members = [ "caddy" ];
         services.caddy.virtualHosts."mta-sts.${cfg.domain}" = {
           extraConfig = ''
             header Content-Type "text/plain"
