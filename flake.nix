@@ -65,7 +65,7 @@
     };
 
     openclaw-nix = {
-      url = "github:Scout-DJ/openclaw-nix";
+      url = "github:openclaw/nix-openclaw";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 

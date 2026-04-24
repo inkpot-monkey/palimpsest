@@ -8,7 +8,7 @@
 {
   imports = [
     inputs.vpsFree.nixosModules.containerUnstable
-    inputs.openclaw-nix.nixosModules.openclaw
+    inputs.openclaw-nix.nixosModules.openclaw-gateway
 
     self.nixosProfiles.bundle
   ];
@@ -40,10 +40,10 @@
     };
   };
 
-  services.openclaw = {
+  services.openclaw-gateway = {
     enable = true;
     # Connect to the local LiteLLM service
-    gatewayPort = 8001; # Default or custom port
+    port = 8001;
   };
 
   networking = {
