@@ -3,6 +3,7 @@
   lib,
   pkgs,
   self,
+  inputs,
   ...
 }:
 
@@ -28,7 +29,7 @@ let
 in
 {
   imports = [
-    self.nixosModules.stump
+    ../../services/stump
   ];
 
   options.custom.profiles.media = {
