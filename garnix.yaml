@@ -4,13 +4,13 @@
 builds:
   include:
     # Build all packages defined in perSystem
-    - packages.*
+    - packages.*.*
     
     # Check all systems
-    - checks.*
+    - checks.*.*
     
     # Build devShells to populate binary cache
-    - devShells.*
+    - devShells.*.*
 
 # You can also exclude specific items if they fail or are too large
 # builds:
