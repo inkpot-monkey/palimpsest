@@ -11,12 +11,6 @@ builds:
     
     # Build devShells to populate binary cache
     - devShells.*
-    
-    # Build Home Manager configurations
-    - homeConfigurations.*
-    
-    # Build NixOS configurations
-    - nixosConfigurations.*
 
 # You can also exclude specific items if they fail or are too large
 # builds:
