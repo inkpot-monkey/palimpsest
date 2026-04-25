@@ -2,6 +2,7 @@
   config,
   lib,
   inputs,
+  self,
   ...
 }:
 
@@ -24,11 +25,11 @@ in
     };
 
     sops.secrets.github_token = {
-      sopsFile = ../../../secrets + "/profiles/github.yaml";
+      sopsFile = self.lib.getSecretFile "github";
     };
 
     sops.secrets.garnix_netrc = {
-      sopsFile = ../../../secrets + "/profiles/garnix.yaml";
+      sopsFile = self.lib.getSecretFile "garnix";
     };
 
     sops.templates."nix-github-token".content = ''

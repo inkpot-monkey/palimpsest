@@ -3,7 +3,7 @@
   config,
   inputs,
   lib,
-  ...
+  self, ...
 }:
 {
   options.custom.home.profiles.ai = {
@@ -30,7 +30,7 @@
     };
 
     sops = {
-      defaultSopsFile = ../../../secrets + "/users/inkpotmonkey.yaml";
+      defaultSopsFile = self.lib.getSecretPath "users/inkpotmonkey.yaml";
       defaultSopsFormat = "yaml";
       # Define the secret for Home Manager
       secrets.litellm_key = {

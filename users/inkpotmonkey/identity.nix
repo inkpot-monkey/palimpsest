@@ -1,9 +1,9 @@
-{ lib, ... }:
+{ lib, self, ... }:
 let
   # Load user identities from secrets if available
   secretsIdentities =
-    if builtins.pathExists (../../secrets + "/identities.nix") then
-      import (../../secrets + "/identities.nix")
+    if builtins.pathExists (self.lib.getSecretPath "identities.nix") then
+      import (self.lib.getSecretPath "identities.nix")
     else
       { };
 

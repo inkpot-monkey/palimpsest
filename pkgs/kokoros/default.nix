@@ -28,8 +28,8 @@ let
   sonicSrc = fetchFromGitHub {
     owner = "waywardgeek";
     repo = "sonic";
-    rev = "master";
-    hash = "sha256-/AHkv7F7SH/BbQy6HFnaIj7znKbljLGwwnJ1HPv9k3A=";
+    rev = "b93885dcb70aae50c6f76b0fe4e0868f029a077e";
+    hash = "sha256-kKMAjoLdC3y9vx7rw80+T1r/QZ2miBjJCIAOs3fm2dg=";
   };
 
   # Wrapped CMake to force flags during configuration
@@ -74,8 +74,8 @@ let
     src = fetchFromGitHub {
       owner = "lucasjinreal";
       repo = "Kokoros";
-      rev = "main";
-      hash = "sha256-0Ig5g8MTyZwRHOdUzOZBo6ebgVtBXbTezdKyWh9AVK0=";
+      rev = "7089168f0ca2d8e1fcd8e523c9d75d915c6afdff";
+      hash = "sha256-cOHpKmhXKCtvJnccEfc/FJcSixbsqLzy3/zgJrEPqRs=";
     };
 
     cargoHash = "sha256-SvhHAfvF/jGmq4kybWDTbYamfEQSgnVI81RDLgGD1pY=";

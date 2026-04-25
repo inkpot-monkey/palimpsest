@@ -3,7 +3,7 @@
   options,
   lib,
   settings,
-  ...
+  self, ...
 }:
 
 let
@@ -24,13 +24,13 @@ in
       {
         sops.secrets = {
           cloudflare_dns_token_stalwart = {
-            sopsFile = ../../../../secrets + "/profiles/mail.yaml";
+            sopsFile = self.lib.getSecretPath "profiles/mail.yaml";
             owner = "stalwart-mail";
             group = "stalwart-mail";
             key = "cloudflare_dns_token";
           };
           stalwart_admin_password = {
-            sopsFile = ../../../../secrets + "/profiles/mail.yaml";
+            sopsFile = self.lib.getSecretPath "profiles/mail.yaml";
             owner = "stalwart-mail";
             group = "stalwart-mail";
           };

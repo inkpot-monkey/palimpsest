@@ -1,6 +1,7 @@
 {
   pkgs,
   inputs,
+  self,
   ...
 }:
 {
@@ -11,7 +12,7 @@
   ];
 
   sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
-  sops.defaultSopsFile = ../../../secrets + "/shared.yaml";
+  sops.defaultSopsFile = self.lib.getSecretPath "shared.yaml";
 
   home.packages = with pkgs; [
     kdePackages.kate

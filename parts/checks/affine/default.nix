@@ -73,8 +73,8 @@ pkgs.testers.nixosTest {
         # We use a tiny python web server to prove the port bindings and networking work.
         virtualisation.oci-containers.backend = "podman";
         virtualisation.oci-containers.containers.affine = lib.mkForce {
-          # Use a dummy busybox image that NixOS can build offline
-          image = "ghcr.io/toeverything/affine:stable";
+          # Match the name built by dockerTools below to avoid remote pull
+          image = "localhost/busybox:latest";
           imageFile = pkgs.dockerTools.buildImage {
             name = "localhost/busybox";
             tag = "latest";

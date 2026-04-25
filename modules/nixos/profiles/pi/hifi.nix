@@ -2,7 +2,7 @@
   config,
   lib,
   pkgs,
-  ...
+  self, ...
 }:
 
 let
@@ -26,7 +26,7 @@ in
 
     # --- SECRETS ---
     sops.secrets."spotify/password" = {
-      sopsFile = ../../../../secrets + "/profiles/media.yaml";
+      sopsFile = self.lib.getSecretPath "profiles/media.yaml";
       owner = "spotifyd";
       group = "spotifyd";
     };

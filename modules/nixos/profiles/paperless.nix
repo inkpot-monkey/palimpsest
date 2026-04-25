@@ -3,7 +3,7 @@
   lib,
   options,
   settings,
-  ...
+  self, ...
 }:
 
 let
@@ -22,7 +22,7 @@ in
     lib.mkMerge [
       {
         sops.secrets.paperless_secret = {
-          sopsFile = ../../../secrets + "/profiles/paperless.yaml";
+          sopsFile = self.lib.getSecretPath "profiles/paperless.yaml";
           owner = config.services.paperless.user;
           inherit (config.users.users.${config.services.paperless.user}) group;
         };

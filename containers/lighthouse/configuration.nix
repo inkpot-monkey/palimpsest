@@ -11,7 +11,7 @@
       "/etc/ssh/ssh_host_ed25519_key" # System key
     ];
 
-    defaultSopsFile = ../../secrets + "/nebula.yaml";
+    defaultSopsFile = self.lib.getSecretPath "nebula.yaml";
   };
 
   services.nebula.networks.mesh = {

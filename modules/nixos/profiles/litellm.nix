@@ -2,7 +2,7 @@
   config,
   lib,
   settings,
-  ...
+  self, ...
 }:
 
 let
@@ -23,16 +23,16 @@ in
 
     sops.secrets = {
       "apikey@api.deepinfra.com" = {
-        sopsFile = ../../../secrets + "/profiles/ai.yaml";
+        sopsFile = self.lib.getSecretPath "profiles/ai.yaml";
       };
       "apikey@generativelanguage.googleapis.com" = {
-        sopsFile = ../../../secrets + "/profiles/ai.yaml";
+        sopsFile = self.lib.getSecretPath "profiles/ai.yaml";
       };
       "apikey@api.anthropic.com" = {
-        sopsFile = ../../../secrets + "/profiles/ai.yaml";
+        sopsFile = self.lib.getSecretPath "profiles/ai.yaml";
       };
       litellm_key = {
-        sopsFile = ../../../secrets + "/profiles/ai.yaml";
+        sopsFile = self.lib.getSecretPath "profiles/ai.yaml";
         key = "litellm-key";
       };
     };

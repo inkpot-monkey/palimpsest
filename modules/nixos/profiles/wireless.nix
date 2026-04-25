@@ -1,7 +1,7 @@
 {
   config,
   lib,
-  ...
+  self, ...
 }:
 
 let
@@ -15,10 +15,10 @@ in
   config = lib.mkIf cfg.enable {
     # 1. Declare the individual nested secrets
     sops.secrets."wifi/home/ssid" = {
-      sopsFile = ../../../secrets + "/profiles/wireless.yaml";
+      sopsFile = self.lib.getSecretPath "profiles/wireless.yaml";
     };
     sops.secrets."wifi/home/psk" = {
-      sopsFile = ../../../secrets + "/profiles/wireless.yaml";
+      sopsFile = self.lib.getSecretPath "profiles/wireless.yaml";
     };
 
     # 2. Build the environment file using a SOPS template

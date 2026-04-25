@@ -3,7 +3,7 @@
   lib,
   settings,
   pkgs,
-  ...
+  self, ...
 }:
 
 let
@@ -19,7 +19,7 @@ in
   config = lib.mkIf cfg.enable {
     sops = {
       secrets.cloudflare_dns_token = {
-        sopsFile = ../../../secrets + "/profiles/networking.yaml";
+        sopsFile = self.lib.getSecretPath "profiles/networking.yaml";
         owner = "caddy";
         group = "caddy";
       };

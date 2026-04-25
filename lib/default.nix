@@ -22,11 +22,43 @@ let
       // {
         inherit unstable;
       };
+ 
+    getSecretPath =
+      subpath:
+      let
+        path = "${self.outPath}/secrets/${subpath}";
+        isNix = inputs.nixpkgs.lib.hasSuffix ".nix" subpath;
+        fallback = if isNix then ../parts/mock-identities.nix else ../parts/mock-secrets.yaml;
+      in
+      if builtins.pathExists path then path else fallback;
 
-    getSecretFile = name: ../secrets + "/profiles/${name}.yaml";
-    getHostSecretFile = host: ../secrets + "/hosts/${host}/secrets.yaml";
-    getHostNamedSecretFile = host: name: ../secrets + "/hosts/${host}/${name}.yaml";
-    getUserSecretFile = user: ../secrets + "/users/${user}.yaml";
+    getSecretFile =
+      name:
+      let
+        path = "${self.outPath}/secrets/profiles/${name}.yaml";
+      in
+      if builtins.pathExists path then path else ../parts/mock-secrets.yaml;
+
+    getHostSecretFile =
+      host:
+      let
+        path = "${self.outPath}/secrets/hosts/${host}/secrets.yaml";
+      in
+      if builtins.pathExists path then path else ../parts/mock-secrets.yaml;
+
+    getHostNamedSecretFile =
+      host: name:
+      let
+        path = "${self.outPath}/secrets/hosts/${host}/${name}.yaml";
+      in
+      if builtins.pathExists path then path else ../parts/mock-secrets.yaml;
+
+    getUserSecretFile =
+      user:
+      let
+        path = "${self.outPath}/secrets/users/${user}.yaml";
+      in
+      if builtins.pathExists path then path else ../parts/mock-secrets.yaml;
 
     mkSystem =
       {
