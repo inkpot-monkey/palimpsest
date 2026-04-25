@@ -27,6 +27,10 @@ in
       sopsFile = ../../../secrets + "/profiles/github.yaml";
     };
 
+    sops.secrets.garnix_netrc = {
+      sopsFile = ../../../secrets + "/profiles/garnix.yaml";
+    };
+
     sops.templates."nix-github-token".content = ''
       access-tokens = github.com=${config.sops.placeholder.github_token}
     '';
@@ -71,6 +75,10 @@ in
         # Auto-GC when low on space
         min-free = toString (100 * 1024 * 1024);
         max-free = toString (1024 * 1024 * 1024);
+
+        # Binary Cache Authentication (Garnix)
+        netrc-file = config.sops.secrets.garnix_netrc.path;
+        narinfo-cache-positive-ttl = 3600;
 
         # Substituters & Caches
         trusted-users = [
