@@ -873,9 +873,22 @@
         "nixpkgs-stable": "nixpkgs-stable_2",
         "nixpkgs-unstable": "nixpkgs-unstable",
         "openclaw-nix": "openclaw-nix",
+        "secrets": "secrets",
         "sops-nix": "sops-nix",
         "vpsFree": "vpsFree"
       }
+    },
+    "secrets": {
+      "flake": false,
+      "locked": {
+        "path": "./secrets",
+        "type": "path"
+      },
+      "original": {
+        "path": "./secrets",
+        "type": "path"
+      },
+      "parent": []
     },
     "sops-nix": {
       "inputs": {

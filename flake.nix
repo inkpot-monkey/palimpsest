@@ -68,6 +68,11 @@
       url = "github:openclaw/nix-openclaw";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+    
+    secrets = {
+      url = "path:./secrets";
+      flake = false;
+    };
 
   };
 
