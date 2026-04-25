@@ -18,8 +18,8 @@ in
 {
   config.custom.users.inkpotmonkey.identity = {
     username = "inkpotmonkey";
-    name = getIdent "inkpotmonkey" "name" "NixOS User";
-    email = getIdent "inkpotmonkey" "email" "user@example.com";
+    name = getIdent "inkpotmonkey" "name" "";
+    email = getIdent "inkpotmonkey" "email" "";
     sshKey = getIdent "inkpotmonkey" "sshKey" "";
     hashedPassword = getIdent "inkpotmonkey" "hashedPassword" "";
 

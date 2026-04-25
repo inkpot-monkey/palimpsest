@@ -20,6 +20,7 @@ in
       system = "x86_64-linux";
       modules = [
         ./weedySeadragon/configuration.nix
+        self.users.inkpotmonkey.gui
         self.users.eyeofalligator
       ];
     };

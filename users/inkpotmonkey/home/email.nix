@@ -7,9 +7,24 @@
 }:
 
 let
-  protonEmail = "<SCRUBBED_EMAIL>";
-  gmailEmail = "thomas@yeesshh.com";
-  myName = "Thomas Kelly";
+  # Load user identities from secrets if available
+  secretsIdentities =
+    if builtins.pathExists (self.lib.getSecretPath "identities.nix") then
+      import (self.lib.getSecretPath "identities.nix")
+    else
+      { };
+
+  # Helper to get identity data with a fallback
+  getIdent =
+    name: field: default:
+    if lib.attrByPath [ name field ] null secretsIdentities != null then
+      secretsIdentities.${name}.${field}
+    else
+      default;
+
+  protonEmail = getIdent "inkpotmonkey" "email" "";
+  gmailEmail = getIdent "inkpotmonkey" "gmail" "";
+  myName = getIdent "inkpotmonkey" "name" "";
 in
 {
   options.custom.home.profiles.email = {
@@ -126,7 +141,7 @@ in
           IMAPAccount proton
           Host 127.0.0.1
           Port 1143
-          User <SCRUBBED_EMAIL>
+          User "${protonEmail}"
           PassCmd "${pkgs.coreutils}/bin/cat ${config.sops.secrets."email/protonmail/password".path}"
           AuthMechs LOGIN
           TLSType None
@@ -174,7 +189,7 @@ in
           primary = true;
           address = protonEmail;
           realName = myName;
-          userName = "<SCRUBBED_EMAIL>";
+          userName = protonEmail;
           imap.host = "127.0.0.1";
           imap.port = 1143;
           imap.tls.enable = false;
