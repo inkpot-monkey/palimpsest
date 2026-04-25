@@ -9,8 +9,7 @@ result-*
 # =========================================
 # Direnv environment loader
 .direnv
-# Envrc configuration (often contains local env vars)
-.envrc
+
 # SSH keys generated for bootstrapping (should not be committed)
 keys/
 !users/*/keys
