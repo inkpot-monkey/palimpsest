@@ -2,8 +2,8 @@
 let
   # Load user identities from secrets if available
   secretsIdentities =
-    if builtins.pathExists (inputs.secrets + "/identities.nix") then
-      import (inputs.secrets + "/identities.nix")
+    if builtins.pathExists (../../secrets + "/identities.nix") then
+      import (../../secrets + "/identities.nix")
     else
       { };
 

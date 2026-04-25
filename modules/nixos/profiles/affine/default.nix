@@ -28,7 +28,7 @@ in
   config = lib.mkIf cfg.enable {
     # --- Secrets & Templates ---
     sops.secrets.affine_password = {
-      sopsFile = inputs.secrets + "/profiles/affine.yaml";
+      sopsFile = ../../../../secrets + "/profiles/affine.yaml";
       owner = "postgres";
     };
 

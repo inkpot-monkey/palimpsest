@@ -23,7 +23,7 @@ let
       cp "${./dnsconfig.js}" "$DNS_DIR/dnsconfig.js"
 
       # Fallback to local secrets directory if SECRETS_PATH is not set
-      DEFAULT_SECRETS="${inputs.secrets}/profiles/networking.yaml"
+      DEFAULT_SECRETS="${../../../secrets}/profiles/networking.yaml"
       SECRETS_FILE="''${SECRETS_PATH:-$DEFAULT_SECRETS}"
       DATA_FILE="$DNS_DIR/dns-data.json"
 

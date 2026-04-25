@@ -873,25 +873,8 @@
         "nixpkgs-stable": "nixpkgs-stable_2",
         "nixpkgs-unstable": "nixpkgs-unstable",
         "openclaw-nix": "openclaw-nix",
-        "secrets": "secrets",
         "sops-nix": "sops-nix",
         "vpsFree": "vpsFree"
-      }
-    },
-    "secrets": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1776806539,
-        "narHash": "sha256-j6tzLsHeW0XwTZKrXGeU4cQPMspUf+4u6SQD4yft8jU=",
-        "ref": "refs/heads/main",
-        "rev": "7ff37b479710a1a86103db1c0543aa7976625bda",
-        "revCount": 1,
-        "type": "git",
-        "url": "ssh://git@github.com/inkpot-monkey/stash.git"
-      },
-      "original": {
-        "type": "git",
-        "url": "ssh://git@github.com/inkpot-monkey/stash.git"
       }
     },
     "sops-nix": {

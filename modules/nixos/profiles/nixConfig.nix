@@ -24,7 +24,7 @@ in
     };
 
     sops.secrets.github_token = {
-      sopsFile = inputs.secrets + "/profiles/github.yaml";
+      sopsFile = ../../../secrets + "/profiles/github.yaml";
     };
 
     sops.templates."nix-github-token".content = ''

@@ -27,7 +27,7 @@ in
 
     # --- SECRETS ---
     sops.secrets."spotify/password" = {
-      sopsFile = inputs.secrets + "/profiles/media.yaml";
+      sopsFile = ../../../../secrets + "/profiles/media.yaml";
       owner = "spotifyd";
       group = "spotifyd";
     };

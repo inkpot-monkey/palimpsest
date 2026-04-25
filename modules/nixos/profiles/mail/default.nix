@@ -25,13 +25,13 @@ in
       {
         sops.secrets = {
           cloudflare_dns_token_stalwart = {
-            sopsFile = inputs.secrets + "/profiles/mail.yaml";
+            sopsFile = ../../../../secrets + "/profiles/mail.yaml";
             owner = "stalwart-mail";
             group = "stalwart-mail";
             key = "cloudflare_dns_token";
           };
           stalwart_admin_password = {
-            sopsFile = inputs.secrets + "/profiles/mail.yaml";
+            sopsFile = ../../../../secrets + "/profiles/mail.yaml";
             owner = "stalwart-mail";
             group = "stalwart-mail";
           };

@@ -3,8 +3,8 @@ let
   # Load node metadata from secrets if available, otherwise use placeholders
   # This keeps the repository public-ready while remaining functional for the user.
   secretsNodes =
-    if builtins.pathExists (inputs.secrets + "/nodes.nix") then
-      import (inputs.secrets + "/nodes.nix")
+    if builtins.pathExists (../secrets + "/nodes.nix") then
+      import (../secrets + "/nodes.nix")
     else
       { };
 

@@ -30,7 +30,7 @@
     };
 
     sops = {
-      defaultSopsFile = inputs.secrets + "/users/inkpotmonkey.yaml";
+      defaultSopsFile = ../../../secrets + "/users/inkpotmonkey.yaml";
       defaultSopsFormat = "yaml";
       # Define the secret for Home Manager
       secrets.litellm_key = {
