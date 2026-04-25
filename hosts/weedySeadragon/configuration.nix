@@ -30,6 +30,10 @@
     };
   };
 
+  sops = {
+    age.sshKeyPaths = [ "/home/inkpotmonkey/.ssh/id_ed25519" ];
+  };
+
   # Safety Measure: Admin User
   custom.users.admin.identity = {
     username = "admin";
