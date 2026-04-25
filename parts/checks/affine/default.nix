@@ -20,7 +20,7 @@ pkgs.testers.nixosTest {
         inputs.sops-nix.nixosModules.sops
 
         (self + /modules/nixos/profiles/podman.nix)
-        (self + /modules/nixos/profiles/affine.nix)
+        (self + /modules/nixos/profiles/affine)
       ];
 
       config = {

@@ -1,4 +1,4 @@
-{ inputs, lib, ... }:
+{ lib, ... }:
 let
   # Load user identities from secrets if available
   secretsIdentities =

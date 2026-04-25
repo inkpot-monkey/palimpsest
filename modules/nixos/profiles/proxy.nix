@@ -3,7 +3,6 @@
   lib,
   settings,
   pkgs,
-  inputs,
   ...
 }:
 
