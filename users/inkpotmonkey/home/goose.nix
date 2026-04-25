@@ -26,9 +26,9 @@
         pkgs.wl-clipboard
       ];
 
-    sops.secrets."apikey@search.brave.com" = lib.mkIf (config.identity.profile == "gui") {
-      sopsFile = self.lib.getUserSecretFile "inkpotmonkey";
-      format = "yaml";
-    };
+    # sops.secrets."apikey@search.brave.com" = lib.mkIf (config.identity.profile == "gui") {
+    #   sopsFile = self.lib.getUserSecretFile "inkpotmonkey";
+    #   format = "yaml";
+    # };
   };
 }
