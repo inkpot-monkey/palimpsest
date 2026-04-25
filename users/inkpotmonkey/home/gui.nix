@@ -27,7 +27,7 @@
       waybar.enable = lib.mkDefault true;
       swaync.enable = lib.mkDefault true;
       hyprlock.enable = lib.mkDefault true;
-      email.enable = lib.mkDefault true;
+      email.enable = lib.mkDefault false;
       emacs.enable = lib.mkDefault true;
       restic.enable = lib.mkDefault true;
       git-annex.enable = lib.mkDefault true;
