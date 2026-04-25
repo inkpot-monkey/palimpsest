@@ -29,8 +29,12 @@
         desktopManager.plasma6.enable = true;
       };
 
-      # 3. Flatpak
+      # 3. Flatpak & Discover Support
       services.flatpak.enable = true;
+      environment.systemPackages = [
+        pkgs.kdePackages.discover
+        pkgs.kdePackages.flatpak-kcm
+      ];
 
       # 4. Steam
       programs.steam.enable = true;
@@ -41,8 +45,9 @@
       # 6. Bluetooth
       custom.profiles.bluetooth.enable = true;
 
-      # 7. Printing
+      # 7. Printing & Scanning
       services.printing.enable = true;
+      hardware.sane.enable = true;
 
       # 8. KDE Connect
       programs.kdeconnect.enable = true;
@@ -59,6 +64,9 @@
         ];
         dates = "04:00";
       };
+
+      # 10. Compatibility
+      programs.nix-ld.enable = true;
 
       # 6. Home Manager Configuration
       home-manager = {
