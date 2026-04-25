@@ -70,7 +70,7 @@
     };
     
     secrets = {
-      url = "path:./secrets";
+      url = "git+ssh://git@github.com/inkpot-monkey/stash.git";
       flake = false;
     };
 
