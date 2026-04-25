@@ -16,6 +16,14 @@ in
       ];
     };
 
+    weedySeadragon = mkSystem {
+      system = "x86_64-linux";
+      modules = [
+        ./weedySeadragon/configuration.nix
+        self.users.eyeofalligator
+      ];
+    };
+
     sawtoothShark = mkSystem {
       system = "x86_64-linux";
       modules = [
