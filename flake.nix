@@ -112,7 +112,7 @@
         {
           _module.args.pkgs = self.lib.mkPkgs system;
           _module.args.unstable = (self.lib.mkPkgs system).unstable;
-          formatter = pkgs.nixfmt;
+          formatter = pkgs.nixfmt-rfc-style;
           packages = import ./pkgs pkgs;
         };
     };
