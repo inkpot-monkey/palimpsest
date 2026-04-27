@@ -78,8 +78,9 @@ pkgs.testers.nixosTest {
     # 1. Verify Remote Initialization
     gateway.succeed("sudo -u git-annex git -C /var/lib/git-annex/gateway annex info encrypted-backup-content | grep 'encryption: shared'")
 
-    # 2. Create and Sync File using Assistant
+    # Create and Sync File using Assistant
     gateway.succeed("sudo -u git-annex bash -c 'cd /var/lib/git-annex/gateway && echo secret_data > secret.txt'")
+    gateway.succeed("sudo -u git-annex git -C /var/lib/git-annex/gateway annex add secret.txt")
 
     # Wait for assistant to commit
     gateway.wait_for_file("/var/lib/git-annex/gateway/.git/annex")
