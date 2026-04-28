@@ -32,6 +32,14 @@
       # Secrets
       sops
       ssh-to-age
+
+      # Rust (e.g. pkgs/annas-opds: cargo test / clippy / rustfmt)
+      cargo
+      rustc
+      rustfmt
+      clippy
+      pkg-config
+      openssl
     ];
 
   };
