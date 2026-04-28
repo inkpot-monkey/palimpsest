@@ -27,6 +27,9 @@
             lib
             ;
         };
+        annas_opds = import ./annas-opds {
+          inherit pkgs;
+        };
       };
     };
 }
