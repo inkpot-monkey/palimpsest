@@ -3,7 +3,8 @@
   config,
   lib,
   inputs,
-  self, ...
+  self,
+  ...
 }:
 
 {
@@ -138,7 +139,7 @@
       if [[ "$INSIDE_EMACS" = 'vterm' ]]; then
         # Source the official vterm setup script directly from the Nix store
         # This replaces the manual vterm_printf, vterm_cmd, etc.
-        source "${pkgs.emacsPackages.vterm}/share/emacs/site-lisp/elpa/vterm-*/etc/emacs-vterm-bash.sh"
+        source ${pkgs.emacsPackages.vterm}/share/emacs/site-lisp/elpa/vterm-*/etc/emacs-vterm-bash.sh
 
         # Optional: Prompt tracking (if the sourced script doesn't auto-detect your specific prompt setup)
         # vterm needs to know where the prompt ends to allow moving the cursor by "prompts" in Emacs
