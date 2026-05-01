@@ -47,6 +47,8 @@ const TTL_SHORT = TTL(1);
 function getServiceRecords(svcs, isPublic) {
     const recs = [];
     for (const name in svcs) {
+        if (name === "mail") continue; // Handled by Stalwart records in getBaseServerRecords
+
         const svc = svcs[name];
         const node = infra.nodes[svc.node];
         if (!node) continue;
@@ -77,7 +79,7 @@ function getStalwartRecords(domain, id) {
         MX("@", 10, "mail." + domain + "."),
 
         // Security: SPF
-        TXT("@", "v=spf1 mx ip4:" + KELPY.public.ip4 + (KELPY.public.ip6 ? " ip6:" + KELPY.public.ip6 : "") + " -all"),
+        TXT("@", "v=spf1 mx ip4:" + KELPY.public.ip4 + (KELPY.public.ip4 ? " ip6:" + KELPY.public.ip6 : "") + " -all"),
 
         // Security: DMARC (Quarantine)
         TXT("_dmarc", "v=DMARC1; p=quarantine; adkim=s; aspf=s;"),
@@ -137,4 +139,3 @@ D(
     IGNORE_NAME("*._domainkey", "TXT"),
     DISABLE_IGNORE_SAFETY_CHECK
 );
-
