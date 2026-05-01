@@ -45,7 +45,6 @@
     n8n = ./n8n.nix;
     media = ./media;
     owncloud = ./owncloud.nix;
-    transcriber = ./transcriber.nix;
 
     # --- Hardware Specific (Pi) ---
     pi = ./pi;
