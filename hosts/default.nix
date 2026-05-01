@@ -30,7 +30,7 @@ in
       modules = [
         ./sawtoothShark/configuration.nix
         self.users.inkpotmonkey.gui
-        self.users.general.gui
+        # self.users.general.gui
       ];
     };
 

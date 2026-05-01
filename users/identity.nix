@@ -16,6 +16,11 @@
             type = lib.types.str;
             description = "User's email address";
           };
+          gmail = lib.mkOption {
+            type = lib.types.str;
+            description = "User's gmail address";
+            default = "";
+          };
           sshKey = lib.mkOption {
             type = lib.types.str;
             description = "User's public SSH key";

@@ -6,26 +6,6 @@
   ...
 }:
 
-let
-  # Load user identities from secrets if available
-  secretsIdentities =
-    if builtins.pathExists (self.lib.getSecretPath "identities.nix") then
-      import (self.lib.getSecretPath "identities.nix")
-    else
-      { };
-
-  # Helper to get identity data with a fallback
-  getIdent =
-    name: field: default:
-    if lib.attrByPath [ name field ] null secretsIdentities != null then
-      secretsIdentities.${name}.${field}
-    else
-      default;
-
-  protonEmail = getIdent "inkpotmonkey" "email" "";
-  gmailEmail = getIdent "inkpotmonkey" "gmail" "";
-  myName = getIdent "inkpotmonkey" "name" "";
-in
 {
   options.custom.home.profiles.email = {
     enable = lib.mkEnableOption "email configuration (mbsync, notmuch, protonmail-bridge)";
@@ -78,91 +58,84 @@ in
 
       programs.mbsync = {
         enable = true;
-        extraConfig = ''
-          # ========================================================================
-          # MANUAL YEESSHH (GMAIL) CONFIGURATION
-          # ========================================================================
-          # We define this manually to avoid Home Manager module bugs/limitations.
+        extraConfig =
+          (self.lib.mkMbsyncAccount {
+            name = "yeesshh";
+            host = "imap.gmail.com";
+            user = config.identity.gmail; # Assuming gmail is added to identity or I'll check identity
+            passCmd = "${pkgs.coreutils}/bin/cat ${config.sops.secrets."email/yeesshh/password".path}";
+            extraConfig = ''
+              CertificateFile /etc/ssl/certs/ca-certificates.crt
+              PipelineDepth 1
+            '';
+          })
+          + ''
+            IMAPStore yeesshh-remote
+            Account yeesshh
 
-          IMAPAccount yeesshh
-          Host imap.gmail.com
-          User ${gmailEmail}
-          PassCmd "${pkgs.coreutils}/bin/cat ${config.sops.secrets."email/yeesshh/password".path}"
-          AuthMechs LOGIN
-          TLSType IMAPS
-          CertificateFile /etc/ssl/certs/ca-certificates.crt
-          PipelineDepth 1
+            MaildirStore yeesshh-local
+            Path ${config.home.homeDirectory}/mail/yeesshh/
+            Inbox ${config.home.homeDirectory}/mail/yeesshh/Inbox
+            SubFolders Verbatim
+          ''
+          + (self.lib.mkMbsyncChannel {
+            name = "yeesshh-inbox";
+            account = "yeesshh";
+            far = "INBOX";
+            near = "Inbox";
+          })
+          + (self.lib.mkMbsyncChannel {
+            name = "yeesshh-sent";
+            account = "yeesshh";
+            far = "[Gmail]/Sent Mail";
+            near = "Sent";
+          })
+          + (self.lib.mkMbsyncChannel {
+            name = "yeesshh-trash";
+            account = "yeesshh";
+            far = "[Gmail]/Trash";
+            near = "Trash";
+          })
+          + (self.lib.mkMbsyncChannel {
+            name = "yeesshh-drafts";
+            account = "yeesshh";
+            far = "[Gmail]/Drafts";
+            near = "Drafts";
+          })
+          + ''
+            Group yeesshh
+            Channel yeesshh-inbox
+            Channel yeesshh-sent
+            Channel yeesshh-trash
+            Channel yeesshh-drafts
+          ''
+          + (self.lib.mkMbsyncAccount {
+            name = "proton";
+            host = "127.0.0.1";
+            port = 1143;
+            user = config.identity.email;
+            passCmd = "${pkgs.coreutils}/bin/cat ${config.sops.secrets."email/protonmail/password".path}";
+            tlsType = "None";
+          })
+          + ''
+            IMAPStore proton-remote
+            Account proton
 
-          IMAPStore yeesshh-remote
-          Account yeesshh
-
-          MaildirStore yeesshh-local
-          Path ${config.home.homeDirectory}/mail/yeesshh/
-          Inbox ${config.home.homeDirectory}/mail/yeesshh/Inbox
-          SubFolders Verbatim
-
-          Channel yeesshh-inbox
-          Far :yeesshh-remote:INBOX
-          Near :yeesshh-local:Inbox
-          Create Both
-          Expunge Both
-          Remove None
-
-          Channel yeesshh-sent
-          Far ":yeesshh-remote:[Gmail]/Sent Mail"
-          Near :yeesshh-local:Sent
-          Create Both
-          Expunge Both
-          Remove None
-
-          Channel yeesshh-trash
-          Far :yeesshh-remote:[Gmail]/Trash
-          Near :yeesshh-local:Trash
-          Create Both
-          Expunge Both
-          Remove None
-
-          Channel yeesshh-drafts
-          Far :yeesshh-remote:[Gmail]/Drafts
-          Near :yeesshh-local:Drafts
-          Create Both
-          Expunge Both
-          Remove None
-
-          Group yeesshh
-          Channel yeesshh-inbox
-          Channel yeesshh-sent
-          Channel yeesshh-trash
-          Channel yeesshh-drafts
-
-          # ========================================================================
-          # MANUAL PROTON CONFIGURATION
-          # ========================================================================
-          IMAPAccount proton
-          Host 127.0.0.1
-          Port 1143
-          User "${protonEmail}"
-          PassCmd "${pkgs.coreutils}/bin/cat ${config.sops.secrets."email/protonmail/password".path}"
-          AuthMechs LOGIN
-          TLSType None
-
-          IMAPStore proton-remote
-          Account proton
-
-          MaildirStore proton-local
-          Path ${config.home.homeDirectory}/mail/proton/
-          Inbox ${config.home.homeDirectory}/mail/proton/Inbox
-          SubFolders Verbatim
-
-          Channel proton
-          Far :proton-remote:
-          Near :proton-local:
-          Patterns *
-          Create Both
-          Expunge Both
-          Remove None
-          SyncState *
-        '';
+            MaildirStore proton-local
+            Path ${config.home.homeDirectory}/mail/proton/
+            Inbox ${config.home.homeDirectory}/mail/proton/Inbox
+            SubFolders Verbatim
+          ''
+          + (self.lib.mkMbsyncChannel {
+            name = "proton";
+            account = "proton";
+            far = "";
+            near = "";
+            patterns = "*";
+          })
+          + ''
+            SyncState *
+          '';
       };
 
       # Update Notmuch to handle two accounts
@@ -187,9 +160,9 @@ in
         # --- ACCOUNT 1: PROTON ---
         accounts.proton = {
           primary = true;
-          address = protonEmail;
-          realName = myName;
-          userName = protonEmail;
+          address = config.identity.email;
+          realName = config.identity.name;
+          userName = config.identity.email;
           imap.host = "127.0.0.1";
           imap.port = 1143;
           imap.tls.enable = false;
@@ -207,9 +180,9 @@ in
 
         # --- ACCOUNT 2: YEESSHH (GMAIL) ---
         accounts.yeesshh = {
-          address = gmailEmail;
-          realName = myName;
-          userName = gmailEmail; # Gmail username is full email
+          address = config.identity.gmail;
+          realName = config.identity.name;
+          userName = config.identity.gmail; # Gmail username is full email
           flavor = "gmail.com"; # Helper that sets IMAP/SMTP hosts automatically
 
           # We override passwordCommand to use the Gmail secret

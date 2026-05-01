@@ -20,11 +20,11 @@
 
       simple-http-server
 
-      nodePackages.typescript-language-server
-      nodePackages.bash-language-server
-      nodePackages.prettier
-      nodePackages.yaml-language-server
-      nodePackages.svelte-language-server
+      typescript-language-server
+      bash-language-server
+      prettier
+      yaml-language-server
+      svelte-language-server
 
       # Infrastructure
       vpsfree-client

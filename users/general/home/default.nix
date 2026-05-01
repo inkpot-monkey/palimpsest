@@ -12,13 +12,14 @@
   ];
 
   sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
-  sops.defaultSopsFile = self.lib.getSecretPath "shared.yaml";
+  # Keys for goose (apikey@…) live in profiles/ai.yaml; there is no shared.yaml in stash.
+  sops.defaultSopsFile = self.lib.getSecretFile "ai";
 
   home.packages = with pkgs; [
     kdePackages.kate
     slack
     mpv
-    protonvpn-gui
+    pkgs."proton-vpn"
     qbittorrent
     anki
     nodejs

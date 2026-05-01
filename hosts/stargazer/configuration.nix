@@ -31,7 +31,7 @@
     gaming.enable = true;
     virtualization.enable = true;
     fonts.enable = true;
-    regreet.enable = true;
+    regreet.enable = false; # Disabled in favor of SDDM for Plasma 6
     bluetooth.enable = true;
     zsa.enable = true;
     tailscale = {

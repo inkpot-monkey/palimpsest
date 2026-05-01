@@ -3,7 +3,8 @@
   config,
   inputs,
   lib,
-  self, ...
+  self,
+  ...
 }:
 {
   options.custom.home.profiles.ai = {
@@ -20,7 +21,11 @@
       inputs.llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.cursor-agent
       inputs.llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.gemini-cli
 
-      mcp-nixos
+      # Node.js / npx — required for MCP servers (Antigravity launches with a
+      # minimal $PATH from the display manager and won't find npx otherwise)
+      nodejs
+
+      # mcp-nixos
       playwright-driver.browsers
     ];
 

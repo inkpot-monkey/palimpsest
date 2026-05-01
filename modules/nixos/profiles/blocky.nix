@@ -2,8 +2,8 @@
   config,
   options,
   lib,
+  pkgs,
   settings,
-  unstable,
   ...
 }:
 
@@ -47,7 +47,7 @@ in
         services.blocky = {
           enable = true;
           # Use the injected unstable package safely via specialArgs.
-          package = unstable.blocky;
+          package = pkgs.blocky;
           settings = {
             ports.dns = [ "127.0.0.1:53" ] ++ (lib.optionals hasTailscale tailscaleBind);
 

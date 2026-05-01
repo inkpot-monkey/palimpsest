@@ -20,6 +20,7 @@ in
     username = "inkpotmonkey";
     name = getIdent "inkpotmonkey" "name" "";
     email = getIdent "inkpotmonkey" "email" "";
+    gmail = getIdent "inkpotmonkey" "gmail" "";
     sshKey = getIdent "inkpotmonkey" "sshKey" "";
     hashedPassword = getIdent "inkpotmonkey" "hashedPassword" "";
 

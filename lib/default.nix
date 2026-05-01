@@ -6,23 +6,14 @@ let
 
     mkPkgs =
       system:
-      let
-        unstable = import inputs.nixpkgs-unstable {
-          inherit system;
-          config.allowUnfree = true;
-        };
-      in
       import inputs.nixpkgs {
         inherit system;
         overlays = [ overlays.default ];
         config = {
           allowUnfree = true;
         };
-      }
-      // {
-        inherit unstable;
       };
- 
+
     getSecretPath =
       subpath:
       let
@@ -60,25 +51,62 @@ let
       in
       if builtins.pathExists path then path else ../parts/mock-secrets.yaml;
 
+    # Email Config Helpers
+    mkMbsyncAccount =
+      {
+        name,
+        host,
+        user,
+        passCmd,
+        port ? null,
+        tlsType ? "IMAPS",
+        authMechs ? "LOGIN",
+        extraConfig ? "",
+      }:
+      ''
+        IMAPAccount ${name}
+        Host ${host}
+        User ${user}
+        PassCmd "${passCmd}"
+        AuthMechs ${authMechs}
+        TLSType ${tlsType}
+        ${lib.optionalString (port != null) "Port ${toString port}"}
+        ${extraConfig}
+      '';
+
+    mkMbsyncChannel =
+      {
+        name,
+        account,
+        far,
+        near,
+        patterns ? "*",
+        create ? "Both",
+        expunge ? "Both",
+        remove ? "None",
+      }:
+      ''
+        Channel ${name}
+        Far :${account}-remote:${far}
+        Near :${account}-local:${near}
+        Patterns ${patterns}
+        Create ${create}
+        Expunge ${expunge}
+        Remove ${remove}
+      '';
+
     mkSystem =
       {
         system,
         modules,
         specialArgs ? { },
       }:
-      let
-        unstable = import inputs.nixpkgs-unstable {
-          inherit system;
-          config.allowUnfree = true;
-        };
-      in
       inputs.nixpkgs.lib.nixosSystem {
         specialArgs = {
           inherit (self) settings;
           inherit
             inputs
             self
-            unstable
             ;
           homeManagerInput = inputs.home-manager;
         }
@@ -97,19 +125,12 @@ let
         modules,
         specialArgs ? { },
       }:
-      let
-        unstable = import inputs.nixpkgs-unstable {
-          inherit system;
-          config.allowUnfree = true;
-        };
-      in
       inputs.nixos-raspberrypi.lib.nixosSystem {
         specialArgs = {
           inherit (self) settings;
           inherit
             inputs
             self
-            unstable
             ;
           inherit (inputs) nixos-raspberrypi;
           homeManagerInput = inputs.home-manager;

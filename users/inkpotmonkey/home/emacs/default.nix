@@ -13,7 +13,6 @@
   };
 
   config = lib.mkIf config.custom.home.profiles.emacs.enable {
-    nixpkgs.overlays = [ inputs.emacs-overlay.overlays.default ];
 
     programs.emacs = {
       enable = true;
@@ -60,8 +59,8 @@
               "@treesit-grammars@"
             ]
             [
-              "inkpot-monkey"
-              "inkpot-monkey@palebluebytes.space"
+              config.identity.username
+              config.identity.email
               "${self.lib.getSecretPath "users/inkpotmonkey.yaml"}"
               "${pkgs.emacsPackages.treesit-grammars.with-all-grammars}/lib"
             ]
@@ -81,72 +80,35 @@
     };
 
     home.packages = with pkgs; [
-      binutils
-
-      ## Dependencies
-      unzip
-      zip
-      cmake
-
-      # :tools editorconfig
-      editorconfig-core-c
-      # :tools lookup & :lang org +roam
-      sqlite
-      # :tools images
-      imagemagick
-
-      # :lang latex & :lang org (latex previews)
-      texlive.combined.scheme-medium
-
-      # formatter
-      prettierd
-
-      # LSPs
-      nil
-      nixfmt
-      shfmt
-      shellcheck
-      nodePackages.bash-language-server
-      dockerfile-language-server
-      nodePackages.typescript-language-server
-      nodePackages.yaml-language-server
-      nodePackages.svelte-language-server
-      vscode-langservers-extracted # html, css, json, eslint
-      taplo # toml
-
-      # :lang python
-      python3
-      black
-      pyright
-
-      # :lang javascript
-      nodejs_24
-
-      # :lang markdown
-      pandoc
-
-      # :lang web
-      html-tidy
-      stylelint
-      jsbeautifier
-
-      # ECA (Editor Code Assistant) server
-      inputs.eca.packages.${pkgs.system}.default
+      # Emacs specific tools that are not general dev tools
+      # (All LSPs and general dev tools are now in dev.nix)
     ];
 
     programs.bash.bashrcExtra = ''
-      # Only run this logic if we are actually inside vterm
+      # ========================================================================
+      # vterm integration (akermu/emacs-libvterm)
+      # ========================================================================
       if [[ "$INSIDE_EMACS" = 'vterm' ]]; then
-        # Source the official vterm setup script directly from the Nix store
-        # This replaces the manual vterm_printf, vterm_cmd, etc.
-        source ${pkgs.emacsPackages.vterm}/share/emacs/site-lisp/elpa/vterm-*/etc/emacs-vterm-bash.sh
-
-        # Optional: Prompt tracking (if the sourced script doesn't auto-detect your specific prompt setup)
-        # vterm needs to know where the prompt ends to allow moving the cursor by "prompts" in Emacs
-        vterm_prompt_end() {
-            vterm_printf "51;A$(whoami)@$(hostname):$(pwd)"
+        # Define vterm_printf for proper escape sequence handling
+        vterm_printf() {
+          if [ -n "$TMUX" ] && ([ "''${TERM%%-*}" = "tmux" ] || [ "''${TERM%%-*}" = "screen" ]); then
+            # Tell tmux to pass the escape sequences through
+            printf "\ePtmux;\e\e]%s\007\e\\" "$1"
+          elif [ "''${TERM%%-*}" = "screen" ]; then
+            # GNU screen
+            printf "\eP\e]%s\007\e\\" "$1"
+          else
+            printf "\e]%s\e\\" "$1"
+          fi
         }
-        PS1=$PS1'\[$(vterm_prompt_end)\]'
+
+        # Enable directory tracking and prompt recognition
+        vterm_prompt_end() {
+          vterm_printf "51;A$(whoami)@$(hostname):$(pwd)"
+        }
+
+        # Hook into PROMPT_COMMAND for reliable execution
+        PROMPT_COMMAND="''${PROMPT_COMMAND:+''${PROMPT_COMMAND}; }vterm_prompt_end"
       fi
     '';
 

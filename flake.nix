@@ -3,7 +3,6 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    nixpkgs-unstable.url = "github:NixOS/nixpkgs/staging-next";
     nixpkgs-stable.url = "github:nixos/nixpkgs/nixos-25.11";
 
     home-manager = {
@@ -111,8 +110,7 @@
         }:
         {
           _module.args.pkgs = self.lib.mkPkgs system;
-          _module.args.unstable = (self.lib.mkPkgs system).unstable;
-          formatter = pkgs.nixfmt-rfc-style;
+          formatter = pkgs.nixfmt;
           packages = import ./pkgs pkgs;
         };
     };

@@ -11,7 +11,7 @@
     impermanence = ./impermanence.nix;
     nebula = ./nebula.nix;
     tailscale = ./tailscale.nix;
-    server = ./server.nix;
+    ssh = ./ssh.nix;
     wireless = ./wireless.nix;
     zsa = ./zsa.nix;
 

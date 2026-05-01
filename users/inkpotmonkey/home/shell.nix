@@ -3,8 +3,7 @@
   pkgs,
   lib,
   ...
-}:
-{
+}: {
   options.custom.home.profiles.shell = {
     enable = lib.mkEnableOption "shell configuration";
   };
@@ -32,9 +31,13 @@
     programs.nix-index.enable = true;
 
     home.packages = with pkgs; [
+      # Core Utilities
       ripgrep
       fd
       jq
+      wget
+      tree
+      git
     ];
   };
 }

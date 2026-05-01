@@ -8,7 +8,7 @@
     ./impermanence.nix
     ./nebula.nix
     ./tailscale.nix
-    ./server.nix
+    ./ssh.nix
     ./wireless.nix
     ./zsa.nix
     ./gui-base.nix

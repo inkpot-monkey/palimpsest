@@ -100,7 +100,24 @@
         ];
       };
 
-      programs.hyprland.enable = true;
+      # 2. KDE Plasma 6 (Wayland Only)
+      services = {
+        xserver.enable = false; # Disable X11 server
+        displayManager = {
+          sddm = {
+            enable = lib.mkDefault true;
+            wayland.enable = true;
+          };
+          defaultSession = "plasma";
+        };
+        desktopManager.plasma6.enable = true;
+      };
+
+      # Still define XKB settings as they are used by Wayland compositors
+      services.xserver.xkb = {
+        layout = "gb";
+        variant = "";
+      };
 
       users.users.inkpotmonkey = {
         extraGroups = [
@@ -115,9 +132,7 @@
         ];
       };
 
-      nixpkgs.config.permittedInsecurePackages = [
-        "beekeeper-studio-5.5.7"
-      ];
+      nixpkgs.config.permittedInsecurePackages = [ ];
     })
   ];
 }

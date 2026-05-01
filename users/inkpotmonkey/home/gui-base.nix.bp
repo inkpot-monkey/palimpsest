@@ -134,7 +134,7 @@
 
       qbittorrent-enhanced
       pritunl-client
-      protonvpn-gui
+      pkgs."proton-vpn"
 
       # --- Communication ---
       # vesktop # Discord client
@@ -157,7 +157,7 @@
       blender
       ffmpeg
       yt-dlp
-      youtube-tui
+      # youtube-tui
 
       # --- AI & Audio Processing ---
       whisper-cpp

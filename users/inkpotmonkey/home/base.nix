@@ -16,9 +16,11 @@
     # =========================================
     programs.home-manager.enable = true;
     xdg.mimeApps.enable = lib.mkDefault false;
+    xdg.userDirs.setSessionVariables = false;
+
     home = {
-      username = "inkpotmonkey";
-      homeDirectory = "/home/inkpotmonkey";
+      username = config.identity.username;
+      homeDirectory = "/home/${config.identity.username}";
       stateVersion = "25.05";
 
       sessionVariables = {
@@ -26,14 +28,10 @@
       };
 
       # =========================================
-      # User Packages (CLI Only)
+      # User Packages (Global)
       # =========================================
       packages = with pkgs; [
-        neovim
-        wget
-        git
-        ripgrep
-        fd
+        neovim # Primary editor fallback
       ];
     };
 

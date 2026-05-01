@@ -25,8 +25,8 @@
               phpPackages.composer
               phpactor
 
-              nodejs_21
-              nodePackages.pnpm
+              nodejs
+              pnpm
             ];
           };
         }

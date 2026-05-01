@@ -33,5 +33,6 @@ in
 
     # Generic Bluetooth management tool (GUI)
     services.blueman.enable = true;
+    systemd.user.services.blueman-applet.enable = false;
   };
 }

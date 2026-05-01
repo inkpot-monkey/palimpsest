@@ -40,15 +40,15 @@ let
       };
     };
 
-    antigravity = final: prev: {
-      antigravity = prev.antigravity.overrideAttrs (_: {
-        version = "1.19.5";
-        src = final.fetchurl {
-          url = "https://edgedl.me.gvt1.com/edgedl/release2/j0qc3/antigravity/stable/1.19.5-5117559161880576/linux-x64/Antigravity.tar.gz";
-          hash = "sha256-xGeNs24UwQCKGp4d3tj7jYdurqSXkmjYQF6f2Vwckm4=";
-        };
-      });
-    };
+    # antigravity = final: prev: {
+    #   antigravity = prev.antigravity.overrideAttrs (_: {
+    #     version = "1.19.5";
+    #     src = final.fetchurl {
+    #       url = "https://edgedl.me.gvt1.com/edgedl/release2/j0qc3/antigravity/stable/1.19.5-5117559161880576/linux-x64/Antigravity.tar.gz";
+    #       hash = "sha256-xGeNs24UwQCKGp4d3tj7jYdurqSXkmjYQF6f2Vwckm4=";
+    #     };
+    #   });
+    # };
   };
 
   # 4. Flexget: Fix missing WebUI assets
@@ -63,7 +63,7 @@ in
   default = inputs.nixpkgs.lib.composeManyExtensions [
     additions
     modifications.tree-sitter
-    modifications.antigravity
+    # modifications.antigravity
     flexget
   ];
 }

@@ -16,7 +16,7 @@
   custom.profiles = {
     pi.enable = true;
     base.enable = true;
-    server.enable = true;
+    ssh.enable = true;
     wireless.enable = true;
     hifiberry.enable = true;
     hifi.enable = true;

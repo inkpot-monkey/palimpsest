@@ -39,9 +39,7 @@ in
             username = "inkpotmonkey";
           };
           nixpkgs.config.allowUnfree = true;
-          nixpkgs.config.permittedInsecurePackages = [
-            "beekeeper-studio-5.5.7"
-          ];
+          nixpkgs.config.permittedInsecurePackages = [ ];
         }
       ];
     };

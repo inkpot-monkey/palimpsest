@@ -20,7 +20,7 @@
       enable = true;
       tags = [ "tag:server" ];
     };
-    server.enable = true;
+    ssh.enable = true;
     proxy.enable = true;
     backup.enable = true;
     monitoring-server.enable = true;

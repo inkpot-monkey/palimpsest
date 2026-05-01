@@ -48,11 +48,8 @@
         {
           default = pkgs.mkShell {
             packages = attrValues {
-              inherit (pkgs.nodePackages)
-                bash-language-server
-                ;
-
               inherit (pkgs)
+                bash-language-server
                 rustToolchain
                 openssl
                 pkg-config

@@ -7,7 +7,7 @@
 {
   imports = [
     ./cli.nix
-    ./gui.nix
+    ./profiles.nix
   ];
 
   config = lib.mkMerge [
