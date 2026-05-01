@@ -10,7 +10,7 @@
     # ==========================================
     home.sessionVariables = {
       BROWSER = "vivaldi";
-      # Ensure Hyprland/Electron apps use Wayland
+      # Ensure Electron apps use Wayland
       NIXOS_OZONE_WL = "1";
     };
 
@@ -26,7 +26,7 @@
       };
     };
 
-    programs.wofi.enable = true;
+
 
     # ==========================================
     # XDG & Application Defaults
