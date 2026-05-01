@@ -65,7 +65,6 @@
 
     openclaw-nix = {
       url = "github:openclaw/nix-openclaw";
-      inputs.nixpkgs.follows = "nixpkgs";
     };
     
     secrets = {

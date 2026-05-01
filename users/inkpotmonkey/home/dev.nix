@@ -30,7 +30,7 @@
       # --- Language Servers & Formatters ---
       # Nix
       nil
-      nixfmt-rfc-style
+      nixfmt
 
       # Shell
       shfmt

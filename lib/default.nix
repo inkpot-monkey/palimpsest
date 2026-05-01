@@ -1,7 +1,8 @@
 { inputs, self, ... }:
 let
   overlays = import ../modules/shared/overlays { inherit inputs; };
-  helpers = inputs.nixpkgs.lib // {
+  lib = inputs.nixpkgs.lib;
+  helpers = lib // {
     inherit overlays;
 
     mkPkgs =
@@ -70,7 +71,7 @@ let
         PassCmd "${passCmd}"
         AuthMechs ${authMechs}
         TLSType ${tlsType}
-        ${lib.optionalString (port != null) "Port ${toString port}"}
+        ${lib.optionalString (port != null) "Port ${builtins.toString port}"}
         ${extraConfig}
       '';
 
