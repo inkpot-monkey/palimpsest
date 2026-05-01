@@ -15,7 +15,7 @@
     custom.home.profiles = {
       cli.enable = lib.mkDefault true; # GUI implies CLI
 
-      gui.enable = lib.mkDefault true;      # The GUI applications & config bundle
+      gui.enable = lib.mkDefault true; # The GUI applications & config bundle
       dev.enable = lib.mkDefault true;
       ai.enable = lib.mkDefault true;
       goose.enable = lib.mkDefault false;

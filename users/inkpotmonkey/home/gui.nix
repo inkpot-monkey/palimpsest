@@ -3,7 +3,8 @@
   config,
   lib,
   ...
-}: {
+}:
+{
   config = lib.mkIf config.custom.home.profiles.gui.enable {
     # ==========================================
     # Environment Variables
@@ -25,8 +26,6 @@
         confirm_os_window_close = 0;
       };
     };
-
-
 
     # ==========================================
     # XDG & Application Defaults
