@@ -791,9 +791,19 @@
 		:init (mcp-hub-start-all-server))
 
 (use-package eca
-		:ensure nil
-		:config
-		(setq eca-custom-command "eca"))
+  :ensure nil
+  :bind (("C-, c s" . eca)
+         ("C-, c n" . eca-chat-new)
+         ("C-, c r" . eca-rewrite)
+         ("C-, c w" . eca-workspaces)
+         ("C-, c R" . eca-restart)
+         ("C-, c k" . eca-stop))
+  :hook (prog-mode . eca-completion-mode)
+  :config
+  (setq eca-custom-command '("eca" "server"))
+  (setq eca-chat-window-width 0.45)
+  (setq eca-chat-focus-on-open t)
+  (setq eca-chat-auto-add-repomap t))
 
 (use-package daemons)
 
