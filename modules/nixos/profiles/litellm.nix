@@ -2,7 +2,8 @@
   config,
   lib,
   settings,
-  self, ...
+  self,
+  ...
 }:
 
 let
@@ -16,19 +17,11 @@ in
   config = lib.mkIf cfg.enable {
     sops.templates."litellm-env".content = ''
       DEEPINFRA_API_KEY=${config.sops.placeholder."apikey@api.deepinfra.com"}
-      GEMINI_API_KEY=${config.sops.placeholder."apikey@generativelanguage.googleapis.com"}
-      ANTHROPIC_API_KEY=${config.sops.placeholder."apikey@api.anthropic.com"}
       LITELLM_MASTER_KEY=${config.sops.placeholder.litellm_key}
     '';
 
     sops.secrets = {
       "apikey@api.deepinfra.com" = {
-        sopsFile = self.lib.getSecretPath "profiles/ai.yaml";
-      };
-      "apikey@generativelanguage.googleapis.com" = {
-        sopsFile = self.lib.getSecretPath "profiles/ai.yaml";
-      };
-      "apikey@api.anthropic.com" = {
         sopsFile = self.lib.getSecretPath "profiles/ai.yaml";
       };
       litellm_key = {
@@ -46,11 +39,52 @@ in
       settings = {
         master_key = "os.environ/LITELLM_MASTER_KEY";
         model_list = [
-
           {
-            model_name = "deepinfra/meta-llama/Llama-3-70b-instruct";
+            model_name = "gemini-pro";
             litellm_params = {
-              model = "deepinfra/meta-llama/Meta-Llama-3-70B-Instruct";
+              model = "deepinfra/google/gemini-2.5-pro";
+              api_key = "os.environ/DEEPINFRA_API_KEY";
+            };
+          }
+          {
+            model_name = "gemini-flash";
+            litellm_params = {
+              model = "deepinfra/google/gemini-2.5-flash";
+              api_key = "os.environ/DEEPINFRA_API_KEY";
+            };
+          }
+          {
+            model_name = "claude-4-sonnet";
+            litellm_params = {
+              model = "deepinfra/anthropic/claude-4-sonnet";
+              api_key = "os.environ/DEEPINFRA_API_KEY";
+            };
+          }
+          {
+            model_name = "deepseek-flash";
+            litellm_params = {
+              model = "deepinfra/deepseek-ai/DeepSeek-V4-Flash";
+              api_key = "os.environ/DEEPINFRA_API_KEY";
+            };
+          }
+          {
+            model_name = "deepseek-pro";
+            litellm_params = {
+              model = "deepinfra/deepseek-ai/DeepSeek-V4-Pro";
+              api_key = "os.environ/DEEPINFRA_API_KEY";
+            };
+          }
+          {
+            model_name = "minimax";
+            litellm_params = {
+              model = "deepinfra/MiniMaxAI/MiniMax-M2.5";
+              api_key = "os.environ/DEEPINFRA_API_KEY";
+            };
+          }
+          {
+            model_name = "qwen3-coder";
+            litellm_params = {
+              model = "deepinfra/Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo";
               api_key = "os.environ/DEEPINFRA_API_KEY";
             };
           }
@@ -64,29 +98,24 @@ in
               mode = "audio_transcription";
             };
           }
-          {
-            model_name = "gemini/gemini-1.5-pro";
-            litellm_params = {
-              model = "gemini/gemini-1.5-pro";
-              api_key = "os.environ/GEMINI_API_KEY";
-            };
-          }
-          {
-            model_name = "anthropic/claude-3-5-sonnet-20240620";
-            litellm_params = {
-              model = "anthropic/claude-3-5-sonnet-20240620";
-              api_key = "os.environ/ANTHROPIC_API_KEY";
-            };
-          }
-          {
-            model_name = "deepinfra/deepseek-ai/DeepSeek-V3";
-            litellm_params = {
-              model = "deepinfra/deepseek-ai/DeepSeek-V3.2";
-              api_key = "os.environ/DEEPINFRA_API_KEY";
-            };
-          }
         ];
       };
     };
+
+    users.users.litellm = {
+      isSystemUser = true;
+      group = "litellm";
+    };
+    users.groups.litellm = { };
+
+    systemd.services.litellm.serviceConfig = {
+      DynamicUser = lib.mkForce false;
+      User = "litellm";
+      Group = "litellm";
+    };
+
+    systemd.tmpfiles.rules = [
+      "Z /var/lib/litellm 0750 litellm litellm - -"
+    ];
   };
 }
