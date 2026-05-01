@@ -9,46 +9,18 @@
 let
   cfg = config.custom.profiles.media;
 
-  subtitler = pkgs.writeShellApplication {
-    name = "auto-sub";
-    runtimeInputs = with pkgs; [
-      ffmpeg
-      jq
-      netcat
-      file
-    ];
-    text = builtins.readFile (
-      pkgs.replaceVars ./auto-sub.sh {
-        TRANSCRIPTION_SERVER_ADDRESS = cfg.transcriptionServer.address;
-        TRANSCRIPTION_SERVER_PORT = toString cfg.transcriptionServer.port;
-        LANGUAGE = cfg.language;
-      }
-    );
-  };
 in
 {
   imports = [
-    ../../services/stump
+    # ../../services/stump
   ];
 
   options.custom.profiles.media = {
     enable = lib.mkEnableOption "Media server and automation configuration";
-    transcriptionServer = {
-      address = lib.mkOption {
-        type = lib.types.str;
-        default = "100.x.y.z";
-        description = "The IP address of the transcription server.";
-      };
-      port = lib.mkOption {
-        type = lib.types.port;
-        default = 9999;
-        description = "The port of the transcription server.";
-      };
-    };
     language = lib.mkOption {
       type = lib.types.str;
       default = "spa";
-      description = "The language of the audio track to transcribe.";
+      description = "The language of the subtitles to download.";
     };
     transmission = {
       host = lib.mkOption {
@@ -96,15 +68,32 @@ in
     users.users.jellyfin.extraGroups = [ "render" ];
 
     # --- 3. Stump Media Server ---
-    services.stump = {
-      enable = true;
-      openFirewall = true;
-    };
+    # services.stump = {
+    #   enable = true;
+    #   openFirewall = true;
+    # };
 
     systemd.tmpfiles.rules = [
       "Z /var/cache/jellyfin 0750 jellyfin jellyfin - -"
-      "d /var/lib/jellyfin 0700 jellyfin jellyfin -"
+      "Z /var/lib/jellyfin 0700 jellyfin jellyfin - -"
+      "d ${cfg.mediaPath}/movies 0755 flexget jellyfin - -"
+      "d ${cfg.mediaPath}/series 0755 flexget jellyfin - -"
     ];
+
+    # Ensure media directories exist before flexget starts
+    systemd.services.media-dirs = {
+      description = "Create media directories";
+      before = [ "flexget.service" ];
+      wantedBy = [ "flexget.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = "yes";
+      };
+      script = ''
+        mkdir -p "${cfg.mediaPath}/movies" "${cfg.mediaPath}/series"
+        chown flexget:jellyfin "${cfg.mediaPath}/movies" "${cfg.mediaPath}/series"
+      '';
+    };
 
     # --- 3. FlexGet Automation Engine ---
     sops.secrets.flexget_webui_password = lib.mkIf (!cfg.testMode) {
@@ -119,15 +108,18 @@ in
       homeDir = "/var/lib/flexget";
       systemScheduler = true;
       interval = "5m";
+      package = pkgs.flexget.overrideAttrs (old: {
+        propagatedBuildInputs = old.propagatedBuildInputs ++ [
+          pkgs.python3Packages.subliminal
+        ];
+      });
       config = lib.mkDefault (
         builtins.readFile (
           pkgs.replaceVars ./flexget.yaml {
             TRANSMISSION_HOST = cfg.transmission.host;
             TRANSMISSION_PORT = toString cfg.transmission.port;
             MEDIA_PATH = toString cfg.mediaPath;
-            TASKSPOOLER_BIN = "${pkgs.taskspooler}/bin/tsp";
-            AUTOSUB_BIN = "${subtitler}/bin/auto-sub";
-            TRANSCRIPTION_SERVER_ADDRESS = cfg.transcriptionServer.address;
+            SUBTITLE_LANG = cfg.language;
           }
         )
       );
@@ -165,10 +157,8 @@ in
       StateDirectory = lib.mkForce "flexget media";
     };
 
-    # --- 5. Global Packages ---
     environment.systemPackages = with pkgs; [
       flexget
-      taskspooler
     ];
   };
 }

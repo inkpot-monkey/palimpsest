@@ -25,15 +25,6 @@ tasks:
       host: "@TRANSMISSION_HOST@"
       port: @TRANSMISSION_PORT@
       only_complete: true
-    manipulate:
-      - location:
-          replace:
-            regexp: '^/downloads/'
-            format: '/var/lib/transmission/Downloads/'
-      - location:
-          replace:
-            regexp: '^/config/'
-            format: '/var/lib/transmission/config/'
     if:
       - "transmission_category == 'movies'": accept
     metainfo_movie: true
@@ -51,14 +42,6 @@ tasks:
       port: @TRANSMISSION_PORT@
       only_complete: true
     manipulate:
-      - location:
-          replace:
-            regexp: '^/downloads/'
-            format: '/var/lib/transmission/Downloads/'
-      - location:
-          replace:
-            regexp: '^/config/'
-            format: '/var/lib/transmission/config/'
       - title:
           replace:
             regexp: '\[Cap\.(\d+)\]'
@@ -66,32 +49,32 @@ tasks:
 
     symlink:
       to: "@MEDIA_PATH@/series/{{ series_name|pathscrub }}/Season {{ series_season }}/"
-      rename: "{{ series_name|pathscrub }} - {{ series_id }}{{ location|pathext }}"
+      rename: "{{ series_name|pathscrub }} - {{ series_id}}{{ location|pathext }}"
       link_type: hard
       existing: ignore
 
-  transcribe-movies:
+  get-subtitles-movies:
     priority: 10
     filesystem:
       path: "@MEDIA_PATH@/movies"
       recursive: yes
       regexp: '.*\.(mkv|mp4|avi)$'
     accept_all: yes
-    exec:
-      on_start:
-        phase: ping -c 1 @TRANSCRIPTION_SERVER_ADDRESS@
-      on_output:
-        for_accepted: "filename=\"{{ location }}\"; [ ! -f \"${filename%.*}.srt\" ] && @TASKSPOOLER_BIN@ @AUTOSUB_BIN@ \"$filename\""
+    subliminal:
+      languages: [@SUBTITLE_LANG@]
+      alternatives: [eng]
+      providers: [opensubtitles, tvsubtitles]
+      exact_match: yes
 
-  transcribe-series:
+  get-subtitles-series:
     priority: 11
     filesystem:
       path: "@MEDIA_PATH@/series"
       recursive: yes
       regexp: '.*\.(mkv|mp4|avi)$'
     accept_all: yes
-    exec:
-      on_start:
-        phase: ping -c 1 @TRANSCRIPTION_SERVER_ADDRESS@
-      on_output:
-        for_accepted: "filename=\"{{ location }}\"; [ ! -f \"${filename%.*}.srt\" ] && @TASKSPOOLER_BIN@ @AUTOSUB_BIN@ \"$filename\""
+    subliminal:
+      languages: [@SUBTITLE_LANG@]
+      alternatives: [eng]
+      providers: [opensubtitles, tvsubtitles]
+      exact_match: yes
