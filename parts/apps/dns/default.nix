@@ -11,7 +11,7 @@ let
       pkgs.dnscontrol
       pkgs.sops
       pkgs.jq
-      pkgs.esbuild
+      pkgs.typescript
     ];
     text = ''
       set -euo pipefail
@@ -20,8 +20,10 @@ let
       DNS_DIR=$(mktemp -d)
       trap 'rm -rf "$DNS_DIR"' EXIT
 
-      # Copy TS config
+      # Copy TS config and support files
       cp "${./dnsconfig.ts}" "$DNS_DIR/dnsconfig.ts"
+      cp "${./tsconfig.json}" "$DNS_DIR/tsconfig.json"
+      cp "${./types-dnscontrol.d.ts}" "$DNS_DIR/types-dnscontrol.d.ts"
 
       # Use secrets from flake input
       DEFAULT_SECRETS="${self.lib.getSecretFile "networking"}"
@@ -38,15 +40,12 @@ let
       }' | jq . > "$DATA_FILE"
 
       echo "Compiling TypeScript configuration..."
-      # We use esbuild to transpile TS to ES5 JS that dnscontrol can understand.
-      # We mark dns-data.json as external because dnscontrol's require() will handle it at runtime.
-      esbuild "$DNS_DIR/dnsconfig.ts" \
-        --bundle \
-        --target=es5 \
-        --platform=node \
-        --outfile="$DNS_DIR/dnsconfig.js" \
-        --external:./dns-data.json \
-        --log-level=warning
+      # We use tsc to transpile TS to ES5 JS that dnscontrol can understand.
+      tsc --project "$DNS_DIR/tsconfig.json" \
+          --noEmit false \
+          --target ES5 \
+          --module None \
+          --outFile "$DNS_DIR/dnsconfig.js"
 
       COMMAND="''${1:-preview}"
 
