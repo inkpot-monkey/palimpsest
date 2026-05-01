@@ -8,7 +8,7 @@
   writeShellScriptBin,
 }:
 let
-  version = "0.1.0";
+  version = "0.1.2";
 
   # Pre-built React SPA extracted from the official Linux release bundle.
   # The zip contains both the server binary (ignored) and the client/ web assets.
@@ -29,6 +29,10 @@ rustPlatform.buildRustPackage {
     rev = "v${version}";
     hash = "sha256-FavhqSckX/d3UAxLMUb3EwrNolUjZrkZNISP7GwMR58=";
   };
+
+  postPatch = ''
+    sed -i '1i #![recursion_limit = "256"]' apps/server/src/lib.rs
+  '';
 
   cargoHash = "sha256-qcNA4u3sjHTJnvA3KUfjEuYxjhv6tGYg85dZiiDUJPc=";
 
