@@ -34,6 +34,5 @@
     ./monitoring/smartctl.nix
     ./monitoring/exporters.nix
     ./media
-    ./transcriber.nix
   ];
 }

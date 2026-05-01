@@ -62,7 +62,7 @@
           (self.lib.mkMbsyncAccount {
             name = "yeesshh";
             host = "imap.gmail.com";
-            user = config.identity.gmail; # Assuming gmail is added to identity or I'll check identity
+            user = config.identity.gmail;
             passCmd = "${pkgs.coreutils}/bin/cat ${config.sops.secrets."email/yeesshh/password".path}";
             extraConfig = ''
               CertificateFile /etc/ssl/certs/ca-certificates.crt

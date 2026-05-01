@@ -39,7 +39,7 @@
     # Sops Configuration (User)
     # =========================================
     sops.age.sshKeyPaths = [
-      "/home/inkpotmonkey/.ssh/id_ed25519"
+      "${config.home.homeDirectory}/.ssh/id_ed25519"
       # "/etc/ssh/ssh_host_ed25519_key"
     ];
 

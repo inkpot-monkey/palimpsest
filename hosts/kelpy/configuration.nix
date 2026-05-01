@@ -36,12 +36,12 @@
     blocky.enable = true;
     media = {
       enable = true;
-      transcriptionServer.address = "100.95.39.9";
     };
   };
 
   services.openclaw-gateway = {
     enable = true;
+    package = inputs.openclaw-nix.packages.${pkgs.system}.openclaw-gateway;
     # Connect to the local LiteLLM service
     port = 8001;
   };
@@ -55,7 +55,6 @@
   nixpkgs = {
     hostPlatform = "x86_64-linux";
     config.permittedInsecurePackages = [
-      "openclaw-2026.2.26"
       "beekeeper-studio-5.5.7"
     ];
   };

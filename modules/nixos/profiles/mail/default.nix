@@ -3,7 +3,8 @@
   options,
   lib,
   settings,
-  self, ...
+  self,
+  ...
 }:
 
 let
@@ -113,6 +114,7 @@ in
       (lib.optionalAttrs (options.services ? stalwart) {
         services.stalwart = {
           enable = true;
+          stateVersion = config.system.stateVersion;
           settings = {
             config.local-keys = [
               "store.*"
