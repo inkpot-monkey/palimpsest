@@ -9,6 +9,7 @@
 
 let
   cfg = config.custom.profiles.mail;
+  managementPort = 8082;
 in
 {
   options.custom.profiles.mail = {
@@ -59,6 +60,10 @@ in
         };
 
         users.groups.stalwart-mail.members = [ "caddy" ];
+
+        systemd.services.stalwart-mail.serviceConfig.LoadCredential = [
+          "admin_password:${config.sops.secrets.stalwart_admin_password.path}"
+        ];
         services.caddy.virtualHosts."mta-sts.${cfg.domain}" = {
           extraConfig = ''
             header Content-Type "text/plain"
@@ -74,7 +79,7 @@ in
         services.caddy.virtualHosts."mail.${cfg.domain}" = {
           useACMEHost = "mail.${cfg.domain}";
           extraConfig = ''
-            reverse_proxy 127.0.0.1:${toString settings.services.public.mail.port}
+            reverse_proxy 127.0.0.1:${toString managementPort}
           '';
         };
 
@@ -174,13 +179,13 @@ in
                   tls.certificate = "default";
                 };
                 "management" = {
-                  bind = [ "127.0.0.1:${toString settings.services.public.mail.port}" ];
+                  bind = [ "127.0.0.1:${toString managementPort}" ];
                   protocol = "http";
                   url = "https://mail.${cfg.domain}";
                 };
                 "jmap" = {
                   bind = [ "127.0.0.1:8081" ]; # Internal JMAP port
-                  protocol = "jmap";
+                  protocol = "http";
                 };
               };
             };
