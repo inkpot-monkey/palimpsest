@@ -6,7 +6,6 @@
     # List your module files here
     finance = ./finance;
     git-annex = ./git-annex;
-    goose = ./goose;
     kokoro-tts = ./kokoro;
     options = ./options.nix;
   };

@@ -4,7 +4,6 @@
     ./gui.nix
     ./ai.nix
     ./dev.nix
-    ./goose.nix
     ./email.nix
     ./restic.nix
     ./git-annex.nix
@@ -18,7 +17,6 @@
       gui.enable = lib.mkDefault true; # The GUI applications & config bundle
       dev.enable = lib.mkDefault true;
       ai.enable = lib.mkDefault true;
-      goose.enable = lib.mkDefault false;
       email.enable = lib.mkDefault false;
       emacs.enable = lib.mkDefault true;
       restic.enable = lib.mkDefault false;

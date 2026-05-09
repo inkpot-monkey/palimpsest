@@ -96,8 +96,6 @@
             ".ssh"
             ".config/vivaldi"
             ".local/share/direnv"
-            ".config/goose"
-            ".local/share/goose"
             ".local/share/cass"
             ".agent"
             ".claude"

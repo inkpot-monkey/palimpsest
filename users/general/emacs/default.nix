@@ -44,21 +44,6 @@ let
         };
         packageRequires = [ epkgs.yaml ];
       })
-      (epkgs.trivialBuild {
-        pname = "goose";
-        version = "master";
-        src = pkgs.fetchFromGitHub {
-          owner = "aq2bq";
-          repo = "goose.el";
-          rev = "master";
-          sha256 = "sha256-LI2ghfilcmF8r0O69FhNDrJpk33gyAWDl05bdsvDHPw=";
-        };
-        packageRequires = [
-          epkgs.vterm
-          epkgs.transient
-          epkgs.consult
-        ];
-      })
     ];
   };
 in

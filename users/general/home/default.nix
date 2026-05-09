@@ -1,19 +1,11 @@
 {
   pkgs,
-  inputs,
-  self,
   ...
 }:
 {
   imports = [
-    inputs.sops-nix.homeManagerModule
-    ./goose.nix
     # ./emacs - if it exists, I'll need to check the path
   ];
-
-  sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
-  # Keys for goose (apikey@…) live in profiles/ai.yaml; there is no shared.yaml in stash.
-  sops.defaultSopsFile = self.lib.getSecretFile "ai";
 
   home.packages = with pkgs; [
     kdePackages.kate

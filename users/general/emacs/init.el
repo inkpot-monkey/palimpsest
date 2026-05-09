@@ -526,24 +526,6 @@
   (setq transient-levels-file (expand-file-name "transient/levels.el" user-emacs-directory))
   (setq transient-values-file (expand-file-name "transient/values.el" user-emacs-directory)))
 
-;;; Goose CLI Integration
-(use-package goose
-		:bind (("C-c g" . goose-transient)))
-;;  :after vterm transient consult
-;; :config
-;; (setq goose-program-name "goose")
-;; (setq goose-default-buffer-name "*goose*")
-;; ;; Configure prompt directory
-;; (when (file-directory-p "~/.config/goose/prompts/")
-;;   (setq goose-prompt-directory (expand-file-name "~/.config/goose/prompts/")))
-;; ;; Customize context formatting if desired
-;; (setq goose-context-format "%s")
-;; (setq goose-context-file-path-prefix "File from path: %s")
-;; (setq goose-context-buffer-prefix "File: %s\n%s")
-;; ;; Enable automatic context extraction from current file/buffer
-;; (add-hook 'goose-mode-hook (lambda ()
-;;                              (setq-local goose-context-default-buffer (current-buffer)))))
-
 ;;; Sudo & TRAMP Integration
 (use-package tramp
 		:ensure nil
