@@ -13,17 +13,6 @@
         media = import ./media {
           inherit pkgs inputs self;
         };
-        transmission = import ./transmission {
-          inherit pkgs inputs self;
-        };
-        flexget = import ./flexget {
-          inherit
-            pkgs
-            inputs
-            self
-            lib
-            ;
-        };
         annas_opds = import ./annas-opds {
           inherit pkgs;
         };
