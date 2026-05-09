@@ -32,8 +32,8 @@
     proxy = ./proxy.nix;
     podman = ./podman.nix;
     affine = ./affine;
-    transmission = ./media/transmission.nix;
     litellm = ./litellm.nix;
+    openclaw = ./openclaw.nix;
     backup = ./backup.nix;
     blocky = ./blocky.nix;
     monitoring = {

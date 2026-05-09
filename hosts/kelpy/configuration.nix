@@ -1,5 +1,6 @@
 {
   inputs,
+  config,
   pkgs,
   self,
   settings,
@@ -8,7 +9,6 @@
 {
   imports = [
     inputs.vpsFree.nixosModules.containerUnstable
-    inputs.openclaw-nix.nixosModules.openclaw-gateway
 
     self.nixosProfiles.bundle
   ];
@@ -32,18 +32,88 @@
     matrix.enable = true;
     paperless.enable = true;
     litellm.enable = true;
-    transmission.enable = true;
+    openclaw.enable = true;
     blocky.enable = true;
     media = {
       enable = true;
     };
   };
 
-  services.openclaw-gateway = {
-    enable = true;
-    package = inputs.openclaw-nix.packages.${pkgs.system}.openclaw-gateway;
-    # Connect to the local LiteLLM service
-    port = 8001;
+  # OpenClaw models configuration — site-specific provider setup.
+  # The gateway infrastructure (SOPS secrets, service config, port, etc.)
+  # is handled by the openclaw profile; only the model routing is here.
+  services.openclaw-gateway.config = {
+    gateway.controlUi.allowedOrigins = [
+      "https://openclaw.palebluebytes.space"
+    ];
+    models = {
+      mode = "merge";
+      providers = {
+        litellm = {
+          baseUrl = "http://127.0.0.1:4000";
+          apiKey = "\${LITELLM_MASTER_KEY}";
+          api = "openai-completions";
+          models = [
+            {
+              id = "gemini-pro";
+              name = "Gemini 2.5 Pro via DeepInfra";
+              input = [ "text" "image" ];
+              contextWindow = 1000000;
+              maxTokens = 64000;
+            }
+            {
+              id = "gemini-flash";
+              name = "Gemini 2.5 Flash via DeepInfra";
+              input = [ "text" "image" ];
+              contextWindow = 1000000;
+              maxTokens = 64000;
+            }
+            {
+              id = "claude-4-sonnet";
+              name = "Claude 4 Sonnet via DeepInfra";
+              input = [ "text" "image" ];
+              contextWindow = 200000;
+              maxTokens = 64000;
+            }
+            {
+              id = "deepseek-flash";
+              name = "DeepSeek V4 Flash via DeepInfra";
+              input = [ "text" ];
+              contextWindow = 128000;
+              maxTokens = 32000;
+            }
+            {
+              id = "deepseek-pro";
+              name = "DeepSeek V4 Pro via DeepInfra";
+              input = [ "text" ];
+              contextWindow = 128000;
+              maxTokens = 32000;
+            }
+            {
+              id = "minimax";
+              name = "MiniMax M2.5 via DeepInfra";
+              input = [ "text" ];
+              contextWindow = 128000;
+              maxTokens = 32000;
+            }
+            {
+              id = "qwen3-coder";
+              name = "Qwen3 Coder 480B via DeepInfra";
+              input = [ "text" ];
+              contextWindow = 128000;
+              maxTokens = 32000;
+            }
+          ];
+        };
+      };
+    };
+    agents = {
+      defaults = {
+        model = {
+          primary = "litellm/claude-4-sonnet";
+        };
+      };
+    };
   };
 
   networking = {

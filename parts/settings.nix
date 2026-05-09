@@ -78,12 +78,24 @@ in
           node = "kelpy";
           port = 8096;
         };
-        flexget = {
-          node = "kelpy";
-          port = 5050;
-        };
       };
       private = {
+        sonarr = {
+          node = "kelpy";
+          port = 8989;
+        };
+        radarr = {
+          node = "kelpy";
+          port = 7878;
+        };
+        bazarr = {
+          node = "kelpy";
+          port = 6767;
+        };
+        prowlarr = {
+          node = "kelpy";
+          port = 9696;
+        };
         litellm = {
           node = "kelpy";
           port = 4000;
@@ -98,11 +110,15 @@ in
         };
         torrent = {
           node = "kelpy";
-          port = 9091;
+          port = 8080;
         };
         affine = {
           node = "kelpy";
           port = 3010;
+        };
+        openclaw = {
+          node = "kelpy";
+          port = 8001;
         };
       };
     };

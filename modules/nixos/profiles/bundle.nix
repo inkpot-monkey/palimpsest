@@ -25,8 +25,8 @@
     ./proxy.nix
     ./podman.nix
     ./affine
-    ./media/transmission.nix
     ./litellm.nix
+    ./openclaw.nix
     ./backup.nix
     ./blocky.nix
     ./monitoring/client.nix

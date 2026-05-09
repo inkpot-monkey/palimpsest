@@ -10,7 +10,10 @@ switch host="":
 
 # Deploy to a remote host (e.g. kelpy, porcupineFish)
 deploy host:
-  nixos-rebuild --target-host {{host}} --sudo --ask-sudo-password switch --flake .#{{host}}
+		nixos-rebuild --target-host {{host}} --sudo --ask-sudo-password switch --flake .#{{host}}
+
+deployBoot host:
+		nixos-rebuild --target-host {{host}} --sudo --ask-sudo-password boot --flake .#{{host}}
 
 # Build the flake locally without switching
 build host="":
