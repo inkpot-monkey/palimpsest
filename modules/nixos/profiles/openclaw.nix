@@ -64,7 +64,7 @@ in
           defaults = {
             model = {
               primary = "litellm/deepseek-flash";
-              fallbacks = ["litellm/deepseek-pro"];
+              fallbacks = [ "litellm/deepseek-pro" ];
             };
           };
         };

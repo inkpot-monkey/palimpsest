@@ -1,6 +1,5 @@
 {
   inputs,
-  config,
   pkgs,
   self,
   settings,
@@ -57,21 +56,30 @@
             {
               id = "gemini-pro";
               name = "Gemini 2.5 Pro via DeepInfra";
-              input = [ "text" "image" ];
+              input = [
+                "text"
+                "image"
+              ];
               contextWindow = 1000000;
               maxTokens = 64000;
             }
             {
               id = "gemini-flash";
               name = "Gemini 2.5 Flash via DeepInfra";
-              input = [ "text" "image" ];
+              input = [
+                "text"
+                "image"
+              ];
               contextWindow = 1000000;
               maxTokens = 64000;
             }
             {
               id = "claude-4-sonnet";
               name = "Claude 4 Sonnet via DeepInfra";
-              input = [ "text" "image" ];
+              input = [
+                "text"
+                "image"
+              ];
               contextWindow = 200000;
               maxTokens = 64000;
             }

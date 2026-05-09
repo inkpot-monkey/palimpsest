@@ -7,7 +7,7 @@
   ...
 }:
 let
-  litellm = self.nixosConfigurations.kelpy.config.services.litellm;
+  inherit (self.nixosConfigurations.kelpy.config.services) litellm;
 in
 {
   options.custom.home.profiles.ai = {

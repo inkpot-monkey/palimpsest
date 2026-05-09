@@ -1,7 +1,6 @@
 {
   config,
   lib,
-  settings,
   ...
 }:
 
@@ -27,7 +26,12 @@ in
 
     environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
       directories = [
-        { directory = "/var/lib/bazarr"; user = "bazarr"; group = "media"; mode = "0750"; }
+        {
+          directory = "/var/lib/bazarr";
+          user = "bazarr";
+          group = "media";
+          mode = "0750";
+        }
       ];
     };
   };

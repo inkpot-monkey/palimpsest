@@ -1,8 +1,6 @@
 {
   config,
   lib,
-  pkgs,
-  self,
   ...
 }:
 
@@ -56,7 +54,12 @@ in
 
     environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
       directories = [
-        { directory = cfg.mediaPath; user = "root"; group = "media"; mode = "2775"; }
+        {
+          directory = cfg.mediaPath;
+          user = "root";
+          group = "media";
+          mode = "2775";
+        }
       ];
     };
   };

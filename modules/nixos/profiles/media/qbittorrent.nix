@@ -78,34 +78,34 @@ in
         ];
       };
       preStart = ''
-        CONF_DIR="/var/lib/qbittorrent/config/qBittorrent"
-        CONF_FILE="$CONF_DIR/qBittorrent.conf"
-        mkdir -p "$CONF_DIR"
+                CONF_DIR="/var/lib/qbittorrent/config/qBittorrent"
+                CONF_FILE="$CONF_DIR/qBittorrent.conf"
+                mkdir -p "$CONF_DIR"
 
-        # If file doesn't exist, create a basic one
-        if [ ! -f "$CONF_FILE" ]; then
-          cat <<EOF > "$CONF_FILE"
-[LegalNotice]
-Accepted=true
+                # If file doesn't exist, create a basic one
+                if [ ! -f "$CONF_FILE" ]; then
+                  cat <<EOF > "$CONF_FILE"
+        [LegalNotice]
+        Accepted=true
 
-[Preferences]
-WebUI\Username=admin
-WebUI\Password_PBKDF2=@PASSWORD_HASH@
-WebUI\Address=*
-WebUI\ServerDomains=*
-WebUI\Port=${toString cfg.qbittorrent.webuiPort}
-Downloads\SavePath=/downloads/
-Downloads\TempPath=/downloads/incomplete/
-EOF
-        fi
+        [Preferences]
+        WebUI\Username=admin
+        WebUI\Password_PBKDF2=@PASSWORD_HASH@
+        WebUI\Address=*
+        WebUI\ServerDomains=*
+        WebUI\Port=${toString cfg.qbittorrent.webuiPort}
+        Downloads\SavePath=/downloads/
+        Downloads\TempPath=/downloads/incomplete/
+        EOF
+                fi
 
-        # Use replace-secret to swap placeholders with the contents of the systemd credentials
-        # This is non-destructive to other settings in the file.
-        # NOTE: This is a one-time operation. If the file exists, the placeholder is gone
-        # and future password changes in Sops will not be applied automatically.
-        ${pkgs.replace-secret}/bin/replace-secret '@PASSWORD_HASH@' "$CREDENTIALS_DIRECTORY/password" "$CONF_FILE"
+                # Use replace-secret to swap placeholders with the contents of the systemd credentials
+                # This is non-destructive to other settings in the file.
+                # NOTE: This is a one-time operation. If the file exists, the placeholder is gone
+                # and future password changes in Sops will not be applied automatically.
+                ${pkgs.replace-secret}/bin/replace-secret '@PASSWORD_HASH@' "$CREDENTIALS_DIRECTORY/password" "$CONF_FILE"
 
-        chown qbittorrent:media "$CONF_FILE"
+                chown qbittorrent:media "$CONF_FILE"
       '';
     };
 
@@ -115,7 +115,12 @@ EOF
 
     environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
       directories = [
-        { directory = "/var/lib/qbittorrent"; user = "qbittorrent"; group = "media"; mode = "0755"; }
+        {
+          directory = "/var/lib/qbittorrent";
+          user = "qbittorrent";
+          group = "media";
+          mode = "0755";
+        }
       ];
     };
 
@@ -135,7 +140,7 @@ EOF
               VPN_TYPE = "wireguard";
               SERVER_COUNTRIES = "Switzerland";
             };
-        ports = [ 
+        ports = [
           "127.0.0.1:${toString settings.services.private.torrent.port}:${toString cfg.qbittorrent.webuiPort}/tcp" # WebUI
           "6881:6881/tcp" # Torrent
           "6881:6881/udp" # Torrent

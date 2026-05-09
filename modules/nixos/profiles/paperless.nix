@@ -3,7 +3,8 @@
   lib,
   options,
   settings,
-  self, ...
+  self,
+  ...
 }:
 
 let

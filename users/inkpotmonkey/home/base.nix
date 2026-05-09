@@ -19,7 +19,7 @@
     xdg.userDirs.setSessionVariables = false;
 
     home = {
-      username = config.identity.username;
+      inherit (config.identity) username;
       homeDirectory = "/home/${config.identity.username}";
       stateVersion = "25.05";
 

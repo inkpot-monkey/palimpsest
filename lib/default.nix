@@ -1,7 +1,7 @@
 { inputs, self, ... }:
 let
   overlays = import ../modules/shared/overlays { inherit inputs; };
-  lib = inputs.nixpkgs.lib;
+  inherit (inputs.nixpkgs) lib;
   helpers = lib // {
     inherit overlays;
 
@@ -98,7 +98,6 @@ let
 
     mkSystem =
       {
-        system,
         modules,
         specialArgs ? { },
       }:
@@ -122,7 +121,6 @@ let
 
     mkPiSystem =
       {
-        system,
         modules,
         specialArgs ? { },
       }:

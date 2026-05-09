@@ -1,7 +1,6 @@
 {
   config,
   lib,
-  pkgs,
   ...
 }:
 
@@ -16,7 +15,10 @@ in
     };
 
     # Jellyfin needs access to the 'users' group to read Transmission downloads
-    users.users.jellyfin.extraGroups = [ "render" "users" ];
+    users.users.jellyfin.extraGroups = [
+      "render"
+      "users"
+    ];
 
     systemd.tmpfiles.rules = [
       "Z /var/cache/jellyfin 0750 jellyfin jellyfin - -"
@@ -25,8 +27,18 @@ in
 
     environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
       directories = [
-        { directory = "/var/lib/jellyfin"; user = "jellyfin"; group = "media"; mode = "0750"; }
-        { directory = "/var/cache/jellyfin"; user = "jellyfin"; group = "media"; mode = "0750"; }
+        {
+          directory = "/var/lib/jellyfin";
+          user = "jellyfin";
+          group = "media";
+          mode = "0750";
+        }
+        {
+          directory = "/var/cache/jellyfin";
+          user = "jellyfin";
+          group = "media";
+          mode = "0750";
+        }
       ];
     };
   };

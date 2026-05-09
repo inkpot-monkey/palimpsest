@@ -2,7 +2,8 @@
   config,
   lib,
   ...
-}: {
+}:
+{
   options.custom.home.profiles.git = {
     enable = lib.mkEnableOption "git configuration";
   };

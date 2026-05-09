@@ -1,7 +1,7 @@
 { inputs, self, ... }:
 {
   perSystem =
-    { pkgs, lib, ... }:
+    { pkgs, ... }:
     {
       checks = {
         affine = import ./affine {

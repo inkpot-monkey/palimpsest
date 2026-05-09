@@ -2,7 +2,6 @@
   config,
   options,
   lib,
-  settings,
   self,
   ...
 }:
@@ -119,7 +118,7 @@ in
       (lib.optionalAttrs (options.services ? stalwart) {
         services.stalwart = {
           enable = true;
-          stateVersion = config.system.stateVersion;
+          inherit (config.system) stateVersion;
           settings = {
             config.local-keys = [
               "store.*"

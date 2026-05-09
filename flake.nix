@@ -66,7 +66,7 @@
     openclaw-nix = {
       url = "github:openclaw/nix-openclaw";
     };
-    
+
     secrets = {
       url = "git+ssh://git@github.com/inkpot-monkey/stash.git";
       flake = false;

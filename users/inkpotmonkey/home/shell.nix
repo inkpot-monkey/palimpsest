@@ -3,7 +3,8 @@
   pkgs,
   lib,
   ...
-}: {
+}:
+{
   options.custom.home.profiles.shell = {
     enable = lib.mkEnableOption "shell configuration";
   };

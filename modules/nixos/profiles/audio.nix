@@ -36,7 +36,6 @@ in
         };
       };
 
-
       # Wireplumber configuration
       wireplumber.enable = true;
       wireplumber.extraConfig = {

@@ -3,7 +3,10 @@ let
   # Load node metadata from secrets if available, otherwise use placeholders
   # This keeps the repository public-ready while remaining functional for the user.
   secretsNodes =
-    if builtins.pathExists (self.lib.getSecretPath "nodes.nix") then import (self.lib.getSecretPath "nodes.nix") else { };
+    if builtins.pathExists (self.lib.getSecretPath "nodes.nix") then
+      import (self.lib.getSecretPath "nodes.nix")
+    else
+      { };
 
   # Helper to get metadata with a safe fallback
   getMeta =

@@ -3,7 +3,8 @@
   lib,
   settings,
   pkgs,
-  self, ...
+  self,
+  ...
 }:
 
 let
