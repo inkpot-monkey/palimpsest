@@ -1,6 +1,5 @@
 {
   config,
-  pkgs,
   lib,
   settings,
   self,
@@ -29,7 +28,7 @@ in
   options.custom.profiles.media.qbittorrent = {
     puid = lib.mkOption {
       type = lib.types.str;
-      default = "989";
+      default = "988";
       description = "PUID for the qBittorrent container.";
     };
     pgid = lib.mkOption {
@@ -54,6 +53,7 @@ in
 
     users.users.qbittorrent = {
       isSystemUser = true;
+      uid = 988;
       group = "qbittorrent";
       extraGroups = [ "media" ];
     };
@@ -63,19 +63,11 @@ in
       sopsFile = self.lib.getSecretFile "media";
     };
 
-    sops.secrets.qbittorrent = lib.mkIf (!cfg.testMode) {
-      sopsFile = self.lib.getSecretFile "media";
-      owner = "qbittorrent";
-    };
-
-    systemd.services.podman-qbittorrent-app = {
+    systemd.services.qbittorrent = {
       after = [ "podman-gluetun.service" ];
       requires = [ "podman-gluetun.service" ];
       serviceConfig = {
         Type = lib.mkForce "simple";
-        LoadCredential = [
-          "password:${config.sops.secrets.qbittorrent.path}"
-        ];
       };
       preStart = ''
                 CONF_DIR="/var/lib/qbittorrent/config/qBittorrent"
@@ -90,7 +82,6 @@ in
 
         [Preferences]
         WebUI\Username=admin
-        WebUI\Password_PBKDF2=@PASSWORD_HASH@
         WebUI\Address=*
         WebUI\ServerDomains=*
         WebUI\Port=${toString cfg.qbittorrent.webuiPort}
@@ -99,11 +90,10 @@ in
         EOF
                 fi
 
-                # Use replace-secret to swap placeholders with the contents of the systemd credentials
-                # This is non-destructive to other settings in the file.
-                # NOTE: This is a one-time operation. If the file exists, the placeholder is gone
-                # and future password changes in Sops will not be applied automatically.
-                ${pkgs.replace-secret}/bin/replace-secret '@PASSWORD_HASH@' "$CREDENTIALS_DIRECTORY/password" "$CONF_FILE"
+                # NOTE: qBittorrent expects a PBKDF2 hash for the password in the config file.
+                # Setting it declaratively via Nix is complex because it doesn't support environment variables.
+                # Please set the password manually in the Web UI after first login!
+                # The container prints a temporary password to the logs on first start.
 
                 chown qbittorrent:media "$CONF_FILE"
       '';
