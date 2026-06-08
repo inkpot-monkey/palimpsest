@@ -57,7 +57,7 @@ in
 
         # 2. SOPS Secret for Tailscale Auth Key
         sops.secrets.tailscale_key = {
-          sopsFile = self.lib.getSecretPath "profiles/tailscale.yaml";
+          sopsFile = self.lib.getSecretPath "profiles/networking.yaml";
         };
 
         # 3. Tailscale Service Configuration

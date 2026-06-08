@@ -40,6 +40,12 @@
       clippy
       pkg-config
       openssl
+
+      # Advanced Rust development utilities
+      mold
+      bacon
+      cargo-nextest
+      cargo-watch
     ];
 
   };

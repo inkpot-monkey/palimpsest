@@ -16,7 +16,6 @@
     # =========================================
     programs.home-manager.enable = true;
     xdg.mimeApps.enable = lib.mkDefault false;
-    xdg.userDirs.setSessionVariables = false;
 
     home = {
       inherit (config.identity) username;

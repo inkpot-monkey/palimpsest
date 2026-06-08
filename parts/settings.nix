@@ -21,6 +21,79 @@ let
 
   inherit (inputs.nixpkgs) lib;
   primaryDomain = "palebluebytes.space";
+
+  services = {
+    public = {
+      matrix = {
+        node = "kelpy";
+        port = 6167;
+        proxy = false;
+      };
+      mail = {
+        node = "kelpy";
+        port = 8082;
+        proxy = false;
+      };
+      jellyfin = {
+        node = "kelpy";
+        port = 8096;
+      };
+    };
+    private = {
+      sonarr = {
+        node = "kelpy";
+        port = 8989;
+      };
+      radarr = {
+        node = "kelpy";
+        port = 7878;
+      };
+      bazarr = {
+        node = "kelpy";
+        port = 6767;
+      };
+      prowlarr = {
+        node = "kelpy";
+        port = 9696;
+      };
+      litellm = {
+        node = "kelpy";
+        port = 4000;
+      };
+      monitoring = {
+        node = "kelpy";
+        port = 3001;
+      };
+      paperless = {
+        node = "kelpy";
+        port = 28981;
+      };
+      torrent = {
+        node = "kelpy";
+        port = 8080;
+      };
+      affine = {
+        node = "kelpy";
+        port = 3010;
+      };
+      openclaw = {
+        node = "kelpy";
+        port = 8001;
+      };
+    };
+  };
+
+  allServiceEndpoints =
+    (lib.mapAttrsToList (_: svc: "${svc.node}:${toString svc.port}") services.public)
+    ++ (lib.mapAttrsToList (_: svc: "${svc.node}:${toString svc.port}") services.private);
+
+  uniqueEndpoints = lib.unique allServiceEndpoints;
+
+  checkPorts =
+    if builtins.length uniqueEndpoints != builtins.length allServiceEndpoints then
+      builtins.throw "Duplicate ports found on the same node in settings.nix! Endpoints: ${builtins.toJSON allServiceEndpoints}"
+    else
+      services;
 in
 {
   flake.settings = {
@@ -65,65 +138,6 @@ in
       hostName = "potbelliedSeahorse";
     };
 
-    services = {
-      public = {
-        matrix = {
-          node = "kelpy";
-          port = 6167;
-          proxy = false;
-        };
-        mail = {
-          node = "kelpy";
-          port = 8080;
-          proxy = false;
-        };
-        jellyfin = {
-          node = "kelpy";
-          port = 8096;
-        };
-      };
-      private = {
-        sonarr = {
-          node = "kelpy";
-          port = 8989;
-        };
-        radarr = {
-          node = "kelpy";
-          port = 7878;
-        };
-        bazarr = {
-          node = "kelpy";
-          port = 6767;
-        };
-        prowlarr = {
-          node = "kelpy";
-          port = 9696;
-        };
-        litellm = {
-          node = "kelpy";
-          port = 4000;
-        };
-        monitoring = {
-          node = "kelpy";
-          port = 3001;
-        };
-        paperless = {
-          node = "kelpy";
-          port = 28981;
-        };
-        torrent = {
-          node = "kelpy";
-          port = 8080;
-        };
-        affine = {
-          node = "kelpy";
-          port = 3010;
-        };
-        openclaw = {
-          node = "kelpy";
-          port = 8001;
-        };
-      };
-    };
+    services = checkPorts;
   };
 }

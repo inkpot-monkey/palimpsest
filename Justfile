@@ -6,25 +6,31 @@ default:
 
 # Local rebuild and switch
 switch host="":
-  nh os switch . {{ if host == "" { "" } else { "--hostname " + host } }}
+  nh os switch . --no-nom {{ if host == "" { "" } else { "--hostname " + host } }}
 
 # Deploy to a remote host (e.g. kelpy, porcupineFish)
 deploy host:
 		nixos-rebuild --target-host {{host}} --sudo --ask-sudo-password switch --flake .#{{host}}
 
+# Deploy to a remote host and set as default for next boot
 deployBoot host:
 		nixos-rebuild --target-host {{host}} --sudo --ask-sudo-password boot --flake .#{{host}}
 
 # Build the flake locally without switching
 build host="":
-  nh os build . {{ if host == "" { "" } else { "--hostname " + host } }}
+  nh os build . --no-nom {{ if host == "" { "" } else { "--hostname " + host } }}
 
 # Run checks
 check:
   nix flake check -L
 
+# Run dry-run checks for all hosts
 check-all:
   @nix flake show --json . 2>/dev/null | jq -r '.nixosConfigurations | keys[]' | xargs -I{} sh -c 'echo "Checking host: {}" && nixos-rebuild dry-run --flake .#{}'
+
+# DNS management with DnsControl (commands: preview, push, check)
+dns command="preview":
+  nix run .#dns -- {{command}}
 
 # Format all Nix files
 fmt:

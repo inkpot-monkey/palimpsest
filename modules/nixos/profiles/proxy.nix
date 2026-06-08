@@ -36,7 +36,7 @@ in
       inherit email;
       package = pkgs.caddy.withPlugins {
         plugins = [ "github.com/caddy-dns/cloudflare@v0.2.1" ];
-        hash = "sha256-hEIqK6F+9OCcd4JueVSidfUgQsVPWo0/imciD1UnqRo=";
+        hash = "sha256-RIqZlp7sV+Qka9stLN1NshgmvuSfUZdi4D9hP862jpQ=";
       };
       globalConfig = "";
       extraConfig = ''
@@ -60,7 +60,9 @@ in
           allServices =
             (lib.mapAttrs (_: svc: svc // { isPublic = true; }) settings.services.public)
             // (lib.mapAttrs (_: svc: svc // { isPublic = false; }) settings.services.private);
-          hostServices = lib.filterAttrs (_: svc: svc.node == config.networking.hostName) allServices;
+          hostServices = lib.filterAttrs (
+            _: svc: svc.node == config.networking.hostName && (svc.proxy or true)
+          ) allServices;
         in
         lib.mkMerge [
           (lib.mapAttrs' (
@@ -69,7 +71,9 @@ in
               extraConfig = ''
                 ${lib.optionalString (!svc.isPublic) "import internal_only"}
                 import cloudflare_tls
-                reverse_proxy 127.0.0.1:${toString svc.port}
+                handle {
+                  reverse_proxy 127.0.0.1:${toString svc.port}
+                }
               '';
             }
           ) hostServices)
