@@ -41,6 +41,7 @@
       server = ./monitoring/server.nix;
       smartctl = ./monitoring/smartctl.nix;
       exporters = ./monitoring/exporters.nix;
+      dmarc = ./monitoring/dmarc.nix;
     };
     n8n = ./n8n.nix;
     media = ./media;

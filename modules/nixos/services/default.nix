@@ -9,5 +9,6 @@
     git-annex = ./git-annex;
     jmap-bridge = ./jmap-bridge;
     stump = ./stump;
+    dmarc-metrics-exporter = ./dmarc-metrics-exporter;
   };
 }

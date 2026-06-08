@@ -40,7 +40,7 @@ systemctl status stalwart-mail
  ```bash
  nix run .#dns -- push
  ```
- This will automatically create or update your MX, SPF, DMARC, and MTA-STS records for `palebluebytes.xyz`.
+ This will automatically create or update your MX, SPF, DMARC, and MTA-STS records for `palebluebytes.space`.
  
  ### Step 2: DKIM Records
  Stalwart generates DKIM keys internally. 
@@ -66,6 +66,25 @@ systemctl status stalwart-mail
 3.  **Create Users:**
     - Go to **Directory > Accounts**.
     - Create a new account (e.g., `me@yourdomain.com`).
+    - **Catch-all Address**: To create a catch-all address, edit the account and add `@yourdomain.com` (without a username part) as an alias. This catches all unmatched emails for that domain.
+
+## 4b. Adding New Domains
+
+To add a new domain (e.g., `palebluebytes.xyz`) to your mail server:
+
+1.  **Update NixOS Configuration**:
+    *   Add the new domain to `custom.profiles.mail.extraDomains` in your host configuration (e.g., in `hosts/kelpy/default.nix`).
+    *   Rebuild the system: `nixos-rebuild switch --flake ~/code/nixos#kelpy`.
+    *   This will set up Caddy to serve `autoconfig`, `autodiscover`, and `mta-sts` for the new domain.
+
+2.  **Add Domain in Stalwart Web Admin**:
+    *   Log in to the Web Admin (`https://mail.palebluebytes.space`).
+    *   Go to **Directory > Domains**.
+    *   Click **Create Domain** and enter your new domain.
+
+3.  **Configure DNS**:
+    *   Add MX records pointing to `mail.palebluebytes.space`.
+    *   Add SPF, DMARC, and DKIM records as provided by the Stalwart Web Admin for the new domain.
 
 ## 5. Verify Email & Features
 
@@ -73,10 +92,12 @@ systemctl status stalwart-mail
     Add your account to Thunderbird or Outlook using only your email address. It should automatically find the correct IMAP and SMTP settings.
 
 2.  **JMAP Access:**
-    You can now use JMAP clients at `https://mail.palebluebytes.xyz/alt/jmap`.
+    You can now use JMAP clients at `https://mail.palebluebytes.space/jmap`.
 
 3.  **Send a Test Email:**
     Send an email from your new account to [check-auth@verifier.port25.com](mailto:check-auth@verifier.port25.com) or use [mail-tester.com](https://www.mail-tester.com).
+    
+    *   **Troubleshooting DKIM**: If mail-tester says your message is not signed with DKIM (even though DNS records are correct), ensure that the signing policy is active. Go to **Settings > MTA > Inbound > Sender Authentication** and set **DKIM Sign Domain** to return `sender_domain` for local authenticated users (e.g., condition: `is_local_domain(sender_domain) && !is_empty(authenticated_as)`).
     
 4.  **Check Score:**
     Ensure you get a 10/10 score. If SPF or DKIM fails, verify your DNS records via `dnscontrol`.

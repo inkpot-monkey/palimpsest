@@ -33,6 +33,7 @@
     ./monitoring/server.nix
     ./monitoring/smartctl.nix
     ./monitoring/exporters.nix
+    ./monitoring/dmarc.nix
     ./media
   ];
 }
