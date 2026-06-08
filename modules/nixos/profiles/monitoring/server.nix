@@ -15,6 +15,24 @@ let
 
   # Helper function to generate target strings for a specific port
   makeTargets = port: map (ip: "${ip}:${toString port}") senderNodes;
+
+  dashboards = {
+    dmarc = pkgs.fetchurl {
+      url = "https://grafana.com/api/dashboards/11333/revisions/1/download";
+      sha256 = "sha256-B0+jcw6L32KftbkyNyhswXar7EzGQuAyU5HH2rSiNts=";
+    };
+    node-exporter = pkgs.fetchurl {
+      url = "https://grafana.com/api/dashboards/1860/revisions/37/download";
+      sha256 = "sha256-1DE1aaanRHHeCOMWDGdOS1wBXxOF84UXAjJzT5Ek6mM=";
+    };
+  };
+
+  # Construct a directory in the Nix store containing only the strictly cryptographically hashed dashboards
+  dashboardsDir = pkgs.runCommand "grafana-dashboards" { } ''
+    mkdir -p $out
+    ln -s ${dashboards.dmarc} $out/dmarc.json
+    ln -s ${dashboards.node-exporter} $out/node-exporter.json
+  '';
 in
 {
   options.custom.profiles.monitoring-server = {
@@ -71,6 +89,14 @@ in
               { targets = makeTargets config.services.prometheus.exporters.node.port; }
             ];
           }
+        ]
+        ++ lib.optionals (config.custom.profiles.dmarc-exporter.enable or false) [
+          {
+            job_name = "dmarc";
+            static_configs = [
+              { targets = [ "127.0.0.1:${toString config.services.dmarc-metrics-exporter.port}" ]; }
+            ];
+          }
         ];
       };
     };
@@ -105,7 +131,7 @@ in
       provision.dashboards.settings.providers = [
         {
           name = "My Dashboards";
-          options.path = ./dashboards;
+          options.path = dashboardsDir;
         }
       ];
     };
