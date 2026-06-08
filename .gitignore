@@ -40,6 +40,8 @@ secrets/
 # =========================================
 # Rust build directory
 target/
+# bacon background-check log
+bacon.log
 
 # =========================================
 # Python
