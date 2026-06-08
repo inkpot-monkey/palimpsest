@@ -56,6 +56,9 @@ in
 
     # just deploy kelpy
     # nixos-rebuild --target-host kelpy --sudo --ask-sudo-password switch --flake .#kelpy
+    #
+    # Initial build on a fresh VPS (before inkpotmonkey user exists):
+    # nixos-rebuild --target-host root@<ip> switch --flake .#kelpy
     kelpy = mkSystem {
 
       modules = [
