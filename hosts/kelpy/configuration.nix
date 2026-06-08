@@ -24,11 +24,17 @@
     backup.enable = true;
     monitoring-server.enable = true;
     monitoring-client.enable = true;
+    dmarc-exporter.enable = false;
     mail = {
       enable = true;
       domain = "palebluebytes.space";
+      extraDomains = [ "palebluebytes.xyz" ];
     };
-    matrix.enable = true;
+    matrix = {
+      enable = true;
+      whatsapp.enable = true;
+      jmap-bridge.enable = true;
+    };
     paperless.enable = true;
     litellm.enable = true;
     openclaw.enable = true;
@@ -132,9 +138,6 @@
 
   nixpkgs = {
     hostPlatform = "x86_64-linux";
-    config.permittedInsecurePackages = [
-      "beekeeper-studio-5.5.7"
-    ];
   };
 
   environment.systemPackages = with pkgs; [
