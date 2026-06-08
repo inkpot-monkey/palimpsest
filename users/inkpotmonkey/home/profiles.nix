@@ -2,11 +2,11 @@
 {
   imports = [
     ./gui.nix
-    ./ai.nix
     ./dev.nix
     ./email.nix
     ./restic.nix
     ./git-annex.nix
+    ./ai/default.nix
     ./emacs/default.nix
   ];
 

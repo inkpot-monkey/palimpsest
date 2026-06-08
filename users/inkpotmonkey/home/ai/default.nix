@@ -21,6 +21,7 @@
 
       inputs.llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.eca
       inputs.llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.cursor-agent
+      inputs.llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.claude-code
       inputs.llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.gemini-cli
       inputs.llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.sandbox-runtime
       inputs.llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.agent-browser
