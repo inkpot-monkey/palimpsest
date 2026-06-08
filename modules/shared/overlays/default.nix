@@ -1,7 +1,12 @@
 { inputs, ... }:
 let
   # 1. Additions: Your custom packages
-  additions = final: _prev: import (inputs.self + /pkgs/default.nix) final;
+  additions =
+    final: _prev:
+    import (inputs.self + /pkgs/default.nix) {
+      pkgs = final;
+      craneLib = inputs.crane.mkLib final;
+    };
 
   # 2. Modifications: Your overrides
   modifications = {

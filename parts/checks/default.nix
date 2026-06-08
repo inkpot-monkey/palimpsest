@@ -16,6 +16,9 @@
         annas_opds = import ./annas-opds {
           inherit pkgs;
         };
+        jmap_bridge = import ./jmap-bridge {
+          inherit pkgs inputs self;
+        };
       };
     };
 }
