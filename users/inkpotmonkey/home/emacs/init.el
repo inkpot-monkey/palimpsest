@@ -143,6 +143,17 @@
       (setq mark-ring (nbutlast mark-ring))
       (goto-char (marker-position (car (last mark-ring))))))
 
+  (defun insert-secure-random-hex (arg)
+    "Generate a secure 64-character hex token.
+With a prefix ARG, save it to the kill ring instead of inserting it."
+    (interactive "P")
+    (let ((token (substring (shell-command-to-string "openssl rand -hex 32") 0 -1)))
+      (if arg
+          (progn
+            (kill-new token)
+            (message "Token copied to kill ring."))
+        (insert token))))
+
   :bind
   ("M-z" . zap-up-to-char)
   ("M-%" . query-replace-regexp)
@@ -315,6 +326,8 @@
 
 (use-package org
 		:defer t
+		:custom
+		(org-todo-keywords '((sequence "TODO(t)" "IN PROGRESS(p)" "BLOCKED(b)" "|" "DONE(d)" "CANCELED(c)")))
 		:config
 		(defun my/org-setup-fonts ()
 			(dolist (face '(org-level-1 org-level-2 org-level-3 org-level-4
@@ -601,7 +614,6 @@
 					 ("M-s e" . consult-isearch-history)
 					 ;; needed by consult-line to detect isearch
 					 ("M-s l" . consult-line)
-					 ;; needed by consult-line to detect isearch
 					 ("M-s L" . consult-line-multi)
 					 
 					 ;; Minibuffer history
@@ -611,14 +623,14 @@
 					 ;; orig. previous-matching-history-element
 					 ("M-r" . consult-history)))
 
-(use-package just-mode
-		:mode ("\\Justfile\\'" . just-mode))
-
 (use-package just-ts-mode
 		:mode ("\\Justfile\\'" . just-ts-mode))
 
-(use-package justl
-		:bind (("C-c j" . justl)))
+(use-package just-complete
+		:load-path "./just-complete"
+		:ensure nil
+		:bind (("C-c j" . just-run+)))
+
 
 (use-package embark
 		:bind
@@ -791,19 +803,19 @@
 		:init (mcp-hub-start-all-server))
 
 (use-package eca
-  :ensure nil
-  :bind (("C-, c s" . eca)
-         ("C-, c n" . eca-chat-new)
-         ("C-, c r" . eca-rewrite)
-         ("C-, c w" . eca-workspaces)
-         ("C-, c R" . eca-restart)
-         ("C-, c k" . eca-stop))
-  :hook (prog-mode . eca-completion-mode)
-  :config
-  (setq eca-custom-command '("eca" "server"))
-  (setq eca-chat-window-width 0.45)
-  (setq eca-chat-focus-on-open t)
-  (setq eca-chat-auto-add-repomap t))
+		:ensure nil
+		:bind (("C-, c s" . eca)
+					 ("C-, c n" . eca-chat-new)
+					 ("C-, c r" . eca-rewrite)
+					 ("C-, c w" . eca-workspaces)
+					 ("C-, c R" . eca-restart)
+					 ("C-, c k" . eca-stop))
+		:hook (prog-mode . eca-completion-mode)
+		:config
+		(setq eca-custom-command '("eca" "server"))
+		(setq eca-chat-window-width 0.45)
+		(setq eca-chat-focus-on-open t)
+		(setq eca-chat-auto-add-repomap t))
 
 (use-package daemons)
 
@@ -897,6 +909,21 @@
 		:hook
 		(markdown-mode . visual-fill-column-mode)
 		(markdown-view-mode . visual-fill-column-mode))
+
+(define-derived-mode open-docx-as-markdown+ markdown-view-mode "DOCX View"
+										 "Major mode for viewing .docx files as markdown."
+										 (let ((filename (buffer-file-name)))
+											 (when (and filename (file-exists-p filename))
+												 (let ((inhibit-read-only t))
+													 (erase-buffer)
+													 (insert (shell-command-to-string (format "pandoc -f docx -t markdown %s" (shell-quote-argument filename))))
+													 (set-buffer-modified-p nil)
+													 (read-only-mode 1)
+													 (goto-char (point-min))))))
+
+(add-to-list 'auto-mode-alist '("\\.docx\\'" . open-docx-as-markdown+))
+
+
 
 (use-package text-mode
 		:ensure nil
@@ -1025,7 +1052,13 @@
 	:config
 	(defun my/advice-compilation-filter (f proc string)
 		"Advice for `compilation-filter' to handle ANSI colors."
-		(funcall f proc (xterm-color-filter string)))
+		(let ((filtered (xterm-color-filter string)))
+			(when (string-match-p "\033\\[[0-9;]*H\\|\033\\[[23]?J\\|\033c" string)
+				(let ((inhibit-read-only t))
+					(erase-buffer))
+				(setq filtered (replace-regexp-in-string "\\`\n+" "" filtered)))
+			(unless (string-empty-p filtered)
+				(funcall f proc filtered))))
 
 	(advice-add 'compilation-filter :around #'my/advice-compilation-filter)
 
@@ -1042,20 +1075,36 @@
 		(let ((inhibit-read-only t))
 			(xterm-color-colorize-buffer)))
 
+	;; Carriage Return (CR) filter for clean progress bars (e.g. Nix builds)
+	(defun my/process-filter-cr (&rest _)
+		"Handle carriage returns by deleting to the beginning of the line."
+		(let ((inhibit-read-only t))
+			(save-excursion
+				(let ((start (cond
+											 ((bound-and-true-p compilation-filter-start) compilation-filter-start)
+											 ((bound-and-true-p comint-last-output-start) comint-last-output-start)
+											 (t (point-min)))))
+					(goto-char start)
+					(while (search-forward "\r" nil t)
+						(delete-region (line-beginning-position) (point)))))))
+
+	(add-hook 'compilation-filter-hook #'my/process-filter-cr)
+
 	(add-hook 'shell-mode-hook (lambda ()
 															 (setq-local xterm-color-preserve-properties t)
 															 (setq-local comint-inhibit-carriage-motion nil)
-															 (add-hook 'comint-preoutput-filter-functions 'xterm-color-filter nil t)))
-	
-	;; Carriage Return (CR) filter for clean progress bars (e.g. Nix builds)
-	(defun my/compilation-filter-cr-hook ()
-		(let ((inhibit-read-only t))
-			(save-excursion
-				(goto-char compilation-filter-start)
-				(while (search-forward "\r" nil t)
-					(delete-region (line-beginning-position) (point))))))
-	
-	(add-hook 'compilation-filter-hook #'my/compilation-filter-cr-hook))
+															 (add-hook 'comint-preoutput-filter-functions 'xterm-color-filter nil t)
+															 (add-hook 'comint-output-filter-functions #'my/process-filter-cr nil t))))
+
+;; Force async-shell-command buffers to use shell-mode so they get our filters
+(defun my/set-shell-mode-for-async-shell (&rest _)
+	"Enable shell-mode in the async shell command buffer."
+	(when-let ((buf (get-buffer "*Async Shell Command*")))
+		(with-current-buffer buf
+			(unless (derived-mode-p 'shell-mode)
+				(shell-mode)))))
+
+(advice-add 'async-shell-command :after #'my/set-shell-mode-for-async-shell)
 
 (use-package eshell
 		:ensure nil
@@ -1082,7 +1131,51 @@
 		(add-hook 'eshell-mode-hook #'my/eshell-setup))
 
 (use-package ement
-		:defer t)
+		:ensure nil		;; Provided by Nix
+		:commands (ement-connect ement-list-rooms ement-view-room ement-describe-room)
+		:custom
+		(ement-save-sessions t)
+		(ement-auto-sync t)
+		(ement-initial-sync-timeout 40)
+
+		:init
+		;; Convenience: connect with pre-filled user ID for matrix.palebluebytes.space
+		(defun my/ement-connect ()
+			"Connect to Matrix at matrix.palebluebytes.space as inkpotmonkey."
+			(interactive)
+			(require 'ement)
+			(if-let ((session (cdr (assoc "@inkpotmonkey:matrix.palebluebytes.space"
+																		ement-sessions))))
+					(ement-connect :session session)
+				(ement-connect :user-id "@inkpotmonkey:matrix.palebluebytes.space")))
+
+		(defun my/ement-list ()
+			"Show the Ement room list, connecting first if needed."
+			(interactive)
+			(require 'ement)
+			(unless ement-sessions
+				(if (y-or-n-p "Not connected to Matrix. Connect now?")
+						(my/ement-connect)
+					(user-error "Not connected to Matrix")))
+			(ement-list-rooms))
+
+		;; Define a prefix map for Ement commands under C-c m
+		(define-prefix-command 'my/ement-map)
+		(define-key 'my/ement-map (kbd "c") 'my/ement-connect)
+		(define-key 'my/ement-map (kbd "m") 'my/ement-connect)
+		(define-key 'my/ement-map (kbd "d") (lambda () (interactive)
+																					(require 'ement)
+																					(ement-disconnect
+																					 (mapcar #'cdr ement-sessions))))
+		(define-key 'my/ement-map (kbd "l") 'my/ement-list)
+		(define-key 'my/ement-map (kbd "v") 'ement-view-room)
+		(define-key 'my/ement-map (kbd "s") 'ement-room-send-image)
+		(define-key 'my/ement-map (kbd "f") 'ement-room-send-file)
+		(define-key 'my/ement-map (kbd "i") 'ement-invite-user)
+		(define-key 'my/ement-map (kbd "S") 'ement-directory-search)
+
+		:bind
+		(("C-c m" . my/ement-map)))
 
 
 (use-package nix-ts-mode
@@ -1409,27 +1502,6 @@ buffer (*App: Name*)."
 					("C-c C-o" . sclang-server-boot)
 					("C-." . sclang-stop)
 					("C-c C-d" . sclang-find-help)))
-
-(use-package notmuch
-		:bind ("C-c m" . notmuch)
-		:config
-		(setq notmuch-show-logo nil
-					notmuch-search-oldest-first nil
-					notmuch-hello-sections '(notmuch-hello-insert-saved-searches
-																	 notmuch-hello-insert-alltags))
-		(setq notmuch-saved-searches
-					'((:name "inbox" :query "tag:inbox" :key "i")
-						(:name "unread" :query "tag:unread" :key "u")
-						(:name "flagged" :query "tag:flagged" :key "f")
-						(:name "sent" :query "tag:sent" :key "t")
-						(:name "drafts" :query "tag:draft" :key "d")
-						(:name "all mail" :query "*" :key "a"))))
-
-;; Consult integration (searching mail with completion)
-(use-package consult-notmuch
-		:after (consult notmuch)
-		:bind ("C-c n" . consult-notmuch))
-
 
 (add-hook 'emacs-startup-hook
           (lambda ()

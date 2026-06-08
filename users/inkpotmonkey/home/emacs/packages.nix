@@ -109,4 +109,9 @@
       epkgs.compat
     ];
   })
+  (epkgs.trivialBuild {
+    pname = "just-complete";
+    version = "unstable-202X";
+    src = ./just-complete;
+  })
 ]

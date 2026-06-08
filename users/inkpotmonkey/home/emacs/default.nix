@@ -32,6 +32,11 @@
             epkgs.eshell-syntax-highlighting
             # treesit-grammars-patched
             epkgs.treesit-grammars.with-all-grammars
+
+            # MCP server for agentic Elisp development — describes functions,
+            # reads source files, looks up Info docs, etc.
+            epkgs.elisp-dev-mcp
+            epkgs.mcp-server-lib
           ]
           ++ (import ./packages.nix {
             inherit epkgs pkgs;

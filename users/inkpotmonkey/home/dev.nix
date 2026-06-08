@@ -26,6 +26,7 @@
       imagemagick
       pandoc
       libtool
+      openssl
 
       # --- Language Servers & Formatters ---
       # Nix
