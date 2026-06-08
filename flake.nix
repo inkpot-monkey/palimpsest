@@ -24,6 +24,8 @@
 
     nixos-hardware.url = "github:nixos/nixos-hardware";
 
+    nixos-turing-rk1.url = "github:GiyoMoon/nixos-turing-rk1";
+
     emacs-overlay.url = "github:nix-community/emacs-overlay";
 
     vpsFree.url = "github:vpsfreecz/vpsadminos";
@@ -50,7 +52,6 @@
 
     llm-agents = {
       url = "github:numtide/llm-agents.nix";
-      inputs.nixpkgs.follows = "nixpkgs";
     };
 
     nix-index-database = {
@@ -58,13 +59,12 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    eca = {
-      url = "github:editor-code-assistant/eca";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
     openclaw-nix = {
       url = "github:openclaw/nix-openclaw";
+    };
+
+    crane = {
+      url = "github:ipetkov/crane";
     };
 
     secrets = {
@@ -110,7 +110,10 @@
         {
           _module.args.pkgs = self.lib.mkPkgs system;
           formatter = pkgs.nixfmt;
-          packages = import ./pkgs pkgs;
+          packages = import ./pkgs {
+            inherit pkgs;
+            craneLib = inputs.crane.mkLib pkgs;
+          };
         };
     };
 }
