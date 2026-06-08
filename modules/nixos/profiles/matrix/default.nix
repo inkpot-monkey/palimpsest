@@ -9,72 +9,54 @@
 let
   cfg = config.custom.profiles.matrix;
   domain = "matrix.palebluebytes.space";
-
-  # matrixSubdomain is no longer needed as we run on the root domain
   address = "127.0.0.1";
 
-  # Path to the separate secrets file relative to the secrets flake input
   matrixSecrets = self.lib.getSecretFile "matrix";
+
+  # Collect appservice registrations from enabled bridges
+  appServiceRegistrations =
+    lib.optionals config.custom.profiles.matrix.whatsapp.enable [
+      "/run/credentials/conduit.service/whatsapp-registration.yaml"
+    ]
+    ++ lib.optionals config.custom.profiles.matrix.jmap-bridge.enable [
+      "/run/credentials/conduit.service/jmap-bridge-registration.yaml"
+    ];
+
+  # Collect LoadCredential entries from enabled bridges
+  bridgeCredentials =
+    lib.optionals config.custom.profiles.matrix.whatsapp.enable [
+      "whatsapp-registration.yaml:${config.sops.templates."whatsapp-registration.yaml".path}"
+    ]
+    ++ lib.optionals config.custom.profiles.matrix.jmap-bridge.enable [
+      "jmap-bridge-registration.yaml:${config.sops.templates."jmap-registration.yaml".path}"
+    ];
 in
 {
-  imports = [ self.nixosModules.jmap-bridge ];
+  imports = [
+    ./mautrix-whatsapp.nix
+    ./jmap-bridge.nix
+  ];
 
   options.custom.profiles.matrix = {
     enable = lib.mkEnableOption "Matrix (Conduit) configuration";
   };
 
   config = lib.mkIf cfg.enable {
+    nixpkgs.config.permittedInsecurePackages = [
+      "olm-3.2.16"
+    ];
+
     # ----------------------------------------------------------------------------
     # Secret Management (SOPS)
     # ----------------------------------------------------------------------------
     sops.defaultSopsFormat = "yaml";
-
-    # Define secrets from secrets/matrix.yaml
-    sops.secrets.email_as_token = {
-      sopsFile = matrixSecrets;
-    };
-    sops.secrets.email_hs_token = {
-      sopsFile = matrixSecrets;
-    };
-    sops.secrets.email_password = {
-      sopsFile = matrixSecrets;
-    };
 
     sops.secrets.registration_token = {
       sopsFile = matrixSecrets;
     };
 
     # ----------------------------------------------------------------------------
-    # JMAP Bridge Configuration
-    # ----------------------------------------------------------------------------
-
-    # Template for environment file (populated with decrypted secrets)
-    sops.templates."jmap-bridge.env" = {
-      content = ''
-        MATRIX_AS_TOKEN=${config.sops.placeholder.email_as_token}
-        JMAP_TOKEN=${config.sops.placeholder.email_password}
-      '';
-    };
-
-    services.jmap-bridge = {
-      enable = true;
-      username = "test";
-
-      # Use internal listener directly to avoid public/private port confusion
-      url = "http://127.0.0.1:8080/jmap/session";
-
-      matrixUrl = "http://127.0.0.1:${toString settings.services.public.matrix.port}";
-      environmentFile = config.sops.templates."jmap-bridge.env".path;
-
-      registration = {
-        enable = true;
-        asToken = config.sops.placeholder.email_as_token;
-        hsToken = config.sops.placeholder.email_hs_token;
-      };
-    };
-
-    # ----------------------------------------------------------------------------
-    # Matrix Tuwunel Configuration
+    # Matrix Conduit (Homeserver)
     # ----------------------------------------------------------------------------
     services.matrix-conduit = {
       enable = true;
@@ -90,47 +72,58 @@ in
         ];
 
         allow_registration = true;
-        # Point to the decrypted secret path via systemd credentials
         registration_token_file = "/run/credentials/conduit.service/registration_token";
 
-        # Register the JMAP Bridge (Supported in Conduit)
-        app_service_config_files = [ "/run/credentials/conduit.service/jmap-bridge-registration.yaml" ];
+        # NOTE: Conduit does NOT support app_service_config_files. Appservices (bridges)
+        # must be registered and updated dynamically in the homeserver's #admins room.
+        # This parameter is kept here only for reference, or can be ignored.
+        app_service_config_files = appServiceRegistrations;
       };
     };
 
     systemd.services.conduit.serviceConfig.LoadCredential = [
       "registration_token:${config.sops.secrets.registration_token.path}"
-      "jmap-bridge-registration.yaml:${config.services.jmap-bridge.registration.path}"
+    ]
+    ++ bridgeCredentials;
+
+    systemd.services.conduit.restartTriggers = [
+      config.sops.secrets.registration_token.path
+    ]
+    ++ lib.optionals config.custom.profiles.matrix.whatsapp.enable [
+      config.sops.templates."whatsapp-registration.yaml".path
+    ]
+    ++ lib.optionals config.custom.profiles.matrix.jmap-bridge.enable [
+      config.sops.templates."jmap-registration.yaml".path
     ];
 
     # ----------------------------------------------------------------------------
     # Caddy Reverse Proxy
     # ----------------------------------------------------------------------------
-
-    # Matrix Server Virtual Host (Handles Federation, Client API, and Discovery)
     services.caddy.virtualHosts."${domain}" = {
       hostName = domain;
-      extraConfig = lib.mkAfter ''
-        # Matrix server discovery (Fed) - Pointing to itself for correctness
-        handle /.well-known/matrix/server {
-          header Content-Type "application/json"
-          header Access-Control-Allow-Origin "*"
-          respond `{"m.server":"${domain}:443"}`
-        }
+      extraConfig = lib.mkBefore (
+        ''
+          # Matrix server discovery (Fed)
+          handle /.well-known/matrix/server {
+            header Content-Type "application/json"
+            header Access-Control-Allow-Origin "*"
+            respond `{"m.server":"${domain}:443"}`
+          }
 
-        # Matrix client discovery - Pointing to itself
-        handle /.well-known/matrix/client {
-          header Content-Type "application/json"
-          header Access-Control-Allow-Origin "*"
-          respond `{"m.homeserver":{"base_url":"https://${domain}"}}`
-        }
-      '';
-    };
-
-    environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
-      directories = [
-        "/var/lib/jmap-bridge"
-      ];
+          # Matrix client discovery
+          handle /.well-known/matrix/client {
+            header Content-Type "application/json"
+            header Access-Control-Allow-Origin "*"
+            respond `{"m.homeserver":{"base_url":"https://${domain}"}}`
+          }
+        ''
+        + ''
+          import cloudflare_tls
+          handle {
+            reverse_proxy 127.0.0.1:${toString settings.services.public.matrix.port}
+          }
+        ''
+      );
     };
 
     # Enforce secure permissions on /var/lib/private to satisfy DynamicUser requirements
