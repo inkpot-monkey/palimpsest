@@ -22,6 +22,7 @@ graph TD
     C --> C2[sawtoothShark]
     C --> C3[kelpy]
     C --> C4[porcupineFish]
+    C --> C5[rk1a / rk1b]
     
     D --> D1[nixos/profiles]
     D --> D2[nixos/services]
