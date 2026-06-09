@@ -27,6 +27,7 @@
     ./affine
     ./litellm.nix
     ./openclaw.nix
+    ./aionui.nix
     ./backup.nix
     ./blocky.nix
     ./monitoring/client.nix

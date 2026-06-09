@@ -64,6 +64,10 @@ let
         node = "kelpy";
         port = 8001;
       };
+      aionui = {
+        node = "kelpy";
+        port = 25808;
+      };
     };
   };
 
