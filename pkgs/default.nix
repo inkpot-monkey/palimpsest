@@ -3,6 +3,7 @@
 # If meta.mainProgram is set, also: nix run .#<name>
 
 { pkgs, craneLib }: {
+  aionui = pkgs.callPackage ./aionui { };
   stump = pkgs.callPackage ./stump { };
   vocabsieve = pkgs.libsForQt5.callPackage ./vocabsieve.nix { };
   finance-tools = pkgs.callPackage ./finance-tools { };
