@@ -16,6 +16,7 @@
 
   custom.profiles = {
     base.enable = true;
+    sudo.enable = true;
     audio.enable = true;
     gui-base.enable = true;
     backup.enable = false;

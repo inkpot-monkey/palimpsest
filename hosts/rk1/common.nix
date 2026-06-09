@@ -11,6 +11,7 @@
     self.nixosProfiles.sops # enabled transitively by base
     self.nixosProfiles.impermanence # option read by tailscale (left disabled)
     self.nixosProfiles.ssh
+    self.nixosProfiles.sudo
     self.nixosProfiles.tailscale
     self.nixosProfiles.local-llm
   ];
@@ -18,6 +19,7 @@
   custom.profiles = {
     base.enable = true;
     ssh.enable = true;
+    sudo.enable = true;
     tailscale = {
       enable = true;
       tags = [ "tag:server" ];

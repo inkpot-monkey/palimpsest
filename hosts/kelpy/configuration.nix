@@ -20,6 +20,9 @@
       tags = [ "tag:server" ];
     };
     ssh.enable = true;
+    # Deliberately NOT passwordless sudo: kelpy is the public-facing VPS, so keep
+    # the sudo password as defense-in-depth. `just deploy kelpy` supplies it via
+    # --ask-sudo-password (prompted once, up front).
     proxy.enable = true;
     backup.enable = true;
     monitoring-server.enable = true;

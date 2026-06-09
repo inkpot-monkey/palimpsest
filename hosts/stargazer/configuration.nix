@@ -25,6 +25,7 @@
 
   custom.profiles = {
     base.enable = true;
+    sudo.enable = true;
     audio.enable = true;
     wireless.enable = true;
     gui-base.enable = true;

@@ -17,6 +17,7 @@
     pi.enable = true;
     base.enable = true;
     ssh.enable = true;
+    sudo.enable = true;
     wireless.enable = true;
     hifiberry.enable = true;
     hifi.enable = true;
