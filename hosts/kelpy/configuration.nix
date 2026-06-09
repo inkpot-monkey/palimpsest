@@ -38,6 +38,7 @@
     paperless.enable = true;
     litellm.enable = true;
     openclaw.enable = true;
+    aionui.enable = true;
     blocky.enable = true;
     media = {
       enable = true;
@@ -135,6 +136,13 @@
   };
 
   services.restic.backups.daily.paths = [ "/persistent" ];
+
+  # Persist the agent's home state across impermanence reboots: Claude Code
+  # subscription credentials/config and the project checkouts AionUi works in.
+  environment.persistence."/persistent".users.inkpotmonkey.directories = [
+    ".claude"
+    "code"
+  ];
 
   nixpkgs = {
     hostPlatform = "x86_64-linux";
