@@ -6,6 +6,30 @@
 }:
 let
   cfg = config.services.aionui;
+
+  # AionUi's backend (aioncore) activates a "managed Node runtime" (and ACP tools)
+  # by copying them out of its bundled managed-resources into <data-dir>/runtime.
+  # When the bundle lives in the read-only Nix store (0555 dirs), that activation
+  # fails with "bundled Node runtime is invalid … Permission denied", and Claude
+  # Code (an npm-based ACP agent) cannot launch at all. Fix: stage a *writable*
+  # copy of the bundle under the (persisted) data dir and point aioncore at it via
+  # --backend-bin. Re-staged only when the package version changes.
+  backendDir = "${cfg.dataDir}/backend";
+  backendBin = "${backendDir}/linux-x64/aioncore";
+  prepareBackend = pkgs.writeShellScript "aionui-prepare-backend" ''
+    export PATH=${lib.makeBinPath [ pkgs.coreutils ]}:$PATH
+    set -eu
+    src=${cfg.package}/libexec/aionui-web/bundled-aioncore
+    dst=${backendDir}
+    ver=${cfg.package.version}
+    if [ "$(cat "$dst/.aionui-version" 2>/dev/null || true)" != "$ver" ]; then
+      rm -rf "$dst"
+      mkdir -p "$dst"
+      cp -a --reflink=auto "$src/." "$dst/"
+      chmod -R u+w "$dst"
+      printf '%s' "$ver" > "$dst/.aionui-version"
+    fi
+  '';
 in
 {
   options.services.aionui = {
@@ -122,6 +146,8 @@ in
       serviceConfig = {
         User = cfg.user;
         Group = cfg.group;
+        # Stage the writable backend copy before launch (see backendDir comment).
+        ExecStartPre = prepareBackend;
         ExecStart = lib.concatStringsSep " " (
           [
             (lib.getExe cfg.package)
@@ -131,14 +157,16 @@ in
             (toString cfg.port)
             "--data-dir"
             cfg.dataDir
+            "--backend-bin"
+            backendBin
           ]
           ++ lib.optional cfg.allowRemote "--remote"
         );
         Restart = "on-failure";
         RestartSec = "5s";
-        # First launch initialises the SQLite DB and seeds the admin user, which
-        # can take ~30s; give it generous headroom before systemd gives up.
-        TimeoutStartSec = "180s";
+        # First launch stages the backend copy (~hundreds of MB), initialises the
+        # SQLite DB and seeds the admin user; give it generous headroom.
+        TimeoutStartSec = "600s";
 
         EnvironmentFile = lib.mkIf (cfg.environmentFile != null) cfg.environmentFile;
 
