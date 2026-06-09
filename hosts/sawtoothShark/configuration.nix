@@ -65,6 +65,11 @@
     hostPlatform = "x86_64-linux";
   };
 
+  # Give sawtoothShark the power to build images for the aarch64 raspberry
+  # pis (e.g. porcupineFish SD images) locally via emulation, matching
+  # stargazer (see hosts/stargazer/boot.nix).
+  boot.binfmt.emulatedSystems = [ "aarch64-linux" ];
+
   # Input configuration (Kanata / uinput)
   services.udev.extraRules = ''
     KERNEL=="uinput", MODE="0660", GROUP="uinput", OPTIONS+="static_node=uinput"
