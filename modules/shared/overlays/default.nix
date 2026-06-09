@@ -59,6 +59,9 @@ let
   # 4. Flexget: Fix missing WebUI assets
   flexget = import ./flexget.nix { inherit inputs; };
 
+  # llama-cpp: enable libcurl so `-hf`/`-hfd` can fetch GGUFs at runtime
+  llama-cpp = import ./llama-cpp.nix { inherit inputs; };
+
 in
 {
   inherit additions modifications;
@@ -70,5 +73,6 @@ in
     modifications.tree-sitter
     # modifications.antigravity
     flexget
+    llama-cpp
   ];
 }
