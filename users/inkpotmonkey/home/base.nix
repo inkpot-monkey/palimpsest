@@ -20,7 +20,7 @@
     home = {
       inherit (config.identity) username;
       homeDirectory = "/home/${config.identity.username}";
-      stateVersion = "25.05";
+      stateVersion = "26.11";
 
       sessionVariables = {
         SOPS_AGE_KEY_FILE = "/run/user/$(id -u)/secrets.d/age-keys.txt";

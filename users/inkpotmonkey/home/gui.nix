@@ -33,6 +33,9 @@
     xdg.userDirs = {
       enable = true;
       createDirectories = true;
+      # Keep legacy behavior (export XDG_*_DIR session variables); the default
+      # flipped to false for stateVersion >= 26.05.
+      setSessionVariables = true;
     };
 
     xdg.mimeApps = {
