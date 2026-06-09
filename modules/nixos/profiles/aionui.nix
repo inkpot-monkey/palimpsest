@@ -11,6 +11,8 @@
 let
   cfg = config.custom.profiles.aionui;
   claude-code = inputs.llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.claude-code;
+  # The local homeserver's name (see modules/nixos/profiles/matrix: server_name).
+  matrixServer = "matrix.${config.networking.domain}";
 in
 {
   options.custom.profiles.aionui = {
@@ -18,15 +20,20 @@ in
 
     notifications = {
       enable = lib.mkEnableOption ''
-        AionUi -> Matrix notifier. Opt-in: requires the one-time bootstrap first
-        (register a Matrix bot, create the room, add its access token to
-        secrets/profiles/matrix.yaml as `aionui_matrix_token`, set `roomId`).
+        AionUi -> Matrix notifier. The only manual step is adding the bot's
+        password to secrets/profiles/matrix.yaml as `aionui_matrix_bot_password`;
+        the notifier then self-registers the bot (using the homeserver
+        registration token) and creates the alerts room on first run.
       '';
-      roomId = lib.mkOption {
+      room = lib.mkOption {
         type = lib.types.str;
-        default = "";
-        example = "!abcdef:matrix.palebluebytes.space";
-        description = "Matrix room ID the notifier posts agent events to.";
+        default = "#aionui-alerts:${matrixServer}";
+        description = "Room alias (auto-created) or id the notifier posts to.";
+      };
+      inviteUser = lib.mkOption {
+        type = lib.types.str;
+        default = "@inkpotmonkey:${matrixServer}";
+        description = "Matrix account invited when the alerts room is created.";
       };
     };
   };
@@ -56,15 +63,25 @@ in
       ];
     };
 
-    # Matrix notifier (opt-in; see notifications option + bootstrap below).
-    sops.secrets.aionui_matrix_token = lib.mkIf cfg.notifications.enable {
-      sopsFile = self.lib.getSecretPath "profiles/matrix.yaml";
-      owner = config.services.aionui-notifier.user;
+    # Matrix notifier (opt-in). Secrets live in profiles/matrix.yaml: the bot
+    # password (add manually) and the homeserver registration token (already
+    # present, re-decrypted here for the notifier user to self-register the bot).
+    sops.secrets = lib.mkIf cfg.notifications.enable {
+      aionui_matrix_bot_password = {
+        sopsFile = self.lib.getSecretPath "profiles/matrix.yaml";
+        owner = config.services.aionui-notifier.user;
+      };
+      aionui_registration_token = {
+        sopsFile = self.lib.getSecretPath "profiles/matrix.yaml";
+        key = "registration_token";
+        owner = config.services.aionui-notifier.user;
+      };
     };
     services.aionui-notifier = lib.mkIf cfg.notifications.enable {
       enable = true;
-      inherit (cfg.notifications) roomId;
-      tokenFile = config.sops.secrets.aionui_matrix_token.path;
+      inherit (cfg.notifications) room inviteUser;
+      passwordFile = config.sops.secrets.aionui_matrix_bot_password.path;
+      registrationTokenFile = config.sops.secrets.aionui_registration_token.path;
       matrixUrl = "http://127.0.0.1:${toString settings.services.public.matrix.port}";
       aionuiUrl = "http://127.0.0.1:${toString settings.services.private.aionui.port}";
     };

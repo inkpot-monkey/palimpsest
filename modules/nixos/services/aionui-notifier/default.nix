@@ -26,16 +26,42 @@ in
       description = "Base URL of the Matrix homeserver client-server API.";
     };
 
-    roomId = lib.mkOption {
+    room = lib.mkOption {
       type = lib.types.str;
-      example = "!abcdef:matrix.example.com";
-      description = "Matrix room ID the bot posts notifications to.";
+      example = "#aionui-alerts:matrix.example.com";
+      description = ''
+        Target room — a room alias (created automatically if missing) or a room
+        id (`!…`). Aliases are recommended: the notifier resolves them and
+        creates the room (inviting {option}`inviteUser`) on first run.
+      '';
     };
 
-    tokenFile = lib.mkOption {
+    botUser = lib.mkOption {
+      type = lib.types.str;
+      default = "aionui-notifier";
+      description = "Matrix bot user localpart. Logged in (or registered) at runtime.";
+    };
+
+    passwordFile = lib.mkOption {
       type = lib.types.path;
-      description = "File containing the Matrix bot access token (e.g. a sops secret).";
-      example = "/run/secrets/aionui_matrix_token";
+      description = "File with the bot's password (e.g. a sops secret). Used to log in / register.";
+      example = "/run/secrets/aionui_matrix_bot_password";
+    };
+
+    registrationTokenFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = ''
+        Optional homeserver registration token file. If set, the notifier
+        self-registers the bot on first run when it does not yet exist.
+      '';
+    };
+
+    inviteUser = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      example = "@me:matrix.example.com";
+      description = "User invited when the notifier creates the room from an alias.";
     };
 
     pollInterval = lib.mkOption {
@@ -88,10 +114,15 @@ in
       environment = {
         AIONUI_URL = cfg.aionuiUrl;
         MATRIX_URL = cfg.matrixUrl;
-        MATRIX_ROOM = cfg.roomId;
-        MATRIX_TOKEN_FILE = cfg.tokenFile;
+        MATRIX_ROOM = cfg.room;
+        MATRIX_USER = cfg.botUser;
+        MATRIX_PASSWORD_FILE = cfg.passwordFile;
+        MATRIX_INVITE = cfg.inviteUser;
         STATE_DIR = cfg.stateDir;
         POLL_INTERVAL = toString cfg.pollInterval;
+      }
+      // lib.optionalAttrs (cfg.registrationTokenFile != null) {
+        MATRIX_REGISTRATION_TOKEN_FILE = cfg.registrationTokenFile;
       };
 
       serviceConfig = {
