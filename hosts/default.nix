@@ -75,5 +75,38 @@ in
       ];
 
     };
+
+    # Turing Pi RK1 nodes (RK3588, 32 GB). Shared config in ./rk1/common.nix;
+    # each node differs only by hostname + served model.
+    #
+    # Deploy (build on the node itself — aarch64):
+    # nixos-rebuild switch --flake .#rk1a \
+    #   --target-host nixos@<ip> --build-host nixos@<ip> --use-remote-sudo
+    rk1a = mkSystem {
+      modules = [
+        ./rk1/common.nix
+        self.users.inkpotmonkey.cli
+        {
+          networking.hostName = "rk1a";
+          # Fast MoE daily driver (3B active → ~10-15 tok/s on CPU).
+          custom.profiles.localLlm.model = "unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL";
+        }
+      ];
+    };
+
+    rk1b = mkSystem {
+      modules = [
+        ./rk1/common.nix
+        self.users.inkpotmonkey.cli
+        {
+          networking.hostName = "rk1b";
+          # Best-quality dense coder + speculative decoding (~3-4 tok/s).
+          custom.profiles.localLlm = {
+            model = "unsloth/Qwen3.6-27B-GGUF:Q4_K_M";
+            draftModel = "unsloth/Qwen3.6-1.7B-GGUF:Q4_K_M";
+          };
+        }
+      ];
+    };
   };
 }

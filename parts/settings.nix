@@ -68,6 +68,15 @@ let
         node = "kelpy";
         port = 25808;
       };
+      # Local llama.cpp endpoints on the Turing Pi RK1 nodes.
+      localLlmA = {
+        node = "rk1a";
+        port = 8080;
+      };
+      localLlmB = {
+        node = "rk1b";
+        port = 8080;
+      };
     };
   };
 
@@ -124,6 +133,22 @@ in
 
     nodes.potbelliedSeahorse = {
       hostName = "potbelliedSeahorse";
+    };
+
+    nodes.rk1a = {
+      hostName = "rk1a";
+      tailscale = {
+        ip4 = getMeta "rk1a" [ "tailscale" "ip4" ] "100.64.0.4";
+        ip6 = getMeta "rk1a" [ "tailscale" "ip6" ] "fd7a:115c:a1e0::4";
+      };
+    };
+
+    nodes.rk1b = {
+      hostName = "rk1b";
+      tailscale = {
+        ip4 = getMeta "rk1b" [ "tailscale" "ip4" ] "100.64.0.5";
+        ip6 = getMeta "rk1b" [ "tailscale" "ip6" ] "fd7a:115c:a1e0::5";
+      };
     };
 
     services = checkPorts;
