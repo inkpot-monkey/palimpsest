@@ -10,9 +10,6 @@
         networking = import ./networking {
           inherit pkgs inputs self;
         };
-        media = import ./media {
-          inherit pkgs inputs self;
-        };
         annas_opds = import ./annas-opds {
           inherit pkgs;
         };
