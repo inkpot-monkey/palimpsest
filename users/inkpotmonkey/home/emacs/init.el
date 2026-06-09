@@ -721,6 +721,12 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 (use-package claude-code
 		:ensure nil)
 
+(use-package claude-code-ide
+		:ensure nil
+		:bind ("C-c C-'" . claude-code-ide-menu)
+		:config
+		(claude-code-ide-emacs-tools-setup))
+
 (use-package gemini-cli
 		:ensure nil)
 

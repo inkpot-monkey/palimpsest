@@ -23,6 +23,21 @@
     packageRequires = [ epkgs.inheritenv ];
   })
   (epkgs.trivialBuild {
+    pname = "claude-code-ide";
+    version = "unstable-2026-06-09";
+    src = pkgs.fetchFromGitHub {
+      owner = "manzaltu";
+      repo = "claude-code-ide.el";
+      rev = "a9485f766ea69f6cb3a3f08dea20d44fd6596673";
+      hash = "sha256-6kaTPI2CCsdxxiCpZ7qqciv/HJCQRsJ8084+SqW8Idc=";
+    };
+    packageRequires = [
+      epkgs.websocket
+      epkgs.transient
+      epkgs.web-server
+    ];
+  })
+  (epkgs.trivialBuild {
     pname = "gemini-cli";
     version = "unstable-202X";
     src = pkgs.fetchFromGitHub {
