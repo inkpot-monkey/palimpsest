@@ -9,6 +9,7 @@
     ./nebula.nix
     ./tailscale.nix
     ./ssh.nix
+    ./sudo.nix
     ./wireless.nix
     ./zsa.nix
     ./gui-base.nix

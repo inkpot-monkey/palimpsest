@@ -12,6 +12,7 @@
     nebula = ./nebula.nix;
     tailscale = ./tailscale.nix;
     ssh = ./ssh.nix;
+    sudo = ./sudo.nix;
     wireless = ./wireless.nix;
     zsa = ./zsa.nix;
 
