@@ -11,20 +11,11 @@ in
 {
   imports = [
     ./qbittorrent.nix
-    ./sonarr.nix
-    ./radarr.nix
-    ./bazarr.nix
-    ./prowlarr.nix
     ./jellyfin.nix
   ];
 
   options.custom.profiles.media = {
     enable = lib.mkEnableOption "Media server and automation configuration";
-    language = lib.mkOption {
-      type = lib.types.str;
-      default = "spa";
-      description = "The language of the subtitles to download.";
-    };
     mediaPath = lib.mkOption {
       type = lib.types.path;
       default = "/var/lib/media";

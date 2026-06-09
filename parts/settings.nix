@@ -40,22 +40,6 @@ let
       };
     };
     private = {
-      sonarr = {
-        node = "kelpy";
-        port = 8989;
-      };
-      radarr = {
-        node = "kelpy";
-        port = 7878;
-      };
-      bazarr = {
-        node = "kelpy";
-        port = 6767;
-      };
-      prowlarr = {
-        node = "kelpy";
-        port = 9696;
-      };
       litellm = {
         node = "kelpy";
         port = 4000;
