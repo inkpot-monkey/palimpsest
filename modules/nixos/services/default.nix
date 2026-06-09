@@ -11,5 +11,6 @@
     stump = ./stump;
     dmarc-metrics-exporter = ./dmarc-metrics-exporter;
     aionui = ./aionui;
+    aionui-notifier = ./aionui-notifier;
   };
 }
