@@ -119,10 +119,6 @@ in
     };
     users.groups = lib.mkIf cfg.createUser { ${cfg.group} = { }; };
 
-    systemd.tmpfiles.rules = [
-      "d '${cfg.dataDir}' 0750 ${cfg.user} ${cfg.group} - -"
-    ];
-
     systemd.services.aionui = {
       description = "AionUi WebUI server";
       documentation = [ "https://github.com/iOfficeAI/AionUi" ];
@@ -146,6 +142,11 @@ in
       serviceConfig = {
         User = cfg.user;
         Group = cfg.group;
+        # systemd creates + chowns the data dir to User before ExecStartPre. This
+        # is required when dataDir is a persisted dir (impermanence/ZFS), which is
+        # otherwise root-owned and unwritable by a non-root service user.
+        StateDirectory = baseNameOf cfg.dataDir;
+        StateDirectoryMode = "0750";
         # Stage the writable backend copy before launch (see backendDir comment).
         ExecStartPre = prepareBackend;
         ExecStart = lib.concatStringsSep " " (

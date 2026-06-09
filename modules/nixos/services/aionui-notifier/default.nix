@@ -99,10 +99,6 @@ in
     };
     users.groups.${cfg.group} = { };
 
-    systemd.tmpfiles.rules = [
-      "d '${cfg.stateDir}' 0750 ${cfg.user} ${cfg.group} - -"
-    ];
-
     systemd.services.aionui-notifier = {
       description = "AionUi → Matrix notifier";
       wantedBy = [ "multi-user.target" ];
@@ -128,6 +124,9 @@ in
       serviceConfig = {
         User = cfg.user;
         Group = cfg.group;
+        # systemd creates + chowns the (persisted) state dir to User on start.
+        StateDirectory = baseNameOf cfg.stateDir;
+        StateDirectoryMode = "0750";
         ExecStart = lib.getExe notifier;
         Restart = "on-failure";
         RestartSec = "10s";

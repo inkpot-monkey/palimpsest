@@ -86,11 +86,21 @@ in
       aionuiUrl = "http://127.0.0.1:${toString settings.services.private.aionui.port}";
     };
 
+    # Persisted dirs must be created owned by their service users (a bare string
+    # would make them root-owned, which the non-root services can't write to).
     environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
       directories = [
-        "/var/lib/aionui"
+        {
+          directory = "/var/lib/aionui";
+          inherit (config.services.aionui) user group;
+          mode = "0750";
+        }
       ]
-      ++ lib.optional cfg.notifications.enable "/var/lib/aionui-notifier";
+      ++ lib.optional cfg.notifications.enable {
+        directory = "/var/lib/aionui-notifier";
+        inherit (config.services.aionui-notifier) user group;
+        mode = "0750";
+      };
     };
   };
 }
