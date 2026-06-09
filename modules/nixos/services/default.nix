@@ -10,5 +10,6 @@
     jmap-bridge = ./jmap-bridge;
     stump = ./stump;
     dmarc-metrics-exporter = ./dmarc-metrics-exporter;
+    aionui = ./aionui;
   };
 }
