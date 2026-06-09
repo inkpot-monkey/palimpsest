@@ -88,6 +88,23 @@ in
               api_key = "os.environ/DEEPINFRA_API_KEY";
             };
           }
+          # Local models served by the Turing Pi RK1 nodes (over tailscale).
+          {
+            model_name = "qwen-local";
+            litellm_params = {
+              model = "openai/qwen3.6-35b-a3b";
+              api_base = "http://${settings.nodes.rk1a.tailscale.ip4}:8080/v1";
+              api_key = "none";
+            };
+          }
+          {
+            model_name = "qwen-quality";
+            litellm_params = {
+              model = "openai/qwen3.6-27b";
+              api_base = "http://${settings.nodes.rk1b.tailscale.ip4}:8080/v1";
+              api_key = "none";
+            };
+          }
           {
             model_name = "whisper";
             litellm_params = {
