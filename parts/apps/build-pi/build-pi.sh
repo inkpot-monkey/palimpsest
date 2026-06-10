@@ -234,6 +234,22 @@ init_vars() {
 }
 
 do_bootstrap_logic() {
+    # ⚠️ STALE: this re-key targets $REPO_ROOT/.sops.yaml and main-repo secrets.yaml
+    # files, but the real secrets now live in the separate `secrets/` stash repo as
+    # profiles/*.yaml (there is no .sops.yaml in the main repo). Until this function is
+    # rewritten to operate on `secrets/` (edit secrets/.sops.yaml, `sops updatekeys`
+    # secrets/profiles/*.yaml, commit+push that repo, then `nix flake update secrets`),
+    # the SOPS re-key here is a no-op for the files that matter — re-key MANUALLY first
+    # (see hosts/porcupineFish/README.md "Secrets (SOPS)"). sops-install-secrets is
+    # all-or-nothing, so a missed file silently breaks wifi/tailscale on the target.
+    if [[ ! -f "$SOPS_CONFIG_PATH" ]]; then
+        echo "WARNING: $SOPS_CONFIG_PATH not found — build-pi's SOPS re-key is stale for the" >&2
+        echo "         current 'secrets/' stash-repo layout. Re-key manually before proceeding" >&2
+        echo "         (hosts/porcupineFish/README.md), or this host may fail to decrypt secrets." >&2
+        read -r -p "Continue WITHOUT automated re-key? (y/N) " -n 1 _ack; echo
+        [[ $_ack =~ ^[Yy]$ ]] || exit 1
+    fi
+
     echo "=> [1/4] Key Generation ($KEY_DIR)"
     ssh-keygen -t ed25519 -f "$SSH_KEY" -N "" -C "$HOST"
 

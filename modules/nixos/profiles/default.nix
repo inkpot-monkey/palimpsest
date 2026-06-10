@@ -53,5 +53,9 @@
     pi = ./pi;
     hifiberry = ./pi/hifiberry.nix;
     hifi = ./pi/hifi.nix;
+
+    # --- Build infrastructure ---
+    # Offload aarch64 builds to the rk1 nodes. Gated OFF until they have NVMe storage.
+    piBuilder = ./pi-builder.nix;
   };
 }

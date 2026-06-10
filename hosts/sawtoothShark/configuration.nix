@@ -12,6 +12,9 @@
 
     # Profiles
     self.nixosProfiles.bundle
+    # Native aarch64 remote builders (rk1a/rk1b). Kept disabled until the rk1 nodes
+    # have NVMe-backed /nix/store — their eMMC is too small to build Pi sd-images.
+    self.nixosProfiles.piBuilder
   ];
 
   custom.profiles = {
@@ -27,6 +30,9 @@
     impermanence.enable = false;
     litellm.enable = false;
     monitoring-client.enable = false;
+    # Flip to true only after the rk1 nodes have NVMe-backed /nix/store (see
+    # modules/nixos/profiles/pi-builder.nix and hosts/rk1/nvme.nix).
+    piBuilder.enable = false;
     tailscale = {
       enable = true;
       acceptDns = true;

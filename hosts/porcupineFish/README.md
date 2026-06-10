@@ -34,6 +34,14 @@ nix run .#build-pi -- provision /dev/sdX porcupineFish
 # or: bash ./parts/apps/build-pi/build-pi.sh provision /dev/sdX porcupineFish
 ```
 
+> **⚠️ `build-pi`'s SOPS re-key step is currently stale.** It edits `$REPO_ROOT/.sops.yaml`
+> and re-keys `secrets.yaml` files in the *main* repo, but there is no `.sops.yaml` in the
+> main repo any more — the real secrets live in the separate **`secrets/`** stash repo as
+> `profiles/*.yaml`. Until `build-pi` is fixed, re-key secrets **manually** (see
+> [Secrets (SOPS)](#secrets-sops--all-or-nothing) below) before building, and use the build /
+> flash / host-key steps only. Note also that the image attribute is
+> `config.system.build.sdImage` — `images.sd-card` does **not** exist on the pinned toolchain.
+
 ## How `build-pi` Chooses Defaults
 
 If you omit `config_name` or `device`, `build-pi` shows interactive menus
@@ -61,6 +69,74 @@ nix run .#build-pi -- devices
 
 ### 2. Boot
 Insert card and power on. The Pi checks into WiFi automatically using secrets managed by SOPS.
+There is **no console on HDMI** during boot (`config.txt` sets `disable_fw_kms_setup=1`, so the
+framebuffer only comes up once the `vc4` KMS driver loads late in boot) and `headless.nix`
+disables the tty1/serial gettys. The only early console is **serial UART** (`enable_uart=1` is
+set; wire a USB-UART to GPIO pins 6/8/10 @ 115200). So the real "did it boot?" signal is whether
+it appears on **tailscale**, not the monitor.
+
+## Toolchain pin (why `nixos-raspberrypi` is pinned, and the forward path)
+
+`flake.nix` pins `nixos-raspberrypi` to **`6b30596`** (Feb 2026). **Do not bump it without
+re-validating a porcupineFish boot.** Newer revs (e.g. `06c6e351`, May 2026) switched the RPi
+vendor kernel from the **stable** branch (`linux_rpi-bcm2711-6.12.34-stable`) to **unstable/next**
+(`6.12.87-unstable`), which **hangs porcupineFish in the initrd before systemd ever starts**.
+
+### How to recognise this failure (it's deceptive)
+- Monitor stays black the whole time (see above — that's normal here, not the bug).
+- Never joins wifi/tailscale.
+- Mount the flashed card and check the root partition: **`/var` is empty** and the **root fs was
+  never grown** past the image's ~5.8 GB (it auto-grows via `x-systemd.growfs` on first boot).
+  Both ⇒ it died in stage-1/initrd, *before* activation. (A late failure like sops would still
+  boot, populate `/var`, and grow the root.)
+
+### Forward path (don't stay on Feb 2026 forever)
+The current `nixos-raspberrypi` still ships the good kernel alongside the broken default
+(`pkgs/linux-rpi/kernels.nix` lists `v6_12_34` … `v6_12_87`). So you can move to a *newer*
+`nixos-raspberrypi` (newer u-boot/firmware/fixes) and just `lib.mkForce`
+`boot.kernelPackages` back to the `v6_12_34` variant — `raspberry-pi-4.nix` only sets it with
+`lib.mkDefault`. Validate with one reflash (ideally once the rk1 native builders are available —
+see `modules/nixos/profiles/pi-builder.nix`), then report the initrd regression upstream to
+`nvmd/nixos-raspberrypi`.
+
+## Secrets (SOPS) — all-or-nothing
+
+`sops-install-secrets` is **all-or-nothing**: the host's age key (derived from
+`/etc/ssh/ssh_host_ed25519_key`) must be a recipient of **every** sops file the host references,
+or the service aborts and installs **none** of them — so even a correctly-keyed wifi PSK never
+lands and the Pi silently fails to join the network. porcupineFish references **six** files in the
+`secrets/` stash repo: `github.yaml`, `wireless.yaml`, `restic.yaml`, `networking.yaml`,
+`media.yaml`, `garnix.yaml`.
+
+**Re-key all six (manual, until `build-pi` is fixed):**
+```bash
+# porcupineFish's age key (from its preserved host key):
+#   age1aq4fp9qrhz03vqrzj8gjw4xm2dgkueudflzex8vmmrg8efe0rswqcv8jah
+cd secrets
+# Ensure &porcupineFish is in each file's creation_rule in .sops.yaml, then:
+for f in github wireless restic networking media garnix; do sops updatekeys -y profiles/$f.yaml; done
+git commit -am "re-key porcupineFish" && git push
+cd .. && nix flake update secrets    # bump the input so the build sees it
+```
+Audit which files a host needs vs which are keyed:
+`nix eval .#nixosConfigurations.porcupineFish.config.sops.secrets --apply 's: map (v: v.sopsFile) (builtins.attrValues s)'`,
+then grep each for the age key.
+
+## Reflash & restore the host key
+
+Reflashing regenerates the SSH host key, which changes the derived age key and breaks SOPS
+decryption. **Preserve the existing key** so the (already-keyed) secrets stay valid:
+```bash
+# BEFORE flashing — capture from the old card's root partition:
+mkdir -p ~/porcupineFish-hostkey && cp -a /mnt/oldroot/etc/ssh/ssh_host_ed25519_key{,.pub} ~/porcupineFish-hostkey/
+# AFTER flashing — restore onto the new root (partition 2), root:root, 0600/0644:
+sudo mount /dev/sdX2 /mnt/new && sudo install -d -m0755 /mnt/new/etc/ssh
+sudo install -o root -g root -m0600 ~/porcupineFish-hostkey/ssh_host_ed25519_key     /mnt/new/etc/ssh/
+sudo install -o root -g root -m0644 ~/porcupineFish-hostkey/ssh_host_ed25519_key.pub /mnt/new/etc/ssh/
+sudo sync && sudo umount /mnt/new
+```
+Verify the key derives to the expected identity:
+`ssh-to-age < ~/porcupineFish-hostkey/ssh_host_ed25519_key.pub` ⇒ `age1aq4fp9…`.
 
 ## Alternative: Native Build (On Pi)
 If local emulation is too slow, you can build natively on the Pi.
