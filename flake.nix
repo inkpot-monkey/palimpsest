@@ -15,7 +15,12 @@
       inputs.nixpkgs.follows = "nixos-raspberrypi/nixpkgs";
     };
 
-    nixos-raspberrypi.url = "github:nvmd/nixos-raspberrypi/main";
+    # Pinned to 6b30596 (Feb 2026): this rev ships the *stable* RPi vendor kernel
+    # (linux_rpi-bcm2711-6.12.34-stable) which boots porcupineFish correctly. Newer revs
+    # (e.g. 06c6e351) switched to the *unstable/next* kernel (6.12.87-unstable), which hangs
+    # porcupineFish in the initrd before systemd (empty /var, root never grows). Do not bump
+    # without re-validating a porcupineFish boot — see hosts/porcupineFish/README.md.
+    nixos-raspberrypi.url = "github:nvmd/nixos-raspberrypi/6b30596bea9047a7cbb55cb58e6f8a3efa4012e2";
 
     impermanence = {
       url = "github:nix-community/impermanence";
