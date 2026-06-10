@@ -220,34 +220,30 @@ init_vars() {
     SSH_KEY="$KEY_DIR/ssh_host_ed25519_key"
     PUB_KEY="$SSH_KEY.pub"
 
-    # Use the absolute path discovered via git
-    SOPS_CONFIG_PATH="${REPO_ROOT}/.sops.yaml"
-    
-    # Determine the correct build target (sd-card image vs direct sdImage)
-    if nix eval --raw ".#nixosConfigurations.${TARGET_HOST}.config.system.build" --apply 'b: if builtins.hasAttr "sdImage" b then "1" else "0"' 2>/dev/null | grep -q "1"; then
-        IMAGE_FLAKE_TARGET=".#nixosConfigurations.${TARGET_HOST}.config.system.build.sdImage"
-    else
-        IMAGE_FLAKE_TARGET=".#nixosConfigurations.${TARGET_HOST}.config.system.build.images.sd-card"
-    fi
-    
+    # Secrets live in the separate `secrets/` stash repo (the `secrets` flake input),
+    # NOT the main repo. We re-key there, push, then bump the flake input.
+    SECRETS_DIR="${REPO_ROOT}/secrets"
+    SOPS_CONFIG_PATH="${SECRETS_DIR}/.sops.yaml"
+
+    # Pi images are exposed as `system.build.sdImage` (the older `images.sd-card`
+    # attribute does not exist on the pinned nixos-raspberrypi).
+    IMAGE_FLAKE_TARGET=".#nixosConfigurations.${TARGET_HOST}.config.system.build.sdImage"
+
     HOST="root@${TARGET_HOST}"
 }
 
 do_bootstrap_logic() {
-    # ⚠️ STALE: this re-key targets $REPO_ROOT/.sops.yaml and main-repo secrets.yaml
-    # files, but the real secrets now live in the separate `secrets/` stash repo as
-    # profiles/*.yaml (there is no .sops.yaml in the main repo). Until this function is
-    # rewritten to operate on `secrets/` (edit secrets/.sops.yaml, `sops updatekeys`
-    # secrets/profiles/*.yaml, commit+push that repo, then `nix flake update secrets`),
-    # the SOPS re-key here is a no-op for the files that matter — re-key MANUALLY first
-    # (see hosts/porcupineFish/README.md "Secrets (SOPS)"). sops-install-secrets is
-    # all-or-nothing, so a missed file silently breaks wifi/tailscale on the target.
+    # Generate a fresh host key, point the host's SOPS anchor at its derived age key,
+    # re-key every secret file the host needs (in the separate `secrets/` stash repo),
+    # verify completeness, push, and bump the `secrets` flake input so the build sees it.
+    if [[ ! -d "$SECRETS_DIR/.git" ]]; then
+        echo "Error: $SECRETS_DIR is not a git checkout of the secrets (stash) repo." >&2
+        echo "       It is the 'secrets' flake input — clone it there first." >&2
+        exit 1
+    fi
     if [[ ! -f "$SOPS_CONFIG_PATH" ]]; then
-        echo "WARNING: $SOPS_CONFIG_PATH not found — build-pi's SOPS re-key is stale for the" >&2
-        echo "         current 'secrets/' stash-repo layout. Re-key manually before proceeding" >&2
-        echo "         (hosts/porcupineFish/README.md), or this host may fail to decrypt secrets." >&2
-        read -r -p "Continue WITHOUT automated re-key? (y/N) " -n 1 _ack; echo
-        [[ $_ack =~ ^[Yy]$ ]] || exit 1
+        echo "Error: Cannot find $SOPS_CONFIG_PATH" >&2
+        exit 1
     fi
 
     echo "=> [1/4] Key Generation ($KEY_DIR)"
@@ -260,56 +256,79 @@ do_bootstrap_logic() {
     AGE_KEY="$(ssh-to-age -i "$PUB_KEY")"
     echo "Age Public Key: $AGE_KEY"
 
-    echo "=> [2/4] Updating $SOPS_CONFIG_PATH"
-    ANCHOR="&${TARGET_HOST}"
-    
-    if [[ ! -f "$SOPS_CONFIG_PATH" ]]; then
-        echo "Error: Cannot find $SOPS_CONFIG_PATH" >&2
+    echo "=> [2/4] Pointing &${TARGET_HOST} anchor at the new key in $SOPS_CONFIG_PATH"
+    local ANCHOR="&${TARGET_HOST}"
+    if grep -q "$ANCHOR" "$SOPS_CONFIG_PATH"; then
+        # Replace the key value after the anchor (anchor + whitespace + token).
+        sed -i -E "s|(${ANCHOR}[[:space:]]+)[^[:space:]]+|\1${AGE_KEY}|" "$SOPS_CONFIG_PATH"
+        grep -q "$AGE_KEY" "$SOPS_CONFIG_PATH" || {
+            echo "ERROR: failed to update the $ANCHOR anchor in .sops.yaml" >&2
+            exit 1
+        }
+        echo "Updated $ANCHOR -> $AGE_KEY"
+    else
+        echo "ERROR: anchor '$ANCHOR' not found in $SOPS_CONFIG_PATH." >&2
+        echo "       This host is not declared yet. Add a 'keys:' entry" >&2
+        echo "       '- $ANCHOR age1...' and reference '*${TARGET_HOST}' in the" >&2
+        echo "       creation_rules of every profile this host uses, then re-run." >&2
         exit 1
     fi
 
-    # Create a safe temporary file
-    local tmp_file
-    tmp_file=$(mktemp)
-    
-    if grep -q "$ANCHOR" "$SOPS_CONFIG_PATH"; then
-        echo "Updating $ANCHOR in $SOPS_CONFIG_PATH..."
-        # Use -i for in-place edit, and use a simpler but robust regex
-        # This matches the line with the anchor and replaces everything after the anchor+space
-        sed -i -E "s/($ANCHOR[[:space:]]+)[^[:space:]]+/\1$AGE_KEY/" "$SOPS_CONFIG_PATH"
-        
-        # Verify the change
-        if grep -q "$AGE_KEY" "$SOPS_CONFIG_PATH"; then
-            echo "Successfully updated .sops.yaml with the new key."
-        else
-            echo "ERROR: Failed to update .sops.yaml. The key was not found after sed." >&2
+    echo "=> [3/4] Re-keying secrets + verifying completeness"
+    pushd "$SECRETS_DIR" > /dev/null
+
+    # updatekeys only rewrites a file when its recipient set changed — i.e. exactly the
+    # files whose creation_rule references *${TARGET_HOST} (whose key value we just
+    # changed). Files the host isn't in report "up to date" and are left untouched, so
+    # this re-keys everything the host needs without churning unrelated secrets.
+    while IFS= read -r -d '' f; do
+        sops updatekeys -y "$f"
+    done < <(find . -type f -name '*.yaml' ! -name '.sops.yaml' -print0)
+
+    # Hard gate: sops-install-secrets is all-or-nothing, so every file the host
+    # references MUST now carry its key. Enumerate them from the host config and check.
+    echo "Verifying every required secret file is keyed to ${TARGET_HOST}..."
+    local required missing=0 bn path
+    # Anchor the eval to the main repo flake — cwd is currently $SECRETS_DIR.
+    required=$(
+        nix eval --json "${REPO_ROOT}#nixosConfigurations.${TARGET_HOST}.config.sops.secrets" \
+            --apply 's: map (v: baseNameOf v.sopsFile) (builtins.attrValues s)' 2>/dev/null \
+        | tr -d '[]" ' | tr ',' '\n' | sort -u
+    )
+    if [[ -z "$required" ]]; then
+        echo "WARNING: could not enumerate ${TARGET_HOST} sops files; skipping verification." >&2
+    else
+        for bn in $required; do
+            path=$(find . -type f -name "$bn" ! -name '.sops.yaml' | head -n1)
+            if [[ -n "$path" ]] && grep -q "$AGE_KEY" "$path"; then
+                echo "  OK       $bn"
+            else
+                echo "  MISSING  $bn — not keyed to ${TARGET_HOST}" >&2
+                missing=1
+            fi
+        done
+        if [[ "$missing" = 1 ]]; then
+            echo "ERROR: some required secret files are not keyed to ${TARGET_HOST}." >&2
+            echo "       Add '*${TARGET_HOST}' to their creation_rules in .sops.yaml, then re-run." >&2
+            popd > /dev/null
             exit 1
         fi
-    else
-        echo "Warning: $ANCHOR anchor not found in $SOPS_CONFIG_PATH."
-        echo "Key not updated in .sops.yaml. Secrets update might fail."
-    fi
-    rm -f "$tmp_file"
-
-    echo "=> [3/4] Updating secrets"
-    # Move to repo root so SOPS can find .sops.yaml automatically via relative paths
-    pushd "$REPO_ROOT" > /dev/null
-    
-    # We use 'find' to update every secrets file. 
-    # Since .sops.yaml is now fixed, updatekeys will find the creation_rules.
-    if command -v sops-update-all > /dev/null 2>&1; then
-        sops-update-all
-    else
-        find . -name "secrets.yaml" -exec sops updatekeys -y {} \;
     fi
 
-    # CRITICAL: We MUST stage the changes to .sops.yaml and secrets files.
-    # Flake builds only see what is in the git index.
-    echo "Staging secret changes for Nix build..."
-    git add "$SOPS_CONFIG_PATH"
-    find . -name "secrets.yaml" -exec git add {} \;
-    
+    echo "=> [3/4] Publishing re-keyed secrets"
+    if git diff --quiet && git diff --cached --quiet; then
+        echo "No secret changes to commit (already up to date for this key)."
+    else
+        git add -A
+        git commit -m "build-pi: re-key ${TARGET_HOST} (new host key ${AGE_KEY})"
+        git push
+    fi
     popd > /dev/null
+
+    # Bump the 'secrets' flake input so the image build picks up the re-keyed files.
+    # (nix build tolerates a dirty flake.lock, so this need not be committed to build.)
+    echo "Bumping 'secrets' flake input..."
+    nix flake update secrets
 }
 
 do_flash_logic() {

@@ -34,13 +34,17 @@ nix run .#build-pi -- provision /dev/sdX porcupineFish
 # or: bash ./parts/apps/build-pi/build-pi.sh provision /dev/sdX porcupineFish
 ```
 
-> **⚠️ `build-pi`'s SOPS re-key step is currently stale.** It edits `$REPO_ROOT/.sops.yaml`
-> and re-keys `secrets.yaml` files in the *main* repo, but there is no `.sops.yaml` in the
-> main repo any more — the real secrets live in the separate **`secrets/`** stash repo as
-> `profiles/*.yaml`. Until `build-pi` is fixed, re-key secrets **manually** (see
-> [Secrets (SOPS)](#secrets-sops--all-or-nothing) below) before building, and use the build /
-> flash / host-key steps only. Note also that the image attribute is
-> `config.system.build.sdImage` — `images.sd-card` does **not** exist on the pinned toolchain.
+> **SOPS re-key:** `build-pi provision` generates a fresh host key, points the host's
+> `&<host>` anchor in **`secrets/.sops.yaml`** (the stash repo) at its derived age key,
+> runs `sops updatekeys` over `secrets/profiles/*.yaml`, then **verifies every file the host
+> references is keyed** (it enumerates `config.sops.secrets.*.sopsFile` and aborts if any is
+> missing — guarding against the all-or-nothing failure below), commits+pushes the stash
+> repo, and bumps the `secrets` flake input. The host must already be declared in
+> `secrets/.sops.yaml` (a `&<host>` key anchor + `*<host>` in each relevant `creation_rules`);
+> if not, the script tells you what to add. For an *existing* host where you'd rather keep its
+> current key (no re-key), use the manual flow in [Secrets (SOPS)](#secrets-sops--all-or-nothing)
+> and skip `provision`. The image attribute is `config.system.build.sdImage` (`images.sd-card`
+> does not exist on the pinned toolchain).
 
 ## How `build-pi` Chooses Defaults
 
