@@ -89,7 +89,8 @@ in
         {
           networking.hostName = "rk1a";
           # Fast MoE daily driver (3B active → ~10-15 tok/s on CPU).
-          custom.profiles.localLlm.model = "unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL";
+          # TEMP: Q3_K_S (15.4G) to fit the 29G eMMC; restore UD-Q4_K_XL (22.4G) once the NVMe is in.
+          custom.rk1.llm.model = "unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q3_K_S";
         }
       ];
     };
@@ -100,11 +101,12 @@ in
         self.users.inkpotmonkey.cli
         {
           networking.hostName = "rk1b";
-          # Best-quality dense coder + speculative decoding (~3-4 tok/s).
-          custom.profiles.localLlm = {
-            model = "unsloth/Qwen3.6-27B-GGUF:Q4_K_M";
-            draftModel = "unsloth/Qwen3.6-1.7B-GGUF:Q4_K_M";
-          };
+          # Coder MoE (~3.3B active params), so it's bandwidth-cheap and fast on the RK3588 —
+          # unlike a dense 27B, which reads all weights per token and is bandwidth-bound at
+          # <1 tok/s. MTP/draft speculative decoding gave no CPU benefit (benchmarked 0.80 vs
+          # 0.84 tok/s), so it stays off.
+          # TEMP: UD-Q3_K_XL (13.8G) to fit the 29G eMMC; bump to Q5_K_XL once the NVMe is in.
+          custom.rk1.llm.model = "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:UD-Q3_K_XL";
         }
       ];
     };

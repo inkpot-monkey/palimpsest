@@ -38,7 +38,9 @@ Flash it to the node's eMMC via the BMC web UI (or `tpi` CLI), then power on. To
 NixOS from an NVMe instead of the eMMC, follow the "external block device" steps in the
 [upstream README](https://github.com/GiyoMoon/nixos-turing-rk1#flashing-the-image-to-an-external-block-device).
 
-Default credentials after flashing: user `nixos`, password `turing`.
+Default credentials after flashing: user `nixos`, password `turing`. This account is
+removed on the first switch to this config (`users.mutableUsers = false` in `common.nix`);
+thereafter access is key-only SSH as `inkpotmonkey`.
 
 ## 2. First switch to this config
 
@@ -68,7 +70,7 @@ nixos-rebuild switch --flake .#rk1b --target-host rk1b --use-remote-sudo
 On first boot the service does two one-time, slow steps (watch them):
 
 ```bash
-ssh nixos@rk1a journalctl -u llama-cpp -f
+ssh inkpotmonkey@rk1a journalctl -u llama-cpp -f
 ```
 
 1. Compiles the curl-enabled `llama-cpp` (the `modules/shared/overlays/llama-cpp.nix`
@@ -79,7 +81,7 @@ ssh nixos@rk1a journalctl -u llama-cpp -f
 
 ```bash
 # Service up + model loaded
-ssh nixos@rk1a 'systemctl status llama-cpp'
+ssh inkpotmonkey@rk1a 'systemctl status llama-cpp'
 curl http://rk1a:8080/v1/models
 
 # Quick generation
@@ -89,10 +91,10 @@ curl http://rk1a:8080/v1/chat/completions -H 'Content-Type: application/json' -d
 }'
 
 # rk1b: confirm speculative decoding actually engaged (look for draft / accept-rate lines)
-ssh nixos@rk1b 'journalctl -u llama-cpp | grep -i draft'
+ssh inkpotmonkey@rk1b 'journalctl -u llama-cpp | grep -i draft'
 
 # Resident weights, no swap thrash
-ssh nixos@rk1a 'free -h'
+ssh inkpotmonkey@rk1a 'free -h'
 
 # Through the gateway (from kelpy)
 curl -H "Authorization: Bearer $LITELLM_MASTER_KEY" http://kelpy:4000/v1/models

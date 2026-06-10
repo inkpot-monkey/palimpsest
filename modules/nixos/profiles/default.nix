@@ -34,7 +34,6 @@
     podman = ./podman.nix;
     affine = ./affine;
     litellm = ./litellm.nix;
-    local-llm = ./local-llm.nix;
     openclaw = ./openclaw.nix;
     backup = ./backup.nix;
     blocky = ./blocky.nix;

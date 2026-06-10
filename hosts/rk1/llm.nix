@@ -1,0 +1,160 @@
+# Local llama.cpp LLM server, RK3588-tuned. This lives with the rk1 host config rather than in
+# the shared modules/nixos/profiles/ because only the Turing Pi RK1 nodes serve LLMs — the
+# tuning (A76 core pinning, flash-attn off, MoE-oriented) is specific to this hardware.
+# Option namespace matches the sibling ./nvme.nix module: custom.rk1.*
+{
+  config,
+  lib,
+  ...
+}:
+
+let
+  cfg = config.custom.rk1.llm;
+
+  # Speculative decoding: pull a small draft model alongside the target.
+  # The draft MUST share the target's tokenizer/vocab or llama.cpp rejects it.
+  draftFlags = lib.optionals (cfg.draftModel != null) [
+    "-hfd"
+    cfg.draftModel
+    # llama.cpp renamed --draft-max → --spec-draft-n-max (the old flag now hard-errors).
+    "--spec-draft-n-max"
+    "16"
+  ];
+
+  # Self-speculative decoding via the model's own Multi-Token-Prediction head.
+  # No separate draft model — `model` must be an MTP-enabled GGUF (…-MTP-GGUF).
+  mtpFlags = lib.optionals cfg.mtp [
+    "--spec-type"
+    "draft-mtp"
+  ];
+
+  # Flash-attention + quantized KV go together (q8_0 KV requires -fa on). On the RK3588 CPU
+  # backend the extra dequant work can cost decode tok/s, so this is a measured per-node knob.
+  faFlags =
+    if cfg.flashAttention then
+      [
+        "-fa"
+        "on"
+        "--cache-type-k"
+        "q8_0"
+        "--cache-type-v"
+        "q8_0"
+      ]
+    else
+      [
+        "-fa"
+        "off"
+      ];
+in
+{
+  options.custom.rk1.llm = {
+    enable = lib.mkEnableOption "local llama.cpp LLM server (RK3588-tuned)";
+
+    model = lib.mkOption {
+      type = lib.types.str;
+      example = "unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q4_K_XL";
+      description = "HuggingFace GGUF spec passed to `llama-server -hf` (the per-node knob).";
+    };
+
+    draftModel = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "unsloth/Qwen3.6-1.7B-GGUF:Q4_K_M";
+      description = ''
+        Optional HuggingFace GGUF for speculative decoding (`-hfd`). Must share the
+        target model's tokenizer/vocab, otherwise the draft is silently disabled.
+      '';
+    };
+
+    mtp = lib.mkEnableOption ''
+      Multi-Token-Prediction self-speculative decoding (`--spec-type draft-mtp`).
+      `model` must be an MTP-enabled GGUF (e.g. unsloth/Qwen3.6-27B-MTP-GGUF); the
+      draft tokens come from the model's own MTP head, so no separate draftModel is
+      needed (and the two are mutually exclusive)
+    '';
+
+    port = lib.mkOption {
+      type = lib.types.port;
+      default = 8080;
+      description = "Listen port for the llama.cpp OpenAI-compatible server.";
+    };
+
+    threads = lib.mkOption {
+      type = lib.types.int;
+      default = 4;
+      description = ''
+        Generation threads. On RK3588, 4 (the A76 cores) outperforms 8 — the slower
+        A55 cores bottleneck the pipeline.
+      '';
+    };
+
+    ctxSize = lib.mkOption {
+      type = lib.types.int;
+      default = 4096;
+      description = "Context window (-c). Larger uses more RAM and slows generation.";
+    };
+
+    mlock = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = "Pin model weights in RAM (--mlock). Disable when RAM is contended.";
+    };
+
+    flashAttention = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Enable flash attention (`-fa on`) with quantized q8_0 KV cache. Benchmarked on the
+        RK3588 CPU backend (Qwen3-Coder-30B-A3B): `-fa off` + f16 KV is ~3% faster (6.22 vs
+        6.04 tok/s) and higher KV quality, so the default is off. RAM cost of f16 KV is small
+        at 4096 ctx. Flip to true only if a model/quant measures faster with it.
+      '';
+    };
+
+    pinBigCores = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Pin the server to the RK3588 A76 big cores (CPUAffinity 4-7) so the scheduler can't
+        drift the generation threads onto the slower A55 cores. ~6× difference if it lands on
+        A55s (measured 1.0 vs 6.2 tok/s). RK3588-specific.
+      '';
+    };
+  };
+
+  config = lib.mkIf cfg.enable {
+    services.llama-cpp = {
+      enable = true;
+      # Bind on all interfaces; the firewall below scopes access to tailscale only.
+      host = "0.0.0.0";
+      inherit (cfg) port;
+      extraFlags = [
+        "-hf"
+        cfg.model
+        "-t"
+        (toString cfg.threads)
+        "-c"
+        (toString cfg.ctxSize)
+        "-np"
+        "1"
+      ]
+      ++ faFlags
+      ++ lib.optional cfg.mlock "--mlock"
+      ++ draftFlags
+      ++ mtpFlags;
+    };
+
+    # Keep generation threads on the A76 big cores (RK3588 cores 4-7).
+    systemd.services.llama-cpp.serviceConfig.CPUAffinity = lib.mkIf cfg.pinBigCores "4-7";
+
+    assertions = [
+      {
+        assertion = !(cfg.mtp && cfg.draftModel != null);
+        message = "custom.rk1.llm: set either `mtp` or `draftModel`, not both.";
+      }
+    ];
+
+    # Expose the port only on the tailnet, not the public LAN.
+    networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ cfg.port ];
+  };
+}

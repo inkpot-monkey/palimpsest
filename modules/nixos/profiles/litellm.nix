@@ -89,20 +89,24 @@ in
             };
           }
           # Local models served by the Turing Pi RK1 nodes (over tailscale).
+          # rk1a = general MoE (Qwen3.6-35B-A3B), rk1b = coder MoE (Qwen3-Coder-30B-A3B).
+          # Generous timeout: CPU MoE decode is ~6-8 tok/s, so a long answer can take minutes.
           {
-            model_name = "qwen-local";
+            model_name = "qwen-general";
             litellm_params = {
               model = "openai/qwen3.6-35b-a3b";
               api_base = "http://${settings.nodes.rk1a.tailscale.ip4}:8080/v1";
               api_key = "none";
+              timeout = 600;
             };
           }
           {
-            model_name = "qwen-quality";
+            model_name = "qwen-coder";
             litellm_params = {
-              model = "openai/qwen3.6-27b";
+              model = "openai/qwen3-coder-30b-a3b";
               api_base = "http://${settings.nodes.rk1b.tailscale.ip4}:8080/v1";
               api_key = "none";
+              timeout = 600;
             };
           }
           {
@@ -115,6 +119,13 @@ in
               mode = "audio_transcription";
             };
           }
+        ];
+
+        # Graceful degradation: if a local RK1 node is down or mid model-swap, fall back to a
+        # remote DeepInfra model instead of erroring the client.
+        litellm_settings.fallbacks = [
+          { "qwen-coder" = [ "qwen3-coder" ]; }
+          { "qwen-general" = [ "deepseek-flash" ]; }
         ];
       };
     };

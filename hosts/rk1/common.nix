@@ -6,6 +6,10 @@
     # Hardware: boot, u-boot, mainline kernel, device tree, root fileSystem.
     inputs.nixos-turing-rk1.nixosModules.turing-rk1
 
+    # RK1-specific local modules (not shared profiles — only these nodes serve LLMs / use NVMe).
+    ./llm.nix # local llama.cpp LLM server (custom.rk1.llm)
+    ./nvme.nix # optional NVMe model-cache storage (inert until custom.rk1.nvme.enable = true)
+
     self.nixosProfiles.base
     self.nixosProfiles.nixConfig # enabled transitively by base
     self.nixosProfiles.sops # enabled transitively by base
@@ -13,7 +17,6 @@
     self.nixosProfiles.ssh
     self.nixosProfiles.sudo
     self.nixosProfiles.tailscale
-    self.nixosProfiles.local-llm
   ];
 
   custom.profiles = {
@@ -24,8 +27,16 @@
       enable = true;
       tags = [ "tag:server" ];
     };
-    localLlm.enable = true; # model set per-node in hosts/default.nix
   };
+
+  # Local LLM server (model set per-node in hosts/default.nix).
+  custom.rk1.llm.enable = true;
+
+  # Declared users are authoritative: removes the GiyoMoon base-image `nixos`/`turing`
+  # account on the first switch. Login is key-only SSH as inkpotmonkey (see profiles/ssh.nix);
+  # inkpotmonkey's hashedPassword + ssh key come from secrets/identities.nix.
+  users.mutableUsers = false;
+  users.users.root.hashedPassword = "!"; # lock the root account (no password login)
 
   nixpkgs.hostPlatform = "aarch64-linux";
 
