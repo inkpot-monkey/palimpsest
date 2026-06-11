@@ -56,6 +56,22 @@ let
         "-fa"
         "off"
       ];
+
+  # CPU placement (RK3588: cores 0-3 = A55 little, 4-7 = A76 big). Decode is bandwidth-bound and
+  # the A55s only bottleneck it, so pin decode strictly to the A76 cores. Prefill (prompt
+  # processing) is compute-bound and parallelizes, so let it use ALL cores — the A55s add ~11%
+  # there with no decode regression (measured). Uses llama.cpp's per-phase strict affinity
+  # instead of a blanket systemd CPUAffinity so the two phases can target different cores.
+  cpuFlags = lib.optionals cfg.pinBigCores [
+    "-Cr"
+    "4-7"
+    "--cpu-strict"
+    "1"
+    "-Crb"
+    "0-7"
+    "--cpu-strict-batch"
+    "1"
+  ];
 in
 {
   options.custom.rk1.llm = {
@@ -104,8 +120,18 @@ in
       type = lib.types.int;
       default = 4;
       description = ''
-        Generation threads. On RK3588, 4 (the A76 cores) outperforms 8 — the slower
-        A55 cores bottleneck the pipeline.
+        Generation (decode) threads. On RK3588, 4 (the A76 cores) outperforms 8 — the slower
+        A55 cores bottleneck the bandwidth-bound decode loop.
+      '';
+    };
+
+    threadsBatch = lib.mkOption {
+      type = lib.types.int;
+      default = 8;
+      description = ''
+        Prompt-processing (prefill) threads. Unlike decode, prefill is compute-bound and
+        parallelizes, so all 8 cores help (~11% faster first-token, no decode regression).
+        With pinBigCores, prefill is placed across cores 0-7 while decode stays on the A76s.
       '';
     };
 
@@ -136,9 +162,9 @@ in
       type = lib.types.bool;
       default = true;
       description = ''
-        Pin the server to the RK3588 A76 big cores (CPUAffinity 4-7) so the scheduler can't
-        drift the generation threads onto the slower A55 cores. ~6× difference if it lands on
-        A55s (measured 1.0 vs 6.2 tok/s). RK3588-specific.
+        RK3588 core placement via llama.cpp strict per-phase affinity: decode threads pinned to
+        the A76 big cores (4-7) — ~6× vs landing on A55s (measured 1.0 vs 6.2 tok/s) — while
+        prefill threads span all cores (0-7) for faster first-token. RK3588-specific.
       '';
     };
   };
@@ -154,20 +180,20 @@ in
         cfg.model
         "-t"
         (toString cfg.threads)
+        "-tb"
+        (toString cfg.threadsBatch)
         "-c"
         (toString cfg.ctxSize)
         "-np"
         "1"
       ]
       ++ faFlags
+      ++ cpuFlags
       ++ lib.optional cfg.mlock "--mlock"
       ++ draftFlags
       ++ mtpFlags
       ++ ngramFlags;
     };
-
-    # Keep generation threads on the A76 big cores (RK3588 cores 4-7).
-    systemd.services.llama-cpp.serviceConfig.CPUAffinity = lib.mkIf cfg.pinBigCores "4-7";
 
     assertions = [
       {
