@@ -143,6 +143,8 @@ in
             "network-online.target"
           ];
           wants = [ "network-online.target" ];
+          # Run on every boot/activation (deploy), not only when the timer fires.
+          wantedBy = [ "multi-user.target" ];
           path = [
             pkgs.tailscale
             pkgs.coreutils
@@ -153,10 +155,18 @@ in
             set -uo pipefail
             install -d -m 0755 /run/blocky-services
             tmp="$(mktemp)"
-            ${lib.concatMapStringsSep "\n" (s: ''
-              ip="$(tailscale ip -4 ${lib.escapeShellArg s.node} 2>/dev/null | head -n1 || true)"
-              [ -n "$ip" ] && printf '%s %s\n' "$ip" ${lib.escapeShellArg s.host} >> "$tmp"
-            '') tailscaleServices}
+            # tailscale learns peer IPs asynchronously after the daemon comes up, so a
+            # boot/deploy can race it. Retry until at least one resolves rather than
+            # writing an empty file and waiting for the next timer tick.
+            for _ in $(seq 1 30); do
+              : > "$tmp"
+              ${lib.concatMapStringsSep "\n" (s: ''
+                ip="$(tailscale ip -4 ${lib.escapeShellArg s.node} 2>/dev/null | head -n1 || true)"
+                [ -n "$ip" ] && printf '%s %s\n' "$ip" ${lib.escapeShellArg s.host} >> "$tmp"
+              '') tailscaleServices}
+              [ -s "$tmp" ] && break
+              sleep 2
+            done
             # Only swap + reload when the resolved IPs actually changed. blocky does NOT
             # hot-reload hostsFile (its /api/lists/refresh covers only block/allow lists),
             # so we restart it to pick up changes — a brief (~1s) blip that only happens
