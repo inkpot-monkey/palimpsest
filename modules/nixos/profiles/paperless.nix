@@ -4,6 +4,7 @@
   options,
   settings,
   self,
+  inputs,
   ...
 }:
 
@@ -30,6 +31,11 @@ in
 
         services.paperless = {
           enable = true;
+          # Pin paperless to nixpkgs-stable: unstable's paperless-ngx pins ocrmypdf
+          # down to ocrmypdf_16 (paperless requires <17), and that overridden OCR
+          # closure isn't on Hydra/cache.nixos.org for unstable revisions, so every
+          # re-lock rebuilds ocrmypdf from source. The stable build is cached.
+          package = inputs.nixpkgs-stable.legacyPackages.${config.nixpkgs.hostPlatform.system}.paperless-ngx;
           consumptionDirIsPublic = true;
           domain = "paperless.${domain}";
           inherit (settings.services.private.paperless) port;
@@ -39,13 +45,31 @@ in
               ".DS_STORE/*"
               "desktop.ini"
             ];
-            PAPERLESS_OCR_LANGUAGE = "eng+spa+cat";
+            # PAPERLESS_OCR_LANGUAGE is deliberately NOT set here. Setting it in
+            # `settings` makes the NixOS module rebuild tesseract limited to those
+            # languages — an uncached closure that re-derives on every deploy. We
+            # inject it as a runtime-only env var below instead, so the cached
+            # all-language tesseract is used while OCR still runs in eng+spa+cat.
             PAPERLESS_OCR_USER_ARGS = {
               optimize = 1;
               pdfa_image_compression = "lossless";
             };
           };
         };
+
+        # Runtime OCR language, injected outside `services.paperless.settings` so it
+        # does not trigger a language-limited tesseract rebuild (see note above).
+        systemd.services =
+          lib.genAttrs
+            [
+              "paperless-consumer"
+              "paperless-task-queue"
+              "paperless-scheduler"
+              "paperless-web"
+            ]
+            (_: {
+              environment.PAPERLESS_OCR_LANGUAGE = "eng+spa+cat";
+            });
 
         services.caddy.virtualHosts."paperless.${domain}" = {
           extraConfig = lib.mkAfter ''
