@@ -48,6 +48,44 @@ let
       install -m 0400 "$f" /run/tuwunel/appservices/
     done
   '';
+
+  # Idempotently register the admin Matrix account via the shared registration
+  # token (UIA token flow, the same one the aionui notifier self-registers with).
+  # Ordered before other account-creating services so `grant_admin_to_first_user`
+  # makes this the homeserver admin.
+  adminLocalpart = "inkpotmonkey";
+  registerAdmin = pkgs.writeShellScript "tuwunel-register-admin" ''
+    set -eu
+    url="http://${address}:${toString matrixPort}"
+    pass="$(cat "$CREDENTIALS_DIRECTORY/admin_password")"
+    token="$(cat "$CREDENTIALS_DIRECTORY/registration_token")"
+
+    for _ in $(seq 1 30); do
+      ${pkgs.curl}/bin/curl -sf "$url/_matrix/client/versions" >/dev/null && break
+      sleep 2
+    done
+
+    # Step 1: initiate registration to obtain a UIA session. If the account
+    # already exists the server answers M_USER_IN_USE with no session.
+    session="$(${pkgs.curl}/bin/curl -s -X POST "$url/_matrix/client/v3/register" \
+      -H 'content-type: application/json' \
+      -d "$(${pkgs.jq}/bin/jq -nc --arg u "${adminLocalpart}" --arg p "$pass" \
+        '{username:$u,password:$p,inhibit_login:true}')" \
+      | ${pkgs.jq}/bin/jq -r '.session // empty')"
+
+    if [ -z "$session" ]; then
+      echo "admin account ${adminLocalpart} already exists; nothing to do"
+      exit 0
+    fi
+
+    # Step 2: complete registration with the token.
+    code="$(${pkgs.curl}/bin/curl -s -o /dev/null -w '%{http_code}' -X POST "$url/_matrix/client/v3/register" \
+      -H 'content-type: application/json' \
+      -d "$(${pkgs.jq}/bin/jq -nc --arg u "${adminLocalpart}" --arg p "$pass" --arg t "$token" --arg s "$session" \
+        '{username:$u,password:$p,inhibit_login:true,auth:{type:"m.login.registration_token",token:$t,session:$s}}')")"
+    echo "admin registration HTTP $code"
+    [ "$code" = "200" ]
+  '';
 in
 {
   imports = [
@@ -70,6 +108,9 @@ in
     sops.defaultSopsFormat = "yaml";
 
     sops.secrets.registration_token = {
+      sopsFile = matrixSecrets;
+    };
+    sops.secrets.matrix_admin_password = {
       sopsFile = matrixSecrets;
     };
 
@@ -114,6 +155,27 @@ in
         config.sops.secrets.registration_token.path
       ]
       ++ bridgeRestartTriggers;
+    };
+
+    # Declaratively create the admin account once tuwunel is up.
+    systemd.services.tuwunel-register-admin = {
+      description = "Register the admin Matrix account on tuwunel";
+      after = [ "tuwunel.service" ];
+      requires = [ "tuwunel.service" ];
+      wantedBy = [ "multi-user.target" ];
+      # Register before other account-creating services so this account wins
+      # grant_admin_to_first_user.
+      before = [ "aionui-notifier.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        DynamicUser = true;
+        LoadCredential = [
+          "registration_token:${config.sops.secrets.registration_token.path}"
+          "admin_password:${config.sops.secrets.matrix_admin_password.path}"
+        ];
+        ExecStart = registerAdmin;
+      };
     };
 
     # ----------------------------------------------------------------------------

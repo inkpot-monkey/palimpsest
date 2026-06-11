@@ -27,6 +27,10 @@ in
     sops.secrets.email_encryption_key = {
       sopsFile = self.lib.getSecretFile "matrix";
     };
+    # JMAP password for the declaratively-provisioned bridge user.
+    sops.secrets.jmap_user_password = {
+      sopsFile = self.lib.getSecretFile "matrix";
+    };
 
     # --- Environment template ---
     sops.templates."jmap-bridge.env" = {
@@ -64,6 +68,16 @@ in
       matrixUrl = "http://127.0.0.1:6167";
       environmentFile = config.sops.templates."jmap-bridge.env".path;
       encryptionKeyFile = config.sops.secrets.email_encryption_key.path;
+
+      # Provision the bridge account declaratively instead of interactive !login.
+      # jmapUsername is the Stalwart/JMAP login (the mailbox address).
+      users = [
+        {
+          matrixId = "@inkpotmonkey:${domain}";
+          jmapUsername = "thomas@palebluebytes.space";
+          tokenFile = config.sops.secrets.jmap_user_password.path;
+        }
+      ];
     };
 
     systemd.services.jmap-bridge.environment.MATRIX_DOMAIN = domain;
