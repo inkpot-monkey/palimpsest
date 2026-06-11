@@ -90,12 +90,16 @@ in
           };
         };
 
-        networking.firewall = {
-          allowedTCPPorts = [ 4001 ];
-        };
-
+        # blocky's DNS (53) and HTTP API/metrics (4001) are only for the host itself and
+        # tailnet clients. Scope BOTH to tailscale0 so neither is exposed on a public
+        # interface (e.g. kelpy's WAN — a global allowedTCPPorts=[4001] made the blocky
+        # API + /metrics reachable from the internet). Loopback is always allowed, so a
+        # same-host prometheus still scrapes :4001 fine; remote scrapes go over tailscale.
         networking.firewall.interfaces."tailscale0" = {
-          allowedTCPPorts = [ 53 ];
+          allowedTCPPorts = [
+            53
+            4001
+          ];
           allowedUDPPorts = [ 53 ];
         };
       }
