@@ -38,6 +38,7 @@
       rustc
       rustfmt
       clippy
+      rust-analyzer
       pkg-config
       openssl
 
