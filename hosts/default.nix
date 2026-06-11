@@ -91,6 +91,10 @@ in
           # Fast MoE daily driver (3B active → ~10-15 tok/s on CPU).
           # TEMP: Q3_K_S (15.4G) to fit the 29G eMMC; restore UD-Q4_K_XL (22.4G) once the NVMe is in.
           custom.rk1.llm.model = "unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q3_K_S";
+          # 128K context (native 256K). This MoE's KV is tiny (~0.02 MB/tok) so 128K uses only
+          # ~20G RAM total, ~12G free — measured. KV is allocated upfront; decode speed only
+          # drops as the window actually fills.
+          custom.rk1.llm.ctxSize = 131072;
         }
       ];
     };
@@ -107,6 +111,10 @@ in
           # 0.84 tok/s), so it stays off.
           # TEMP: UD-Q3_K_XL (13.8G) to fit the 29G eMMC; bump to Q5_K_XL once the NVMe is in.
           custom.rk1.llm.model = "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:UD-Q3_K_XL";
+          # 64K context (native 256K). This coder's KV is larger (~0.09 MB/tok), so 64K uses
+          # ~22G RAM with ~9.5G free (safe for prefill buffers); 128K would leave only ~3.4G.
+          # For more, switch to q8_0 KV (flashAttention = true) to ~halve KV at ~3% decode cost.
+          custom.rk1.llm.ctxSize = 65536;
         }
       ];
     };

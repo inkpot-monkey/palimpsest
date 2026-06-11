@@ -195,6 +195,12 @@ in
       ++ ngramFlags;
     };
 
+    # `--mlock` needs a high memlock rlimit or it silently fails (systemd default is 8 MB) and the
+    # weights fall back to reclaimable page cache. Lock them so a large-context prefill can't evict
+    # the model and force slow re-reads from eMMC. The locked footprint (model + KV) was measured
+    # to fit per node (rk1a 128K ≈ 20G, rk1b 64K ≈ 22G of 32G).
+    systemd.services.llama-cpp.serviceConfig.LimitMEMLOCK = lib.mkIf cfg.mlock "infinity";
+
     assertions = [
       {
         # At most one speculative-decoding method (they all drive --spec-type / -hfd).
