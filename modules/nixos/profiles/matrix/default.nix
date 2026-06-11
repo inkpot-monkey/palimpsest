@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  pkgs,
   self,
   settings,
   ...
@@ -10,26 +11,43 @@ let
   cfg = config.custom.profiles.matrix;
   domain = "matrix.palebluebytes.space";
   address = "127.0.0.1";
+  matrixPort = settings.services.public.matrix.port;
 
   matrixSecrets = self.lib.getSecretFile "matrix";
 
-  # Collect appservice registrations from enabled bridges
-  appServiceRegistrations =
-    lib.optionals config.custom.profiles.matrix.whatsapp.enable [
-      "/run/credentials/conduit.service/whatsapp-registration.yaml"
-    ]
-    ++ lib.optionals config.custom.profiles.matrix.jmap-bridge.enable [
-      "/run/credentials/conduit.service/jmap-bridge-registration.yaml"
-    ];
-
-  # Collect LoadCredential entries from enabled bridges
-  bridgeCredentials =
+  # Appservice registrations from enabled bridges. tuwunel loads these
+  # declaratively from `appservice_dir` (unlike Conduit, which required the
+  # #admins-room dance). They are passed in as systemd credentials and copied
+  # into the appservice dir by `setupAppservices` so the secret tokens never
+  # land in a world-readable path.
+  bridgeRegistrationCreds =
     lib.optionals config.custom.profiles.matrix.whatsapp.enable [
       "whatsapp-registration.yaml:${config.sops.templates."whatsapp-registration.yaml".path}"
     ]
     ++ lib.optionals config.custom.profiles.matrix.jmap-bridge.enable [
-      "jmap-bridge-registration.yaml:${config.sops.templates."jmap-registration.yaml".path}"
+      "jmap-registration.yaml:${config.sops.templates."jmap-registration.yaml".path}"
     ];
+
+  bridgeRestartTriggers =
+    lib.optionals config.custom.profiles.matrix.whatsapp.enable [
+      config.sops.templates."whatsapp-registration.yaml".path
+    ]
+    ++ lib.optionals config.custom.profiles.matrix.jmap-bridge.enable [
+      config.sops.templates."jmap-registration.yaml".path
+    ];
+
+  # Populate tuwunel's appservice_dir from the loaded credentials at start.
+  # Runs as the service user (which can read $CREDENTIALS_DIRECTORY and write the
+  # RuntimeDirectory), copying only *-registration.yaml so the registration_token
+  # credential is excluded from the directory tuwunel parses as appservices.
+  setupAppservices = pkgs.writeShellScript "tuwunel-appservices" ''
+    set -eu
+    install -d -m 0750 /run/tuwunel/appservices
+    shopt -s nullglob
+    for f in "$CREDENTIALS_DIRECTORY"/*-registration.yaml; do
+      install -m 0400 "$f" /run/tuwunel/appservices/
+    done
+  '';
 in
 {
   imports = [
@@ -38,7 +56,7 @@ in
   ];
 
   options.custom.profiles.matrix = {
-    enable = lib.mkEnableOption "Matrix (Conduit) configuration";
+    enable = lib.mkEnableOption "Matrix homeserver (tuwunel) configuration";
   };
 
   config = lib.mkIf cfg.enable {
@@ -56,45 +74,47 @@ in
     };
 
     # ----------------------------------------------------------------------------
-    # Matrix Conduit (Homeserver)
+    # tuwunel (Matrix homeserver, conduwuit lineage)
     # ----------------------------------------------------------------------------
-    services.matrix-conduit = {
+    services.matrix-tuwunel = {
       enable = true;
       settings.global = {
         server_name = domain;
-        inherit address;
-        inherit (settings.services.public.matrix) port;
+        address = [ address ];
+        port = [ matrixPort ];
 
+        allow_federation = true;
         trusted_servers = [
           "matrix.org"
           "nixos.org"
           "libera.chat"
         ];
 
+        # Closed registration except via the shared token; the first account
+        # created becomes admin.
         allow_registration = true;
-        registration_token_file = "/run/credentials/conduit.service/registration_token";
+        registration_token_file = "/run/credentials/tuwunel.service/registration_token";
+        grant_admin_to_first_user = true;
 
-        # NOTE: Conduit does NOT support app_service_config_files. Appservices (bridges)
-        # must be registered and updated dynamically in the homeserver's #admins room.
-        # This parameter is kept here only for reference, or can be ignored.
-        app_service_config_files = appServiceRegistrations;
+        # Bridges register declaratively from this directory (populated from
+        # systemd credentials by setupAppservices below).
+        appservice_dir = "/run/tuwunel/appservices/";
       };
     };
 
-    systemd.services.conduit.serviceConfig.LoadCredential = [
-      "registration_token:${config.sops.secrets.registration_token.path}"
-    ]
-    ++ bridgeCredentials;
-
-    systemd.services.conduit.restartTriggers = [
-      config.sops.secrets.registration_token.path
-    ]
-    ++ lib.optionals config.custom.profiles.matrix.whatsapp.enable [
-      config.sops.templates."whatsapp-registration.yaml".path
-    ]
-    ++ lib.optionals config.custom.profiles.matrix.jmap-bridge.enable [
-      config.sops.templates."jmap-registration.yaml".path
-    ];
+    systemd.services.tuwunel = {
+      serviceConfig = {
+        LoadCredential = [
+          "registration_token:${config.sops.secrets.registration_token.path}"
+        ]
+        ++ bridgeRegistrationCreds;
+        ExecStartPre = [ setupAppservices ];
+      };
+      restartTriggers = [
+        config.sops.secrets.registration_token.path
+      ]
+      ++ bridgeRestartTriggers;
+    };
 
     # ----------------------------------------------------------------------------
     # Caddy Reverse Proxy
@@ -120,13 +140,14 @@ in
         + ''
           import cloudflare_tls
           handle {
-            reverse_proxy 127.0.0.1:${toString settings.services.public.matrix.port}
+            reverse_proxy ${address}:${toString matrixPort}
           }
         ''
       );
     };
 
-    # Enforce secure permissions on /var/lib/private to satisfy DynamicUser requirements
+    # Enforce secure permissions on /var/lib/private to satisfy DynamicUser
+    # requirements (the jmap bridge runs as a DynamicUser).
     systemd.tmpfiles.rules = [
       "z /var/lib/private 0700 root root -"
       "z /persistent/var/lib/private 0700 root root -"

@@ -9,8 +9,8 @@
 let
   cfg = config.custom.profiles.matrix.whatsapp;
   botUsername = config.services.mautrix-whatsapp.settings.appservice.bot.username;
-  serverName = config.services.matrix-conduit.settings.global.server_name;
-  conduitUrl = "http://${config.services.matrix-conduit.settings.global.address}:${toString config.services.matrix-conduit.settings.global.port}";
+  serverName = config.services.matrix-tuwunel.settings.global.server_name;
+  homeserverUrl = "http://${builtins.head config.services.matrix-tuwunel.settings.global.address}:${toString (builtins.head config.services.matrix-tuwunel.settings.global.port)}";
   adminUsername = "inkpotmonkey";
 in
 {
@@ -26,14 +26,14 @@ in
     sops.secrets.whatsapp_as_token = {
       sopsFile = self.lib.getSecretFile "matrix";
       restartUnits = [
-        "conduit.service"
+        "tuwunel.service"
         "mautrix-whatsapp.service"
       ];
     };
     sops.secrets.whatsapp_hs_token = {
       sopsFile = self.lib.getSecretFile "matrix";
       restartUnits = [
-        "conduit.service"
+        "tuwunel.service"
         "mautrix-whatsapp.service"
       ];
     };
@@ -48,7 +48,7 @@ in
     # --- Registration Template ---
     # mode 0400 (default) and owner=mautrix-whatsapp lets the bridge's
     # preStart cp the file before the service drops privileges.
-    # Conduit receives this via LoadCredential so group is irrelevant.
+    # tuwunel loads this declaratively via appservice_dir — see matrix/default.nix.
     sops.templates."whatsapp-registration.yaml" = {
       owner = "mautrix-whatsapp";
       content = ''
@@ -68,6 +68,10 @@ in
     services.mautrix-whatsapp = {
       enable = true;
       settings = {
+        homeserver = {
+          address = homeserverUrl;
+          domain = serverName;
+        };
         appservice = {
           bot = {
             username = "whatsapp";
@@ -89,7 +93,7 @@ in
             "@${adminUsername}:${serverName}" = "admin";
           };
           double_puppet_server_map = {
-            "${serverName}" = conduitUrl;
+            "${serverName}" = homeserverUrl;
           };
           double_puppet_allow_discovery = true;
         };
@@ -111,6 +115,6 @@ in
       chmod 640 /var/lib/mautrix-whatsapp/whatsapp-registration.yaml
     '';
 
-    # Conduit receives this registration via LoadCredential — see matrix/default.nix.
+    # tuwunel loads this registration via appservice_dir — see matrix/default.nix.
   };
 }
