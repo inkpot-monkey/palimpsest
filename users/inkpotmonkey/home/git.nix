@@ -22,6 +22,14 @@ let
     gpg.format = "ssh";
     gpg.ssh.allowedSignersFile = "${config.home.homeDirectory}/.ssh/allowed_signers";
     core.fsmonitor = true;
+    # Authenticate to GitHub over HTTPS using the system sops github_token
+    # (deployed at /run/secrets/github_token, made group-readable in
+    # modules/nixos/profiles/nixConfig.nix). Lets headless services like the
+    # AionUi backend clone/fetch/push private repos without a token living in
+    # any .git/config, and re-reads the file each call so token rotation just
+    # works. SSH remotes (git@github.com) bypass this entirely.
+    credential."https://github.com".helper =
+      ''!f() { test "$1" = get && { echo username=x-access-token; echo "password=$(cat /run/secrets/github_token)"; }; }; f'';
   };
 in
 {

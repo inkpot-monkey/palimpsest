@@ -26,6 +26,13 @@ in
 
     sops.secrets.github_token = {
       sopsFile = self.lib.getSecretFile "github";
+      # Group-readable by the human user so their git can authenticate to GitHub
+      # over HTTPS via the credential helper in users/inkpotmonkey/home/git.nix
+      # (needed by headless services like the AionUi backend on kelpy, which have
+      # no user session and thus no home-manager sops secrets). Root/nix-daemon
+      # still reads it for `access-tokens`.
+      mode = "0440";
+      group = "users";
     };
 
     sops.templates."nix-github-token".content = ''
