@@ -24,15 +24,6 @@ let
     lib.nameValuePair "${name}.${settings.nodes.kelpy.domain}" ip
   ) allServices;
 
-  currentNode = settings.nodes.${config.networking.hostName} or null;
-  tailscaleBind =
-    if currentNode != null && currentNode ? tailscale then
-      [
-        "${currentNode.tailscale.ip4}:53"
-      ]
-      ++ (lib.optional (currentNode.tailscale ? ip6) "[${currentNode.tailscale.ip6}]:53")
-    else
-      [ ];
 in
 {
   options.custom.profiles.blocky = {
@@ -49,7 +40,11 @@ in
           # Use the injected unstable package safely via specialArgs.
           package = pkgs.blocky;
           settings = {
-            ports.dns = [ "127.0.0.1:53" ] ++ (lib.optionals hasTailscale tailscaleBind);
+            # Bind a wildcard rather than the host's (per-reflash, drift-prone) Tailscale
+            # IP: that lets blocky bind immediately on boot — no stale-IP failure, no race
+            # waiting for tailscaled to assign an address — and the firewall below restricts
+            # external :53 to the tailscale0 interface, so exposure is unchanged.
+            ports.dns = [ ":53" ];
 
             bootstrapDns = {
               upstream = "https://one.one.one.one/dns-query";

@@ -1,5 +1,6 @@
 {
   pkgs,
+  lib,
   inputs,
   self,
   ...
@@ -31,6 +32,13 @@
     backup.enable = true;
     blocky.enable = true;
   };
+
+  # ZFS is a stray default (nothing here uses it) and an audio node has no need for it.
+  # More importantly it drags in zfs-kernel, which needs the kernel's `dev` output — that
+  # output isn't in nixos-raspberrypi's cache, so leaving zfs on would force a full
+  # from-source kernel compile on every build/deploy. Dropping it lets the (cached) kernel
+  # substitute instead.
+  boot.supportedFilesystems.zfs = lib.mkForce false;
 
   services.restic.backups.daily.paths = [
     "/var/lib"
