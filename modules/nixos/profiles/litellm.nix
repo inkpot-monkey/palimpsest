@@ -121,11 +121,22 @@ in
           }
         ];
 
-        # Graceful degradation: if a local RK1 node is down or mid model-swap, fall back to a
-        # remote DeepInfra model instead of erroring the client.
+        # Graceful degradation: if a local RK1 node is down or mid model-swap, fail over first to
+        # the OTHER local node (always up, just a different model), then to DeepInfra once it's
+        # funded again (currently 402 / no balance, so the local cross-fallback is what matters).
         litellm_settings.fallbacks = [
-          { "qwen-coder" = [ "qwen3-coder" ]; }
-          { "qwen-general" = [ "deepseek-flash" ]; }
+          {
+            "qwen-coder" = [
+              "qwen-general"
+              "qwen3-coder"
+            ];
+          }
+          {
+            "qwen-general" = [
+              "qwen-coder"
+              "deepseek-flash"
+            ];
+          }
         ];
       };
     };
