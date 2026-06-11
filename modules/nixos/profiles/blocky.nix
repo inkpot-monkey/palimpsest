@@ -156,15 +156,20 @@ in
             install -d -m 0755 /run/blocky-services
             tmp="$(mktemp)"
             # tailscale learns peer IPs asynchronously after the daemon comes up, so a
-            # boot/deploy can race it. Retry until at least one resolves rather than
-            # writing an empty file and waiting for the next timer tick.
-            for _ in $(seq 1 30); do
+            # boot/deploy can race it — and it streams the netmap in gradually, so on a
+            # cold boot some peers resolve before others. Retry until ALL expected
+            # services resolve (not just the first one): breaking on the first non-empty
+            # write locks in a PARTIAL hosts file — whichever peers tailscale hadn't
+            # learned yet get silently dropped until the 30-min timer. Fall through with
+            # whatever resolved if a node is genuinely unreachable for the whole window.
+            expected=${toString (builtins.length tailscaleServices)}
+            for _ in $(seq 1 45); do
               : > "$tmp"
               ${lib.concatMapStringsSep "\n" (s: ''
                 ip="$(tailscale ip -4 ${lib.escapeShellArg s.node} 2>/dev/null | head -n1 || true)"
                 [ -n "$ip" ] && printf '%s %s\n' "$ip" ${lib.escapeShellArg s.host} >> "$tmp"
               '') tailscaleServices}
-              [ -s "$tmp" ] && break
+              [ "$(wc -l < "$tmp")" -eq "$expected" ] && break
               sleep 2
             done
             # Only swap + reload when the resolved IPs actually changed. blocky does NOT
