@@ -40,13 +40,19 @@ let
   # Runs as the service user (which can read $CREDENTIALS_DIRECTORY and write the
   # RuntimeDirectory), copying only *-registration.yaml so the registration_token
   # credential is excluded from the directory tuwunel parses as appservices.
-  setupAppservices = pkgs.writeShellScript "tuwunel-appservices" ''
+  tuwunelPreStart = pkgs.writeShellScript "tuwunel-prestart" ''
     set -eu
+    # Populate appservice_dir from the loaded credentials (only *-registration.yaml
+    # so the registration_token credential is excluded).
     install -d -m 0750 /run/tuwunel/appservices
     shopt -s nullglob
     for f in "$CREDENTIALS_DIRECTORY"/*-registration.yaml; do
       install -m 0400 "$f" /run/tuwunel/appservices/
     done
+    # tuwunel's local media provider does not create its own root directory, so
+    # uploads fail with ENOENT until it exists. Create it under the (persisted)
+    # state directory.
+    install -d -m 0700 /var/lib/tuwunel/media
   '';
 
   # Idempotently register the admin Matrix account via the shared registration
@@ -149,7 +155,7 @@ in
           "registration_token:${config.sops.secrets.registration_token.path}"
         ]
         ++ bridgeRegistrationCreds;
-        ExecStartPre = [ setupAppservices ];
+        ExecStartPre = [ tuwunelPreStart ];
       };
       restartTriggers = [
         config.sops.secrets.registration_token.path
