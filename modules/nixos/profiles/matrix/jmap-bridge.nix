@@ -80,6 +80,9 @@ in
           matrixId = "@inkpotmonkey:${domain}";
           jmapUsername = "thomas";
           tokenFile = config.sops.secrets.email_password.path;
+          # Log in as the user to auto-accept the bridge's room invites (so each
+          # email conversation doesn't need a manual "Start chatting").
+          matrixPasswordFile = config.sops.secrets.matrix_admin_password.path;
         }
       ];
     };
