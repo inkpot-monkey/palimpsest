@@ -18,18 +18,21 @@ in
 
   config = lib.mkIf cfg.enable {
     # --- Secrets ---
+    # All JMAP/email credentials live in the mail secrets file (the bridge's
+    # Matrix-side appservice tokens are email-bridge state, kept alongside the
+    # JMAP login password rather than duplicated in matrix.yaml).
     sops.secrets.email_as_token = {
-      sopsFile = self.lib.getSecretFile "matrix";
+      sopsFile = self.lib.getSecretFile "mail";
     };
     sops.secrets.email_hs_token = {
-      sopsFile = self.lib.getSecretFile "matrix";
+      sopsFile = self.lib.getSecretFile "mail";
     };
     sops.secrets.email_encryption_key = {
-      sopsFile = self.lib.getSecretFile "matrix";
+      sopsFile = self.lib.getSecretFile "mail";
     };
-    # JMAP password for the declaratively-provisioned bridge user.
-    sops.secrets.jmap_user_password = {
-      sopsFile = self.lib.getSecretFile "matrix";
+    # JMAP login password for the declaratively-provisioned bridge user.
+    sops.secrets.email_password = {
+      sopsFile = self.lib.getSecretFile "mail";
     };
 
     # --- Environment template ---
@@ -70,12 +73,13 @@ in
       encryptionKeyFile = config.sops.secrets.email_encryption_key.path;
 
       # Provision the bridge account declaratively instead of interactive !login.
-      # jmapUsername is the Stalwart/JMAP login (the mailbox address).
+      # jmapUsername is the Stalwart/JMAP login (the principal name, not the
+      # email address).
       users = [
         {
           matrixId = "@inkpotmonkey:${domain}";
-          jmapUsername = "thomas@palebluebytes.space";
-          tokenFile = config.sops.secrets.jmap_user_password.path;
+          jmapUsername = "thomas";
+          tokenFile = config.sops.secrets.email_password.path;
         }
       ];
     };
