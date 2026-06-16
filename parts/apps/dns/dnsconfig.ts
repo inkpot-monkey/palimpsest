@@ -16,6 +16,13 @@ interface ServiceInfo {
     proxy?: boolean;
 }
 
+// One record exactly as Stalwart's /api/dns/records returns it (FQDN name, textual content).
+interface StalwartRecord {
+    type: string;
+    name: string;
+    content: string;
+}
+
 interface InfraData {
     nodes: Record<string, NodeInfo>;
     services: {
@@ -23,12 +30,28 @@ interface InfraData {
         private: Record<string, ServiceInfo>;
     };
     primaryDomain: string;
-    mailDomain: string;
+    mail: {
+        domain: string;
+        extraDomains?: string[];
+    };
+    // The authoritative mail/security records (MX, SPF, DMARC, TLSRPT, SRV, DKIM, DANE, …)
+    // for each domain, fetched from Stalwart's management API by the `dns` app at run time.
+    mailRecords?: Record<string, StalwartRecord[]>;
 }
 
 /**
- * Modern DNS configuration using DnsControl and NixOS infrastructure data.
- * This script is programmatically executed by a Nix app.
+ * DnsControl configuration — the SINGLE SOURCE OF TRUTH for the whole zone.
+ *
+ * Ownership is explicit:
+ *   - Per-service A/AAAA records come from `settings.services`.
+ *   - The mail/security records (MX, SPF, DMARC, TLSRPT, SRV, DKIM, DANE/TLSA, the extra
+ *     domains' mail CNAME) come straight from Stalwart — the `dns` app fetches them from
+ *     /api/dns/records and we emit them verbatim, so they can never drift from the authority.
+ *   - The few records Stalwart doesn't manage (the apex Worker, the primary's mail host
+ *     A/AAAA, and the Caddy-served MTA-STS + autoconfig/autodiscover) are added below.
+ *
+ * In-flight ACME DNS-01 challenge records are IGNOREd so a push can't delete one mid-renewal
+ * (both Caddy and Stalwart issue certs via Cloudflare DNS-01).
  */
 
 // @ts-ignore
@@ -38,21 +61,27 @@ const CF = NewDnsProvider("cloudflare");
 const REG_NONE = NewRegistrar("none");
 
 const KELPY = infra.nodes.kelpy;
-const PRIMARY_DOMAIN = infra.primaryDomain;
-const MAIL_DOMAIN = infra.mailDomain;
+const PUB4 = KELPY.public!.ip4;
+const PUB6 = KELPY.public!.ip6;
 
-// common record values
+// Apex landing page (Cloudflare Worker). DNS only makes the apex proxied — a Worker Route
+// must be configured Cloudflare-side for it to actually serve.
+const APEX_WORKER = "palebluebytes.palebluebytes.workers.dev.";
+
+// common record values. PROXY_ON is used by the apex ALIAS below (and by any public service
+// that opts in via `proxy = true`); PROXY_OFF keeps records DNS-only (grey-cloud).
 const PROXY_ON = CF_PROXY_ON;
 const PROXY_OFF = CF_PROXY_OFF;
-const TTL_SHORT = TTL(1);
 
 /**
- * Helper to add service records (A/AAAA) based on node IP addresses.
+ * Per-service A/AAAA records. Public services resolve to a node's public IP (optionally
+ * Cloudflare-proxied); private services resolve, DNS-only, to a node's tailscale IP —
+ * not publicly routable, so they're reachable only from the tailnet.
  */
 function getServiceRecords(svcs: Record<string, ServiceInfo>, isPublic: boolean): any[] {
     const recs: any[] = [];
     for (const name in svcs) {
-        if (name === "mail") continue; // Handled by Stalwart records in getBaseServerRecords
+        if (name === "mail") continue; // mail host is emitted by getMailRecords
 
         const svc = svcs[name];
         const node = infra.nodes[svc.node];
@@ -71,81 +100,91 @@ function getServiceRecords(svcs: Record<string, ServiceInfo>, isPublic: boolean)
     return recs;
 }
 
-/**
- * Shared Stalwart Mail records
- */
-function getStalwartRecords(domain: string, id: string): any[] {
-    const recs: any[] = [
-        A("mail", KELPY.public!.ip4),
-        MX("@", 10, "mail." + domain + "."),
+// FQDN ("mail.example.com." / "example.com.") -> dnscontrol label ("mail" / "@").
+function relLabel(fqdn: string, domain: string): string {
+    const s = fqdn.charAt(fqdn.length - 1) === "." ? fqdn.slice(0, -1) : fqdn;
+    if (s === domain) return "@";
+    const suffix = "." + domain;
+    const i = s.length - suffix.length;
+    if (i > 0 && s.slice(i) === suffix) return s.slice(0, i);
+    return s;
+}
 
-        // Security: SPF
-        TXT("@", "v=spf1 mx ip4:" + KELPY.public!.ip4 + (KELPY.public!.ip6 ? " ip6:" + KELPY.public!.ip6 : "") + " -all"),
-
-        // Security: DMARC (Quarantine)
-        TXT("_dmarc", "v=DMARC1; p=quarantine; adkim=s; aspf=s;"),
-
-        // Security: MTA-STS
-        CNAME("mta-sts", "mail." + domain + ".", PROXY_OFF),
-        TXT("_mta-sts", "v=STSv1; id=" + id + ";"),
-
-        // Client Autoconfig/Autodiscover
-        SRV("_submission._tcp", 0, 1, 587, "mail." + domain + "."),
-        SRV("_imaps._tcp", 0, 1, 993, "mail." + domain + "."),
-    ];
-
-    if (KELPY.public!.ip6) {
-        recs.push(AAAA("mail", KELPY.public!.ip6));
+// Map one Stalwart record to its dnscontrol equivalent (content is whitespace-delimited).
+function emitStalwart(domain: string, r: StalwartRecord): any {
+    const n = relLabel(r.name, domain);
+    const p = r.content.split(" ");
+    switch (r.type) {
+        case "A":
+            return A(n, r.content);
+        case "AAAA":
+            return AAAA(n, r.content);
+        case "CNAME":
+            return CNAME(n, r.content);
+        case "TXT":
+            return TXT(n, r.content);
+        case "MX":
+            return MX(n, parseInt(p[0], 10), p.slice(1).join(" "));
+        case "SRV":
+            return SRV(n, parseInt(p[0], 10), parseInt(p[1], 10), parseInt(p[2], 10), p.slice(3).join(" "));
+        case "TLSA":
+            return TLSA(n, parseInt(p[0], 10), parseInt(p[1], 10), parseInt(p[2], 10), p.slice(3).join(" "));
+        default:
+            throw "unsupported Stalwart record type: " + r.type;
     }
+}
+
+/**
+ * The records for a mail domain that Stalwart does NOT manage — the apex Worker, the
+ * primary's mail-host address (Stalwart omits it), and the Caddy-served MTA-STS +
+ * autoconfig/autodiscover endpoints — followed by everything Stalwart does manage.
+ */
+function getMailRecords(domain: string, isPrimary: boolean): any[] {
+    const recs: any[] = [];
+
+    // Apex → Cloudflare Worker landing page (proxied).
+    recs.push(ALIAS("@", APEX_WORKER, PROXY_ON));
+
+    // The primary domain holds the real mail-host A/AAAA; extra domains get a CNAME to it
+    // straight from Stalwart, so nothing to add for them here.
+    if (isPrimary) {
+        recs.push(A("mail", PUB4));
+        if (PUB6) recs.push(AAAA("mail", PUB6));
+    }
+
+    // MTA-STS + mail-client autoconfig (served by Caddy — not part of Stalwart's record set).
+    recs.push(CNAME("mta-sts", "mail." + domain + "."));
+    recs.push(TXT("_mta-sts", "v=STSv1; id=2026051001;"));
+    recs.push(CNAME("autoconfig", "mail." + domain + "."));
+    recs.push(CNAME("autodiscover", "mail." + domain + "."));
+
+    // Everything Stalwart manages (MX, SPF, DMARC, TLSRPT, SRV, DKIM, DANE, …), verbatim.
+    const stalwart = (infra.mailRecords && infra.mailRecords[domain]) || [];
+    for (let k = 0; k < stalwart.length; k++) recs.push(emitStalwart(domain, stalwart[k]));
 
     return recs;
 }
 
-/**
- * Helper to add standard server records (A/AAAA root + mail)
- */
-function getBaseServerRecords(domain: string): any[] {
-    const recs: any[] = [
-        A("@", KELPY.public!.ip4),
-    ];
+// Every mail domain (primary first); the primary zone also carries the service records.
+const primary = infra.mail.domain;
+const mailDomains = [primary].concat(infra.mail.extraDomains || []);
 
-    if (KELPY.public!.ip6) {
-        recs.push(AAAA("@", KELPY.public!.ip6));
-    }
+for (let d = 0; d < mailDomains.length; d++) {
+    const domain = mailDomains[d];
+    const isPrimary = domain === primary;
 
-    if (domain === MAIL_DOMAIN) {
-        recs.push(...getStalwartRecords(domain, "2026042302"));
-    } else {
-        // Fallback: just point the 'mail' subdomain to the server
-        recs.push(A("mail", KELPY.public!.ip4));
-        if (KELPY.public!.ip6) {
-            recs.push(AAAA("mail", KELPY.public!.ip6));
-        }
-    }
-    return recs;
+    const serviceRecs = isPrimary
+        ? getServiceRecords(infra.services.public, true).concat(getServiceRecords(infra.services.private, false))
+        : [];
+
+    D(
+        domain,
+        REG_NONE,
+        DnsProvider(CF),
+        serviceRecs,
+        getMailRecords(domain, isPrimary),
+        // Never purge in-flight ACME DNS-01 challenges (Caddy + Stalwart both use them).
+        IGNORE("_acme-challenge", "TXT"),
+        IGNORE("_acme-challenge.**", "TXT")
+    );
 }
-
-// --- Domain: palebluebytes.space (Primary) ---
-D(
-    PRIMARY_DOMAIN,
-    REG_NONE,
-    DnsProvider(CF),
-    getBaseServerRecords(PRIMARY_DOMAIN),
-    [
-        ALIAS("@", "palebluebytes.palebluebytes.workers.dev.", PROXY_ON),
-    ],
-    getServiceRecords(infra.services.public, true),
-    getServiceRecords(infra.services.private, false),
-    IGNORE_NAME("*._domainkey", "TXT"),
-    DISABLE_IGNORE_SAFETY_CHECK
-);
-
-// --- Domain: palebluebytes.xyz (Secondary) ---
-D(
-    "palebluebytes.xyz",
-    REG_NONE,
-    DnsProvider(CF),
-    getBaseServerRecords("palebluebytes.xyz"),
-    IGNORE_NAME("*._domainkey", "TXT"),
-    DISABLE_IGNORE_SAFETY_CHECK
-);

@@ -30,8 +30,7 @@
     dmarc-exporter.enable = false;
     mail = {
       enable = true;
-      domain = "palebluebytes.space";
-      extraDomains = [ "palebluebytes.xyz" ];
+      inherit (settings.mail) domain extraDomains;
     };
     matrix = {
       enable = true;

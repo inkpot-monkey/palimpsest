@@ -104,6 +104,13 @@ in
     inherit primaryDomain;
     mailDomain = primaryDomain;
 
+    # Mail domains served by Stalwart — the single source of truth consumed by both the
+    # kelpy mail profile and the `dns` app (which generates the per-domain mail records).
+    mail = {
+      domain = primaryDomain;
+      extraDomains = [ "palebluebytes.xyz" ];
+    };
+
     nodes.kelpy = {
       hostName = "kelpy";
       domain = "palebluebytes.space";
