@@ -9,6 +9,7 @@
     # RK1-specific local modules (not shared profiles — only these nodes serve LLMs / use NVMe).
     ./llm.nix # local llama.cpp LLM server (custom.rk1.llm)
     ./nvme.nix # optional NVMe model-cache storage (inert until custom.rk1.nvme.enable = true)
+    ./homeassistant.nix # optional Home Assistant + Wyoming voice (inert until custom.rk1.homeAssistant.enable = true)
 
     self.nixosProfiles.base
     self.nixosProfiles.nixConfig # enabled transitively by base
@@ -29,8 +30,8 @@
     };
   };
 
-  # Local LLM server (model set per-node in hosts/default.nix).
-  custom.rk1.llm.enable = true;
+  # The local LLM server is enabled per-node in hosts/default.nix: rk1a serves the general
+  # MoE; rk1b is voice-only (Home Assistant) and leaves the LLM off to free RAM/disk.
 
   # Declared users are authoritative: removes the GiyoMoon base-image `nixos`/`turing`
   # account on the first switch. Login is key-only SSH as inkpotmonkey (see profiles/ssh.nix);

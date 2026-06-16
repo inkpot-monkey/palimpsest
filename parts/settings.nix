@@ -68,13 +68,19 @@ let
         node = "kelpy";
         port = 25808;
       };
-      # Local llama.cpp endpoints on the Turing Pi RK1 nodes.
+      # Home Assistant. It RUNS on rk1b, but is fronted by kelpy's Caddy (TLS via
+      # Cloudflare DNS-01 + the internal_only tailnet guard), so `node` is the front
+      # host (kelpy: where DNS points and Caddy runs) and `backendHost` is where Caddy
+      # reverse-proxies to over tailscale. Reachable tailnet-only at home.<domain>.
+      home = {
+        node = "kelpy";
+        port = 8123;
+        backendHost = "rk1b";
+      };
+      # Local llama.cpp endpoint on Turing Pi RK1 node rk1a. (rk1b was repurposed as the
+      # Home Assistant voice node and no longer serves an LLM, so there is no localLlmB.)
       localLlmA = {
         node = "rk1a";
-        port = 8080;
-      };
-      localLlmB = {
-        node = "rk1b";
         port = 8080;
       };
     };

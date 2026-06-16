@@ -88,6 +88,7 @@ in
         self.users.inkpotmonkey.cli
         {
           networking.hostName = "rk1a";
+          custom.rk1.llm.enable = true;
           # Fast MoE daily driver (3B active → ~10-15 tok/s on CPU).
           # TEMP: Q3_K_S (15.4G) to fit the 29G eMMC; restore UD-Q4_K_XL (22.4G) once the NVMe is in.
           custom.rk1.llm.model = "unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q3_K_S";
@@ -105,16 +106,15 @@ in
         self.users.inkpotmonkey.cli
         {
           networking.hostName = "rk1b";
-          # Coder MoE (~3.3B active params), so it's bandwidth-cheap and fast on the RK3588 —
-          # unlike a dense 27B, which reads all weights per token and is bandwidth-bound at
-          # <1 tok/s. MTP/draft speculative decoding gave no CPU benefit (benchmarked 0.80 vs
-          # 0.84 tok/s), so it stays off.
-          # TEMP: UD-Q3_K_XL (13.8G) to fit the 29G eMMC; bump to Q5_K_XL once the NVMe is in.
-          custom.rk1.llm.model = "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:UD-Q3_K_XL";
-          # 64K context (native 256K). This coder's KV is larger (~0.09 MB/tok), so 64K uses
-          # ~22G RAM with ~9.5G free (safe for prefill buffers); 128K would leave only ~3.4G.
-          # For more, switch to q8_0 KV (flashAttention = true) to ~halve KV at ~3% decode cost.
-          custom.rk1.llm.ctxSize = 65536;
+          # rk1b is the voice node, NOT an LLM server. The qwen-coder MoE was removed to free
+          # ~22G RAM + 13G eMMC for Home Assistant (and, later, WhisperX once the NVMe is in).
+          # custom.rk1.llm is therefore left disabled (default). The coder model still exists
+          # in the cloud as `qwen3-coder` (DeepInfra) via kelpy's LiteLLM; rk1a continues to
+          # serve the local general MoE (qwen-general).
+          #
+          # Home Assistant + local Wyoming voice (STT/TTS); the wake word runs on the phone.
+          # Small footprint (no torch). See hosts/rk1/homeassistant.nix.
+          custom.rk1.homeAssistant.enable = true;
         }
       ];
     };
