@@ -13,8 +13,6 @@ let
   serverName = config.services.matrix-tuwunel.settings.global.server_name;
   homeserverUrl = "http://${builtins.head config.services.matrix-tuwunel.settings.global.address}:${toString (builtins.head config.services.matrix-tuwunel.settings.global.port)}";
   adminLocalpart = config.custom.profiles.matrix.adminLocalpart;
-  # Dots escaped for the appservice namespace regex (full-MXID match).
-  serverNameRe = builtins.replaceStrings [ "." ] [ "\\." ] serverName;
 in
 {
   options.custom.profiles.matrix.whatsapp = {
@@ -42,17 +40,10 @@ in
     };
 
     # --- Environment template ---
-    # LOGIN_SHARED_SECRET is consumed by the nixpkgs module's pre-start, which
-    # writes it to `double_puppet.secrets.<domain>`. The `as_token:` form tells
-    # the bridge to double-puppet via m.login.application_service (tuwunel
-    # advertises that flow) — so portal rooms are auto-joined as the admin
-    # instead of leaving an invite to accept. Requires the admin to sit in the
-    # appservice namespace (see the registration below).
     sops.templates."mautrix-whatsapp.env" = {
       restartUnits = [ "mautrix-whatsapp.service" ];
       content = ''
         ENCRYPTION_PICKLE_KEY=${config.sops.placeholder.whatsapp_pickle_key}
-        MAUTRIX_WHATSAPP_BRIDGE_LOGIN_SHARED_SECRET=as_token:${config.sops.placeholder.whatsapp_as_token}
       '';
     };
 
@@ -72,10 +63,6 @@ in
           users:
           - exclusive: true
             regex: '@${botUsername}_.*'
-          # Non-exclusive: lets the appservice double-puppet the admin (auto-join
-          # portals) without claiming sole ownership of the human's account.
-          - exclusive: false
-            regex: '@${adminLocalpart}:${serverNameRe}'
       '';
     };
 
@@ -108,9 +95,14 @@ in
             "@${adminLocalpart}:${serverName}" = "admin";
           };
         };
-        # bridgev2 schema (top-level, not under `bridge`). The `secrets` entry is
-        # injected at runtime from the env file so the token stays out of the Nix
-        # store — see the env template above.
+        # bridgev2 schema (top-level, not under `bridge`; the old
+        # `bridge.double_puppet_*` keys are dead in v26.05). This only points the
+        # double-puppet login at the homeserver — it does NOT enable auto-join on
+        # its own. Enable it with a one-time `login-matrix <access_token>` in the
+        # bridge's management room. We deliberately avoid the declarative
+        # `as_token` method: it requires putting @admin in this appservice's
+        # namespace, which makes tuwunel route every room the admin is in
+        # (including the jmap email rooms) to this bridge.
         double_puppet = {
           servers = {
             "${serverName}" = homeserverUrl;
