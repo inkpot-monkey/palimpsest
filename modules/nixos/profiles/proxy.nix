@@ -9,7 +9,6 @@
 
 let
   cfg = config.custom.profiles.proxy;
-  inherit (config.networking) domain;
   inherit (settings.admin) email;
 in
 {
@@ -64,37 +63,29 @@ in
             _: svc: svc.node == config.networking.hostName && (svc.proxy or true)
           ) allServices;
         in
-        lib.mkMerge [
-          (lib.mapAttrs' (
-            name: svc:
-            lib.nameValuePair "${name}.${config.networking.domain}" {
-              extraConfig = ''
-                ${lib.optionalString (!svc.isPublic) "import internal_only"}
-                import cloudflare_tls
-                handle {
-                  reverse_proxy 127.0.0.1:${toString svc.port}
-                }
-              '';
-            }
-          ) hostServices)
-          {
-            "${domain}" = {
-              hostName = domain;
-              extraConfig = ''
-                respond "Server is up and running!"
-                        
-                handle /echo {
-                  reverse_proxy 127.0.0.1:9001 {
-                    header_up Host {host}
-                    header_up X-Real-IP {remote}
-                    header_up Connection {>Connection}
-                    header_up Upgrade {>Upgrade}
-                  }
-                }
-              '';
-            };
+        # NOTE: the apex (${domain}) is intentionally NOT served here — it resolves to a
+        # Cloudflare Worker (see the apex ALIAS in parts/apps/dns/dnsconfig.ts), so apex
+        # traffic never reaches Caddy.
+        lib.mapAttrs' (
+          name: svc:
+          let
+            # Most services are co-located with Caddy (proxy to loopback). A service may
+            # instead run on another node and set `backendHost`, in which case Caddy proxies
+            # to that node over tailscale (e.g. Home Assistant on rk1b). DNS still points at
+            # this (front) host, so the service stays tailnet-only behind internal_only.
+            upstream =
+              if svc ? backendHost then settings.nodes.${svc.backendHost}.tailscale.ip4 else "127.0.0.1";
+          in
+          lib.nameValuePair "${name}.${config.networking.domain}" {
+            extraConfig = ''
+              ${lib.optionalString (!svc.isPublic) "import internal_only"}
+              import cloudflare_tls
+              handle {
+                reverse_proxy ${upstream}:${toString svc.port}
+              }
+            '';
           }
-        ];
+        ) hostServices;
     };
 
     # Open firewall ports
