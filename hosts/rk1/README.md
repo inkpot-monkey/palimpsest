@@ -17,11 +17,21 @@ model they serve (set in `../default.nix`).
   - `rk1b` → `Qwen3.6-27B` dense + 1.7B speculative-decoding draft (~3–4 tok/s) — best quality
 - **Gateway**: registered with the kelpy LiteLLM proxy as `qwen-local` / `qwen-quality`
 
-> **Why CPU, not the NPU?** Token generation is memory-bandwidth-bound, so the NPU does
-> not beat the CPU at decoding a given model size, and enabling it requires the Rockchip
-> *vendor* BSP kernel (this hardware module is mainline) plus proprietary, un-packaged
-> runtimes. The MoE on CPU is the real speed lever. NPU support is a deferred, optional
-> phase — see `~/.claude/plans/snuggly-growing-island.md`.
+> **Why CPU, not the NPU?** The NPU (RKLLM runtime) genuinely *does* win at two things:
+> **prefill** (compute-bound — ~130 tok/s on a ~2B model) and **small dense** models
+> (1–4B at ~15–20 tok/s, at lower power). It's just the wrong tool for *this* fleet:
+> - **Decode stays bandwidth-bound** even on the NPU — a small model still decodes at
+>   single-digit tok/s, so the NPU doesn't break the wall we actually wait on.
+> - **No MoE support** in RKLLM (as of toolkit v1.2.3, Nov 2025) → our Qwen3 `*-A3B`
+>   models can't run on it at all; you'd be forced down to a dense ≤8B (8B+ is impractical).
+> - **Context caps at ~16K** (often 2–4K in practice) vs our 64–128K, and it's **W8A8-only**.
+> - Enabling it needs the Rockchip **vendor BSP kernel** (this module is mainline) plus
+>   un-packaged proprietary runtimes — a risky migration off the maintained `nixos-turing-rk1`.
+>
+> The MoE on CPU is the real speed lever here. The NPU would only earn its keep as a
+> *separate* tiny, always-on, low-power model (router / classifier / voice) running
+> **alongside** the CPU servers — not as a replacement. Deferred, optional phase —
+> see `~/.claude/plans/snuggly-growing-island.md`.
 
 ## 1. Flash the base OS (one-time, per node)
 
