@@ -62,6 +62,11 @@
           baseUrl = "http://127.0.0.1:4000";
           apiKey = "\${LITELLM_MASTER_KEY}";
           api = "openai-completions";
+          # OpenClaw's per-provider idle timeout (time to first token). The local RK1 MoE
+          # can spend many minutes prefilling a large prompt before it emits anything; the
+          # default (~4 min) cuts it off as "LLM request timed out". Give it 2h. This is
+          # distinct from the litellm request timeout and agents.defaults.timeoutSeconds.
+          timeoutSeconds = 7200;
           models = [
             {
               id = "gemini-pro";
@@ -121,6 +126,17 @@
               contextWindow = 128000;
               maxTokens = 32000;
             }
+            # Local model served by Turing Pi RK1 node rk1a via litellm (over tailscale).
+            # CPU MoE decode is ~6-8 tok/s, so responses are slow but private and free.
+            # Context matches the node's served ctxSize (rk1a 128K). rk1b was repurposed as
+            # the Home Assistant voice node and no longer serves a coder model.
+            {
+              id = "qwen-general";
+              name = "Qwen3.6 35B-A3B (local, rk1a)";
+              input = [ "text" ];
+              contextWindow = 131072;
+              maxTokens = 16000;
+            }
           ];
         };
       };
@@ -128,10 +144,24 @@
     agents = {
       defaults = {
         model = {
-          primary = "litellm/claude-4-sonnet";
+          # Default agent model: the local general MoE on rk1a (qwen-general). rk1b's coder
+          # model was removed (that board is now the Home Assistant voice node), so qwen-general
+          # is the only local LLM. Routed via litellm, which falls back to cloud if rk1a is down.
+          primary = "litellm/qwen-general";
         };
+        # NO expert-subagent delegation on purpose. The rk1a board has a single llama.cpp
+        # inference slot at ~6 tok/s, so fanning out to a second (and slower, thinking) model
+        # concurrently just contends for / jams that one slot and trips the stall watchdog.
+        # Keep OpenClaw a lean, serial, single-model consumer.
       };
     };
+
+    # Trim the agent prompt for the slow local brain. The browser plugin (Playwright web
+    # automation) is the single largest block of tool definitions in the prompt, and a
+    # headless background/coding agent never browses — disabling it shrinks the prompt and
+    # cuts prefill time. If still too large, the other paired-node plugins (canvas,
+    # device-pair, phone-control, talk-voice, file-transfer) can be disabled the same way.
+    plugins.entries.browser.enabled = false;
   };
 
   networking = {
