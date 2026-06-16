@@ -9,9 +9,10 @@
 let
   cfg = config.custom.profiles.matrix.whatsapp;
   botUsername = config.services.mautrix-whatsapp.settings.appservice.bot.username;
+  bridgePort = config.services.mautrix-whatsapp.settings.appservice.port;
   serverName = config.services.matrix-tuwunel.settings.global.server_name;
   homeserverUrl = "http://${builtins.head config.services.matrix-tuwunel.settings.global.address}:${toString (builtins.head config.services.matrix-tuwunel.settings.global.port)}";
-  adminUsername = "inkpotmonkey";
+  adminLocalpart = config.custom.profiles.matrix.adminLocalpart;
 in
 {
   options.custom.profiles.matrix.whatsapp = {
@@ -53,7 +54,7 @@ in
       owner = "mautrix-whatsapp";
       content = ''
         id: whatsapp
-        url: http://localhost:29318
+        url: http://127.0.0.1:${toString bridgePort}
         as_token: ${config.sops.placeholder.whatsapp_as_token}
         hs_token: ${config.sops.placeholder.whatsapp_hs_token}
         sender_localpart: ${botUsername}
@@ -90,7 +91,7 @@ in
         bridge = {
           permissions = {
             "${serverName}" = "user";
-            "@${adminUsername}:${serverName}" = "admin";
+            "@${adminLocalpart}:${serverName}" = "admin";
           };
           double_puppet_server_map = {
             "${serverName}" = homeserverUrl;
@@ -115,6 +116,9 @@ in
       chmod 640 /var/lib/mautrix-whatsapp/whatsapp-registration.yaml
     '';
 
-    # tuwunel loads this registration via appservice_dir — see matrix/default.nix.
+    # Contribute this registration to tuwunel's appservice_dir wiring — see
+    # the generic `appservices` consumer in matrix/default.nix.
+    custom.profiles.matrix.appservices.whatsapp.registrationPath =
+      config.sops.templates."whatsapp-registration.yaml".path;
   };
 }

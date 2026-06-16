@@ -15,35 +15,12 @@ let
 
   matrixSecrets = self.lib.getSecretFile "matrix";
 
-  # Appservice registrations from enabled bridges. tuwunel loads these
-  # declaratively from `appservice_dir` (unlike Conduit, which required the
-  # #admins-room dance). They are passed in as systemd credentials and copied
-  # into the appservice dir by `setupAppservices` so the secret tokens never
-  # land in a world-readable path.
-  bridgeRegistrationCreds =
-    lib.optionals config.custom.profiles.matrix.whatsapp.enable [
-      "whatsapp-registration.yaml:${config.sops.templates."whatsapp-registration.yaml".path}"
-    ]
-    ++ lib.optionals config.custom.profiles.matrix.jmap-bridge.enable [
-      "jmap-registration.yaml:${config.sops.templates."jmap-registration.yaml".path}"
-    ];
-
-  bridgeRestartTriggers =
-    lib.optionals config.custom.profiles.matrix.whatsapp.enable [
-      config.sops.templates."whatsapp-registration.yaml".path
-    ]
-    ++ lib.optionals config.custom.profiles.matrix.jmap-bridge.enable [
-      config.sops.templates."jmap-registration.yaml".path
-    ];
-
   # Populate tuwunel's appservice_dir from the loaded credentials at start.
   # Runs as the service user (which can read $CREDENTIALS_DIRECTORY and write the
   # RuntimeDirectory), copying only *-registration.yaml so the registration_token
   # credential is excluded from the directory tuwunel parses as appservices.
   tuwunelPreStart = pkgs.writeShellScript "tuwunel-prestart" ''
     set -eu
-    # Populate appservice_dir from the loaded credentials (only *-registration.yaml
-    # so the registration_token credential is excluded).
     install -d -m 0750 /run/tuwunel/appservices
     shopt -s nullglob
     for f in "$CREDENTIALS_DIRECTORY"/*-registration.yaml; do
@@ -59,7 +36,6 @@ let
   # token (UIA token flow, the same one the aionui notifier self-registers with).
   # Ordered before other account-creating services so `grant_admin_to_first_user`
   # makes this the homeserver admin.
-  adminLocalpart = "inkpotmonkey";
   registerAdmin = pkgs.writeShellScript "tuwunel-register-admin" ''
     set -eu
     url="http://${address}:${toString matrixPort}"
@@ -75,19 +51,19 @@ let
     # already exists the server answers M_USER_IN_USE with no session.
     session="$(${pkgs.curl}/bin/curl -s -X POST "$url/_matrix/client/v3/register" \
       -H 'content-type: application/json' \
-      -d "$(${pkgs.jq}/bin/jq -nc --arg u "${adminLocalpart}" --arg p "$pass" \
+      -d "$(${pkgs.jq}/bin/jq -nc --arg u "${cfg.adminLocalpart}" --arg p "$pass" \
         '{username:$u,password:$p,inhibit_login:true}')" \
       | ${pkgs.jq}/bin/jq -r '.session // empty')"
 
     if [ -z "$session" ]; then
-      echo "admin account ${adminLocalpart} already exists; nothing to do"
+      echo "admin account ${cfg.adminLocalpart} already exists; nothing to do"
       exit 0
     fi
 
     # Step 2: complete registration with the token.
     code="$(${pkgs.curl}/bin/curl -s -o /dev/null -w '%{http_code}' -X POST "$url/_matrix/client/v3/register" \
       -H 'content-type: application/json' \
-      -d "$(${pkgs.jq}/bin/jq -nc --arg u "${adminLocalpart}" --arg p "$pass" --arg t "$token" --arg s "$session" \
+      -d "$(${pkgs.jq}/bin/jq -nc --arg u "${cfg.adminLocalpart}" --arg p "$pass" --arg t "$token" --arg s "$session" \
         '{username:$u,password:$p,inhibit_login:true,auth:{type:"m.login.registration_token",token:$t,session:$s}}')")"
     echo "admin registration HTTP $code"
     [ "$code" = "200" ]
@@ -101,6 +77,30 @@ in
 
   options.custom.profiles.matrix = {
     enable = lib.mkEnableOption "Matrix homeserver (tuwunel) configuration";
+
+    adminLocalpart = lib.mkOption {
+      type = lib.types.str;
+      default = "inkpotmonkey";
+      description = "Localpart of the Matrix account granted homeserver admin.";
+    };
+
+    # Bridge modules contribute their appservice registration here; tuwunel's
+    # service wiring (below) consumes the lot generically, so adding a bridge
+    # never touches this file. The attr name becomes the credential basename
+    # (`<name>-registration.yaml`), which tuwunelPreStart globs into appservice_dir.
+    appservices = lib.mkOption {
+      internal = true;
+      default = { };
+      type = lib.types.attrsOf (
+        lib.types.submodule {
+          options.registrationPath = lib.mkOption {
+            type = lib.types.path;
+            description = "Path to the bridge's sops-rendered registration.yaml.";
+          };
+        }
+      );
+      description = "Appservice registrations contributed by enabled bridge modules.";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -151,16 +151,20 @@ in
 
     systemd.services.tuwunel = {
       serviceConfig = {
+        # tuwunel loads bridge registrations declaratively from `appservice_dir`
+        # (unlike Conduit's #admins-room dance). They arrive as systemd credentials
+        # and are copied into the dir by tuwunelPreStart, so the secret tokens never
+        # land in a world-readable path.
         LoadCredential = [
           "registration_token:${config.sops.secrets.registration_token.path}"
         ]
-        ++ bridgeRegistrationCreds;
+        ++ lib.mapAttrsToList (name: a: "${name}-registration.yaml:${a.registrationPath}") cfg.appservices;
         ExecStartPre = [ tuwunelPreStart ];
       };
       restartTriggers = [
         config.sops.secrets.registration_token.path
       ]
-      ++ bridgeRestartTriggers;
+      ++ lib.mapAttrsToList (_name: a: a.registrationPath) cfg.appservices;
     };
 
     # Declaratively create the admin account once tuwunel is up.

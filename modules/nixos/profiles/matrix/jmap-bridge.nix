@@ -7,7 +7,7 @@
 
 let
   cfg = config.custom.profiles.matrix.jmap-bridge;
-  domain = "matrix.palebluebytes.space";
+  domain = config.services.matrix-tuwunel.settings.global.server_name;
 in
 {
   imports = [ self.nixosModules.jmap-bridge ];
@@ -77,7 +77,7 @@ in
       # email address).
       users = [
         {
-          matrixId = "@inkpotmonkey:${domain}";
+          matrixId = "@${config.custom.profiles.matrix.adminLocalpart}:${domain}";
           jmapUsername = "thomas";
           tokenFile = config.sops.secrets.email_password.path;
           # Log in as the user to auto-accept the bridge's room invites (so each
@@ -88,6 +88,11 @@ in
     };
 
     systemd.services.jmap-bridge.environment.MATRIX_DOMAIN = domain;
+
+    # Contribute this registration to tuwunel's appservice_dir wiring — see
+    # the generic `appservices` consumer in matrix/default.nix.
+    custom.profiles.matrix.appservices.jmap.registrationPath =
+      config.sops.templates."jmap-registration.yaml".path;
 
     # --- Persistence ---
     environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
