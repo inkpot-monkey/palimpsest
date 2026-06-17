@@ -15,7 +15,7 @@ A single machine with a `nixosConfiguration`, named by a marine/animal codename 
 _Avoid_: box, server.
 
 **Profile**:
-A toggleable feature bundle under `modules/nixos/profiles/` (or `modules/homeManager/`), enabled per-host through the `custom.*` option namespace. A profile composes existing modules; it is not itself a long-running program.
+A toggleable feature bundle enabled through the `custom.*` namespace, composing existing modules rather than being a long-running program itself. Two kinds, structurally distinct: a **NixOS profile** is fleet-shared (under `modules/nixos/profiles/`, toggled via `custom.profiles.*`); a **home profile** is per-user (under `users/<user>/home/`, toggled via `custom.home.profiles.*`).
 _Avoid_: role, preset.
 
 **Service module**:

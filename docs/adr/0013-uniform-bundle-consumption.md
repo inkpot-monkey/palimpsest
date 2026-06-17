@@ -2,6 +2,8 @@
 
 A host assembles its configuration by importing one kitchen-sink module — `nixosProfiles.bundle`, which pulls in *every* profile (see [0001](0001-flake-parts-custom-namespace.md)) — and then turning features on with `custom.profiles.*.enable`. There is a **single** consumption model across the whole fleet, including the resource-constrained RK1 SBCs.
 
+**Scope: this is about NixOS profiles only.** The per-user *home* profiles deliberately do **not** use this import-all model — they conditionally import version-divergent modules — because of the home-manager version skew across hosts. See [0014](0014-home-profiles-conditional-import.md).
+
 This is deliberate over the obvious-looking alternative of hand-importing only the profiles a host needs. A disabled profile is a `mkIf cfg.enable` no-op, so importing the full bundle contributes **nothing** to the system — it costs only Nix evaluation, which happens on the builder, not the device. The payoff is uniformity and safety: you can never enable a feature whose module you forgot to import, and there is no per-host import list to drift. The RK1 nodes previously imported ~7 profiles à la carte with hand-maintained comments tracking transitive option reads (e.g. `tailscale` reads `custom.profiles.impermanence.enable`); folding them onto the bundle deletes that fragile bookkeeping.
 
 ## Consequences
