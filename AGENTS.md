@@ -19,3 +19,17 @@
 - **Error handling:** avoid bare builtins.abort; use lib.assertMsg / lib.warn where appropriate
 - **Flake inputs:** declare in flake.nix, follow other inputs where possible to avoid version mismatches
 - **pkgs:** custom packages in pkgs/<name>/default.nix, wired via pkgs/default.nix
+
+## Agent skills
+
+### Issue tracker
+
+Issues live as markdown files under `.scratch/<feature-slug>/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default vocabulary (needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
