@@ -47,8 +47,9 @@ interface InfraData {
  *   - The mail/security records (MX, SPF, DMARC, TLSRPT, SRV, DKIM, DANE/TLSA, the extra
  *     domains' mail CNAME) come straight from Stalwart — the `dns` app fetches them from
  *     /api/dns/records and we emit them verbatim, so they can never drift from the authority.
- *   - The few records Stalwart doesn't manage (the apex Worker, the primary's mail host
- *     A/AAAA, and the Caddy-served MTA-STS + autoconfig/autodiscover) are added below.
+ *   - The few records Stalwart doesn't manage (the primary's mail host A/AAAA and the
+ *     Caddy-served MTA-STS + autoconfig/autodiscover) are added below. The apex itself is a
+ *     Cloudflare Worker Custom Domain (worker-managed), so dnscontrol IGNOREs it.
  *
  * In-flight ACME DNS-01 challenge records are IGNOREd so a push can't delete one mid-renewal
  * (both Caddy and Stalwart issue certs via Cloudflare DNS-01).
@@ -64,12 +65,8 @@ const KELPY = infra.nodes.kelpy;
 const PUB4 = KELPY.public!.ip4;
 const PUB6 = KELPY.public!.ip6;
 
-// Apex landing page (Cloudflare Worker). DNS only makes the apex proxied — a Worker Route
-// must be configured Cloudflare-side for it to actually serve.
-const APEX_WORKER = "palebluebytes.palebluebytes.workers.dev.";
-
-// common record values. PROXY_ON is used by the apex ALIAS below (and by any public service
-// that opts in via `proxy = true`); PROXY_OFF keeps records DNS-only (grey-cloud).
+// common record values. PROXY_ON is used by any public service that opts in via
+// `proxy = true`; PROXY_OFF keeps records DNS-only (grey-cloud).
 const PROXY_ON = CF_PROXY_ON;
 const PROXY_OFF = CF_PROXY_OFF;
 
@@ -142,9 +139,6 @@ function emitStalwart(domain: string, r: StalwartRecord): any {
 function getMailRecords(domain: string, isPrimary: boolean): any[] {
     const recs: any[] = [];
 
-    // Apex → Cloudflare Worker landing page (proxied).
-    recs.push(ALIAS("@", APEX_WORKER, PROXY_ON));
-
     // The primary domain holds the real mail-host A/AAAA; extra domains get a CNAME to it
     // straight from Stalwart, so nothing to add for them here.
     if (isPrimary) {
@@ -177,12 +171,17 @@ for (let d = 0; d < mailDomains.length; d++) {
         ? getServiceRecords(infra.services.public, true).concat(getServiceRecords(infra.services.private, false))
         : [];
 
+    // The primary apex is a Cloudflare Worker Custom Domain (worker-managed): leave its
+    // address record alone. dnscontrol still manages the apex MX/TXT (mail) for every domain.
+    const apexIgnore = isPrimary ? [IGNORE("@", "A,AAAA,CNAME")] : [];
+
     D(
         domain,
         REG_NONE,
         DnsProvider(CF),
         serviceRecs,
         getMailRecords(domain, isPrimary),
+        apexIgnore,
         // Never purge in-flight ACME DNS-01 challenges (Caddy + Stalwart both use them).
         IGNORE("_acme-challenge", "TXT"),
         IGNORE("_acme-challenge.**", "TXT")
