@@ -90,7 +90,7 @@ in
             ];
           }
         ]
-        ++ lib.optionals (config.custom.profiles.dmarc-exporter.enable or false) [
+        ++ lib.optionals (config.custom.profiles.monitoring-dmarc.enable or false) [
           {
             job_name = "dmarc";
             static_configs = [

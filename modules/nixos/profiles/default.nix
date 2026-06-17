@@ -35,18 +35,19 @@
     affine = ./affine;
     litellm = ./litellm.nix;
     openclaw = ./openclaw.nix;
+    aionui = ./aionui.nix;
+    homeassistant = ./homeassistant.nix;
     backup = ./backup.nix;
     blocky = ./blocky.nix;
-    monitoring = {
-      client = ./monitoring/client.nix;
-      server = ./monitoring/server.nix;
-      smartctl = ./monitoring/smartctl.nix;
-      exporters = ./monitoring/exporters.nix;
-      dmarc = ./monitoring/dmarc.nix;
-    };
-    n8n = ./n8n.nix;
+    # Flat keys so each matches its enable option 1:1 (custom.profiles.<key>), the same
+    # invariant every other profile follows. Nothing imports these à la carte; the bundle
+    # picks them up via lib.collect.
+    monitoring-client = ./monitoring/client.nix;
+    monitoring-server = ./monitoring/server.nix;
+    monitoring-smartctl = ./monitoring/smartctl.nix;
+    monitoring-exporters = ./monitoring/exporters.nix;
+    monitoring-dmarc = ./monitoring/dmarc.nix;
     media = ./media;
-    owncloud = ./owncloud.nix;
 
     # --- Hardware Specific (Pi) ---
     pi = ./pi;

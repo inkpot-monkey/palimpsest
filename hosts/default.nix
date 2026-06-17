@@ -113,8 +113,14 @@ in
           # serve the local general MoE (qwen-general).
           #
           # Home Assistant + local Wyoming voice (STT/TTS); the wake word runs on the phone.
-          # Small footprint (no torch). See hosts/rk1/homeassistant.nix.
-          custom.rk1.homeAssistant.enable = true;
+          # See modules/nixos/profiles/homeassistant.nix.
+          #
+          # rk1b-specific tuning rationale (the profile itself is host-agnostic): the CPU
+          # faster-whisper/piper here can contend with a co-located llama.cpp prefill burst,
+          # but voice latency isn't critical so the default base-int8 model is fine; drop it
+          # to tiny-int8 if eMMC/RAM gets tight. WhisperX (batch transcription/diarization,
+          # needs torch) is deliberately NOT run here — it's staged behind the NVMe later.
+          custom.profiles.homeassistant.enable = true;
         }
       ];
     };

@@ -9,15 +9,16 @@
     # RK1-specific local modules (not shared profiles — only these nodes serve LLMs / use NVMe).
     ./llm.nix # local llama.cpp LLM server (custom.rk1.llm)
     ./nvme.nix # optional NVMe model-cache storage (inert until custom.rk1.nvme.enable = true)
-    ./homeassistant.nix # optional Home Assistant + Wyoming voice (inert until custom.rk1.homeAssistant.enable = true)
+    # Home Assistant + Wyoming voice is now the shared `homeassistant` profile (in the
+    # bundle below); rk1b enables it via custom.profiles.homeassistant in hosts/default.nix.
 
-    self.nixosProfiles.base
-    self.nixosProfiles.nixConfig # enabled transitively by base
-    self.nixosProfiles.sops # enabled transitively by base
-    self.nixosProfiles.impermanence # option read by tailscale (left disabled)
-    self.nixosProfiles.ssh
-    self.nixosProfiles.sudo
-    self.nixosProfiles.tailscale
+    # The same kitchen-sink bundle every other host uses. Features stay OFF unless toggled
+    # in `custom.profiles` below; disabled profiles are mkIf-gated no-ops, so importing the
+    # whole bundle is behaviour-neutral versus the old à-la-carte list (verified: identical
+    # system fingerprint — same packages, etc entries, systemd units, enable flags) and it
+    # removes the manual transitive-import tracking (e.g. tailscale reading
+    # custom.profiles.impermanence.enable). See docs/adr/0013.
+    self.nixosProfiles.bundle
   ];
 
   custom.profiles = {

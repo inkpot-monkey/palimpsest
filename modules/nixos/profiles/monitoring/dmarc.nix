@@ -6,12 +6,12 @@
 }:
 
 let
-  cfg = config.custom.profiles.dmarc-exporter;
+  cfg = config.custom.profiles.monitoring-dmarc;
 in
 {
   imports = [ self.nixosModules.dmarc-metrics-exporter ];
 
-  options.custom.profiles.dmarc-exporter = {
+  options.custom.profiles.monitoring-dmarc = {
     enable = lib.mkEnableOption "DMARC Metrics Exporter monitoring";
 
     imapUser = lib.mkOption {

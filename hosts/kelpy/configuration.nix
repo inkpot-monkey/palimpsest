@@ -27,7 +27,7 @@
     backup.enable = true;
     monitoring-server.enable = true;
     monitoring-client.enable = true;
-    dmarc-exporter.enable = false;
+    monitoring-dmarc.enable = false;
     mail = {
       enable = true;
       inherit (settings.mail) domain extraDomains;
