@@ -11,7 +11,7 @@ interface NodeInfo {
 }
 
 interface ServiceInfo {
-    node: string;
+    edge: string;
     port?: number;
     proxy?: boolean;
 }
@@ -84,7 +84,7 @@ function getServiceRecords(svcs: Record<string, ServiceInfo>, isPublic: boolean)
         if (name === "mail") continue; // mail host is emitted by getMailRecords
 
         const svc = svcs[name];
-        const node = infra.nodes[svc.node];
+        const node = infra.nodes[svc.edge];
         if (!node) continue;
 
         const net = isPublic ? node.public : node.tailscale;

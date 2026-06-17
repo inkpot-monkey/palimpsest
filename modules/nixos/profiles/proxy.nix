@@ -60,7 +60,7 @@ in
             (lib.mapAttrs (_: svc: svc // { isPublic = true; }) settings.services.public)
             // (lib.mapAttrs (_: svc: svc // { isPublic = false; }) settings.services.private);
           hostServices = lib.filterAttrs (
-            _: svc: svc.node == config.networking.hostName && (svc.proxy or true)
+            _: svc: svc.edge == config.networking.hostName && (svc.proxy or true)
           ) allServices;
         in
         # NOTE: the apex (${domain}) is intentionally NOT served here — it resolves to a
@@ -70,11 +70,10 @@ in
           name: svc:
           let
             # Most services are co-located with Caddy (proxy to loopback). A service may
-            # instead run on another node and set `backendHost`, in which case Caddy proxies
+            # instead run on another node and set `origin`, in which case Caddy proxies
             # to that node over tailscale (e.g. Home Assistant on rk1b). DNS still points at
-            # this (front) host, so the service stays tailnet-only behind internal_only.
-            upstream =
-              if svc ? backendHost then settings.nodes.${svc.backendHost}.tailscale.ip4 else "127.0.0.1";
+            # this (edge) host, so the service stays tailnet-only behind internal_only.
+            upstream = if svc ? origin then settings.nodes.${svc.origin}.tailscale.ip4 else "127.0.0.1";
           in
           lib.nameValuePair "${name}.${config.networking.domain}" {
             extraConfig = ''

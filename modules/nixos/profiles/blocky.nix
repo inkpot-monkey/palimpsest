@@ -24,7 +24,7 @@ let
 
   # Public services resolve to a node's stable public IP — safe to hardcode in customDNS.
   publicMapping = lib.mapAttrs' (
-    name: svc: lib.nameValuePair (fqdn name) settings.nodes.${svc.node}.public.ip4
+    name: svc: lib.nameValuePair (fqdn name) settings.nodes.${svc.edge}.public.ip4
   ) (lib.filterAttrs (_: svc: svc.isPublic) allServices);
 
   # Private services point at a node's TAILSCALE IP, which drifts whenever a node
@@ -33,7 +33,7 @@ let
   # blocky via a generated hosts file (see the blocky-service-hosts unit below).
   tailscaleServices = lib.mapAttrsToList (name: svc: {
     host = fqdn name;
-    inherit (svc) node;
+    inherit (svc) edge;
   }) (lib.filterAttrs (_: svc: !svc.isPublic) allServices);
 
   # Deliberately NOT under /run/blocky: that's blocky's RuntimeDirectory, which systemd
@@ -166,7 +166,7 @@ in
             for _ in $(seq 1 45); do
               : > "$tmp"
               ${lib.concatMapStringsSep "\n" (s: ''
-                ip="$(tailscale ip -4 ${lib.escapeShellArg s.node} 2>/dev/null | head -n1 || true)"
+                ip="$(tailscale ip -4 ${lib.escapeShellArg s.edge} 2>/dev/null | head -n1 || true)"
                 [ -n "$ip" ] && printf '%s %s\n' "$ip" ${lib.escapeShellArg s.host} >> "$tmp"
               '') tailscaleServices}
               [ "$(wc -l < "$tmp")" -eq "$expected" ] && break

@@ -2,6 +2,17 @@
 let
   overlays = import ../modules/shared/overlays { inherit inputs; };
   inherit (inputs.nixpkgs) lib;
+
+  # The getSecret* helpers fall back to checked-in mock files when a path is absent
+  # from the `secrets` input, so the flake evaluates standalone (public clone / fresh
+  # checkout before secrets are wired). The fallback is deliberately LOUD — a silent
+  # mock substitution during a real build would mask a missing/mis-pathed secret, so
+  # each fallback warns. (Originally added for Garnix CI, now defunct; the standalone
+  # eval-ability is kept for the public repo. See docs/adr/0012.)
+  warnMock =
+    what: fallback:
+    lib.warn "secrets: '${what}' not present in the secrets input — falling back to a MOCK; real secrets are NOT used." fallback;
+
   helpers = lib // {
     inherit overlays;
 
@@ -22,35 +33,44 @@ let
         isNix = inputs.nixpkgs.lib.hasSuffix ".nix" subpath;
         fallback = if isNix then ../parts/mock-identities.nix else ../parts/mock-secrets.yaml;
       in
-      if builtins.pathExists path then path else fallback;
+      if builtins.pathExists path then path else warnMock subpath fallback;
 
     getSecretFile =
       name:
       let
         path = "${inputs.secrets}/profiles/${name}.yaml";
       in
-      if builtins.pathExists path then path else ../parts/mock-secrets.yaml;
+      if builtins.pathExists path then
+        path
+      else
+        warnMock "profiles/${name}.yaml" ../parts/mock-secrets.yaml;
 
     getHostSecretFile =
       host:
       let
         path = "${inputs.secrets}/hosts/${host}/secrets.yaml";
       in
-      if builtins.pathExists path then path else ../parts/mock-secrets.yaml;
+      if builtins.pathExists path then
+        path
+      else
+        warnMock "hosts/${host}/secrets.yaml" ../parts/mock-secrets.yaml;
 
     getHostNamedSecretFile =
       host: name:
       let
         path = "${inputs.secrets}/hosts/${host}/${name}.yaml";
       in
-      if builtins.pathExists path then path else ../parts/mock-secrets.yaml;
+      if builtins.pathExists path then
+        path
+      else
+        warnMock "hosts/${host}/${name}.yaml" ../parts/mock-secrets.yaml;
 
     getUserSecretFile =
       user:
       let
         path = "${inputs.secrets}/users/${user}.yaml";
       in
-      if builtins.pathExists path then path else ../parts/mock-secrets.yaml;
+      if builtins.pathExists path then path else warnMock "users/${user}.yaml" ../parts/mock-secrets.yaml;
 
     # Email Config Helpers
     mkMbsyncAccount =

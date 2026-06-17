@@ -7,7 +7,7 @@
 
 let
   cfg = config.custom.profiles.monitoring-client;
-  receiver = settings.services.private.monitoring.node;
+  receiver = settings.services.private.monitoring.edge;
 in
 {
   imports = [

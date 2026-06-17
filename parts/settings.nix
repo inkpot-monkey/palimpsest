@@ -1,23 +1,24 @@
 { inputs, self, ... }:
 let
-  # Load node metadata from secrets if available, otherwise use placeholders
-  # This keeps the repository public-ready while remaining functional for the user.
-  secretsNodes =
-    if builtins.pathExists (self.lib.getSecretPath "nodes.nix") then
-      import (self.lib.getSecretPath "nodes.nix")
-    else
-      { };
+  # Load node metadata from secrets/nodes.nix. getSecretPath returns the real file when
+  # the secrets input provides it, else a mock (and warns) so the flake still evaluates
+  # standalone — see lib/default.nix and docs/adr/0012. The mock has no node keys, so
+  # every lookup below cleanly falls through to its placeholder.
+  secretsNodes = import (self.lib.getSecretPath "nodes.nix");
 
-  # Helper to get metadata with a safe fallback
+  # Look up node metadata (tailscale/public IPs), falling back to a placeholder when an
+  # entry is absent. The fallback is LOUD (mirrors lib's warnMock): a placeholder IP
+  # silently reaching DNS/blocky during a real build would be a hard-to-spot mistake.
   getMeta =
     nodeName: path: default:
     let
       attrPath = [ nodeName ] ++ path;
+      found = lib.attrByPath attrPath null secretsNodes;
     in
-    if lib.attrByPath attrPath null secretsNodes != null then
-      lib.attrByPath attrPath null secretsNodes
+    if found != null then
+      found
     else
-      default;
+      lib.warn "settings: node metadata '${lib.concatStringsSep "." attrPath}' missing from secrets/nodes.nix — using placeholder ${builtins.toJSON default}." default;
 
   inherit (inputs.nixpkgs) lib;
   primaryDomain = "palebluebytes.space";
@@ -25,76 +26,80 @@ let
   services = {
     public = {
       matrix = {
-        node = "kelpy";
+        edge = "kelpy";
         port = 6167;
         proxy = false;
       };
       mail = {
-        node = "kelpy";
+        edge = "kelpy";
         port = 8082;
         proxy = false;
       };
       jellyfin = {
-        node = "kelpy";
+        edge = "kelpy";
         port = 8096;
       };
     };
     private = {
       litellm = {
-        node = "kelpy";
+        edge = "kelpy";
         port = 4000;
       };
       monitoring = {
-        node = "kelpy";
+        edge = "kelpy";
         port = 3001;
       };
       paperless = {
-        node = "kelpy";
+        edge = "kelpy";
         port = 28981;
       };
       torrent = {
-        node = "kelpy";
+        edge = "kelpy";
         port = 8080;
       };
       affine = {
-        node = "kelpy";
+        edge = "kelpy";
         port = 3010;
       };
       openclaw = {
-        node = "kelpy";
+        edge = "kelpy";
         port = 8001;
       };
       aionui = {
-        node = "kelpy";
+        edge = "kelpy";
         port = 25808;
       };
       # Home Assistant. It RUNS on rk1b, but is fronted by kelpy's Caddy (TLS via
-      # Cloudflare DNS-01 + the internal_only tailnet guard), so `node` is the front
-      # host (kelpy: where DNS points and Caddy runs) and `backendHost` is where Caddy
+      # Cloudflare DNS-01 + the internal_only tailnet guard). `edge` is the edge
+      # (kelpy: where DNS points and Caddy runs); `origin` is the upstream Caddy
       # reverse-proxies to over tailscale. Reachable tailnet-only at home.<domain>.
       home = {
-        node = "kelpy";
+        edge = "kelpy";
         port = 8123;
-        backendHost = "rk1b";
+        origin = "rk1b";
       };
       # Local llama.cpp endpoint on Turing Pi RK1 node rk1a. (rk1b was repurposed as the
       # Home Assistant voice node and no longer serves an LLM, so there is no localLlmB.)
       localLlmA = {
-        node = "rk1a";
+        edge = "rk1a";
         port = 8080;
       };
     };
   };
 
+  # Collision check keys on the host that actually LISTENS on the port — the
+  # origin when the service runs off-edge (e.g. Home Assistant on rk1b),
+  # otherwise the edge it is co-located with.
+  listenerHost = svc: svc.origin or svc.edge;
   allServiceEndpoints =
-    (lib.mapAttrsToList (_: svc: "${svc.node}:${toString svc.port}") services.public)
-    ++ (lib.mapAttrsToList (_: svc: "${svc.node}:${toString svc.port}") services.private);
+    (lib.mapAttrsToList (_: svc: "${listenerHost svc}:${toString svc.port}") services.public)
+    ++ (lib.mapAttrsToList (_: svc: "${listenerHost svc}:${toString svc.port}") services.private);
 
   uniqueEndpoints = lib.unique allServiceEndpoints;
 
   checkPorts =
     if builtins.length uniqueEndpoints != builtins.length allServiceEndpoints then
-      builtins.throw "Duplicate ports found on the same node in settings.nix! Endpoints: ${builtins.toJSON allServiceEndpoints}"
+      builtins.throw "Duplicate ports found on the same listener host in settings.nix! Endpoints: ${builtins.toJSON allServiceEndpoints}"
     else
       services;
 in
