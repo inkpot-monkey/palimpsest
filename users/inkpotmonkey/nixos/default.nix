@@ -31,6 +31,27 @@
 
       users.users.inkpotmonkey.shell = pkgs.bash;
 
+      # inkpotmonkey's dedicated commit-signing key (a NON-admin ed25519 key; see
+      # users/inkpotmonkey/home/git.nix for why identity.sshKey must not be used).
+      # Distributed at the SYSTEM level because headless hosts (e.g. kelpy, which
+      # runs the aionui agent with no user session) have no working per-user
+      # home-manager sops. Deployed only on hosts whose host key is a recipient of
+      # users/inkpotmonkey.yaml; git.nix keys off the presence of this secret and
+      # falls back to ~/.ssh elsewhere.
+      sops.secrets.inkpotmonkey_signing_key =
+        lib.mkIf
+          (builtins.elem config.networking.hostName [
+            "kelpy"
+            "stargazer"
+            "sawtoothShark"
+          ])
+          {
+            sopsFile = self.lib.getSecretPath "users/inkpotmonkey.yaml";
+            key = "signing_key";
+            owner = "inkpotmonkey";
+            mode = "0400";
+          };
+
       # =========================================
       # Home Manager Configuration
       # =========================================
