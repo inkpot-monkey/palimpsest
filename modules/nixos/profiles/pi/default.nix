@@ -15,6 +15,11 @@ in
     inputs.nixos-raspberrypi.nixosModules.trusted-nix-caches
   ];
 
+  # Declared here, with its implementation. The pi profile is excluded from the
+  # universal bundle, so this option is undeclared on non-Pi hosts — readers must
+  # guard with `config.custom.profiles.pi.enable or false` (see nixConfig.nix).
+  options.custom.profiles.pi.enable = lib.mkEnableOption "Raspberry Pi specific configuration";
+
   config = lib.mkIf cfg.enable {
     # ==========================================
     # Filesystem & Boot
