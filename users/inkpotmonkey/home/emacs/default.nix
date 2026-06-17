@@ -23,6 +23,7 @@
           epkgs:
           [
             epkgs.vterm
+            epkgs.eat # terminal backend for claude-code-ide (better TUI/scrollback than vterm)
             epkgs.yaml
             epkgs.just-mode
             epkgs.just-ts-mode

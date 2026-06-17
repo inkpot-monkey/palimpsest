@@ -718,12 +718,17 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 (use-package popup)
 (use-package projectile)
 
-(use-package claude-code
-		:ensure nil)
+(use-package eat
+		:ensure nil
+		:custom
+		(eat-term-scrollback-size 200000)) ;; keep plenty of scrollback for long Claude responses
 
 (use-package claude-code-ide
 		:ensure nil
 		:bind ("C-c C-'" . claude-code-ide-menu)
+		:custom
+		;; eat handles full-screen TUI redraw + scrollback better than vterm
+		(claude-code-ide-terminal-backend 'eat)
 		:config
 		(claude-code-ide-emacs-tools-setup))
 

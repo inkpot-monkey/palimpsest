@@ -12,17 +12,6 @@
     packageRequires = [ epkgs.yaml ];
   })
   (epkgs.trivialBuild {
-    pname = "claude-code";
-    version = "unstable-202X";
-    src = pkgs.fetchFromGitHub {
-      owner = "stevemolitor";
-      repo = "claude-code.el";
-      rev = "4a9914bd4161eb43f489820f9174c62390e5adc8";
-      hash = "sha256-ISlD6q1hceckry1Jd19BX1MfobHJxng5ulX2gq9f644=";
-    };
-    packageRequires = [ epkgs.inheritenv ];
-  })
-  (epkgs.trivialBuild {
     pname = "claude-code-ide";
     version = "unstable-2026-06-09";
     src = pkgs.fetchFromGitHub {
