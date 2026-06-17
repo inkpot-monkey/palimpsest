@@ -59,8 +59,22 @@ in
       agentPackages = [
         claude-code
         pkgs.git
+        pkgs.gh # so the agent can `gh pr create`
         pkgs.nodejs
       ];
+
+      # Authenticate `gh` (and thus `gh pr create`) headlessly with the same token
+      # git uses for HTTPS push. The raw github_token secret isn't KEY=VALUE, so
+      # it's rendered to an env file via the sops template defined below.
+      environmentFile = config.sops.templates."aionui-gh-env".path;
+    };
+
+    # GH_TOKEN for the agent's `gh`, rendered from the system github_token secret
+    # (declared in modules/nixos/profiles/nixConfig.nix from profiles/github.yaml).
+    sops.templates."aionui-gh-env" = {
+      content = "GH_TOKEN=${config.sops.placeholder.github_token}\n";
+      owner = config.services.aionui.user;
+      inherit (config.services.aionui) group;
     };
 
     # Matrix notifier (opt-in). Secrets live in profiles/matrix.yaml: the bot
