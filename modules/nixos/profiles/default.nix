@@ -50,9 +50,9 @@
     media = ./media;
 
     # --- Hardware Specific (Pi) ---
-    pi = ./pi;
-    hifiberry = ./pi/hifiberry.nix;
-    hifi = ./pi/hifi.nix;
+    # No pi/hifiberry/hifi entries here: `pi-bundle` (declared above) is the Pi
+    # kitchen-sink and imports those profiles by relative path, so they're never consumed
+    # as `self.nixosProfiles.<key>`. Only catalogue-consumed entries belong in this set.
 
     # --- Build infrastructure ---
     # Offload aarch64 builds to the rk1 nodes. Gated OFF until they have NVMe storage.

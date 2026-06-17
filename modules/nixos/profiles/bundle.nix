@@ -5,16 +5,14 @@
 # add a profile to the catalogue and it joins the bundle automatically.
 #
 # Excluded from the generic bundle (kept opt-in / à-la-carte):
-#   - bundle / pi-bundle : the kitchen-sink modules themselves (self-reference)
-#   - pi / hifiberry / hifi : Raspberry-Pi hardware profiles (pulled in via pi-bundle)
+#   - bundle / pi-bundle : the kitchen-sink modules themselves (self-reference). The Pi
+#     hardware profiles (pi/hifiberry/hifi) are not in the catalogue at all — pi-bundle
+#     imports them directly — so they don't need excluding here.
 #   - piBuilder : aarch64 build-offload, enabled explicitly per host
 let
   excluded = [
     "bundle"
     "pi-bundle"
-    "pi"
-    "hifiberry"
-    "hifi"
     "piBuilder"
   ];
   catalogue = removeAttrs self.nixosProfiles excluded;
