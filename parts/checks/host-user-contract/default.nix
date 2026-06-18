@@ -16,9 +16,9 @@
 let
   inherit (pkgs) lib;
 
-  evalHost =
+  evalSystem =
     grantsModule:
-    (self.lib.mkSystem {
+    self.lib.mkSystem {
       modules = [
         self.nixosProfiles.bundle
         self.users.inkpotmonkey.cli
@@ -34,10 +34,15 @@ let
         }
         grantsModule
       ];
-    }).config;
+    };
+  evalHost = grantsModule: (evalSystem grantsModule).config;
 
-  granted = evalHost { custom.users.inkpotmonkey.granted.gui.enable = true; };
-  denied = evalHost { };
+  # Keep the system handles for granted/denied so the package assertions can read
+  # the overlaid `pkgs` (which lives at the system level, not under config).
+  grantedSys = evalSystem { custom.users.inkpotmonkey.granted.gui.enable = true; };
+  deniedSys = evalSystem { };
+  granted = grantedSys.config;
+  denied = deniedSys.config;
 
   # Slice 03 — the exposed-host assertion. restic is secret-bearing (contract
   # featureMeta), so an exposed host granting it must raise a failing assertion;
@@ -113,6 +118,14 @@ let
     {
       name = "grant: the workstation grant confers the privileged group";
       ok = lib.elem "docker" (groupsOf clampWithGrant);
+    }
+    {
+      name = "packages ride the feature: granting gui applies the emacs overlay";
+      ok = grantedSys.pkgs ? emacs-unstable;
+    }
+    {
+      name = "denying gui keeps the emacs overlay out";
+      ok = !(deniedSys.pkgs ? emacs-unstable);
     }
   ];
 

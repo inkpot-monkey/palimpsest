@@ -14,7 +14,13 @@
 
   config = lib.mkMerge [
     {
-      nixpkgs.overlays = [ inputs.emacs-overlay.overlays.default ];
+      # The emacs feature rides the gui grant (ADR-0015 mechanic 4: packages ride
+      # features). Its overlay is applied ONLY when gui is granted, so a host that
+      # denies gui never pulls emacs-overlay — instead of it applying fleet-wide.
+      # emacs-overlay already follows the host nixpkgs, so there is one nixpkgs.
+      nixpkgs.overlays = lib.optionals config.custom.users.inkpotmonkey.granted.gui.enable [
+        inputs.emacs-overlay.overlays.default
+      ];
 
       # 1. User shell and keys
       custom.users.inkpotmonkey.identity.trustedKeys =
