@@ -116,9 +116,12 @@ in
           # base-int8 faster-whisper; voice latency isn't critical so it's fine on CPU.
           custom.profiles.homeassistant.enable = true;
 
-          # NVMe (Samsung PM981, 512G, fitted Jun 2026) hosts the big model caches at
-          # /var/cache so they don't overflow the 29G eMMC.
+          # NVMe (Samsung PM981, 512G, fitted Jun 2026): /nix on the `nixstore` partition
+          # (400G) so the store has room for build offload (this node is the fleet's aarch64
+          # remote builder — see modules/nixos/profiles/pi-builder.nix); model caches on the
+          # `rk1cache` partition at /var/cache. Both keep the 29G eMMC from overflowing.
           custom.rk1.nvme.enable = true;
+          custom.rk1.nvme.relocateNixStore = true;
 
           # WhisperX: heavyweight offline batch transcription/diarization (torch +
           # faster-whisper large-v3 + pyannote). Was staged behind the NVMe — now live, with
