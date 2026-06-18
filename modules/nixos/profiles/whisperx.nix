@@ -193,6 +193,11 @@ in
     # Oneshot worker: drains the inbox once, triggered by the .path unit below.
     systemd.services.whisperx-batch = {
       description = "WhisperX batch transcription (drain inbox)";
+      # No start rate-limit: each drained file (and the dir change from moving it out) can
+      # trigger the path unit, and a batch of drops triggers several times in quick succession.
+      # The worker is idempotent and cheap on an empty inbox, so never let a burst fail the unit
+      # (the old PathExistsGlob trigger looped on in-flight *.part files and hit start-limit).
+      startLimitIntervalSec = 0;
       # Don't run before the model-cache disk is mounted (NVMe at /var/cache).
       unitConfig.RequiresMountsFor = [ "/var/cache" ];
       environment = {
@@ -225,12 +230,19 @@ in
       };
     };
 
-    # Re-arm whenever the inbox is non-empty; the worker drains it and the path unit fires again.
+    # Trigger on directory *changes*, not persistent existence. PathExistsGlob would re-fire in a
+    # tight loop while an in-flight *.part upload (which the worker skips) still exists, tripping
+    # the start-limit. PathChanged fires once per add/rename/remove in the inbox: a .part create
+    # fires (worker skips), the rename to the final name fires (worker processes + moves it out),
+    # and the move-out fires one last empty run — all bounded. Drop files atomically (write .part,
+    # then rename in) so the worker never sees a half-written upload. Files already present when
+    # the watcher (re)starts aren't seen by PathChanged — run `systemctl start whisperx-batch` to
+    # drain those.
     systemd.paths.whisperx-batch = {
       description = "Watch the WhisperX inbox for new audio";
       wantedBy = [ "multi-user.target" ];
       pathConfig = {
-        PathExistsGlob = "${cfg.dataDir}/inbox/*";
+        PathChanged = "${cfg.dataDir}/inbox";
         Unit = "whisperx-batch.service";
       };
     };
