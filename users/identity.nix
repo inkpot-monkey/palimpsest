@@ -1,14 +1,16 @@
 {
   lib,
   config,
+  self,
   ...
 }:
 {
   options.custom.users = lib.mkOption {
     type = lib.types.attrsOf (
       lib.types.submodule {
-        # Field set shared with the home-level `identity` options — see ./identity-options.nix.
-        options.identity = import ./identity-options.nix { inherit lib; };
+        # Identity schema comes from the shared contract (ADR-0015), shared with the
+        # home-level `identity` options so the two can't drift.
+        options.identity = import self.contract.identity { inherit lib; };
       }
     );
     default = { };

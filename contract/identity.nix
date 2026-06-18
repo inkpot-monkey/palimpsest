@@ -1,8 +1,9 @@
-# Shared declaration of the per-user identity option set. Used by both option paths that
-# describe the same data, to keep them from drifting:
+# Shared declaration of the per-user identity option set — part of the host↔user
+# contract (ADR-0015). Used by both option paths that describe the same data, to
+# keep them from drifting:
 #   - the system-level `custom.users.<user>.identity` submodule (users/identity.nix)
 #   - the home-manager-level `identity` options (modules/homeManager/options.nix)
-# The two are bridged by `inherit identity` in users/inkpotmonkey/nixos/default.nix.
+# The two are bridged by `inherit identity` in users/<user>/nixos/default.nix.
 { lib }:
 {
   name = lib.mkOption {

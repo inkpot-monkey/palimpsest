@@ -1,12 +1,10 @@
-{ lib, ... }:
+{ lib, self, ... }:
 {
-  # Field set shared with the system-level `custom.users.<user>.identity` submodule —
-  # see ../../users/identity-options.nix. Populated from the system identity via
-  # `inherit identity` in users/inkpotmonkey/nixos/default.nix.
-  options.identity = import ../../users/identity-options.nix { inherit lib; };
+  # Identity + home-profile schema come from the shared contract (ADR-0015), so the
+  # system and home option paths describing the same data can't drift. The identity
+  # value is populated from the system identity via `inherit identity` in
+  # users/<user>/nixos/default.nix.
+  options.identity = import self.contract.identity { inherit lib; };
 
-  options.custom.home.profiles = {
-    cli.enable = lib.mkEnableOption "CLI meta-profile (base tools)";
-    gui.enable = lib.mkEnableOption "GUI meta-profile (desktop environment)";
-  };
+  options.custom.home.profiles = import self.contract.homeProfiles { inherit lib; };
 }

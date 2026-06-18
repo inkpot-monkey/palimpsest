@@ -110,6 +110,7 @@
         ./parts/apps
         ./parts/checks
         ./lib
+        ./contract
         ./users
         ./hosts
         ./modules/nixos/services
