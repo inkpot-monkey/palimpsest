@@ -9,4 +9,8 @@
   # restic: user-level backup. Secret-bearing (see contract/default.nix featureMeta):
   # an exposed host may not be granted it.
   restic.enable = lib.mkEnableOption "the restic backup feature for this user (host grant)";
+  # workstation: privileged host access — confers the docker/podman/wheel groups
+  # (contract/default.nix featureGroups). A user can never obtain these by merely
+  # declaring them in identity.extraGroups; only this grant confers them.
+  workstation.enable = lib.mkEnableOption "privileged workstation groups for this user (host grant)";
 }

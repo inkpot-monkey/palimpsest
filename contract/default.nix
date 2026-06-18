@@ -18,6 +18,27 @@
     featureMeta = {
       gui.secretBearing = false;
       restic.secretBearing = true;
+      workstation.secretBearing = false;
+    };
+    # Groups a user may NOT obtain by merely declaring them in identity.extraGroups
+    # (untrusted input) — they require a feature grant. Enforced by the clamp in
+    # realization.nix (ADR-0015 threat model: powers come from grants, not raw data).
+    privilegedGroups = [
+      "docker"
+      "podman"
+      "wheel"
+      "libvirtd"
+      "kvm"
+      "disk"
+      "qemu-libvirtd"
+    ];
+    # The privileged groups each feature grant confers.
+    featureGroups = {
+      workstation = [
+        "docker"
+        "podman"
+        "wheel"
+      ];
     };
   };
 }

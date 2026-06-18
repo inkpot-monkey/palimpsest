@@ -51,6 +51,20 @@ let
   };
   failing = cfg: builtins.filter (a: !a.assertion) cfg.assertions;
 
+  # Slice 04 — the privileged-group clamp. A privileged group named in a user's
+  # own identity is untrusted: it is dropped unless a grant confers it.
+  clampNoGrant = evalHost {
+    custom.users.inkpotmonkey.granted.workstation.enable = lib.mkForce false;
+    custom.users.inkpotmonkey.identity.extraGroups = lib.mkForce [
+      "docker"
+      "audio"
+    ];
+  };
+  clampWithGrant = evalHost {
+    custom.users.inkpotmonkey.identity.extraGroups = lib.mkForce [ "docker" ];
+  };
+  groupsOf = cfg: cfg.users.users.inkpotmonkey.extraGroups;
+
   assertions = [
     {
       name = "granted enables the display manager";
@@ -87,6 +101,18 @@ let
     {
       name = "non-exposed host granting the same feature raises no exposed-host failure";
       ok = !(lib.any (a: lib.hasInfix "exposed host" a.message) (failing normalRestic));
+    }
+    {
+      name = "clamp: a privileged group declared in identity is dropped without a grant";
+      ok = !(lib.elem "docker" (groupsOf clampNoGrant));
+    }
+    {
+      name = "clamp: a non-privileged declared group still passes through";
+      ok = lib.elem "audio" (groupsOf clampNoGrant);
+    }
+    {
+      name = "grant: the workstation grant confers the privileged group";
+      ok = lib.elem "docker" (groupsOf clampWithGrant);
     }
   ];
 

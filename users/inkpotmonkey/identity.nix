@@ -24,13 +24,13 @@ in
     sshKey = getIdent "inkpotmonkey" "sshKey" "";
     hashedPassword = getIdent "inkpotmonkey" "hashedPassword" "";
 
+    # Only non-privileged groups belong in identity (untrusted data). The
+    # privileged groups (docker/podman/wheel) now come from the `workstation`
+    # grant — see contract/realization.nix and users/inkpotmonkey/default.nix.
     extraGroups = [
-      "podman"
-      "docker"
       "networkmanager"
       "audio"
       "video"
-      "wheel"
       "i2c"
       "systemd-journal"
     ];
