@@ -5,6 +5,11 @@
   ...
 }:
 {
+  # The mechanical account realization (custom.users -> users.users, plus the
+  # gui-grant-driven display manager) lives in the contract so a host repo never
+  # re-implements it. See ADR-0015 mechanic 5.
+  imports = [ self.contract.realization ];
+
   options.custom.users = lib.mkOption {
     type = lib.types.attrsOf (
       lib.types.submodule {
@@ -28,37 +33,14 @@
   options.custom.host.exposed = lib.mkEnableOption "an exposed/agent-facing host that may not be granted secret-bearing features";
 
   config = {
-    # 1. Enable services transparently if any user has a "gui" profile
-    networking.networkmanager.enable = lib.mkIf (lib.any (user: user.identity.profile == "gui") (
-      lib.attrValues config.custom.users
-    )) true;
-    services.displayManager.sddm = {
-      enable = lib.mkIf (lib.any (user: user.identity.profile == "gui") (
-        lib.attrValues config.custom.users
-      )) (lib.mkDefault true);
-      wayland.enable = lib.mkIf (lib.any (user: user.identity.profile == "gui") (
-        lib.attrValues config.custom.users
-      )) (lib.mkDefault true);
-    };
-
-    # 2. Map custom users to system users
-    users.users = lib.mapAttrs (_username: userCfg: {
-      isNormalUser = true;
-      inherit (userCfg.identity) hashedPassword extraGroups;
-      description = userCfg.identity.name;
-      openssh.authorizedKeys.keys =
-        lib.optional (userCfg.identity.sshKey != "") userCfg.identity.sshKey
-        ++ userCfg.identity.trustedKeys;
-    }) config.custom.users;
-
-    # 3. Host-side platform binding (ADR-0015): the single place the system names
-    # the secrets backend, so features resolve secrets host-agnostically.
+    # Host-side platform binding (ADR-0015): the single place the system names the
+    # secrets backend, so features resolve secrets host-agnostically.
     custom.platform = {
       secretFile = name: self.lib.getSecretFile name;
       secretPath = subpath: self.lib.getSecretPath subpath;
     };
 
-    # 4. An exposed host must not be granted any secret-bearing feature — no grant,
+    # An exposed host must not be granted any secret-bearing feature — no grant,
     # no re-key, no cleartext on the box most likely to be compromised.
     assertions = lib.optional config.custom.host.exposed (
       let

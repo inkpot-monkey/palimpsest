@@ -10,6 +10,8 @@
     homeProfiles = ./home-profiles.nix;
     features = ./features.nix;
     platform = ./platform.nix;
+    # Host-invariant module mapping custom.users.<u> to system accounts.
+    realization = ./realization.nix;
     # Static metadata about features (not options). `secretBearing` marks features
     # that pull a secret onto a host, so an exposed host can refuse to grant them
     # (ADR-0015 threat model). Keys must match the feature vocabulary above.
