@@ -56,17 +56,36 @@ let
       | ${pkgs.jq}/bin/jq -r '.session // empty')"
 
     if [ -z "$session" ]; then
-      echo "admin account ${cfg.adminLocalpart} already exists; nothing to do"
-      exit 0
+      echo "admin account ${cfg.adminLocalpart} already exists"
+    else
+      # Step 2: complete registration with the token.
+      code="$(${pkgs.curl}/bin/curl -s -o /dev/null -w '%{http_code}' -X POST "$url/_matrix/client/v3/register" \
+        -H 'content-type: application/json' \
+        -d "$(${pkgs.jq}/bin/jq -nc --arg u "${cfg.adminLocalpart}" --arg p "$pass" --arg t "$token" --arg s "$session" \
+          '{username:$u,password:$p,inhibit_login:true,auth:{type:"m.login.registration_token",token:$t,session:$s}}')")"
+      echo "admin registration HTTP $code"
+      [ "$code" = "200" ]
     fi
+    ${lib.optionalString (cfg.adminDisplayName != "") ''
 
-    # Step 2: complete registration with the token.
-    code="$(${pkgs.curl}/bin/curl -s -o /dev/null -w '%{http_code}' -X POST "$url/_matrix/client/v3/register" \
-      -H 'content-type: application/json' \
-      -d "$(${pkgs.jq}/bin/jq -nc --arg u "${cfg.adminLocalpart}" --arg p "$pass" --arg t "$token" --arg s "$session" \
-        '{username:$u,password:$p,inhibit_login:true,auth:{type:"m.login.registration_token",token:$t,session:$s}}')")"
-    echo "admin registration HTTP $code"
-    [ "$code" = "200" ]
+      # Enforce the admin display name (declarative): log in for a token, then
+      # set the profile. Best-effort — never fail the unit over a cosmetic name.
+      at="$(${pkgs.curl}/bin/curl -s -X POST "$url/_matrix/client/v3/login" \
+        -H 'content-type: application/json' \
+        -d "$(${pkgs.jq}/bin/jq -nc --arg u "${cfg.adminLocalpart}" --arg p "$pass" \
+          '{type:"m.login.password",identifier:{type:"m.id.user",user:$u},password:$p}')" \
+        | ${pkgs.jq}/bin/jq -r '.access_token // empty')"
+      if [ -n "$at" ]; then
+        ${pkgs.curl}/bin/curl -sf -o /dev/null -X PUT \
+          "$url/_matrix/client/v3/profile/@${cfg.adminLocalpart}:${domain}/displayname" \
+          -H "authorization: Bearer $at" -H 'content-type: application/json' \
+          -d "$(${pkgs.jq}/bin/jq -nc --arg n "${cfg.adminDisplayName}" '{displayname:$n}')" \
+          && echo "admin display name set to ${cfg.adminDisplayName}" \
+          || echo "WARN: failed to set admin display name" >&2
+      else
+        echo "WARN: could not log in to set admin display name" >&2
+      fi
+    ''}
   '';
 in
 {
@@ -82,6 +101,18 @@ in
       type = lib.types.str;
       default = "inkpotmonkey";
       description = "Localpart of the Matrix account granted homeserver admin.";
+    };
+
+    adminDisplayName = lib.mkOption {
+      type = lib.types.str;
+      default = "✒️inkpotmonkey🐒";
+      description = ''
+        Display name to set on the admin account, enforced on every (re)start
+        of the register-admin service. Set to "" to leave the display name
+        unmanaged (Matrix then defaults it to the localpart). Because it is
+        re-applied each start, changing it in a client is reset on the next
+        restart.
+      '';
     };
 
     # Bridge modules contribute their appservice registration here; tuwunel's
