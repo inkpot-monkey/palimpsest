@@ -17,7 +17,13 @@
     # (ADR-0015 threat model). Keys must match the feature vocabulary above.
     featureMeta = {
       gui.secretBearing = false;
-      restic.secretBearing = true;
+      # secretFiles: stash-relative sops files this feature pulls onto a granting
+      # host. The recipient set of each file is *derived* from which hosts grant
+      # the feature (self.lib.featureRecipients) — the single source of truth.
+      restic = {
+        secretBearing = true;
+        secretFiles = [ "profiles/restic.yaml" ];
+      };
       workstation.secretBearing = false;
     };
     # Groups a user may NOT obtain by merely declaring them in identity.extraGroups

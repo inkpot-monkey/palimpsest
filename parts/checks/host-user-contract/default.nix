@@ -44,6 +44,10 @@ let
   granted = grantedSys.config;
   denied = deniedSys.config;
 
+  # Slice 06 — recipients derive from grants. A two-host synthetic fleet where one
+  # host grants the secret-bearing restic feature and one does not.
+  grantedResticSys = evalSystem { custom.users.inkpotmonkey.granted.restic.enable = true; };
+
   # Slice 03 — the exposed-host assertion. restic is secret-bearing (contract
   # featureMeta), so an exposed host granting it must raise a failing assertion;
   # a normal host granting the same feature must not.
@@ -126,6 +130,14 @@ let
     {
       name = "denying gui keeps the emacs overlay out";
       ok = !(deniedSys.pkgs ? emacs-unstable);
+    }
+    {
+      name = "recipients derive from grants: only the granting host is a recipient";
+      ok =
+        (self.lib.mkFeatureRecipients {
+          granter = grantedResticSys;
+          abstainer = deniedSys;
+        })."profiles/restic.yaml" or [ ] == [ "granter" ];
     }
   ];
 

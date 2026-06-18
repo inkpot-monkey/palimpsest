@@ -44,6 +44,23 @@ check-all:
 dns command="preview":
   nix run .#dns -- {{command}}
 
+# Print the sops recipients implied by the feature grants — the single source of
+# truth (ADR-0015 slice 06). Each secret-bearing feature's stash file should be
+# encrypted to EXACTLY these hosts: `{ "<file>" = [ "<host>" ... ]; }`.
+sops-recipients:
+  @nix eval --json '.#lib.featureRecipients' | jq .
+
+# Re-key / revoke procedure (TRUSTED MACHINE — uses the admin key; operates on the
+# stash at $SECRETS_DIR). The recipient set is *derived*, never hand-maintained:
+#   re-key:  `just sops-recipients` -> set each file's creation_rule in
+#            stash/.sops.yaml to those hosts (+ &admin) -> `sops updatekeys -y <file>`
+#            -> commit+push stash -> `nix flake update secrets`.
+#   revoke:  drop the host from the file's recipients as above, AND ROTATE the secret
+#            (the host has already seen the cleartext) — generate a new value and
+#            `sops <file>` to replace it, then re-key and redeploy.
+#   drift:   `just sops-recipients` must match stash/.sops.yaml; a mismatch means a
+#            grant changed without a re-key (or vice versa).
+
 # Format all Nix files
 fmt:
   nix fmt

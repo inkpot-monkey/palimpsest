@@ -16,6 +16,37 @@ let
   helpers = lib // {
     inherit overlays;
 
+    # Recipients-from-grants (ADR-0015, slice 06): derive, for each secret-bearing
+    # feature's sops file, the set of hosts that should be able to decrypt it — namely
+    # the hosts that GRANT that feature. This is the single source of truth for the
+    # stash's .sops.yaml recipients, so they can never silently drift from the grants
+    # (and, since the exposed-host assertion forbids granting a secret-bearing feature
+    # on an exposed host, no such host can ever become a recipient).
+    #   { "<stash-relative sops file>" = [ "<hostname>" ... ]; }
+    mkFeatureRecipients =
+      nixosConfigurations:
+      let
+        meta = self.contract.featureMeta;
+        secretFeatures = lib.filter (f: meta.${f}.secretBearing or false) (lib.attrNames meta);
+        hostNames = lib.attrNames nixosConfigurations;
+        hostGrants =
+          host: feature:
+          lib.any (u: u.granted.${feature}.enable or false) (
+            lib.attrValues nixosConfigurations.${host}.config.custom.users
+          );
+      in
+      lib.foldl' (
+        acc: feature:
+        let
+          hosts = lib.filter (h: hostGrants h feature) hostNames;
+        in
+        lib.foldl' (a: file: a // { ${file} = lib.unique ((a.${file} or [ ]) ++ hosts); }) acc (
+          meta.${feature}.secretFiles or [ ]
+        )
+      ) { } secretFeatures;
+
+    featureRecipients = helpers.mkFeatureRecipients self.nixosConfigurations;
+
     mkPkgs =
       system:
       import inputs.nixpkgs {
