@@ -1,10 +1,12 @@
 # Optional M.2 NVMe storage for the Turing Pi RK1 nodes.
 #
-# The 29 GB eMMC is too small for full-quant GGUF models (a Q4/Q5 of the 27B/35B
-# weights is 17-32 GB and won't coexist with the OS closure). This module mounts an
-# NVMe drive at /var/cache so the llama.cpp model cache (and systemd's DynamicUser
-# private cache dir under /var/cache/private/llama-cpp) lands on the big disk while
-# the OS stays on eMMC.
+# The 29 GB eMMC is too small for the big model caches these nodes can host: full-quant
+# GGUF weights for the LLM node (a Q4/Q5 of the 27B/35B is 17-32 GB), or the torch +
+# Whisper/pyannote model downloads for the voice node's WhisperX batch transcription.
+# This module mounts an NVMe drive at /var/cache so those model caches (and systemd's
+# DynamicUser private cache dirs under /var/cache/private/*) land on the big disk while
+# the OS stays on eMMC. It is consumer-agnostic: whichever cache-heavy service the node
+# runs adds its own RequiresMountsFor=/var/cache (this module wires llama-cpp's when present).
 #
 # Imported (inert) by hosts/rk1/common.nix. Enable per node once the drive is fitted:
 #
@@ -56,7 +58,12 @@ in
       ];
     };
 
-    # Don't start the LLM server until its model disk is actually mounted.
-    systemd.services.llama-cpp.unitConfig.RequiresMountsFor = [ "/var/cache" ];
+    # Don't start the LLM server until its model disk is actually mounted (only on the LLM
+    # node — the voice node has no llama-cpp service, and a bare unitConfig would otherwise
+    # define a phantom unit). Cache-heavy services on other nodes (e.g. WhisperX) add their
+    # own RequiresMountsFor=/var/cache in their module.
+    systemd.services.llama-cpp.unitConfig.RequiresMountsFor =
+      lib.mkIf config.services.llama-cpp.enable
+        [ "/var/cache" ];
   };
 }
