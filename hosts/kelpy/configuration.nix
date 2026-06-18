@@ -47,6 +47,10 @@
     };
   };
 
+  # kelpy runs the AionUi code-executing agent (aionui.enable above) — mark it
+  # exposed so the contract refuses any secret-bearing user-feature grant (ADR-0015).
+  custom.host.exposed = true;
+
   # OpenClaw models configuration — site-specific provider setup.
   # The gateway infrastructure (SOPS secrets, service config, port, etc.)
   # is handled by the openclaw profile; only the model routing is here.

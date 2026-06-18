@@ -46,7 +46,7 @@
             "sawtoothShark"
           ])
           {
-            sopsFile = self.lib.getSecretPath "users/inkpotmonkey.yaml";
+            sopsFile = config.custom.platform.secretPath "users/inkpotmonkey.yaml";
             key = "signing_key";
             owner = "inkpotmonkey";
             mode = "0400";
@@ -87,6 +87,7 @@
             custom.home.profiles = {
               cli.enable = true;
               gui.enable = osConfig.custom.users.inkpotmonkey.granted.gui.enable;
+              restic.enable = osConfig.custom.users.inkpotmonkey.granted.restic.enable;
             };
           };
       };

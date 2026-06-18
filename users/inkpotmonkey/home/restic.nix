@@ -1,9 +1,13 @@
 {
   config,
   lib,
-  self,
   ...
 }:
+let
+  # Host-provided resolver for the encrypted restic sops source (ADR-0015): the
+  # feature names the secret group, the host says where it lives.
+  resticSops = config.custom.platform.secretFile "restic";
+in
 {
   options.custom.home.profiles.restic = {
     enable = lib.mkEnableOption "Restic backup service (user level)";
@@ -12,15 +16,15 @@
   config = lib.mkIf config.custom.home.profiles.restic.enable {
     sops.secrets.restic_repo = {
       key = "restic/repo";
-      sopsFile = self.lib.getSecretFile "restic";
+      sopsFile = resticSops;
     };
     sops.secrets.restic_password = {
       key = "restic/password";
-      sopsFile = self.lib.getSecretFile "restic";
+      sopsFile = resticSops;
     };
     sops.secrets.restic_ssh_private = {
       key = "restic/ssh/private";
-      sopsFile = self.lib.getSecretFile "restic";
+      sopsFile = resticSops;
     };
     sops.templates."restic-repo".content = ''
       ${config.sops.placeholder.restic_repo}:backups

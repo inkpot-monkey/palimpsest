@@ -7,11 +7,11 @@
 # `identity.profile == "gui"` proxy: the gui system effects below come purely
 # from the grant.
 #
-# This is an eval-level check (it inspects two real nixosSystem evaluations built
-# via self.lib.mkSystem, exactly as hosts are). It verifies the grant *logic*
-# without booting a desktop. Runtime, VM-boot assertions (e.g. a feature secret
-# present at /run on a granting host, absent on a denying one) need a booted
-# machine and are added with slice 03.
+# This is an eval-level check (it inspects real nixosSystem evaluations built via
+# self.lib.mkSystem, exactly as hosts are). It verifies the grant *logic* without
+# booting a desktop. Slice 03 adds the platform-resolver and exposed-host
+# assertions below. Runtime, VM-boot assertions (a feature secret present at /run
+# on a granting host) need a booted machine and arrive with a later slice.
 { self, pkgs, ... }:
 let
   inherit (pkgs) lib;
@@ -39,6 +39,18 @@ let
   granted = evalHost { custom.users.inkpotmonkey.granted.gui.enable = true; };
   denied = evalHost { };
 
+  # Slice 03 — the exposed-host assertion. restic is secret-bearing (contract
+  # featureMeta), so an exposed host granting it must raise a failing assertion;
+  # a normal host granting the same feature must not.
+  exposedRestic = evalHost {
+    custom.host.exposed = true;
+    custom.users.inkpotmonkey.granted.restic.enable = true;
+  };
+  normalRestic = evalHost {
+    custom.users.inkpotmonkey.granted.restic.enable = true;
+  };
+  failing = cfg: builtins.filter (a: !a.assertion) cfg.assertions;
+
   assertions = [
     {
       name = "granted enables the display manager";
@@ -63,6 +75,18 @@ let
     {
       name = "denied leaves uinput off";
       ok = !denied.hardware.uinput.enable;
+    }
+    {
+      name = "system platform resolves a secret source to an existing file";
+      ok = builtins.pathExists (denied.custom.platform.secretFile "restic");
+    }
+    {
+      name = "exposed host granting a secret-bearing feature fails an assertion";
+      ok = lib.any (a: lib.hasInfix "restic" a.message) (failing exposedRestic);
+    }
+    {
+      name = "non-exposed host granting the same feature raises no exposed-host failure";
+      ok = !(lib.any (a: lib.hasInfix "exposed host" a.message) (failing normalRestic));
     }
   ];
 

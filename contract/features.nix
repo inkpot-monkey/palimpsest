@@ -6,4 +6,7 @@
 {
   # gui: desktop environment — display manager, GUI home modules, hardware groups.
   gui.enable = lib.mkEnableOption "the GUI feature for this user (host grant)";
+  # restic: user-level backup. Secret-bearing (see contract/default.nix featureMeta):
+  # an exposed host may not be granted it.
+  restic.enable = lib.mkEnableOption "the restic backup feature for this user (host grant)";
 }
