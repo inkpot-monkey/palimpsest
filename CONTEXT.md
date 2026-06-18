@@ -43,7 +43,7 @@ The dedicated, non-admin key used for commit signing (and other private-key need
 > Target architecture being designed: hosts and users split into separate repos bound by a shared contract, so any host can enable a user and on rebuild they transparently work, while hosts can deny features a user introduces. See [ADR-0015](docs/adr/0015-host-user-contract.md). Today `users/` still lives in this repo; these terms fix the language the migration aims at.
 
 **User**:
-A portable bundle of *public identity + home config + its own secrets + grantable features*, owned in its own repo. Distinct from the **system account** (`users.users.<name>`) a host materialises from the user's public identity.
+A portable bundle of *public identity + home config + its own secrets + grantable features*, owned in its own repo. Distinct from the **system account** (`users.users.<name>`) a host materialises from the user's public identity via a contract-shipped realization module. The contract realizes the *account*; the account's *powers* (privileged groups, display manager) come from granted features, never from the user's raw declaration.
 _Avoid_: account (reserve for the unix system account), profile.
 
 **Contract**:
