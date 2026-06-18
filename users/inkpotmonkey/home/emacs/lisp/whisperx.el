@@ -28,6 +28,7 @@
 
 (require 'dired)
 (require 'subr-x)
+(require 'comint)
 
 (defgroup whisperx nil
   "Transcribe audio/video with the WhisperX CLI."
@@ -83,6 +84,12 @@ from HuggingFace on first use and caches them under ~/.cache."
   "When non-nil, visit the produced transcript when a job finishes."
   :type 'boolean)
 
+(defcustom whisperx-show-progress t
+  "When non-nil, pop up the *whisperx* buffer when a model download starts.
+Models are fetched on demand on first use (see `whisperx-model'); this makes
+that one-time download visible instead of looking like a stalled transcription."
+  :type 'boolean)
+
 (defconst whisperx--buffer "*whisperx*"
   "Name of the buffer collecting WhisperX process output.")
 
@@ -94,6 +101,15 @@ from HuggingFace on first use and caches them under ~/.cache."
 
 (defvar whisperx--current nil
   "Plist of the job currently being processed, or nil.")
+
+(defvar whisperx--downloading nil
+  "Non-nil once a model download has been detected for the current job.")
+
+(defconst whisperx--download-regexp
+  "Downloading\\|Fetching [0-9]+ files\\|[0-9]+%|"
+  "Output pattern signalling WhisperX is downloading a model (HF/torch).
+The \"%|\" form matches tqdm download bars; transcription progress prints
+\"Progress: N%...\" without the pipe, so the two don't collide.")
 
 (defun whisperx--hf-token ()
   "Return the HuggingFace token string, or nil."
@@ -128,6 +144,30 @@ All settings come from the `whisperx-*' variables (set once, never per-run)."
     (goto-char (point-max))
     (let ((inhibit-read-only t))
       (insert (apply #'format fmt args) "\n"))))
+
+(defun whisperx--filter (proc string)
+  "Insert STRING from PROC into the log buffer and surface download activity.
+Carriage returns are honoured (`comint-carriage-motion') so tqdm progress bars
+render as one updating line.  The first download seen per job is announced and,
+when `whisperx-show-progress' is set, pops up the log buffer — so the one-time
+model fetch is visible instead of looking like a stalled transcription."
+  (when (buffer-live-p (process-buffer proc))
+    (with-current-buffer (process-buffer proc)
+      (let ((inhibit-read-only t)
+            (moving (= (point) (process-mark proc))))
+        (save-excursion
+          (goto-char (process-mark proc))
+          (let ((start (point)))
+            (insert string)
+            (comint-carriage-motion start (point)))
+          (set-marker (process-mark proc) (point)))
+        (when moving (goto-char (process-mark proc))))))
+  (when (and (not whisperx--downloading)
+             (string-match-p whisperx--download-regexp string))
+    (setq whisperx--downloading t)
+    (message "WhisperX: downloading model data (one-time, several GB) — watch %s"
+             whisperx--buffer)
+    (when whisperx-show-progress (display-buffer whisperx--buffer))))
 
 (defun whisperx--sentinel (proc event)
   "Process sentinel: report on PROC's EVENT and start the next queued job."
@@ -169,7 +209,8 @@ All settings come from the `whisperx-*' variables (set once, never per-run)."
            (file (plist-get job :file))
            (dir (plist-get job :dir))
            (args (whisperx--build-args file dir)))
-      (setq whisperx--current job)
+      (setq whisperx--current job
+            whisperx--downloading nil)
       (whisperx--log "\n$ %s %s\n  (%d more queued)"
                      whisperx-executable (string-join args " ")
                      (length whisperx--queue))
@@ -184,6 +225,7 @@ All settings come from the `whisperx-*' variables (set once, never per-run)."
              :command (cons whisperx-executable args)
              :noquery t
              :connection-type 'pipe
+             :filter #'whisperx--filter
              :sentinel #'whisperx--sentinel)))))
 
 (defun whisperx--enqueue (files &optional dired-buffer)
