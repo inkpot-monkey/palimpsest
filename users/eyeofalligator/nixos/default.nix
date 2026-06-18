@@ -16,18 +16,11 @@
       # 1. User shell
       users.users.eyeofalligator.shell = pkgs.bash;
 
-      # 2. KDE Plasma 6 & X11
-      services = {
-        xserver = {
-          enable = true;
-          xkb = {
-            layout = "gb";
-            variant = "";
-          };
-        };
-        displayManager.sddm.enable = lib.mkDefault true;
-        desktopManager.plasma6.enable = true;
-      };
+      # 2. GUI: the shared display infrastructure (sddm + plasma6 + Wayland) comes
+      # from the gui grant via contract/realization.nix (see default.nix). A host
+      # that wants an X11 session enables services.xserver itself (weedySeadragon
+      # does). This is what lets eyeofalligator share a host with inkpotmonkey
+      # instead of fighting over services.xserver.enable.
 
       # 3. Flatpak & Discover Support
       services.flatpak.enable = true;

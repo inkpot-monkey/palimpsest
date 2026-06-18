@@ -40,9 +40,16 @@ in
 {
   config = {
     networking.networkmanager.enable = lib.mkIf anyGuiGranted true;
-    services.displayManager.sddm = {
-      enable = lib.mkIf anyGuiGranted (lib.mkDefault true);
-      wayland.enable = lib.mkIf anyGuiGranted (lib.mkDefault true);
+
+    # Shared GUI host infrastructure, conferred by the gui grant and set ONCE here
+    # so any number of gui users on a host share it instead of each imposing a
+    # (conflicting) display server. All mkDefault, so a host can override — e.g.
+    # enable services.xserver for an X11 session alongside the default Wayland one.
+    services = lib.mkIf anyGuiGranted {
+      displayManager.sddm.enable = lib.mkDefault true;
+      displayManager.sddm.wayland.enable = lib.mkDefault true;
+      displayManager.defaultSession = lib.mkDefault "plasma";
+      desktopManager.plasma6.enable = lib.mkDefault true;
     };
 
     users.users = lib.mapAttrs (_name: u: {

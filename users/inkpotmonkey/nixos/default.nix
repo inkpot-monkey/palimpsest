@@ -128,20 +128,10 @@
         ];
       };
 
-      # 2. KDE Plasma 6 (Wayland Only)
-      services = {
-        xserver.enable = false; # Disable X11 server
-        displayManager = {
-          sddm = {
-            enable = lib.mkDefault true;
-            wayland.enable = true;
-          };
-          defaultSession = "plasma";
-        };
-        desktopManager.plasma6.enable = true;
-      };
-
-      # Still define XKB settings as they are used by Wayland compositors
+      # The shared GUI host infrastructure (sddm + plasma6 + Wayland + default
+      # session) now comes from the gui grant via contract/realization.nix, set
+      # once so it composes with other gui users on the same host (ADR-0015).
+      # Keep only the keyboard layout (used by Wayland compositors too).
       services.xserver.xkb = {
         layout = "gb";
         variant = "";
