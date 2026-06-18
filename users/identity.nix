@@ -11,6 +11,9 @@
         # Identity schema comes from the shared contract (ADR-0015), shared with the
         # home-level `identity` options so the two can't drift.
         options.identity = import self.contract.identity { inherit lib; };
+        # Feature grants a host makes for this user, from the contract's vocabulary.
+        # Default-closed (ADR-0015, mechanic 2): a host enables `granted.<feature>`.
+        options.granted = import self.contract.features { inherit lib; };
       }
     );
     default = { };

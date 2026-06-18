@@ -1,6 +1,6 @@
 { lib, osConfig, ... }:
 let
-  isGui = osConfig.custom.users.inkpotmonkey.identity.profile == "gui";
+  isGui = osConfig.custom.users.inkpotmonkey.granted.gui.enable;
 in
 {
   # The desktop/dev home modules use newer home-manager options that don't exist

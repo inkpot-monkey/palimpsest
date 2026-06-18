@@ -86,7 +86,7 @@
             # =========================================
             custom.home.profiles = {
               cli.enable = true;
-              gui.enable = osConfig.custom.users.inkpotmonkey.identity.profile == "gui";
+              gui.enable = osConfig.custom.users.inkpotmonkey.granted.gui.enable;
             };
           };
       };
@@ -101,7 +101,7 @@
     # =========================================
     # GUI Configuration (Guarded by Profile)
     # =========================================
-    (lib.mkIf (config.custom.users.inkpotmonkey.identity.profile == "gui") {
+    (lib.mkIf config.custom.users.inkpotmonkey.granted.gui.enable {
       hardware.uinput.enable = true;
       services.kanata = {
         enable = true;
