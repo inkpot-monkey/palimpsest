@@ -1,0 +1,35 @@
+# Hosts and users live in separate repos, bound by a shared contract
+
+The goal is that **any host can enable a user and, on rebuild, that user transparently works** — login, dotfiles, the features they need — and that **a host can deny features a user introduces**. Today `users/` lives inside this host repo and is coupled to it in five ways (`self.lib.getSecret*`, `self.homeManagerModules.*`, host flake inputs, the `custom.users` schema pulled in by the `base` profile, and secrets living in the host's `stash`). "Enable a user on an arbitrary host" cannot hold while the user *is* part of one host repo.
+
+The decision is **three repos joined by a shared contract**, not a self-contained user flake:
+
+- A small **contract** flake declares the schemas both sides agree on: the identity option set (today `users/identity-options.nix`), the home-profile meta options, and the **feature/capability vocabulary** that denial keys on. Both host repos and user repos depend on it. A self-contained user flake was rejected because "deny a feature" is fundamentally a *negotiated interface* — it needs a shared vocabulary of features that both sides name, which only a third agreed-upon schema can provide.
+- A **user** is a thin module written against that contract — public identity + home config + its own secrets + the features it *offers*. It is host-agnostic: it never names a secrets backend or a host's `self`/inputs.
+- A **host** consumes the contract, materialises the system account from the user's public identity, **grants** the features it chooses, and injects the runtime platform.
+
+Four mechanics make this work, each chosen to preserve a property the fleet already relies on:
+
+1. **Secrets follow features; public identity travels with the user.** "User secret" is three tiers: public identity (`authorizedKeys`, name, email, username, profile) is *not secret* and lives as plaintext in the user repo; `hashedPassword` is a one-way hash treated as low-sensitivity config; only **feature secrets** (private keys, restic, API tokens) are real secrets, and a host learns one **only when it grants the feature that consumes it**. Baseline "enable a user" is therefore **crypto-free**. This extends [ADR-0003](0003-personal-key-is-sops-admin-key.md) to feature granularity: the user's admin/master key **never reaches any host** — it stays on the trusted machine and is what *re-keys* a host into one specific feature secret on grant. A headless or code-executing host that grants only a login shell holds **no private key material** — there is nothing to leak.
+
+2. **Default-closed grant.** A host runs only what it explicitly grants (`custom.users.<user>.granted.<feature>`); "deny" is the absence of a grant. The user's phrasing ("hosts deny features a user introduces") suggested default-*open* veto, but default-closed was chosen: it is host-sovereign by construction, has no fleet-wide blast radius (a new user feature cannot silently activate everywhere), and makes the per-feature secret model safe — no grant ⇒ no re-key ⇒ no secret.
+
+3. **A feature token-gates a user-owned bundle** (`mkIf granted.<feature>`), mirroring [ADR-0013](0013-uniform-bundle-consumption.md) — the fleet's one mental model of bundle + enable-flags + disabled-is-a-no-op, now applied to the host↔user boundary instead of a fourth pattern. The escape hatch is [ADR-0014](0014-home-profiles-conditional-import.md): features touching version-divergent home-manager options must be conditionally *imported*, not just gated, because `mkIf` cannot suppress unknown-option errors across home-manager version skew.
+
+4. **Packages ride features; overlays `follows` the host's nixpkgs.** A feature that needs an overlay or custom package carries it; the user flake brings the overlay as its own input but pins `inputs.nixpkgs.follows` to the host's, so there is **one** nixpkgs (no divergence, no double instantiation). Granting accepts the packages; denying keeps them out. The runtime platform the host injects via `specialArgs` (notably the secrets-accessor *implementation* behind the contract's interface — `platform.getSecret "restic"`) is what keeps the user module from naming the host directly.
+
+## Consequences
+
+- "Enable a user" and "grant a feature" are **two distinct acts**. The first is a crypto-free import of public config. The second (`grant feature F on host H`) is a re-key of H into F's secret *plus* flipping the grant flag — exactly the [ADR-0002](0002-secrets-in-separate-stash-repo.md) re-key step, now per-feature. Tooling must make the re-key explicit, or a granted feature fails at sops activation.
+- Secret access must sit **inside** a feature's `mkIf`, so an ungranted feature never forces its secret. `warnMock` ([ADR-0012](0012-mock-secret-fallbacks-public-eval.md)) already degrades a missing secret to a loud warning, not a crash, so denial fails gracefully.
+- The **contract flake is a dependency of both repos**, so a schema change is breaking across the boundary — it must be versioned/pinned like any other flake input, and identity/feature options can no longer be edited in lockstep with their consumers.
+- A user repo must pin `nixpkgs.follows` to the consuming host (the host sets `inputs.user.inputs.nixpkgs.follows = "nixpkgs"`); forgetting this resurrects a second nixpkgs.
+- This is the **target**, not the current state. The migration starts from the already-extracted `users/identity-options.nix` (the contract's first artifact) and the existing `custom.users` schema, then lifts the secrets-accessor behind an injected interface and reframes home profiles as offered features.
+
+## Considered Options
+
+- **User as a self-contained flake** — rejected: "deny a feature" requires a negotiated, shared feature vocabulary; a self-contained flake gives the host no agreed names to deny.
+- **Default-open veto** (user features on by default, host vetoes) — rejected: fleet-wide blast radius (a new feature auto-activates everywhere until each host vetoes) and it breaks the per-feature secret safety that default-closed gives for free.
+- **Feature as a module the host imports on grant** — mostly rejected: it shatters the user's home config into N importable fragments and adds a fourth composition pattern; token-gating ([ADR-0013](0013-uniform-bundle-consumption.md)) is the default, with conditional import ([ADR-0014](0014-home-profiles-conditional-import.md)) only where version skew forces it.
+- **User owns all package inputs freely** — rejected: risks a second nixpkgs (divergence, double-eval, cache misses) and removes the host's say over what packages arrive, cutting against "host can deny."
+- **Host provides pkgs, user consumes only** — rejected: the user could use only packages the host already has, breaking "transparently works on any host" the moment a user wants something new.

@@ -9,6 +9,7 @@ The conditional keys on `isGui` as a pragmatic **proxy** for "this host's home-m
 - Don't "simplify" the home `lib.optionals isGui` imports into the bundle's import-all pattern — it will break `porcupineFish` (and any future host on a pinned older home-manager).
 - "Profile" therefore means two structurally different things: fleet-shared NixOS profiles (import-all) and per-user home profiles (conditional import). See `CONTEXT.md`.
 - If the version skew ever ends (all hosts on one home-manager), the home side can converge on the NixOS import-all model and drop the `isGui` keying.
+- The host↔user feature model reuses this conditional-import as its escape hatch: features that touch version-divergent home-manager options are imported conditionally rather than token-gated — see [0015](0015-host-user-contract.md).
 
 ## Considered Options
 

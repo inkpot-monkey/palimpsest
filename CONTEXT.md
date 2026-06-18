@@ -38,6 +38,25 @@ _Avoid_: master key, root key.
 **Signing key**:
 The dedicated, non-admin key used for commit signing (and other private-key needs) on headless or code-executing hosts, so the admin key never has to leave a trusted machine.
 
+### Users & the host↔user contract
+
+> Target architecture being designed: hosts and users split into separate repos bound by a shared contract, so any host can enable a user and on rebuild they transparently work, while hosts can deny features a user introduces. See [ADR-0015](docs/adr/0015-host-user-contract.md). Today `users/` still lives in this repo; these terms fix the language the migration aims at.
+
+**User**:
+A portable bundle of *public identity + home config + its own secrets + grantable features*, owned in its own repo. Distinct from the **system account** (`users.users.<name>`) a host materialises from the user's public identity.
+_Avoid_: account (reserve for the unix system account), profile.
+
+**Contract**:
+The small shared flake that declares the schemas both host and user repos depend on — the identity option set, the home-profile meta options, and the feature/capability vocabulary. It is neither host nor user; it is the agreed interface between them, and the only thing that lets a host *deny* a feature it understands.
+_Avoid_: api, sdk, common.
+
+**Feature** (capability):
+The unit of negotiation between a host and a user: simultaneously what a user **offers**, what a host **grants** or denies, and what pulls a secret. A feature token-gates a slice of the user's bundle (`mkIf` no-op when not granted), mirroring the NixOS profile model ([ADR-0013](docs/adr/0013-uniform-bundle-consumption.md)). Its packages, config, and secret all flow through one grant gate.
+_Avoid_: flag, module (the gate is not itself a module).
+
+**Grant** / **Offer**:
+A user **offers** a feature it *can* provide; a host **grants** it by explicitly enabling it (`custom.users.<user>.granted.<feature>`). Default-closed: an ungranted feature is off, and "deny" is simply the absence of a grant. Granting a feature is also what re-keys that feature's secret to the host — so **public identity travels with the user; secrets follow features**, and a host that grants nothing private holds no private key material.
+
 ### Matrix bridging
 
 **The bridge**:
