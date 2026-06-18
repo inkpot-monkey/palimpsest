@@ -46,16 +46,22 @@ The dedicated, non-admin key used for commit signing (and other private-key need
 A portable bundle of *public identity + home config + its own secrets + grantable features*, owned in its own repo. Distinct from the **system account** (`users.users.<name>`) a host materialises from the user's public identity via a contract-shipped realization module. The contract realizes the *account*; the account's *powers* (privileged groups, display manager) come from granted features, never from the user's raw declaration.
 _Avoid_: account (reserve for the unix system account), profile.
 
-**Contract**:
-The small shared flake that declares the schemas both host and user repos depend on — the identity option set, the home-profile meta options, and the feature/capability vocabulary. It is neither host nor user; it is the agreed interface between them, and the only thing that lets a host *deny* a feature it understands.
+**Contract** (the *contract kit*):
+The small shared flake both host and user repos depend on. More than schemas: it ships (1) the **schema** — the identity option set, home-profile meta, the feature/capability vocabulary, and the `platform` *interface*; (2) the host-invariant **realization** that turns the schema into a system account with powers from grants; (3) the **derivation logic** (e.g. recipients-from-grants); and (4) a **conformance suite** that proves the patterns across synthetic hosts × users. It is neither host nor user; it is the agreed interface between them, and the only thing that lets a host *deny* a feature it understands. The host supplies only the *implementation* of the `platform` interface (its secrets backend) — that stays host-side.
 _Avoid_: api, sdk, common.
 
 **Feature** (capability):
 The unit of negotiation between a host and a user: simultaneously what a user **offers**, what a host **grants** or denies, and what pulls a secret. A feature token-gates a slice of the user's bundle (`mkIf` no-op when not granted), mirroring the NixOS profile model ([ADR-0013](docs/adr/0013-uniform-bundle-consumption.md)). Its packages, config, and secret all flow through one grant gate.
 _Avoid_: flag, module (the gate is not itself a module).
 
+A feature has two faces, kept distinct: the **grant** (host-owned) and its **feature configuration** (user-owned).
+
 **Grant** / **Offer**:
-A user **offers** a feature it *can* provide; a host **grants** it by explicitly enabling it (`custom.users.<user>.granted.<feature>`). Default-closed: an ungranted feature is off, and "deny" is simply the absence of a grant. Granting a feature is also what re-keys that feature's secret to the host — so **public identity travels with the user; secrets follow features**, and a host that grants nothing private holds no private key material.
+A user **offers** a feature it *can* provide; a host **grants** it by explicitly enabling it (`custom.users.<user>.granted.<feature>`). Default-closed: an ungranted feature is off, and "deny" is simply the absence of a grant. The grant is purely the host's yes/no. Granting a feature is also what re-keys that feature's secret to the host — so **public identity travels with the user; secrets follow features**, and a host that grants nothing private holds no private key material.
+
+**Feature configuration**:
+The user-provided *parameters* of a feature (e.g. a gui user's **session** preference — Wayland or X11 — or a restic feature's schedule), as opposed to the **grant**, which is the host's yes/no. The realization reads a feature's configuration only when the feature is granted: user-scoped parameters apply per user, while host-affecting ones **aggregate** across all granted users rather than conflict. The gui **session** is the canonical case — on a single-seat host the display surface is the *union* of every granted gui user's session, so two users with different sessions coexist, each logging into their own. (Aggregation only fits parameters that genuinely union; a truly singular setting like the system timezone stays a host decision.)
+_Avoid_: settings (too generic), the grant (that is the host's, not the user's).
 
 ### Matrix bridging
 
