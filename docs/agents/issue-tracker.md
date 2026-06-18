@@ -2,6 +2,8 @@
 
 Issues and PRDs for this repo live as markdown files in `.scratch/`.
 
+`.scratch/` is **gitignored** — these are local working notes, not version-controlled. They are visible to agents operating in this working tree, but not to a freshly-cloned (e.g. cloud) agent. If an issue needs to reach such an agent, hand it the content directly.
+
 ## Conventions
 
 - One feature per directory: `.scratch/<feature-slug>/`
