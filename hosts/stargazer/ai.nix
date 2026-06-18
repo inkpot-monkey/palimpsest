@@ -21,6 +21,14 @@ in
     OLLAMA_VISION_MODEL = visionModel;
   };
 
+  # WhisperX batch transcription/diarization CLI, driven from Emacs/dired (see
+  # users/inkpotmonkey/home/emacs/lisp/whisperx.el). No watch-folder service — just the tool
+  # on PATH, run on the Zen 5 CPU (CTranslate2 int8). ffmpeg-full handles video containers.
+  environment.systemPackages = [
+    pkgs.python3Packages.whisperx
+    pkgs.ffmpeg-full
+  ];
+
   hardware.amdgpu.opencl.enable = true;
   hardware.amdgpu.initrd.enable = true;
 

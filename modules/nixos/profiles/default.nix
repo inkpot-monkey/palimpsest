@@ -37,7 +37,6 @@
     openclaw = ./openclaw.nix;
     aionui = ./aionui.nix;
     homeassistant = ./homeassistant.nix;
-    whisperx = ./whisperx.nix;
     backup = ./backup.nix;
     blocky = ./blocky.nix;
     # Flat keys so each matches its enable option 1:1 (custom.profiles.<key>), the same

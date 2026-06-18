@@ -107,29 +107,24 @@ in
         {
           networking.hostName = "rk1b";
           # rk1b is the voice node, NOT an LLM server. The qwen-coder MoE was removed to free
-          # ~22G RAM + 13G eMMC for Home Assistant + WhisperX. custom.rk1.llm is therefore left
-          # disabled (default). The coder model still exists in the cloud as `qwen3-coder`
-          # (DeepInfra) via kelpy's LiteLLM; rk1a serves the local general MoE (qwen-general).
+          # ~22G RAM + 13G eMMC for Home Assistant. custom.rk1.llm is therefore left disabled
+          # (default). The coder model still exists in the cloud as `qwen3-coder` (DeepInfra) via
+          # kelpy's LiteLLM; rk1a serves the local general MoE (qwen-general).
           #
           # Home Assistant + local Wyoming voice (STT/TTS); the wake word runs on the phone.
           # See modules/nixos/profiles/homeassistant.nix. The real-time STT here is the small
           # base-int8 faster-whisper; voice latency isn't critical so it's fine on CPU.
+          # (Heavyweight WhisperX batch transcription lives on stargazer now — its Zen 5 CPU is
+          # ~8-10x faster than the A76s for large-v3, so an hour of audio takes ~15 min vs ~2h.)
           custom.profiles.homeassistant.enable = true;
 
-          # NVMe (Samsung PM981, 512G, fitted Jun 2026): /nix on the `nixstore` partition
-          # (400G) so the store has room for build offload (this node is the fleet's aarch64
-          # remote builder — see modules/nixos/profiles/pi-builder.nix); model caches on the
-          # `rk1cache` partition at /var/cache. Both keep the 29G eMMC from overflowing.
+          # NVMe (Samsung PM981, 512G, fitted Jun 2026): /nix on the `nixstore` partition (400G)
+          # so the store has room for build offload (this node is the fleet's aarch64 remote
+          # builder — see modules/nixos/profiles/pi-builder.nix), keeping the 29G eMMC from
+          # overflowing. The `rk1cache` partition still mounts at /var/cache but is now spare
+          # (WhisperX, its former tenant, moved to stargazer).
           custom.rk1.nvme.enable = true;
           custom.rk1.nvme.relocateNixStore = true;
-
-          # WhisperX: heavyweight offline batch transcription/diarization (torch +
-          # faster-whisper large-v3 + pyannote). Was staged behind the NVMe — now live, with
-          # its model cache on the drive. Drop audio into /var/cache/whisperx/inbox; transcripts
-          # land in .../out. Runs at low priority so it never starves the voice pipeline.
-          # Diarization stays off until an HF token secret is wired (custom.profiles.whisperx
-          # .diarize + .hfTokenFile).
-          custom.profiles.whisperx.enable = true;
         }
       ];
     };

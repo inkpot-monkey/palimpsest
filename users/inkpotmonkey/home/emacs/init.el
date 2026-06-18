@@ -410,6 +410,15 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 		(:map wdired-mode-map
 					("s-q" . wdired-exit)))
 
+;; Transcribe marked audio/video files with WhisperX (CLI provided on stargazer).
+;; C-c C-t in dired. Settings (model etc.) are set once via the `whisperx-*' vars.
+(use-package whisperx
+		:after dired
+		:load-path "~/code/nixos/users/inkpotmonkey/home/emacs/lisp/"
+		:ensure nil
+		:bind (:map dired-mode-map
+								("C-c C-t" . whisperx-transcribe-dired)))
+
 (use-package nerd-icons-dired
 		:hook (dired-mode . nerd-icons-dired-mode))
 
