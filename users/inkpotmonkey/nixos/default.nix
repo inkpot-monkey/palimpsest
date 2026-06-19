@@ -14,13 +14,9 @@
 
   config = lib.mkMerge [
     {
-      # The emacs feature rides the gui grant (ADR-0015 mechanic 4: packages ride
-      # features). Its overlay is applied ONLY when gui is granted, so a host that
-      # denies gui never pulls emacs-overlay — instead of it applying fleet-wide.
-      # emacs-overlay already follows the host nixpkgs, so there is one nixpkgs.
-      nixpkgs.overlays = lib.optionals config.custom.users.inkpotmonkey.granted.gui.enable [
-        inputs.emacs-overlay.overlays.default
-      ];
+      # NOTE: the emacs overlay moved to the contract gui feature module
+      # (contract/features/gui.nix) — it rides the gui grant there, so the user no
+      # longer writes it (ADR-0018, slice 10).
 
       # 1. User shell and keys
       custom.users.inkpotmonkey.identity.trustedKeys =
@@ -109,7 +105,7 @@
     # GUI Configuration (Guarded by Profile)
     # =========================================
     (lib.mkIf config.custom.users.inkpotmonkey.granted.gui.enable {
-      hardware.uinput.enable = true;
+      # uinput moved to the contract gui feature module (contract/features/gui.nix).
       services.kanata = {
         enable = true;
         package = pkgs.kanata-with-cmd;
@@ -137,19 +133,13 @@
         variant = "";
       };
 
-      users.users.inkpotmonkey = {
-        extraGroups = [
-          "input"
-          "uinput"
-          # For zsa keyboard
-          "plugdev"
-          "disk"
-          "qemu-libvirtd"
-          "dialout"
-          "libvirtd"
-        ];
-      };
+      # The desktop hardware groups moved to contract.featureGroups.gui — they ride
+      # the gui grant via the realization's clamp+grantedGroups path, instead of this
+      # raw users.users write that bypassed the clamp (ADR-0018, slice 10; the
+      # disk/libvirtd/qemu-libvirtd split into a virtualization feature is slice 11).
 
+      # electron is needed by a gui app; nixpkgs.config does not merge cleanly across
+      # modules (a host's value overrides), so this stays user-side until slice 11.
       nixpkgs.config.permittedInsecurePackages = [ "electron-39.8.10" ];
     })
   ];

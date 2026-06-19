@@ -16,6 +16,10 @@
     platform = ./platform.nix;
     # Host-invariant module mapping custom.users.<u> to system accounts.
     realization = ./realization.nix;
+    # The gui feature module: host effects of the gui grant (uinput, the emacs
+    # overlay), gated on any gui grant. Imported alongside the realization so a user
+    # never writes them (ADR-0018, slice 10).
+    guiFeature = ./features/gui.nix;
     # Static metadata about features (not options). `secretBearing` marks features
     # that pull a secret onto a host, so an exposed host can refuse to grant them
     # (ADR-0015 threat model). Keys must match the feature vocabulary above.
@@ -48,6 +52,19 @@
         "docker"
         "podman"
         "wheel"
+      ];
+      # The desktop hardware groups, conferred by the gui grant via the realization's
+      # clamp+grantedGroups path (so they ride the grant, not a raw user write — slice
+      # 10). NOTE: disk/qemu-libvirtd/libvirtd are privileged and split into a
+      # `virtualization` feature in slice 11; here they keep gui behaviour-neutral.
+      gui = [
+        "input"
+        "uinput"
+        "plugdev"
+        "disk"
+        "qemu-libvirtd"
+        "dialout"
+        "libvirtd"
       ];
     };
   };

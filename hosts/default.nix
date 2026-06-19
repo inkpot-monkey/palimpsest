@@ -29,7 +29,10 @@ in
 
       modules = [
         ./sawtoothShark/configuration.nix
-        self.users.inkpotmonkey.gui
+        # Grant-as-data prototype (ADR-0018, slice 10): import inkpotmonkey as a
+        # non-granting manifest; the host grants gui+workstation in its own config,
+        # so the user never self-grants.
+        self.users.inkpotmonkey.manifest
         # self.users.general.gui
       ];
     };

@@ -7,8 +7,13 @@
 {
   # The mechanical account realization (custom.users -> users.users, plus the
   # gui-grant-driven display manager) lives in the contract so a host repo never
-  # re-implements it. See ADR-0015 mechanic 5.
-  imports = [ self.contract.realization ];
+  # re-implements it. See ADR-0015 mechanic 5. The gui feature module rides alongside
+  # it: the host effects of the gui grant come from the contract, not the user
+  # (ADR-0018, slice 10).
+  imports = [
+    self.contract.realization
+    self.contract.guiFeature
+  ];
 
   options.custom.users = lib.mkOption {
     type = lib.types.attrsOf (

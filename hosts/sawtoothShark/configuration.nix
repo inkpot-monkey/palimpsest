@@ -88,5 +88,13 @@
 
   users.users.inkpotmonkey.extraGroups = [ "uinput" ];
 
+  # Grant-as-data (ADR-0018, slice 10): the host grants inkpotmonkey's features
+  # explicitly, rather than the user self-granting via a `.gui` variant import. gui +
+  # workstation reproduce what the old gui variant conferred.
+  custom.users.inkpotmonkey.granted = {
+    gui.enable = true;
+    workstation.enable = true;
+  };
+
   system.stateVersion = "25.11";
 }
