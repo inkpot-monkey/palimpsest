@@ -128,6 +128,18 @@ let
       ok = lib.elem "libvirtd" self.contract.featureGroups.virtualization;
     }
     {
+      name = "safe set: gui is runtime-eligible (slice 15)";
+      ok = lib.elem "gui" self.lib.safeSet;
+    }
+    {
+      name = "safe set: privileged features (workstation, virtualization) are excluded";
+      ok = !(lib.elem "workstation" self.lib.safeSet) && !(lib.elem "virtualization" self.lib.safeSet);
+    }
+    {
+      name = "safe set: secret-bearing features (restic, signing) are excluded";
+      ok = !(lib.elem "restic" self.lib.safeSet) && !(lib.elem "signing" self.lib.safeSet);
+    }
+    {
       name = "system platform resolves a secret source to an existing file";
       ok = builtins.pathExists (denied.custom.platform.secretFile "restic");
     }

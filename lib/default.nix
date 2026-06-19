@@ -47,6 +47,26 @@ let
 
     featureRecipients = helpers.mkFeatureRecipients self.nixosConfigurations;
 
+    # The derived "safe set" — runtime-eligible features (ADR-0018, slice 15): the
+    # features a runtime/greeter binding may confer on a user without operator
+    # authorship. DERIVED from the existing security primitives, never a manual flag:
+    # a feature is eligible iff it bears no secret, confers no PRIVILEGED group, and
+    # carries no host-executed payload (execPayload). gui qualifies (its input/uinput/
+    # plugdev/dialout are non-privileged); workstation/virtualization (privileged) and
+    # restic/signing (secret-bearing) do not. So privilege and host-run code are
+    # build-time-only — a flake URL at a greeter can never escalate.
+    runtimeEligibleFeature =
+      feature:
+      let
+        meta = self.contract.featureMeta.${feature} or { };
+        groups = self.contract.featureGroups.${feature} or [ ];
+      in
+      !(meta.secretBearing or false)
+      && (lib.intersectLists groups self.contract.privilegedGroups == [ ])
+      && !(meta.execPayload or false);
+
+    safeSet = lib.filter helpers.runtimeEligibleFeature (lib.attrNames self.contract.featureMeta);
+
     # The restricted hostFacts projection (ADR-0018, slice 12): the ONLY host state a
     # user's home modules may read, in place of raw `osConfig`. Self-scoped — it carries
     # this host's own facts plus *this user's* grants, never another user's data and
