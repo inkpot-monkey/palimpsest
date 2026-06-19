@@ -47,6 +47,17 @@ let
 
     featureRecipients = helpers.mkFeatureRecipients self.nixosConfigurations;
 
+    # The restricted hostFacts projection (ADR-0018, slice 12): the ONLY host state a
+    # user's home modules may read, in place of raw `osConfig`. Self-scoped — it carries
+    # this host's own facts plus *this user's* grants, never another user's data and
+    # never a secret value. `hostName` is deliberately excluded so a user adapts on
+    # semantic facts, not host identity. Passed to home-manager as a specialArg.
+    mkHostFacts = config: userName: {
+      exposed = config.custom.host.exposed;
+      platform = config.nixpkgs.hostPlatform.system;
+      granted = config.custom.users.${userName}.granted;
+    };
+
     mkPkgs =
       system:
       import inputs.nixpkgs {

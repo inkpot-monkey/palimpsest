@@ -10,6 +10,19 @@ let
       system,
       modules,
       overlays ? [ ],
+      # Standalone home builds have no system; supply a default hostFacts projection
+      # (ADR-0018, slice 12) so home modules that read host state still resolve. These
+      # are desktop configs, so gui is granted; nothing exposed/secret.
+      hostFacts ? {
+        exposed = false;
+        platform = system;
+        granted = {
+          gui.enable = true;
+          restic.enable = false;
+          workstation.enable = false;
+          virtualization.enable = false;
+        };
+      },
     }:
     inputs.home-manager.lib.homeManagerConfiguration {
       pkgs = import inputs.nixpkgs {
@@ -19,7 +32,7 @@ let
           allowUnfree = true;
         };
       };
-      extraSpecialArgs = { inherit inputs self; };
+      extraSpecialArgs = { inherit inputs self hostFacts; };
       inherit modules;
     };
 

@@ -1,6 +1,6 @@
-{ lib, osConfig, ... }:
+{ lib, hostFacts, ... }:
 let
-  isGui = osConfig.custom.users.inkpotmonkey.granted.gui.enable;
+  isGui = hostFacts.granted.gui.enable;
 in
 {
   # The desktop/dev home modules use newer home-manager options that don't exist
@@ -11,10 +11,11 @@ in
   # e.g. porcupineFish on home-manager-25_11 — must not import these at all.
   # See hosts/porcupineFish/README.md for the full rationale.
   #
-  # We branch on the *system* profile via `osConfig` rather than this module's
-  # own `config` (which would recurse, since imports determine config).
-  # `restic.nix`/`git-annex.nix` carry no version-specific options and stay
-  # importable everywhere (opt-in per host via their own enable option).
+  # We branch on the restricted `hostFacts` projection (ADR-0018, slice 12) rather
+  # than this module's own `config` (which would recurse, since imports determine
+  # config) or raw `osConfig` (which exposes the whole system tree). `restic.nix`/
+  # `git-annex.nix` carry no version-specific options and stay importable everywhere
+  # (opt-in per host via their own enable option).
   imports = [
     ./restic.nix
     ./git-annex.nix
