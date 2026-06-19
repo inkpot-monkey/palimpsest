@@ -89,18 +89,7 @@
 
   users.users.inkpotmonkey.extraGroups = [ "uinput" ];
 
-  # Grant-as-data (ADR-0018, slice 10): the host grants inkpotmonkey's features
-  # explicitly, rather than the user self-granting via a `.gui` variant import. gui +
-  # workstation reproduce what the old gui variant conferred.
-  custom.users.inkpotmonkey.granted = {
-    gui.enable = true;
-    workstation.enable = true;
-    # virtualization groups, split out of gui (ADR-0018 slice 11) — reproduces what
-    # the gui block conferred here before the split.
-    virtualization.enable = true;
-    # signing key for commit signing (ADR-0018 slice 13), replacing the hostName gate.
-    signing.enable = true;
-  };
+  # User grants live in the fleet grant matrix (hosts/default.nix), not here.
 
   system.stateVersion = "25.11";
 }

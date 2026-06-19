@@ -1,11 +1,9 @@
 { ... }:
 {
   imports = [ ./bundle.nix ];
-  # eyeofalligator is a gui user: grant gui so the shared display infrastructure
-  # is conferred even on a host where it is the only user (ADR-0015).
-  custom.users.eyeofalligator.granted.gui.enable = true;
-  # eyeofalligator logs into an X11 session. This is feature configuration, not a
-  # host singleton — the realization unions it with other gui users' sessions
-  # (ADR-0016), so eyeofalligator's X11 and inkpotmonkey's Wayland coexist.
+  # eyeofalligator logs into an X11 session — this is feature *configuration*
+  # (user-owned), unioned with other gui users' sessions by the realization (ADR-0016).
+  # The gui *grant* is host-owned: weedySeadragon grants it in the fleet grant matrix
+  # (hosts/default.nix). The user never self-grants (ADR-0018, slice 16).
   custom.users.eyeofalligator.gui.session = "x11";
 }

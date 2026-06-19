@@ -29,9 +29,7 @@
     };
   };
 
-  # Grant-as-data: inkpotmonkey's virtualization groups, split out of gui (ADR-0018
-  # slice 11). Reproduces the groups the gui block conferred here before the split.
-  custom.users.inkpotmonkey.granted.virtualization.enable = true;
+  # User grants live in the fleet grant matrix (hosts/default.nix), not here.
 
   # weedySeadragon hosts two gui users (inkpotmonkey Wayland + eyeofalligator X11).
   # The display surface is NOT set here — it is derived from the union of each

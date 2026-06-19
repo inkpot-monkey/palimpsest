@@ -21,7 +21,9 @@ let
     self.lib.mkSystem {
       modules = [
         self.nixosProfiles.bundle
-        self.users.inkpotmonkey.cli
+        # The user is bound as a non-granting manifest (ADR-0018, slice 16); each test
+        # supplies the grants it needs via grantsModule, never a self-granting variant.
+        self.users.inkpotmonkey.manifest
         {
           custom.profiles.base.enable = true;
           nixpkgs.hostPlatform = "x86_64-linux";
@@ -90,14 +92,15 @@ let
 
   # Slice 04 — the privileged-group clamp. A privileged group named in a user's
   # own identity is untrusted: it is dropped unless a grant confers it.
+  # The manifest base grants nothing, so "no grant" is just the absence of a grant.
   clampNoGrant = evalHost {
-    custom.users.inkpotmonkey.granted.workstation.enable = lib.mkForce false;
     custom.users.inkpotmonkey.identity.extraGroups = lib.mkForce [
       "docker"
       "audio"
     ];
   };
   clampWithGrant = evalHost {
+    custom.users.inkpotmonkey.granted.workstation.enable = true;
     custom.users.inkpotmonkey.identity.extraGroups = lib.mkForce [ "docker" ];
   };
   groupsOf = cfg: cfg.users.users.inkpotmonkey.extraGroups;

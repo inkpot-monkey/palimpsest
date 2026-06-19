@@ -44,12 +44,8 @@
     monitoring-smartctl.enable = true;
   };
 
-  # Grant-as-data: inkpotmonkey's virtualization groups (disk/libvirtd/qemu-libvirtd)
-  # come from this grant, split out of gui (ADR-0018 slice 11). stargazer also runs
-  # the virtualization *services* via custom.profiles.virtualization above.
-  custom.users.inkpotmonkey.granted.virtualization.enable = true;
-  # signing key for commit signing (ADR-0018 slice 13), replacing the hostName gate.
-  custom.users.inkpotmonkey.granted.signing.enable = true;
+  # User grants (gui/workstation/virtualization/signing) live in the fleet grant matrix
+  # — hosts/default.nix — not here. This host config is pure host concern (ADR-0018).
 
   system.stateVersion = "25.05";
 

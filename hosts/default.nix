@@ -5,6 +5,10 @@
 }:
 let
   inherit (self.lib) mkSystem mkPiSystem;
+  # Grant-as-data (ADR-0018, slice 16): a host grants a user's features here, as data,
+  # next to where it binds the user — never by importing a self-granting variant. This
+  # is the fleet's grant matrix; `granted.*` is host-write-only, the user never sets it.
+  grant = user: features: { custom.users.${user}.granted = features; };
 in
 {
   flake.nixosConfigurations = {
@@ -12,7 +16,13 @@ in
 
       modules = [
         ./stargazer/configuration.nix
-        self.users.inkpotmonkey.gui
+        self.users.inkpotmonkey.manifest
+        (grant "inkpotmonkey" {
+          gui.enable = true;
+          workstation.enable = true;
+          virtualization.enable = true;
+          signing.enable = true;
+        })
       ];
     };
 
@@ -20,8 +30,14 @@ in
 
       modules = [
         ./weedySeadragon/configuration.nix
-        self.users.inkpotmonkey.gui
+        self.users.inkpotmonkey.manifest
         self.users.eyeofalligator
+        (grant "inkpotmonkey" {
+          gui.enable = true;
+          workstation.enable = true;
+          virtualization.enable = true;
+        })
+        (grant "eyeofalligator" { gui.enable = true; })
       ];
     };
 
@@ -29,11 +45,13 @@ in
 
       modules = [
         ./sawtoothShark/configuration.nix
-        # Grant-as-data prototype (ADR-0018, slice 10): import inkpotmonkey as a
-        # non-granting manifest; the host grants gui+workstation in its own config,
-        # so the user never self-grants.
         self.users.inkpotmonkey.manifest
-        # self.users.general.gui
+        (grant "inkpotmonkey" {
+          gui.enable = true;
+          workstation.enable = true;
+          virtualization.enable = true;
+          signing.enable = true;
+        })
       ];
     };
 
@@ -48,7 +66,8 @@ in
       };
       modules = [
         ./porcupineFish/configuration.nix
-        self.users.inkpotmonkey.cli
+        self.users.inkpotmonkey.manifest
+        (grant "inkpotmonkey" { workstation.enable = true; })
         # Replace the stable blocky module with the unstable one to use modern options (e.g. denylists)
         {
           disabledModules = [ "services/networking/blocky.nix" ];
@@ -66,7 +85,11 @@ in
 
       modules = [
         ./kelpy/configuration.nix
-        self.users.inkpotmonkey.cli
+        self.users.inkpotmonkey.manifest
+        # kelpy is exposed: it gets workstation (docker/podman/wheel) but no
+        # secret-bearing feature. Now that the grant is explicit here, dropping it is a
+        # one-line change (see the exposed-host note in contract/realization.nix).
+        (grant "inkpotmonkey" { workstation.enable = true; })
       ];
     };
 
@@ -74,7 +97,8 @@ in
 
       modules = [
         ./potbelliedSeahorse/configuration.nix
-        self.users.inkpotmonkey.cli
+        self.users.inkpotmonkey.manifest
+        (grant "inkpotmonkey" { workstation.enable = true; })
       ];
 
     };
@@ -88,7 +112,8 @@ in
     rk1a = mkSystem {
       modules = [
         ./rk1/common.nix
-        self.users.inkpotmonkey.cli
+        self.users.inkpotmonkey.manifest
+        (grant "inkpotmonkey" { workstation.enable = true; })
         {
           networking.hostName = "rk1a";
           custom.rk1.llm.enable = true;
@@ -106,7 +131,8 @@ in
     rk1b = mkSystem {
       modules = [
         ./rk1/common.nix
-        self.users.inkpotmonkey.cli
+        self.users.inkpotmonkey.manifest
+        (grant "inkpotmonkey" { workstation.enable = true; })
         {
           networking.hostName = "rk1b";
           # rk1b is the voice node, NOT an LLM server. The qwen-coder MoE was removed to free
