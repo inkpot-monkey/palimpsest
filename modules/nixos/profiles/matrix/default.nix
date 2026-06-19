@@ -15,6 +15,14 @@ let
 
   matrixSecrets = self.lib.getSecretFile "matrix";
 
+  # GitHub profile picture, pinned by content hash so the avatar is reproducible
+  # (https://github.com/inkpot-monkey.png — 460x460 PNG). Uploaded once to the
+  # homeserver media repo and set as the admin avatar by registerAdmin below.
+  adminAvatar = pkgs.fetchurl {
+    url = "https://github.com/inkpot-monkey.png";
+    hash = "sha256-8pj6GjyU1qBZuDckMIhPEN8AKLxR6meHbAm3v7LKHgY=";
+  };
+
   # Populate tuwunel's appservice_dir from the loaded credentials at start.
   # Runs as the service user (which can read $CREDENTIALS_DIRECTORY and write the
   # RuntimeDirectory), copying only *-registration.yaml so the registration_token
@@ -82,6 +90,30 @@ let
           -d "$(${pkgs.jq}/bin/jq -nc --arg n "${cfg.adminDisplayName}" '{displayname:$n}')" \
           && echo "admin display name set to ${cfg.adminDisplayName}" \
           || echo "WARN: failed to set admin display name" >&2
+
+        # Set the avatar only when currently unset: uploads here are not
+        # content-addressed, so re-uploading every restart would mint a fresh
+        # mxc and churn a profile-change event each time. One-shot is enough.
+        cur="$(${pkgs.curl}/bin/curl -s \
+          "$url/_matrix/client/v3/profile/@${cfg.adminLocalpart}:${domain}/avatar_url" \
+          -H "authorization: Bearer $at" | ${pkgs.jq}/bin/jq -r '.avatar_url // empty')"
+        if [ -z "$cur" ]; then
+          mxc="$(${pkgs.curl}/bin/curl -s -X POST \
+            "$url/_matrix/media/v3/upload?filename=avatar.png" \
+            -H "authorization: Bearer $at" -H 'content-type: image/png' \
+            --data-binary "@${adminAvatar}" \
+            | ${pkgs.jq}/bin/jq -r '.content_uri // empty')"
+          if [ -n "$mxc" ]; then
+            ${pkgs.curl}/bin/curl -sf -o /dev/null -X PUT \
+              "$url/_matrix/client/v3/profile/@${cfg.adminLocalpart}:${domain}/avatar_url" \
+              -H "authorization: Bearer $at" -H 'content-type: application/json' \
+              -d "$(${pkgs.jq}/bin/jq -nc --arg u "$mxc" '{avatar_url:$u}')" \
+              && echo "admin avatar set to $mxc" \
+              || echo "WARN: failed to set admin avatar" >&2
+          else
+            echo "WARN: avatar upload returned no content_uri" >&2
+          fi
+        fi
       else
         echo "WARN: could not log in to set admin display name" >&2
       fi
@@ -105,7 +137,7 @@ in
 
     adminDisplayName = lib.mkOption {
       type = lib.types.str;
-      default = "✒️inkpotmonkey🐒";
+      default = "inkpotmonkey";
       description = ''
         Display name to set on the admin account, enforced on every (re)start
         of the register-admin service. Set to "" to leave the display name
