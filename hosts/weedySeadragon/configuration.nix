@@ -28,10 +28,10 @@
     };
   };
 
-  # weedySeadragon hosts two gui users (inkpotmonkey + eyeofalligator). The shared
-  # Wayland desktop comes from the gui grant (contract realization); enable X11 too
-  # so eyeofalligator can use an X session — the display-server choice is the host's.
-  services.xserver.enable = true;
+  # weedySeadragon hosts two gui users (inkpotmonkey Wayland + eyeofalligator X11).
+  # The display surface is NOT set here — it is derived from the union of each
+  # granted gui user's `gui.session` by the contract realization (ADR-0016), so
+  # both session types are offered and each user logs into their own.
 
   sops = {
     age.sshKeyPaths = [ "/home/inkpotmonkey/.ssh/id_ed25519" ];

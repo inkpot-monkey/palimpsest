@@ -9,6 +9,10 @@
     identity = ./identity.nix;
     homeProfiles = ./home-profiles.nix;
     features = ./features.nix;
+    # User-owned feature *configuration* (parameters of a feature), distinct from
+    # the host-owned grant. Host-affecting params (e.g. gui.session) aggregate as a
+    # union across granted users — ADR-0016.
+    featureConfig = ./feature-config.nix;
     platform = ./platform.nix;
     # Host-invariant module mapping custom.users.<u> to system accounts.
     realization = ./realization.nix;

@@ -29,7 +29,15 @@
 let
   inherit (self.contract) privilegedGroups featureGroups;
   users = config.custom.users;
-  anyGuiGranted = lib.any (u: u.granted.gui.enable or false) (lib.attrValues users);
+  # The gui-session union (ADR-0016): the host display surface is derived from
+  # every *granted* gui user's session preference, not from any one user writing a
+  # raw host singleton. A single-seat host can therefore offer both session types
+  # and each user logs into their own (stock SDDM remembers the choice per user).
+  guiUsers = lib.filter (u: u.granted.gui.enable or false) (lib.attrValues users);
+  anyGuiGranted = guiUsers != [ ];
+  guiSessions = map (u: u.gui.session) guiUsers;
+  anyWayland = lib.elem "wayland" guiSessions;
+  anyX11 = lib.elem "x11" guiSessions;
 
   grantedNames = u: lib.filter (f: u.granted.${f}.enable or false) (lib.attrNames u.granted);
   # Privileged groups earned from the features granted to this user.
@@ -43,13 +51,21 @@ in
 
     # Shared GUI host infrastructure, conferred by the gui grant and set ONCE here
     # so any number of gui users on a host share it instead of each imposing a
-    # (conflicting) display server. All mkDefault, so a host can override — e.g.
-    # enable services.xserver for an X11 session alongside the default Wayland one.
+    # (conflicting) display server. SDDM + plasma6 are present whenever any gui user
+    # is granted; the *session surface* is the union of their preferences (ADR-0016):
+    #   - the Wayland greeter iff some granted gui user wants Wayland
+    #   - services.xserver    iff some granted gui user wants X11
+    # both when both.
     services = lib.mkIf anyGuiGranted {
       displayManager.sddm.enable = lib.mkDefault true;
-      displayManager.sddm.wayland.enable = lib.mkDefault true;
       displayManager.defaultSession = lib.mkDefault "plasma";
       desktopManager.plasma6.enable = lib.mkDefault true;
+      xserver.enable = lib.mkDefault anyX11;
+      # plasma6 defaults the Wayland greeter on (mkDefault true). Keep that when the
+      # union includes a Wayland user; override it off (above mkDefault, below a host
+      # mkForce) when the union is X11-only. Two mkDefaults of differing values would
+      # *conflict* — hence the explicit priority (ADR-0016).
+      displayManager.sddm.wayland.enable = lib.mkIf (!anyWayland) (lib.mkOverride 900 false);
     };
 
     users.users = lib.mapAttrs (_name: u: {

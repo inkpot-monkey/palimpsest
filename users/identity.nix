@@ -15,10 +15,15 @@
       lib.types.submodule {
         # Identity schema comes from the shared contract (ADR-0015), shared with the
         # home-level `identity` options so the two can't drift.
-        options.identity = import self.contract.identity { inherit lib; };
-        # Feature grants a host makes for this user, from the contract's vocabulary.
-        # Default-closed (ADR-0015, mechanic 2): a host enables `granted.<feature>`.
-        options.granted = import self.contract.features { inherit lib; };
+        options = {
+          identity = import self.contract.identity { inherit lib; };
+          # Feature grants a host makes for this user, from the contract's vocabulary.
+          # Default-closed (ADR-0015, mechanic 2): a host enables `granted.<feature>`.
+          granted = import self.contract.features { inherit lib; };
+        }
+        # User-owned feature configuration (ADR-0016): parameters like gui.session.
+        # Merged at the top level so a user writes `custom.users.<u>.gui.session`.
+        // import self.contract.featureConfig { inherit lib; };
       }
     );
     default = { };

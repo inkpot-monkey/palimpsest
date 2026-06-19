@@ -44,6 +44,34 @@ let
   granted = grantedSys.config;
   denied = deniedSys.config;
 
+  # ADR-0016 — the gui-session union. `grantedSys` above has a single gui user whose
+  # session defaults to Wayland: the host enables the Wayland greeter and NOT X11.
+  # A host whose only gui user wants X11 enables X11 and not the Wayland greeter.
+  x11OnlySys = evalSystem {
+    custom.users.inkpotmonkey.granted.gui.enable = true;
+    custom.users.inkpotmonkey.gui.session = "x11";
+  };
+  x11Only = x11OnlySys.config;
+
+  # Two granted gui users with *different* sessions on one (single-seat) host: the
+  # host must offer BOTH session types and realize BOTH accounts. This is the
+  # weedySeadragon coexistence case as a synthetic fixture.
+  twoSessionSys = evalSystem {
+    custom.users.inkpotmonkey.granted.gui.enable = true;
+    custom.users.inkpotmonkey.gui.session = "wayland";
+    custom.users.gamma = {
+      identity = {
+        name = "Gamma";
+        email = "gamma@example.invalid";
+        username = "gamma";
+        profile = "gui";
+      };
+      granted.gui.enable = true;
+      gui.session = "x11";
+    };
+  };
+  twoSession = twoSessionSys.config;
+
   # Slice 06 — recipients derive from grants. A two-host synthetic fleet where one
   # host grants the secret-bearing restic feature and one does not.
   grantedResticSys = evalSystem { custom.users.inkpotmonkey.granted.restic.enable = true; };
@@ -130,6 +158,34 @@ let
     {
       name = "denying gui keeps the emacs overlay out";
       ok = !(deniedSys.pkgs ? emacs-unstable);
+    }
+    {
+      name = "union: a Wayland-only gui host enables the Wayland greeter";
+      ok = grantedSys.config.services.displayManager.sddm.wayland.enable;
+    }
+    {
+      name = "union: a Wayland-only gui host does not enable X11";
+      ok = !grantedSys.config.services.xserver.enable;
+    }
+    {
+      name = "union: an X11-only gui host enables X11";
+      ok = x11Only.services.xserver.enable;
+    }
+    {
+      name = "union: an X11-only gui host does not enable the Wayland greeter";
+      ok = !x11Only.services.displayManager.sddm.wayland.enable;
+    }
+    {
+      name = "union: two gui users with different sessions ⇒ host offers both (Wayland)";
+      ok = twoSession.services.displayManager.sddm.wayland.enable;
+    }
+    {
+      name = "union: two gui users with different sessions ⇒ host offers both (X11)";
+      ok = twoSession.services.xserver.enable;
+    }
+    {
+      name = "union: both gui users are realized as accounts";
+      ok = (twoSession.users.users ? inkpotmonkey) && (twoSession.users.users ? gamma);
     }
     {
       name = "recipients derive from grants: only the granting host is a recipient";
