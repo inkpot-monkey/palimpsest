@@ -70,6 +70,16 @@
       url = "github:openclaw/nix-openclaw";
     };
 
+    # Community repackaging of the Claude Desktop app for Linux (no official
+    # Linux build exists). Extracts the Windows app's resources and rebuilds a
+    # native Electron app, with Cowork support. Actively maintained fork of the
+    # original k3d3 flake — tracks current Claude Desktop versions and vendors
+    # its own asar tool (the upstream's `nodePackages.asar` was removed from
+    # nixpkgs on 2026-03-03). Keep its own nixpkgs pin (what the author tests).
+    claude-desktop = {
+      url = "github:Reginleif88/claude-cowork-nix";
+    };
+
     crane = {
       url = "github:ipetkov/crane";
     };
