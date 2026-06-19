@@ -41,12 +41,14 @@ union the same way.
   stops a user module from writing the raw `services.xserver.enable` again and
   re-breaking the union. Making it impossible is the **restricted-`evalModules`
   boundary (model C, ADR-0015 mechanic 7)**, deferred — see the model-C meta issue.
-- The conformance suite proves it at the eval level today
+- The conformance suite proves it at two levels. At eval
   (`parts/checks/host-user-contract`): two fixture users with different `gui.session`
   on one host ⇒ the host enables *both* session types and both accounts are intact;
   a Wayland-only host enables only the Wayland greeter and an X11-only host only X11
-  (the surface is *derived*, not constant). A runtime VM smoke (both session files
-  present on a booted machine) is deferred to the NixOS-test slice.
+  (the surface is *derived*, not constant). At runtime
+  (`parts/checks/host-user-contract-vm`, a `runNixOSTest` boot): the same two-session
+  host comes up with both a plasma Wayland *and* a plasma X11 session file live and
+  both user accounts activated — the coexistence claim observed on a real machine.
 
 ## Considered Options
 
