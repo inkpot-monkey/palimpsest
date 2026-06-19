@@ -48,6 +48,8 @@
   # come from this grant, split out of gui (ADR-0018 slice 11). stargazer also runs
   # the virtualization *services* via custom.profiles.virtualization above.
   custom.users.inkpotmonkey.granted.virtualization.enable = true;
+  # signing key for commit signing (ADR-0018 slice 13), replacing the hostName gate.
+  custom.users.inkpotmonkey.granted.signing.enable = true;
 
   system.stateVersion = "25.05";
 

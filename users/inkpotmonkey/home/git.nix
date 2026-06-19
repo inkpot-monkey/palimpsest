@@ -2,7 +2,6 @@
   config,
   lib,
   options,
-  osConfig,
   ...
 }:
 let
@@ -17,14 +16,14 @@ let
   # on GitHub as a Signing Key. Hosts without the secret fall back to the user's
   # own ~/.ssh key so nothing regresses there.
   signingPub = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINwuFsdbFSteWr3WwV6MCNZfYhtNpsmhKr48ofiRewHY";
-  # osConfig is null in a standalone home build (no nixos integration); treat that as
-  # "no signing key present" and fall back to ~/.ssh. Slice 13 replaces this
-  # osConfig.sops read entirely with hostFacts.granted.signing + the platform resolver.
-  sopsSecrets = if osConfig != null then osConfig.sops.secrets or { } else { };
-  hasSigningKey = sopsSecrets ? inkpotmonkey_signing_key;
+  # The signing key now rides the user's own home sops (signing.nix), gated on the
+  # signing grant (ADR-0018, slice 13). So whether it is present is a property of THIS
+  # home config — no osConfig, no hostName list. Absent (not granted, or a standalone
+  # build) → fall back to ~/.ssh.
+  hasSigningKey = config.sops.secrets ? inkpotmonkey_signing_key;
   signingKeyPath =
     if hasSigningKey then
-      sopsSecrets.inkpotmonkey_signing_key.path
+      config.sops.secrets.inkpotmonkey_signing_key.path
     else
       "${config.home.homeDirectory}/.ssh/id_ed25519.pub";
 

@@ -98,6 +98,8 @@
     # virtualization groups, split out of gui (ADR-0018 slice 11) — reproduces what
     # the gui block conferred here before the split.
     virtualization.enable = true;
+    # signing key for commit signing (ADR-0018 slice 13), replacing the hostName gate.
+    signing.enable = true;
   };
 
   system.stateVersion = "25.11";

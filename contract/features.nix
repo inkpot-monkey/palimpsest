@@ -17,4 +17,7 @@
   # featureGroups). Split out of gui (slice 11) so gui stays in the safe set — these
   # are privileged and build-time-only, never auto-granted at a greeter.
   virtualization.enable = lib.mkEnableOption "privileged virtualization groups for this user (host grant)";
+  # signing: provision the user's dedicated commit-signing key (secret-bearing, but
+  # `exposedSafe` — a low-privilege key an exposed host may hold; slice 13).
+  signing.enable = lib.mkEnableOption "the commit-signing key for this user (host grant)";
 }

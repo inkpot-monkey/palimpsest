@@ -18,6 +18,7 @@ in
   # (opt-in per host via their own enable option).
   imports = [
     ./restic.nix
+    ./signing.nix
     ./git-annex.nix
   ]
   ++ lib.optionals isGui [

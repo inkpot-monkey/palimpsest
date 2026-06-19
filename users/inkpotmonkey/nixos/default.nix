@@ -33,26 +33,10 @@
 
       users.users.inkpotmonkey.shell = pkgs.bash;
 
-      # inkpotmonkey's dedicated commit-signing key (a NON-admin ed25519 key; see
-      # users/inkpotmonkey/home/git.nix for why identity.sshKey must not be used).
-      # Distributed at the SYSTEM level because headless hosts (e.g. kelpy, which
-      # runs the aionui agent with no user session) have no working per-user
-      # home-manager sops. Deployed only on hosts whose host key is a recipient of
-      # users/inkpotmonkey.yaml; git.nix keys off the presence of this secret and
-      # falls back to ~/.ssh elsewhere.
-      sops.secrets.inkpotmonkey_signing_key =
-        lib.mkIf
-          (builtins.elem config.networking.hostName [
-            "kelpy"
-            "stargazer"
-            "sawtoothShark"
-          ])
-          {
-            sopsFile = config.custom.platform.secretPath "users/inkpotmonkey.yaml";
-            key = "signing_key";
-            owner = "inkpotmonkey";
-            mode = "0400";
-          };
+      # inkpotmonkey's dedicated commit-signing key now rides the `signing` grant via
+      # the contract signing feature module (contract/features/signing.nix), instead of
+      # a hostName ∈ {…} gate here. Hosts grant signing as data; git.nix keys off
+      # hostFacts.granted.signing (ADR-0018, slice 13).
 
       # =========================================
       # Home Manager Configuration
@@ -90,6 +74,10 @@
               cli.enable = true;
               gui.enable = hostFacts.granted.gui.enable;
               restic.enable = hostFacts.granted.restic.enable;
+              # signing key rides the user's home sops (like restic), gated on the
+              # signing grant (ADR-0018, slice 13). Headless/exposed hosts can't
+              # decrypt home sops, so they simply don't grant it.
+              signing.enable = hostFacts.granted.signing.enable;
             };
           };
       };

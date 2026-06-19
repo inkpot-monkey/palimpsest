@@ -50,6 +50,9 @@
   # kelpy runs the AionUi code-executing agent (aionui.enable above) — mark it
   # exposed so the contract refuses any secret-bearing user-feature grant (ADR-0015).
   custom.host.exposed = true;
+  # NOTE: signing is intentionally NOT granted here. It is now a home-sops feature
+  # (ADR-0018, slice 13) decryptable only by the user's own key, which a headless
+  # agent host lacks — and the agent should not sign commits as inkpotmonkey anyway.
 
   # OpenClaw models configuration — site-specific provider setup.
   # The gateway infrastructure (SOPS secrets, service config, port, etc.)

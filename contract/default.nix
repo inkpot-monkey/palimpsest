@@ -34,6 +34,12 @@
       };
       workstation.secretBearing = false;
       virtualization.secretBearing = false;
+      # signing handles a secret (so it is excluded from the future safe set and the
+      # exposed-host ban applies — a greeter user never auto-gets it, no exposed host
+      # holds it). But the secret rides the USER's home sops (like restic), decrypted
+      # by the user's own key — so there is no host re-key and no host recipients
+      # (no secretFiles). See users/inkpotmonkey/home/signing.nix (ADR-0018, slice 13).
+      signing.secretBearing = true;
     };
     # Groups a user may NOT obtain by merely declaring them in identity.extraGroups
     # (untrusted input) — they require a feature grant. Enforced by the clamp in
