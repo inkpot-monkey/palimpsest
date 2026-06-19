@@ -24,12 +24,29 @@ and gated by a host grant.**
   in a **feature module** — a contract-owned NixOS module, gated `mkIf granted` and
   parameterized by the manifest's `featureConfig`. The user never writes host config;
   the contract does, on the user's behalf, only where granted.
-- The boundary is enforced by **structural confinement** (the user has no module slot —
-  "model C") backed by **restricted `lib.evalModules`** (the manifest is evaluated
-  against a universe declaring only the contract's user-facing options — "model A
-  enforcement"). The home side needs no new enforcement: home-manager is *already* a
-  restricted `evalModules` universe — a home config physically cannot reach system
-  state — which is the existing proof that this enforcement model works.
+- The boundary is enforced by **giving the user no system channel at all**, not by
+  policing one. The manifest is a plain attrset of three known keys; the contract
+  **reads** `identity` and `featureConfig` as **typed data** (validated against the
+  contract's existing identity/feature-config schema — a universe with *no* system
+  options, so host options are unexpressible, not allowed-then-checked), **evaluates**
+  only `home` (via home-manager, already a restricted `evalModules` universe that cannot
+  reach system state), and **ignores every other key**. A manifest that also writes
+  `services.openssh.enable = true` has that key simply never read → inert: no error, no
+  effect. Two restricted evaluations, neither with a system-option universe, plus a
+  structurally-ignored remainder.
+  - **Ignore overreach, validate intent.** Out-of-contract keys (any system option;
+    anything that is not `identity`/`featureConfig`/`home`) are *ignored* — the lenient
+    "build still happens" posture. But *malformed in-channel data* (a misspelled or
+    wrong-typed `featureConfig` key) *errors*, because it is the user's own bug and the
+    schema is the typo-catching net; silently dropping it would let a user believe they
+    configured something they did not.
+  - This is what **dissolves model C's headline cost** — the "curated capability
+    catalog" of [ADR-0015](0015-host-user-contract.md) mechanic 7. That cost conflated two
+    things: *home* knobs the user configures (`programs.git`, dotfiles) go through the
+    home module, which home-manager already exposes — no re-exposure, no catalog; and
+    *system* effects go through contract-owned feature modules the user never touches —
+    no user-facing system catalog at all. The only schema that remains is `featureConfig`
+    itself (the knobs a feature *chooses* to expose), which the model needs regardless.
 
 This closes three leaks present in the in-tree "model A" posture today:
 
@@ -126,11 +143,12 @@ We also keep two host-side notions distinct, because only one carries security w
   over), and the *enforcement* (the manifest can contribute nothing the host did not
   grant). Today's `hosts/default.nix` shifts from implicit *grant-by-which-module-you-import*
   to explicit *grant-as-data*.
-- **Migrating a host effect is mechanical but not free**: every write in a user's
-  `nixos/` module is relocated into a contract feature module, parameterized by
-  `featureConfig`. The contract becomes a **curated capability catalog** (0015 mechanic 7's
-  cost), and re-exposing options at the catalog edge re-litigates
-  [0014](0014-home-profiles-conditional-import.md)'s home-manager version skew.
+- **Migrating a host effect is mechanical**: every write in a user's `nixos/` module is
+  relocated into a contract feature module, parameterized by `featureConfig`. Because the
+  user has no system channel (above), this does **not** grow a curated catalog of
+  user-facing system options — the only schema is `featureConfig`. Home knobs stay in the
+  home module, so [0014](0014-home-profiles-conditional-import.md)'s home-manager version
+  skew is confined to the home side exactly as today, not pushed onto a catalog edge.
 - **`permittedInsecurePackages` and overlays move host-ward.** A user can no longer relax
   a host-wide security gate; if a granted feature needs an insecure package or an overlay,
   the *feature module* declares it and the host's grant is its acceptance.
@@ -161,10 +179,16 @@ foundation the greeter will stand on.
 
 ## Considered alternatives
 
+- **Restricted `evalModules` over a curated system catalog** ([ADR-0015](0015-host-user-contract.md)
+  mechanic 7's original framing) — superseded by the read-data enforcement above. Giving
+  the user a single module evaluation against a hand-curated set of re-exposed system
+  options would *error* on out-of-catalog writes (tensioning with "build still happens")
+  and would carry a perpetual catalog-maintenance cost. Reading typed data + evaluating
+  only home achieves the same confinement with ignore-semantics and no system catalog.
 - **Allowlist assertion (keep model A, lint the option-paths a user contributes)** —
   rejected as the *boundary*: it is a post-hoc check over an already-merged evaluation, so
   it is approximate and races the very merges it polices. It can be a transitional
-  *backstop* while the catalog is built, but not the guarantee.
+  *backstop* during migration, but not the guarantee.
 - **A manual `defaultGranted` policy flag per feature** — rejected: it would drift from the
   real safety property. Deriving runtime-eligibility from `secretBearing` + `featureGroups`
   keeps "what a stranger may have" provably tied to "what confers no privilege and no
