@@ -80,8 +80,13 @@
       url = "github:Reginleif88/claude-cowork-nix";
     };
 
-    crane = {
-      url = "github:ipetkov/crane";
+    # The email bridge lives in its own (private) repo (ADR-0017), consumed via
+    # its overlay (adds pkgs.jmap-matrix-bridge) + nixosModule. git+ssh like the
+    # secrets input, since the repo is private. Its nixpkgs follows ours so the
+    # crate builds against the fleet pin.
+    jmap-bridge = {
+      url = "git+ssh://git@github.com/palebluebytes/jmap-matrix-bridge.git";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
 
     secrets = {
@@ -129,7 +134,6 @@
           formatter = pkgs.nixfmt;
           packages = import ./pkgs {
             inherit pkgs;
-            craneLib = inputs.crane.mkLib pkgs;
           };
         };
     };

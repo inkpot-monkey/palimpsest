@@ -13,11 +13,8 @@
         annas_opds = import ./annas-opds {
           inherit pkgs;
         };
-        # Run against tuwunel to match the production homeserver on kelpy.
-        jmap_bridge = import ./jmap-bridge {
-          inherit pkgs inputs self;
-          homeserver = "tuwunel";
-        };
+        # jmap_bridge VM check moved to the bridge's own repo
+        # (inputs.jmap-bridge.checks); its CI owns the round-trip test now.
       };
     };
 }

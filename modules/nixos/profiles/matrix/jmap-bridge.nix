@@ -2,6 +2,7 @@
   config,
   lib,
   self,
+  inputs,
   ...
 }:
 
@@ -10,7 +11,7 @@ let
   domain = config.services.matrix-tuwunel.settings.global.server_name;
 in
 {
-  imports = [ self.nixosModules.jmap-bridge ];
+  imports = [ inputs.jmap-bridge.nixosModules.jmap-bridge ];
 
   options.custom.profiles.matrix.jmap-bridge = {
     enable = lib.mkEnableOption "JMAP-to-Matrix bridge (email in Matrix)";

@@ -5,7 +5,6 @@ let
     final: _prev:
     import (inputs.self + /pkgs/default.nix) {
       pkgs = final;
-      craneLib = inputs.crane.mkLib final;
     };
 
   # 2. Modifications: Your overrides
@@ -70,6 +69,7 @@ in
   # Using composeManyExtensions is more robust than manual attribute merging
   default = inputs.nixpkgs.lib.composeManyExtensions [
     additions
+    inputs.jmap-bridge.overlays.default
     modifications.tree-sitter
     # modifications.antigravity
     flexget

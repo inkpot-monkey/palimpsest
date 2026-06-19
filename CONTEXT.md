@@ -60,7 +60,7 @@ A user **offers** a feature it *can* provide; a host **grants** it by explicitly
 ### Matrix bridging
 
 **The bridge**:
-The hand-written Rust `jmap-matrix-bridge` appservice that connects a JMAP mailbox (Stalwart) to Matrix. Unqualified, "the bridge" means this one.
+The hand-written Rust `jmap-matrix-bridge` appservice that connects a JMAP mailbox (Stalwart) to Matrix. Unqualified, "the bridge" means this one. It lives in its own repo (`palebluebytes/jmap-matrix-bridge`), consumed here as the `jmap-bridge` flake input; only the host glue (`modules/nixos/profiles/matrix/jmap-bridge.nix`) is in this repo. See [ADR-0017](docs/adr/0017-jmap-bridge-own-repo.md).
 _Avoid_: connector, gateway.
 
 **Homeserver**:
