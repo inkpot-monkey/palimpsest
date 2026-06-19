@@ -24,6 +24,11 @@
         host_user_contract_vm = import ./host-user-contract-vm {
           inherit pkgs self;
         };
+        # The conformance matrix (ADR-0018, slice 16): users × host archetypes, proving
+        # any host can enable any user with the invariants intact.
+        host_user_contract_matrix = import ./host-user-contract-matrix {
+          inherit pkgs self;
+        };
       };
     };
 }
