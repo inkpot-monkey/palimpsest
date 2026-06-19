@@ -25,6 +25,7 @@
     gaming = ./gaming.nix;
     direnv = ./direnv.nix;
     virtualization = ./virtualization.nix;
+    kanata = ./kanata.nix;
 
     # --- Application / Service Profiles ---
     matrix = ./matrix;

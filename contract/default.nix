@@ -33,6 +33,7 @@
         secretFiles = [ "profiles/restic.yaml" ];
       };
       workstation.secretBearing = false;
+      virtualization.secretBearing = false;
     };
     # Groups a user may NOT obtain by merely declaring them in identity.extraGroups
     # (untrusted input) — they require a feature grant. Enforced by the clamp in
@@ -54,16 +55,20 @@
         "wheel"
       ];
       # The desktop hardware groups, conferred by the gui grant via the realization's
-      # clamp+grantedGroups path (so they ride the grant, not a raw user write — slice
-      # 10). NOTE: disk/qemu-libvirtd/libvirtd are privileged and split into a
-      # `virtualization` feature in slice 11; here they keep gui behaviour-neutral.
+      # clamp+grantedGroups path. All non-privileged, so gui stays in the safe set
+      # (ADR-0018, slice 11). video is conferred via identity already.
       gui = [
         "input"
         "uinput"
         "plugdev"
+        "dialout"
+      ];
+      # The privileged virtualization groups, split out of gui (slice 11) so they are
+      # build-time-only, never on a greeter-grantable feature. kvm is intentionally
+      # omitted: it is not conferred to any user today (behaviour-neutral).
+      virtualization = [
         "disk"
         "qemu-libvirtd"
-        "dialout"
         "libvirtd"
       ];
     };

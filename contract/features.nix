@@ -13,4 +13,8 @@
   # (contract/default.nix featureGroups). A user can never obtain these by merely
   # declaring them in identity.extraGroups; only this grant confers them.
   workstation.enable = lib.mkEnableOption "privileged workstation groups for this user (host grant)";
+  # virtualization: the privileged disk/libvirtd/qemu-libvirtd groups (contract
+  # featureGroups). Split out of gui (slice 11) so gui stays in the safe set — these
+  # are privileged and build-time-only, never auto-granted at a greeter.
+  virtualization.enable = lib.mkEnableOption "privileged virtualization groups for this user (host grant)";
 }

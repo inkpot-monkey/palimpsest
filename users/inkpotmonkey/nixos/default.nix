@@ -105,24 +105,10 @@
     # GUI Configuration (Guarded by Profile)
     # =========================================
     (lib.mkIf config.custom.users.inkpotmonkey.granted.gui.enable {
-      # uinput moved to the contract gui feature module (contract/features/gui.nix).
-      services.kanata = {
-        enable = true;
-        package = pkgs.kanata-with-cmd;
-        keyboards.default = {
-          configFile = ../home/configs/kanata.kbd;
-          extraDefCfg = "process-unmapped-keys yes";
-        };
-      };
-
-      systemd.services.kanata-default = {
-        path = [ pkgs.brightnessctl ];
-        serviceConfig.SupplementaryGroups = [
-          "input"
-          "uinput"
-          "video"
-        ];
-      };
+      # uinput + the emacs overlay moved to the contract gui feature module
+      # (contract/features/gui.nix). kanata moved to the host (a privileged,
+      # cmd-enabled keymap is an executable payload, not a safe-set user feature) —
+      # `custom.profiles.kanata` (ADR-0018, slice 11; portable kanata is issue 18).
 
       # The shared GUI host infrastructure (sddm + plasma6 + Wayland + default
       # session) now comes from the gui grant via contract/realization.nix, set

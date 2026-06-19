@@ -22,6 +22,7 @@
     sudo.enable = true;
     audio.enable = true;
     gui-base.enable = true;
+    kanata.enable = true; # keyboard remap, host-side (ADR-0018 slice 11)
     backup.enable = false;
     direnv.enable = true;
     fonts.enable = true;
@@ -94,6 +95,9 @@
   custom.users.inkpotmonkey.granted = {
     gui.enable = true;
     workstation.enable = true;
+    # virtualization groups, split out of gui (ADR-0018 slice 11) — reproduces what
+    # the gui block conferred here before the split.
+    virtualization.enable = true;
   };
 
   system.stateVersion = "25.11";

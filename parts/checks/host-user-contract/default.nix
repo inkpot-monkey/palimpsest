@@ -108,11 +108,7 @@ let
       ok = granted.services.displayManager.sddm.enable;
     }
     {
-      name = "granted enables kanata";
-      ok = granted.services.kanata.enable;
-    }
-    {
-      name = "granted enables uinput";
+      name = "granted enables uinput (via the contract gui feature module)";
       ok = granted.hardware.uinput.enable;
     }
     {
@@ -120,12 +116,16 @@ let
       ok = !denied.services.displayManager.sddm.enable;
     }
     {
-      name = "denied leaves kanata off";
-      ok = !denied.services.kanata.enable;
-    }
-    {
       name = "denied leaves uinput off";
       ok = !denied.hardware.uinput.enable;
+    }
+    {
+      name = "gui confers no privileged group (safe set: slice 11 split)";
+      ok = !(lib.any (g: lib.elem g self.contract.privilegedGroups) self.contract.featureGroups.gui);
+    }
+    {
+      name = "virtualization confers the privileged groups, only via its grant";
+      ok = lib.elem "libvirtd" self.contract.featureGroups.virtualization;
     }
     {
       name = "system platform resolves a secret source to an existing file";

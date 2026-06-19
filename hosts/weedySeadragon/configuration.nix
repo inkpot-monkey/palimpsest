@@ -19,6 +19,7 @@
     audio.enable = true;
     wireless.enable = true;
     gui-base.enable = true;
+    kanata.enable = true; # keyboard remap, host-side (ADR-0018 slice 11)
     bluetooth.enable = true;
     sops.enable = true;
     fonts.enable = true;
@@ -27,6 +28,10 @@
       acceptDns = true;
     };
   };
+
+  # Grant-as-data: inkpotmonkey's virtualization groups, split out of gui (ADR-0018
+  # slice 11). Reproduces the groups the gui block conferred here before the split.
+  custom.users.inkpotmonkey.granted.virtualization.enable = true;
 
   # weedySeadragon hosts two gui users (inkpotmonkey Wayland + eyeofalligator X11).
   # The display surface is NOT set here — it is derived from the union of each

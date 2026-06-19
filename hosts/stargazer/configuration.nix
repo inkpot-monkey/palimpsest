@@ -31,6 +31,7 @@
     gui-base.enable = true;
     gaming.enable = true;
     virtualization.enable = true;
+    kanata.enable = true; # keyboard remap, host-side (ADR-0018 slice 11)
     fonts.enable = true;
     regreet.enable = false; # Disabled in favor of SDDM for Plasma 6
     bluetooth.enable = true;
@@ -42,6 +43,11 @@
     monitoring-client.enable = true;
     monitoring-smartctl.enable = true;
   };
+
+  # Grant-as-data: inkpotmonkey's virtualization groups (disk/libvirtd/qemu-libvirtd)
+  # come from this grant, split out of gui (ADR-0018 slice 11). stargazer also runs
+  # the virtualization *services* via custom.profiles.virtualization above.
+  custom.users.inkpotmonkey.granted.virtualization.enable = true;
 
   system.stateVersion = "25.05";
 
