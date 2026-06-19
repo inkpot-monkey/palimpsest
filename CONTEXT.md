@@ -59,9 +59,35 @@ A feature has two faces, kept distinct: the **grant** (host-owned) and its **fea
 **Grant** / **Offer**:
 A user **offers** a feature it *can* provide; a host **grants** it by explicitly enabling it (`custom.users.<user>.granted.<feature>`). Default-closed: an ungranted feature is off, and "deny" is simply the absence of a grant. The grant is purely the host's yes/no. Granting a feature is also what re-keys that feature's secret to the host — so **public identity travels with the user; secrets follow features**, and a host that grants nothing private holds no private key material.
 
+The grant is the **sole enabler**, and the host must grant *every* host effect — no exceptions. A user can never enable a feature; it can only **offer** one. An offer without a grant is **inert**: the feature's host effects are a silent no-op and the build still succeeds — requesting an ungranted feature is never an error, it simply produces a host without that feature. Consequently `granted.<feature>` is **host-write-only** — a user repo can never set its own grant — and the user contributes no system configuration at all, only data the host's grants draw on (see **User manifest**, **Feature module**, **Binding path**, [ADR-0018](docs/adr/0018-user-confinement-manifest-greeter.md)).
+
+**Prohibition** vs **Incapacity**:
+Two reasons a host lacks a feature, only one of which is a security statement. A **prohibition** is a host *forbidding* a feature it otherwise could run — the security verb (e.g. an exposed host forbidding any secret-bearing feature). An **incapacity** is a host simply not being able to offer it — a *headless* host has no display, so no greeter and no gui, which is a fact about the hardware, not a policy. Do not model incapacity as a ban; it dilutes the one word that carries weight.
+_Avoid_: "deny" for both (reserve denial for the absence of a grant; use prohibit for the active security veto).
+
 **Feature configuration**:
 The user-provided *parameters* of a feature (e.g. a gui user's **session** preference — Wayland or X11 — or a restic feature's schedule), as opposed to the **grant**, which is the host's yes/no. The realization reads a feature's configuration only when the feature is granted: user-scoped parameters apply per user, while host-affecting ones **aggregate** across all granted users rather than conflict. The gui **session** is the canonical case — on a single-seat host the display surface is the *union* of every granted gui user's session, so two users with different sessions coexist, each logging into their own. (Aggregation only fits parameters that genuinely union; a truly singular setting like the system timezone stays a host decision.)
 _Avoid_: settings (too generic), the grant (that is the host's, not the user's).
+
+**User manifest**:
+The confined surface a user repo exposes — and the *only* thing it exposes: its public **identity**, its **feature configuration**, the features it **offers**, and a **home module**. It is **pure data plus home**; it has no system-configuration slot, so it cannot write `users.users`, `nixpkgs.*`, `boot.*`, or any host option — those are simply not in its universe. Its data is **host-independent** and evaluated **against** a host's grant surface: the host's grants decide which of its offered features realize, and the manifest only ever *parameterizes* contract-owned **feature modules**, never writes host config directly. Its home module may *read* host state only through the restricted **hostFacts** projection, never raw `osConfig`. This is what makes a user portable — and what makes evaluating a stranger's flake URL at the greeter safe. See [ADR-0018](docs/adr/0018-user-confinement-manifest-greeter.md).
+_Avoid_: user module (it is deliberately not a NixOS module), config.
+
+**Feature module**:
+A **contract-owned** NixOS module carrying a feature's *host effects* (its services, groups, packages, secrets), gated `mkIf granted` and parameterized by the user's feature configuration. It is the only thing that writes host configuration on a user's behalf — the user manifest never does. Relocating a host effect out of a user and into a feature module is what turns an unbounded "user can set anything" into "the host grants, the contract realizes" (the model-C boundary, [ADR-0015](docs/adr/0015-host-user-contract.md) mechanic 7, made concrete in [ADR-0018](docs/adr/0018-user-confinement-manifest-greeter.md)).
+_Avoid_: profile (a profile is host- or user-toggled config composition; a feature module is the grant-gated realization of one feature).
+
+**hostFacts**:
+The restricted, read-only projection of host state a user manifest's home module may consult to adapt — `{ exposed, platform, granted }` and nothing more. It is **self-scoped** (this user's grants only; never another user's data and never a secret value) and deliberately **excludes `hostName`**, so a user adapts on *semantic* facts, never on host identity. It replaces the raw-`osConfig` read with a surface narrow enough that host-awareness can't become host-coupling. See [ADR-0018](docs/adr/0018-user-confinement-manifest-greeter.md).
+_Avoid_: osConfig (the unrestricted tree it replaces).
+
+**Safe set** (runtime-eligible features):
+The features a *runtime* binding — the greeter — may confer on a user without operator authorship: exactly those that confer no privileged group and bear no secret (`¬secretBearing ∧ featureGroups == []`). It is **derived**, not declared. gui is in it; `workstation` (privileged) and `restic`/`signing` (secret-bearing) are not. The hinge of the model: privilege is build-time-only, so a flake URL typed at a greeter can never escalate. See [ADR-0018](docs/adr/0018-user-confinement-manifest-greeter.md).
+_Avoid_: default-granted (describes the disposition, not the membership rule).
+
+**Binding path**:
+How a user is bound to a host, of which there are two, with opposite grant defaults *by design*. **Build-time binding** is operator-authored (the fleet declaration) and **default-closed** — the operator grants explicitly, privilege included, subject to prohibitions. **Runtime binding** is the **greeter** (flake URL + username + password) and is **default-open over the safe set** — gui and baseline are auto-granted, privilege is impossible. Both drive the *same* contract, manifests, and feature modules.
+_Avoid_: enable (a user is never bound by enabling itself; the host's grant binds).
 
 ### Matrix bridging
 
