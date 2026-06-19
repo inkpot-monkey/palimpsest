@@ -474,15 +474,15 @@
       "locked": {
         "lastModified": 1781866010,
         "narHash": "sha256-25mYjQvHAk823v6cMbGuZKwjoMgrj+9CZ5Hr57ZQYpg=",
-        "ref": "refs/heads/main",
+        "owner": "palebluebytes",
+        "repo": "jmap-matrix-bridge",
         "rev": "e2f739d322bba65f0e1340a66df5f9c499e1f75c",
-        "revCount": 67,
-        "type": "git",
-        "url": "ssh://git@github.com/palebluebytes/jmap-matrix-bridge.git"
+        "type": "github"
       },
       "original": {
-        "type": "git",
-        "url": "ssh://git@github.com/palebluebytes/jmap-matrix-bridge.git"
+        "owner": "palebluebytes",
+        "repo": "jmap-matrix-bridge",
+        "type": "github"
       }
     },
     "llm-agents": {
