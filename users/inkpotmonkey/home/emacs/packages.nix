@@ -12,42 +12,13 @@
     packageRequires = [ epkgs.yaml ];
   })
   (epkgs.trivialBuild {
-    pname = "claude-code-ide";
-    version = "unstable-2026-06-09";
-    src = pkgs.fetchFromGitHub {
-      owner = "manzaltu";
-      repo = "claude-code-ide.el";
-      rev = "a9485f766ea69f6cb3a3f08dea20d44fd6596673";
-      hash = "sha256-6kaTPI2CCsdxxiCpZ7qqciv/HJCQRsJ8084+SqW8Idc=";
-    };
-    packageRequires = [
-      epkgs.websocket
-      epkgs.transient
-      epkgs.web-server
-    ];
-  })
-  (epkgs.trivialBuild {
-    pname = "gemini-cli";
-    version = "unstable-202X";
-    src = pkgs.fetchFromGitHub {
-      owner = "linchen2chris";
-      repo = "gemini-cli.el";
-      rev = "7a291a3e65eca50b7352aeb0e808c7984bba5437";
-      hash = "sha256-VY0kuRdmcwjB36vVGtv8X3f1Da2qO+e08cqfW2KjOvQ=";
-    };
-    packageRequires = [
-      epkgs.popup
-      epkgs.projectile
-    ];
-  })
-  (epkgs.trivialBuild {
     pname = "ai-code-interface";
-    version = "unstable-202X";
+    version = "unstable-2026-06-19";
     src = pkgs.fetchFromGitHub {
       owner = "tninja";
       repo = "ai-code-interface.el";
-      rev = "d6ed3eec0209d0bdb7fc9354195e40933b855384";
-      hash = "sha256-uGMEdH6GeIUwXqPVpps4jk2OwhwToeJJPk3Yw5s3nx0=";
+      rev = "453281bd230d7004a517e3b288eff530c3b9d4de";
+      hash = "sha256-7nx86SC/KFQ4v85YuwdCSyqnjXUkQp9/eiJnIn/QYGo=";
     };
     packageRequires = [ epkgs.magit ];
   })
@@ -95,23 +66,6 @@
     postInstall = ''
       cp -rv sources $out/share/emacs/site-lisp/
     '';
-  })
-  (epkgs.trivialBuild {
-    pname = "eca";
-    version = "unstable-2026-04-17";
-    src = pkgs.fetchFromGitHub {
-      owner = "editor-code-assistant";
-      repo = "eca-emacs";
-      rev = "ecf9d229e012ceabb871b261c28cc06702d601a7";
-      hash = "sha256-nIvqXEccWG4lsgsHTyt7KmdSMS7Oq0Fl4Oo4GPoS9ck=";
-    };
-    packageRequires = [
-      epkgs.dash
-      epkgs.s
-      epkgs.f
-      epkgs.markdown-mode
-      epkgs.compat
-    ];
   })
   (epkgs.trivialBuild {
     pname = "just-complete";

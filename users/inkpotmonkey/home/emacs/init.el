@@ -732,17 +732,38 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 		:custom
 		(eat-term-scrollback-size 200000)) ;; keep plenty of scrollback for long Claude responses
 
-(use-package claude-code-ide
+;; ghostel — libghostty terminal, the claude-code backend (renders the Claude
+;; TUI most faithfully, no eat-style repaint ghosting). The native module ships
+;; prebuilt in the Nix package, so never let ghostel try to download/compile it.
+(use-package ghostel
 		:ensure nil
-		:bind ("C-c C-'" . claude-code-ide-menu)
 		:custom
-		;; eat handles full-screen TUI redraw + scrollback better than vterm
-		(claude-code-ide-terminal-backend 'eat)
-		:config
-		(claude-code-ide-emacs-tools-setup))
+		(ghostel-module-auto-install nil))
 
-(use-package gemini-cli
-		:ensure nil)
+;; stevemolitor/claude-code.el — Claude Code as a full-window coding agent.
+;; Multiple named sessions per project: claude-code (C-c c c), a second agent
+;; with claude-code-new-instance, or claude-code-start-in-directory; switch
+;; between them with claude-code-select-buffer (C-c c b). Defaults to the eat
+;; backend. Buffers are named *claude:<dir>[:name]*.
+;;
+;; Keys: C-c c is the command prefix (C-c c m = transient menu).
+(use-package claude-code
+		:ensure nil
+		:bind-keymap ("C-c c" . claude-code-command-map)
+		:custom
+		;; libghostty backend — faithful TUI render, no eat repaint ghosting.
+		(claude-code-terminal-backend 'ghostel)
+		;; Full window, not the default split-below: route display through
+		;; display-buffer so the same-window rule below applies. Reuses the
+		;; selected window (full height + width); switch buffers to get back to
+		;; code. Leaves any other windows you've split intact.
+		(claude-code-display-window-fn #'display-buffer)
+		;; Never truncate the eat buffer — keep the whole session scrollable so
+		;; long responses don't get clipped off-screen (the original problem).
+		(claude-code-eat-never-truncate-claude-buffer t)
+		:config
+		(add-to-list 'display-buffer-alist
+								 '("\\`\\*claude:" (display-buffer-same-window))))
 
 (use-package ai-code-interface
 		:ensure nil
@@ -821,21 +842,6 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 		:config
 		(require 'mcp-hub)
 		:init (mcp-hub-start-all-server))
-
-(use-package eca
-		:ensure nil
-		:bind (("C-, c s" . eca)
-					 ("C-, c n" . eca-chat-new)
-					 ("C-, c r" . eca-rewrite)
-					 ("C-, c w" . eca-workspaces)
-					 ("C-, c R" . eca-restart)
-					 ("C-, c k" . eca-stop))
-		:hook (prog-mode . eca-completion-mode)
-		:config
-		(setq eca-custom-command '("eca" "server"))
-		(setq eca-chat-window-width 0.45)
-		(setq eca-chat-focus-on-open t)
-		(setq eca-chat-auto-add-repomap t))
 
 (use-package daemons)
 

@@ -23,7 +23,9 @@
           epkgs:
           [
             epkgs.vterm
-            epkgs.eat # terminal backend for claude-code-ide (better TUI/scrollback than vterm)
+            epkgs.eat # fallback terminal backend for claude-code
+            epkgs.ghostel # libghostty terminal backend for claude-code (most faithful TUI render)
+            epkgs.claude-code # from MELPA via emacs-overlay (auto-updates on flake update; has ghostel support)
             epkgs.yaml
             epkgs.just-mode
             epkgs.just-ts-mode
