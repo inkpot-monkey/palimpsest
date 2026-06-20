@@ -1,0 +1,78 @@
+# DRAFT ESPHome config for an Antela Filament A60 on LibreTiny (BK7231N).
+#
+# This is a TEMPLATE — copy to `antela-a60-<n>.yaml`, set the substitutions, and finalise
+# the LED-driver block from the GPIO/driver config that slice 01's cloudcutter run dumps
+# (see ../.scratch/antela-bulbs/issues/01). Until that's confirmed, the `output:`/`light:`
+# section below is a best guess and MUST be checked against the real bulb.
+#
+# Secrets resolve from the gitignored esphome/secrets.yaml (decrypted from stash — see README.md).
+
+substitutions:
+  name: antela-a60-1
+  friendly_name: "Antela A60 1"
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+
+bk72xx:
+  # Antela's common module is CB2L (BK7231N). Confirm from the teardown / cloudcutter run;
+  # if unknown, `generic-bk7231n-qfn32-tuya` is the safe fallback board.
+  board: cb2l
+
+logger:
+
+api:
+  encryption:
+    key: !secret api_key_antela_a60_1
+
+ota:
+  - platform: esphome
+    password: !secret ota_password_antela_a60_1
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  # Fallback hotspot if WiFi drops — handy during first adoption.
+  ap:
+    ssid: "${name} fallback"
+
+captive_portal:
+
+# ----------------------------------------------------------------------------------------
+# LED driver — keep exactly ONE variant, with pins from slice 01's dumped Tuya config.
+# ----------------------------------------------------------------------------------------
+
+# Variant A — two-channel CCT (warm + cold filament), the typical filament A60:
+# output:
+#   - platform: libretiny_pwm
+#     id: ch_cold
+#     pin: P?      # confirm
+#   - platform: libretiny_pwm
+#     id: ch_warm
+#     pin: P?      # confirm
+# light:
+#   - platform: cwww
+#     name: ${friendly_name}
+#     cold_white: ch_cold
+#     warm_white: ch_warm
+#     cold_white_color_temperature: 6500 K   # confirm
+#     warm_white_color_temperature: 2700 K   # confirm
+#     constant_brightness: true
+
+# Variant B — single warm-white channel (monochromatic dimmable):
+# output:
+#   - platform: libretiny_pwm
+#     id: ch_ww
+#     pin: P?      # confirm
+# light:
+#   - platform: monochromatic
+#     name: ${friendly_name}
+#     output: ch_ww
+
+# Variant C — BP5758D constant-current driver (Antela RGB GLS uses this; unlikely for a
+# plain filament A60, included for completeness):
+# bp5758d:
+#   data_pin: P?   # confirm
+#   clock_pin: P?  # confirm
+# (then an rgbww/rgbct light referencing the bp5758d channels)

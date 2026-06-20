@@ -1,0 +1,5 @@
+# The decrypted ESPHome secrets, produced from stash at build time. NEVER commit.
+secrets.yaml
+
+# ESPHome's per-build state / compiled artifacts.
+.esphome/
