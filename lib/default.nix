@@ -58,14 +58,13 @@ let
     runtimeEligibleFeature =
       feature:
       let
-        meta = self.contract.featureMeta.${feature} or { };
-        groups = self.contract.featureGroups.${feature} or [ ];
+        f = self.contract.features.${feature} or { };
       in
-      !(meta.secretBearing or false)
-      && (lib.intersectLists groups self.contract.privilegedGroups == [ ])
-      && !(meta.execPayload or false);
+      !(f.secretBearing or false)
+      && (lib.intersectLists (f.groups or [ ]) self.contract.privilegedGroups == [ ])
+      && !(f.execPayload or false);
 
-    safeSet = lib.filter helpers.runtimeEligibleFeature (lib.attrNames self.contract.featureMeta);
+    safeSet = lib.filter helpers.runtimeEligibleFeature (lib.attrNames self.contract.features);
 
     # The restricted hostFacts projection (ADR-0018, slice 12): the ONLY host state a
     # user's home modules may read, in place of raw `osConfig`. Self-scoped — it carries

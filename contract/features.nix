@@ -1,23 +1,91 @@
-# Feature / capability vocabulary that host grants key on (ADR-0015, mechanic 2).
-# A host grants a user's feature via `custom.users.<user>.granted.<feature>`;
-# ungranted is default-closed. Populated per feature as the migration proceeds
-# (slice 02 adds the first, `gui`). Returns option fragments keyed by feature.
+# The feature registry — the SINGLE source of truth for the contract's feature
+# vocabulary (ADR-0015, mechanic 2). One entry per feature; every other feature
+# surface the contract exposes (the `granted.*` grant options, `featureMeta`,
+# `featureGroups`, the user-owned `featureConfig` options, the imported feature
+# modules, the derived safe set, and the sops recipients) is a PROJECTION of this
+# map — see contract/default.nix. Adding a feature is a single edit here, and the
+# keys can never drift across the projections because there is only one set of keys.
+#
+# Per-entry shape (all fields optional except `grant`):
+#   grant         : mkEnableOption description for `custom.users.<u>.granted.<f>`
+#   groups        : privileged/host groups the grant confers (clamped in via the
+#                   realization). Listed in `privilegedGroups` ⇒ build-time-only.
+#   secretBearing : the feature pulls a secret onto a host ⇒ an exposed host may not
+#                   be granted it, and it is excluded from the runtime safe set.
+#   secretFiles   : stash-relative sops files whose recipient set is DERIVED from the
+#                   hosts that grant this feature (self.lib.featureRecipients).
+#   execPayload   : the feature runs host-side user-supplied code ⇒ never safe-set
+#                   eligible (the inert-payload clause; no feature uses it yet).
+#   config        : user-owned option fragment merged into `custom.users.<u>` — the
+#                   feature's *parameters* (host-affecting ones aggregate, ADR-0019).
+#   module        : host-effects module imported alongside the realization.
 { lib }:
 {
-  # gui: desktop environment — display manager, GUI home modules, hardware groups.
-  gui.enable = lib.mkEnableOption "the GUI feature for this user (host grant)";
-  # restic: user-level backup. Secret-bearing (see contract/default.nix featureMeta):
-  # an exposed host may not be granted it.
-  restic.enable = lib.mkEnableOption "the restic backup feature for this user (host grant)";
-  # workstation: privileged host access — confers the docker/podman/wheel groups
-  # (contract/default.nix featureGroups). A user can never obtain these by merely
-  # declaring them in identity.extraGroups; only this grant confers them.
-  workstation.enable = lib.mkEnableOption "privileged workstation groups for this user (host grant)";
-  # virtualization: the privileged disk/libvirtd/qemu-libvirtd groups (contract
-  # featureGroups). Split out of gui (slice 11) so gui stays in the safe set — these
-  # are privileged and build-time-only, never auto-granted at a greeter.
-  virtualization.enable = lib.mkEnableOption "privileged virtualization groups for this user (host grant)";
-  # signing: provision the user's dedicated commit-signing key (secret-bearing, but
-  # `exposedSafe` — a low-privilege key an exposed host may hold; slice 13).
-  signing.enable = lib.mkEnableOption "the commit-signing key for this user (host grant)";
+  # gui: desktop environment — display surface (the realization's session union),
+  # non-privileged input groups, and the gui feature module (uinput, overlays, the
+  # electron permit). In the safe set: no secret, no privileged group, no exec payload.
+  gui = {
+    grant = "the GUI feature for this user (host grant)";
+    groups = [
+      "input"
+      "uinput"
+      "plugdev"
+      "dialout"
+    ];
+    module = ./features/gui.nix;
+    config = {
+      # gui.session: which display session this user logs into. Host-affecting and
+      # UNION-aggregated by the realization (ADR-0019) — a Wayland user and an X11
+      # user coexist on one seat, each logging into their own. A user declares this;
+      # it NEVER sets services.xserver.enable directly.
+      gui.session = lib.mkOption {
+        type = lib.types.enum [
+          "wayland"
+          "x11"
+        ];
+        default = "wayland";
+        description = "Display session this user logs into; unioned across granted gui users by the realization.";
+      };
+    };
+  };
+
+  # restic: user-level backup. Secret-bearing ⇒ an exposed host may not be granted it;
+  # the recipient set of its sops file derives from which hosts grant it.
+  restic = {
+    grant = "the restic backup feature for this user (host grant)";
+    secretBearing = true;
+    secretFiles = [ "profiles/restic.yaml" ];
+  };
+
+  # workstation: privileged host access — the docker/podman/wheel groups. A user can
+  # never obtain these by declaring them in identity.extraGroups; only this grant does.
+  workstation = {
+    grant = "privileged workstation groups for this user (host grant)";
+    groups = [
+      "docker"
+      "podman"
+      "wheel"
+    ];
+  };
+
+  # virtualization: the privileged disk/libvirtd/qemu-libvirtd groups, split out of gui
+  # (slice 11) so gui stays in the safe set — these are build-time-only, never auto-
+  # granted at a greeter. (kvm is in privilegedGroups but conferred to no user today.)
+  virtualization = {
+    grant = "privileged virtualization groups for this user (host grant)";
+    groups = [
+      "disk"
+      "qemu-libvirtd"
+      "libvirtd"
+    ];
+  };
+
+  # signing: the user's dedicated NON-admin commit-signing key. Secret-bearing (so the
+  # exposed-host ban applies and a greeter never auto-grants it), but the secret rides
+  # the USER's home sops decrypted by the user's own key — no host re-key, no host
+  # recipients (no secretFiles). See users/inkpotmonkey/home/signing.nix (slice 13).
+  signing = {
+    grant = "the commit-signing key for this user (host grant)";
+    secretBearing = true;
+  };
 }

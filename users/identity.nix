@@ -12,8 +12,8 @@
   # (ADR-0018, slice 10).
   imports = [
     self.contract.realization
-    self.contract.guiFeature
-  ];
+  ]
+  ++ self.contract.featureModules;
 
   options.custom.users = lib.mkOption {
     type = lib.types.attrsOf (
@@ -24,11 +24,11 @@
           identity = import self.contract.identity { inherit lib; };
           # Feature grants a host makes for this user, from the contract's vocabulary.
           # Default-closed (ADR-0015, mechanic 2): a host enables `granted.<feature>`.
-          granted = import self.contract.features { inherit lib; };
+          granted = self.contract.grantedOptions;
         }
         # User-owned feature configuration (ADR-0019): parameters like gui.session.
         # Merged at the top level so a user writes `custom.users.<u>.gui.session`.
-        // import self.contract.featureConfig { inherit lib; };
+        // self.contract.featureConfigOptions;
       }
     );
     default = { };
