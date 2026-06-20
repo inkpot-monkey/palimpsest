@@ -11,28 +11,32 @@ in
 {
   # The `restic.enable` option is declared centrally in the contract home-profile
   # vocabulary (contract/home-profiles.nix); this module supplies its config.
+  # Secrets + the repo template go through the backend-neutral platform seam (ADR-0021),
+  # never sops directly: the feature declares logical secrets; the host binding realizes them.
   config = lib.mkIf config.custom.home.profiles.restic.enable {
-    sops.secrets.restic_repo = {
-      key = "restic/repo";
-      sopsFile = resticSops;
+    custom.platform.secrets = {
+      restic_repo = {
+        source = resticSops;
+        key = "restic/repo";
+      };
+      restic_password = {
+        source = resticSops;
+        key = "restic/password";
+      };
+      restic_ssh_private = {
+        source = resticSops;
+        key = "restic/ssh/private";
+      };
     };
-    sops.secrets.restic_password = {
-      key = "restic/password";
-      sopsFile = resticSops;
-    };
-    sops.secrets.restic_ssh_private = {
-      key = "restic/ssh/private";
-      sopsFile = resticSops;
-    };
-    sops.templates."restic-repo".content = ''
-      ${config.sops.placeholder.restic_repo}:backups
+    custom.platform.secretTemplates."restic-repo".content = ''
+      ${config.custom.platform.placeholder.restic_repo}:backups
     '';
 
     services.restic.enable = true;
     services.restic.backups.daily = {
       initialize = true;
-      passwordFile = config.sops.secrets.restic_password.path;
-      repositoryFile = config.sops.templates."restic-repo".path;
+      passwordFile = config.custom.platform.secretPaths.restic_password;
+      repositoryFile = config.custom.platform.templatePaths."restic-repo";
       paths = [
         config.home.homeDirectory
       ];
@@ -48,7 +52,7 @@ in
       extraOptions = [
         # Use a dedicated Restic SSH key for isolation.
         # -F /dev/null avoids permission issues with ~/.ssh/config in the Nix store.
-        "sftp.command='ssh -F /dev/null -i ${config.sops.secrets.restic_ssh_private.path} zh2046@zh2046.rsync.net -s sftp'"
+        "sftp.command='ssh -F /dev/null -i ${config.custom.platform.secretPaths.restic_ssh_private} zh2046@zh2046.rsync.net -s sftp'"
       ];
     };
   };

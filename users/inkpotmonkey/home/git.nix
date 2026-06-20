@@ -20,10 +20,12 @@ let
   # signing grant (ADR-0018, slice 13). So whether it is present is a property of THIS
   # home config — no osConfig, no hostName list. Absent (not granted, or a standalone
   # build) → fall back to ~/.ssh.
-  hasSigningKey = config.sops.secrets ? inkpotmonkey_signing_key;
+  # Read the signing key through the backend-neutral platform seam (ADR-0021), not sops
+  # directly: present iff the signing feature declared it (granted on this host).
+  hasSigningKey = config.custom.platform.secrets ? inkpotmonkey_signing_key;
   signingKeyPath =
     if hasSigningKey then
-      config.sops.secrets.inkpotmonkey_signing_key.path
+      config.custom.platform.secretPaths.inkpotmonkey_signing_key
     else
       "${config.home.homeDirectory}/.ssh/id_ed25519.pub";
 

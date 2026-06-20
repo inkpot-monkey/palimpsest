@@ -15,10 +15,11 @@
   # The `signing.enable` option is declared centrally in the contract home-profile
   # vocabulary (contract/home-profiles.nix); this module supplies its config.
   config = lib.mkIf config.custom.home.profiles.signing.enable {
-    sops.secrets.inkpotmonkey_signing_key = {
+    # Declared through the backend-neutral platform seam (ADR-0021), not sops directly:
+    # the feature names a logical secret + its source group; the host binding realizes it.
+    custom.platform.secrets.inkpotmonkey_signing_key = {
+      source = config.custom.platform.secretPath "users/inkpotmonkey.yaml";
       key = "signing_key";
-      # The host names where the encrypted source lives; the user decrypts it.
-      sopsFile = config.custom.platform.secretPath "users/inkpotmonkey.yaml";
     };
   };
 }
