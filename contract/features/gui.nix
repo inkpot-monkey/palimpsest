@@ -1,6 +1,6 @@
 # Contract-owned `gui` feature module — the host effects of the gui grant that are
 # neither the account itself (the realization, ADR-0015 mechanic 5) nor the display
-# surface (the realization's gui-session union, ADR-0016). Applied fleet-wide and
+# surface (the realization's gui-session union, ADR-0019). Applied fleet-wide and
 # gated on *any* gui grant, so a user's home-manager config never writes these — the
 # contract does, on the host's behalf, only where gui is granted (ADR-0018: a feature
 # module is the only thing that writes host config on a user's behalf).

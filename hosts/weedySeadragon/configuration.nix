@@ -33,7 +33,7 @@
 
   # weedySeadragon hosts two gui users (inkpotmonkey Wayland + eyeofalligator X11).
   # The display surface is NOT set here — it is derived from the union of each
-  # granted gui user's `gui.session` by the contract realization (ADR-0016), so
+  # granted gui user's `gui.session` by the contract realization (ADR-0019), so
   # both session types are offered and each user logs into their own.
 
   sops = {

@@ -1,4 +1,4 @@
-# Runtime VM smoke for the gui-session union (ADR-0016) — the one piece of the
+# Runtime VM smoke for the gui-session union (ADR-0019) — the one piece of the
 # contract's regression gate that genuinely needs a booted machine rather than a
 # pure eval (the eval-level flags live in ../host-user-contract).
 #
@@ -44,7 +44,7 @@ pkgs.testers.runNixOSTest {
         systemd.services.display-manager.wantedBy = lib.mkForce [ ];
 
         # Two gui users on one seat, each wanting a different session. The host
-        # grants gui to both; the realization unions their sessions (ADR-0016).
+        # grants gui to both; the realization unions their sessions (ADR-0019).
         custom.users.aurelia = {
           identity = {
             name = "Aurelia Wayland";

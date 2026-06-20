@@ -5,7 +5,7 @@ user against a *restricted option universe* so it cannot set arbitrary host opti
 and then **deferred** it ("model A in-repo now, model C at the repo split"). This ADR
 promotes that deferral into a concrete model, because three things are now true that
 were not when 0015 was written: the deferral is **already leaking in-tree**, the
-[0016](0016-feature-configuration-aggregates.md) feature-configuration work gave us the
+[0019](0019-feature-configuration-aggregates.md) feature-configuration work gave us the
 data-vs-effect split the model needs, and a **north-star use case** has appeared that
 makes "airtight, not hygienic" non-negotiable — a greeter on any host that takes a
 flake URL + username + password and transparently enables that user.
@@ -194,7 +194,7 @@ defer:
    evaluation to aggregate (the union). It is the price of one contained surface, and it is
    the main *mechanical* risk. The escape hatch, if it bites: keep host-affecting params
    operator-authored system-side (grant data), and let the home-manager surface carry only
-   user-domain config — the gui-session union already works that way today (ADR-0016), so
+   user-domain config — the gui-session union already works that way today (ADR-0019), so
    the prototype can start there and adopt session-as-request later.
 3. **home-manager version skew on the critical path** — because the user surface *is*
    home-manager, ADR-0014's skew (e.g. `porcupineFish`) is central, not an edge.

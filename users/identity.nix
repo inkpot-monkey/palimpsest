@@ -26,7 +26,7 @@
           # Default-closed (ADR-0015, mechanic 2): a host enables `granted.<feature>`.
           granted = import self.contract.features { inherit lib; };
         }
-        # User-owned feature configuration (ADR-0016): parameters like gui.session.
+        # User-owned feature configuration (ADR-0019): parameters like gui.session.
         # Merged at the top level so a user writes `custom.users.<u>.gui.session`.
         // import self.contract.featureConfig { inherit lib; };
       }

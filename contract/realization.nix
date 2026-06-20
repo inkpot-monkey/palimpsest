@@ -29,7 +29,7 @@
 let
   inherit (self.contract) privilegedGroups featureGroups;
   users = config.custom.users;
-  # The gui-session union (ADR-0016): the host display surface is derived from
+  # The gui-session union (ADR-0019): the host display surface is derived from
   # every *granted* gui user's session preference, not from any one user writing a
   # raw host singleton. A single-seat host can therefore offer both session types
   # and each user logs into their own (stock SDDM remembers the choice per user).
@@ -52,7 +52,7 @@ in
     # Shared GUI host infrastructure, conferred by the gui grant and set ONCE here
     # so any number of gui users on a host share it instead of each imposing a
     # (conflicting) display server. SDDM + plasma6 are present whenever any gui user
-    # is granted; the *session surface* is the union of their preferences (ADR-0016):
+    # is granted; the *session surface* is the union of their preferences (ADR-0019):
     #   - the Wayland greeter iff some granted gui user wants Wayland
     #   - services.xserver    iff some granted gui user wants X11
     # both when both.
@@ -64,7 +64,7 @@ in
       # plasma6 defaults the Wayland greeter on (mkDefault true). Keep that when the
       # union includes a Wayland user; override it off (above mkDefault, below a host
       # mkForce) when the union is X11-only. Two mkDefaults of differing values would
-      # *conflict* — hence the explicit priority (ADR-0016).
+      # *conflict* — hence the explicit priority (ADR-0019).
       displayManager.sddm.wayland.enable = lib.mkIf (!anyWayland) (lib.mkOverride 900 false);
     };
 

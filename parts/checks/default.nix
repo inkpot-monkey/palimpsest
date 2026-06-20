@@ -19,7 +19,7 @@
         host_user_contract = import ./host-user-contract {
           inherit pkgs self;
         };
-        # Runtime VM smoke for the gui-session union (ADR-0016): one host, two gui
+        # Runtime VM smoke for the gui-session union (ADR-0019): one host, two gui
         # users with different sessions ⇒ both plasma sessions offered live.
         host_user_contract_vm = import ./host-user-contract-vm {
           inherit pkgs self;

@@ -46,7 +46,7 @@ let
   granted = grantedSys.config;
   denied = deniedSys.config;
 
-  # ADR-0016 — the gui-session union. `grantedSys` above has a single gui user whose
+  # ADR-0019 — the gui-session union. `grantedSys` above has a single gui user whose
   # session defaults to Wayland: the host enables the Wayland greeter and NOT X11.
   # A host whose only gui user wants X11 enables X11 and not the Wayland greeter.
   x11OnlySys = evalSystem {
