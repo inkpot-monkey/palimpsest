@@ -55,16 +55,7 @@
     # no re-key, no cleartext on the box most likely to be compromised.
     assertions = lib.optional config.custom.host.exposed (
       let
-        meta = self.contract.featureMeta;
-        offending = lib.concatMap (
-          uname:
-          let
-            granted = config.custom.users.${uname}.granted;
-          in
-          lib.filter (fname: (granted.${fname}.enable or false) && (meta.${fname}.secretBearing or false)) (
-            lib.attrNames meta
-          )
-        ) (lib.attrNames config.custom.users);
+        offending = self.lib.exposedHostOffenders config;
       in
       {
         assertion = offending == [ ];

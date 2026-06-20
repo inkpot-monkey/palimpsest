@@ -12,10 +12,8 @@
   ...
 }:
 {
-  options.custom.home.profiles.signing = {
-    enable = lib.mkEnableOption "commit-signing key (user level)";
-  };
-
+  # The `signing.enable` option is declared centrally in the contract home-profile
+  # vocabulary (contract/home-profiles.nix); this module supplies its config.
   config = lib.mkIf config.custom.home.profiles.signing.enable {
     sops.secrets.inkpotmonkey_signing_key = {
       key = "signing_key";

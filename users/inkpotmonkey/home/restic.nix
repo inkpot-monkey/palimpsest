@@ -9,10 +9,8 @@ let
   resticSops = config.custom.platform.secretFile "restic";
 in
 {
-  options.custom.home.profiles.restic = {
-    enable = lib.mkEnableOption "Restic backup service (user level)";
-  };
-
+  # The `restic.enable` option is declared centrally in the contract home-profile
+  # vocabulary (contract/home-profiles.nix); this module supplies its config.
   config = lib.mkIf config.custom.home.profiles.restic.enable {
     sops.secrets.restic_repo = {
       key = "restic/repo";

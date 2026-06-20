@@ -47,6 +47,25 @@ let
 
     featureRecipients = helpers.mkFeatureRecipients self.nixosConfigurations;
 
+    # The exposed-host ban (ADR-0015 threat model): the secret-bearing features an
+    # exposed host has been granted — which must be empty. Same user×feature×meta
+    # traversal as mkFeatureRecipients, kept in the canonical layer rather than inlined
+    # in the assertion (ADR-0018 review, finding 4).
+    exposedHostOffenders =
+      config:
+      let
+        meta = self.contract.featureMeta;
+      in
+      lib.concatMap (
+        uname:
+        let
+          granted = config.custom.users.${uname}.granted;
+        in
+        lib.filter (fname: (granted.${fname}.enable or false) && (meta.${fname}.secretBearing or false)) (
+          lib.attrNames meta
+        )
+      ) (lib.attrNames config.custom.users);
+
     # The derived "safe set" — runtime-eligible features (ADR-0018, slice 15): the
     # features a runtime/greeter binding may confer on a user without operator
     # authorship. DERIVED from the existing security primitives, never a manual flag:
