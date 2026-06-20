@@ -20,6 +20,9 @@ in
     platform = ./platform.nix;
     # Host-invariant module mapping custom.users.<u> to system accounts.
     realization = ./realization.nix;
+    # Single writer of nixpkgs.config.permittedInsecurePackages (which shallow-merges,
+    # so host + feature permits must funnel through one mergeable list option).
+    insecurePackages = ./insecure-packages.nix;
 
     # The feature registry itself (single source of truth) and its projections.
     features = registry;

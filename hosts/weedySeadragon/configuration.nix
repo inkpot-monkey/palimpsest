@@ -77,15 +77,8 @@
 
   system.stateVersion = "25.11";
 
-  # `nixpkgs.config` shallow-merges (types.attrs): a host that declares its own
-  # permittedInsecurePackages CLOBBERS, rather than extends, the gui feature's permit
-  # (set in users/inkpotmonkey/nixos via the gui grant). weedySeadragon both declares
-  # its own permit (beekeeper-studio) AND grants gui — whose Claude Desktop app
-  # (users/inkpotmonkey/home/gui.nix) pulls electron — so this single host definition
-  # must list both. Hosts without their own permit (stargazer, sawtoothShark) inherit
-  # the gui permit cleanly as the sole definition.
-  nixpkgs.config.permittedInsecurePackages = [
-    "beekeeper-studio-5.5.7"
-    "electron-39.8.10"
-  ];
+  # beekeeper-studio is insecure. Contributed through the contract aggregator (which
+  # merges) rather than nixpkgs.config directly (which would clobber the gui feature's
+  # electron permit). The gui grant supplies electron via contract/features/gui.nix.
+  custom.insecurePackages = [ "beekeeper-studio-5.5.7" ];
 }

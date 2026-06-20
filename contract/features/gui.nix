@@ -5,11 +5,12 @@
 # contract does, on the host's behalf, only where gui is granted (ADR-0018: a feature
 # module is the only thing that writes host config on a user's behalf).
 #
-# Prototype scope (slice 10): uinput + the emacs overlay (packages ride features,
-# ADR-0015 mechanic 4). The desktop hardware groups ride the gui grant via
-# contract.featureGroups.gui (the realization confers them, clamped). Still in the
-# user module pending slice 11: kanata + xkb (host keyboard config) and the
-# electron permittedInsecurePackages concession (nixpkgs.config does not merge cleanly).
+# Scope: uinput + the emacs overlay (packages ride features, ADR-0015 mechanic 4) +
+# the host keyboard layout + the electron permit for the gui desktop apps. The desktop
+# hardware groups ride the gui grant via contract.featureGroups.gui (the realization
+# confers them, clamped); the display surface (sddm/plasma6/xserver) is the
+# realization's session union (ADR-0019). kanata stays host-side (an executable
+# payload, not a safe-set feature — slice 11; portable kanata is issue 18).
 {
   lib,
   config,
@@ -26,5 +27,15 @@ in
     # The emacs feature rides the gui grant: its overlay is applied ONLY where gui is
     # granted, never fleet-wide.
     nixpkgs.overlays = [ inputs.emacs-overlay.overlays.default ];
+    # Host keyboard layout for the gui seat (used by Wayland compositors too). A host
+    # or another gui user may override it; the fleet default is gb.
+    services.xserver.xkb = {
+      layout = lib.mkDefault "gb";
+      variant = lib.mkDefault "";
+    };
+    # A gui app (Claude Desktop) pulls electron. Contributed through the contract's
+    # insecure-packages aggregator so it merges with any host's own permits instead of
+    # being clobbered by them (contract/insecure-packages.nix).
+    custom.insecurePackages = [ "electron-39.8.10" ];
   };
 }

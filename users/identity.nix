@@ -12,6 +12,7 @@
   # (ADR-0018, slice 10).
   imports = [
     self.contract.realization
+    self.contract.insecurePackages
   ]
   ++ self.contract.featureModules;
 

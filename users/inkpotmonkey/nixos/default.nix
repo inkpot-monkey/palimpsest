@@ -88,33 +88,10 @@
         "/share/applications"
       ];
     }
-
-    # =========================================
-    # GUI Configuration (Guarded by Profile)
-    # =========================================
-    (lib.mkIf config.custom.users.inkpotmonkey.granted.gui.enable {
-      # uinput + the emacs overlay moved to the contract gui feature module
-      # (contract/features/gui.nix). kanata moved to the host (a privileged,
-      # cmd-enabled keymap is an executable payload, not a safe-set user feature) —
-      # `custom.profiles.kanata` (ADR-0018, slice 11; portable kanata is issue 18).
-
-      # The shared GUI host infrastructure (sddm + plasma6 + Wayland + default
-      # session) now comes from the gui grant via contract/realization.nix, set
-      # once so it composes with other gui users on the same host (ADR-0015).
-      # Keep only the keyboard layout (used by Wayland compositors too).
-      services.xserver.xkb = {
-        layout = "gb";
-        variant = "";
-      };
-
-      # The desktop hardware groups moved to contract.featureGroups.gui — they ride
-      # the gui grant via the realization's clamp+grantedGroups path, instead of this
-      # raw users.users write that bypassed the clamp (ADR-0018, slice 10; the
-      # disk/libvirtd/qemu-libvirtd split into a virtualization feature is slice 11).
-
-      # electron is needed by a gui app; nixpkgs.config does not merge cleanly across
-      # modules (a host's value overrides), so this stays user-side until slice 11.
-      nixpkgs.config.permittedInsecurePackages = [ "electron-39.8.10" ];
-    })
+    # All host effects of the gui grant — display surface, hardware groups, uinput,
+    # the emacs overlay, the host keyboard layout, and the electron permit — now live
+    # in the contract (realization + contract/features/gui.nix), so this user module
+    # writes no gui host config at all. That is the point of the feature module: the
+    # contract acts on the host's behalf, the user never does (ADR-0018, slices 10-11).
   ];
 }
