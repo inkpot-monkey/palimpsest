@@ -15,16 +15,26 @@
 {
   self,
   pkgs,
+  inputs,
   ...
 }:
 # Uses the modern `runNixOSTest` framework (not legacy `nixosTest`) because we need
-# `node.specialArgs` to thread the repo's `self` into the node — an `imports` line
-# in users/identity.nix references it before config is evaluated, so it cannot come
-# via a config-level `_module.args`.
+# `node.specialArgs` to thread the repo's `self` (and `inputs`, which the contract
+# realization's gui feature module reads for the emacs overlay) into the node — an
+# `imports` line in users/identity.nix references them before config is evaluated, so
+# they cannot come via a config-level `_module.args`. Mirrors mkSystem's specialArgs.
 pkgs.testers.runNixOSTest {
   name = "host-user-contract-gui-union-test";
 
-  node.specialArgs = { inherit self; };
+  node.specialArgs = {
+    inherit self inputs;
+    inherit (self) settings;
+  };
+
+  # The contract gui feature module adds the emacs overlay via `nixpkgs.overlays`,
+  # which the test driver's default read-only nixpkgs forbids. Let the node build its
+  # own pkgs (as a real host does) so the granted-gui overlay applies cleanly.
+  node.pkgsReadOnly = false;
 
   nodes.machine =
     { lib, ... }:
@@ -37,6 +47,8 @@ pkgs.testers.runNixOSTest {
 
       config = {
         system.stateVersion = "25.11";
+        # Required once the node owns its nixpkgs (pkgsReadOnly = false above).
+        nixpkgs.hostPlatform = pkgs.stdenv.hostPlatform.system;
 
         # Keep the boot lean: the greeter need not run for the session files to be
         # assembled into the system (they come from the session packages, not the

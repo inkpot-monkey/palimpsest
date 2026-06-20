@@ -22,7 +22,7 @@
         # Runtime VM smoke for the gui-session union (ADR-0019): one host, two gui
         # users with different sessions ⇒ both plasma sessions offered live.
         host_user_contract_vm = import ./host-user-contract-vm {
-          inherit pkgs self;
+          inherit pkgs self inputs;
         };
         # The conformance matrix (ADR-0018, slice 16): users × host archetypes, proving
         # any host can enable any user with the invariants intact.
