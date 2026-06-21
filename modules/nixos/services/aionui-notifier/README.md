@@ -19,55 +19,47 @@ auth.
 > (Telegram/Lark/DingTalk/WeChat) actually connect. A native Matrix channel would
 > need a fork of `aioncore`. The poller delivers the same events with no fork.
 
-## Delivery modes
+## Delivery (webhook-only, via matrix-hookshot)
 
-- **Webhook mode (preferred, current default on kelpy).** Set `webhookUrlFile`
-  to a file holding a [matrix-hookshot](../../profiles/matrix/hookshot.nix) generic
-  webhook URL. Each event is POSTed as `{"text": …}` and hookshot owns the Matrix
-  side — no bot login, room, or token here. See [ADR-0024](../../../../docs/adr/0024-matrix-hookshot-webhooks-and-feeds.md).
-- **Matrix-direct mode (legacy).** Leave `webhookUrlFile` unset and the notifier
-  self-bootstraps a bot (registers if needed, logs in, resolves/creates the room
-  alias) and posts straight to a room via the client-server API.
+Each event is POSTed as `{"text": …}` to a [matrix-hookshot](../../profiles/matrix/hookshot.nix)
+generic webhook; hookshot owns the Matrix side (room, formatting, posting). The
+notifier has no bot, login, or token of its own. `webhookUrlFile` points at a
+file holding the webhook URL — it may be empty initially and the notifier idles
+until it's written, then delivers without a restart. See
+[ADR-0024](../../../../docs/adr/0024-matrix-hookshot-webhooks-and-feeds.md).
 
-## Setup (webhook mode)
+## Setup (fully declarative)
 
-In Matrix, invite the `@hookshot` bot to a room and create a generic webhook
-(`webhook` bot command); copy its URL into sops (it may start empty — the notifier
-idles until the URL is present, then delivers without a restart):
-
-```console
-$ sops secrets/profiles/matrix.yaml      # add one line (value can be empty at first):
-aionui_hookshot_webhook_url: https://hookshot.<domain>/webhook/<id>
-```
-
-Enable it on the host (e.g. `hosts/kelpy/configuration.nix`):
+Just enable it on the host (e.g. `hosts/kelpy/configuration.nix`); it requires
+the hookshot bridge (`custom.profiles.matrix.hookshot.enable`):
 
 ```nix
 custom.profiles.aionui = {
-  enable = true;            # the AionUi WebUI itself
-  notifications.enable = true;   # wires webhookUrlFile to the sops secret above
+  enable = true;                 # the AionUi WebUI itself
+  notifications.enable = true;   # provisions the room + hookshot connection
 };
 ```
 
-`just deploy kelpy`. On first start the journal shows `webhook URL loaded; delivering
-events` (or an idle notice until the URL is set).
+The `aionui-hookshot-provision` oneshot (in `profiles/aionui.nix`) reuses the
+hookshot appservice `as_token` to create the `#aionui-alerts` room and a generic
+webhook connection (with a persisted secret hook id), then writes the webhook URL
+to `webhookUrlFile`. No manual `webhook` bot command and no notifier secret.
+
+`just deploy kelpy`, then accept the room invite from your phone. The journal
+shows `aionui hookshot connection provisioned in !…` then the notifier delivering.
 
 ## Options (`services.aionui-notifier`)
 
-`enable`, `aionuiUrl`, `webhookUrlFile` (webhook mode), `matrixUrl`, `room`
-(matrix-direct, alias `#…` or id `!…`), `botUser`, `passwordFile`,
-`registrationTokenFile` (optional self-register), `inviteUser`, `pollInterval`
-(default 10s), `stateDir`, `user`/`group`.
+`enable`, `aionuiUrl`, `webhookUrlFile`, `pollInterval` (default 10s), `stateDir`,
+`user`/`group`.
 
-State (cached token, room id, per-conversation status) lives in `stateDir`
-(`/var/lib/aionui-notifier`, persisted under impermanence). On first ever run the
-notifier seeds state silently so you don't get a backlog of notifications.
+State (per-conversation status, the persisted hook id, the webhook URL file) lives
+in `stateDir` (`/var/lib/aionui-notifier`, persisted under impermanence). On first
+ever run the notifier seeds state silently so you don't get a backlog.
 
 ## Troubleshooting
 
-- `journalctl -u aionui-notifier -f`.
-- `register: bot user exists but login failed — check the password`: the bot was
-  created with a different password; reset it or change `aionui_matrix_bot_password`.
-- No messages: confirm the bot accepted into the room (it auto-creates+invites when
-  it owns the alias; for a pre-existing room, make sure the bot is a member).
-- Token rotated/invalid: the notifier re-logs-in on a 401 automatically.
+- `journalctl -u aionui-notifier -f` and `journalctl -u aionui-hookshot-provision`.
+- No messages: check the provision unit succeeded (`provisioned in !…`) and that
+  the `@hookshot` bot is in the room; confirm `hookshot_webhook_url` exists in the
+  state dir. The notifier logs an idle notice until that file has content.

@@ -41,7 +41,10 @@
     paperless.enable = true;
     litellm.enable = true;
     openclaw.enable = true;
-    aionui.enable = true;
+    aionui = {
+      enable = true;
+      notifications.enable = true;
+    };
     blocky.enable = true;
     media = {
       enable = true;
