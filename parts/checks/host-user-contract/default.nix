@@ -12,12 +12,7 @@
 # booting a desktop. Slice 03 adds the platform-resolver and exposed-host
 # assertions below. Runtime, VM-boot assertions (a feature secret present at /run
 # on a granting host) need a booted machine and arrive with a later slice.
-{
-  self,
-  pkgs,
-  inputs,
-  ...
-}:
+{ self, pkgs, ... }:
 let
   inherit (pkgs) lib;
 
@@ -79,10 +74,6 @@ let
   };
   twoSession = twoSessionSys.config;
 
-  # Slice 06 — recipients derive from grants. A two-host synthetic fleet where one
-  # host grants the secret-bearing restic feature and one does not.
-  grantedResticSys = evalSystem { custom.users.inkpotmonkey.granted.restic.enable = true; };
-
   # Slice 03 — the exposed-host assertion. restic is secret-bearing (contract
   # featureMeta), so an exposed host granting it must raise a failing assertion;
   # a normal host granting the same feature must not.
@@ -127,30 +118,11 @@ let
       name = "denied leaves uinput off";
       ok = !denied.hardware.uinput.enable;
     }
-    {
-      name = "gui confers no privileged group (safe set: slice 11 split)";
-      ok = !(lib.any (g: lib.elem g inputs.contract.privilegedGroups) inputs.contract.featureGroups.gui);
-    }
-    {
-      name = "virtualization confers the privileged groups, only via its grant";
-      ok = lib.elem "libvirtd" inputs.contract.featureGroups.virtualization;
-    }
-    {
-      name = "safe set: gui is runtime-eligible (slice 15)";
-      ok = lib.elem "gui" inputs.contract.lib.safeSet;
-    }
-    {
-      name = "safe set: privileged features (workstation, virtualization) are excluded";
-      ok =
-        !(lib.elem "workstation" inputs.contract.lib.safeSet)
-        && !(lib.elem "virtualization" inputs.contract.lib.safeSet);
-    }
-    {
-      name = "safe set: secret-bearing features (restic, signing) are excluded";
-      ok =
-        !(lib.elem "restic" inputs.contract.lib.safeSet)
-        && !(lib.elem "signing" inputs.contract.lib.safeSet);
-    }
+    # NOTE: the pure-contract-logic assertions (group policy, the derived safe set,
+    # recipients-from-grants) moved to the contract flake's own conformance suite
+    # (inputs.contract.checks.<system>.conformance, ADR-0020 Q5). What remains here is
+    # INTEGRATION: the host bindings (display rendering, the emacs glue, the platform
+    # resolver) realizing the contract as wired into THIS fleet, on the real manifest.
     {
       name = "system platform resolves a secret source to an existing file";
       ok = builtins.pathExists (denied.custom.platform.secretFile "restic");
@@ -210,14 +182,6 @@ let
     {
       name = "union: both gui users are realized as accounts";
       ok = (twoSession.users.users ? inkpotmonkey) && (twoSession.users.users ? gamma);
-    }
-    {
-      name = "recipients derive from grants: only the granting host is a recipient";
-      ok =
-        (inputs.contract.lib.mkFeatureRecipients {
-          granter = grantedResticSys;
-          abstainer = deniedSys;
-        })."profiles/restic.yaml" or [ ] == [ "granter" ];
     }
   ];
 
