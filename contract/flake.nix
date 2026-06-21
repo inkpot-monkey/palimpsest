@@ -30,9 +30,6 @@
         featureGroups
         privilegedGroups
         safeSet
-        grantedOptions
-        featureConfigOptions
-        featureModules
         ;
 
       # The contract's own conformance suite (ADR-0020 Q5): proves the contract's

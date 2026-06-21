@@ -12,9 +12,7 @@
   imports = [ inputs.contract.nixosModules.default ];
 
   # The platform binding — the single place the system names its secrets backend, so a
-  # feature resolves secrets host-agnostically. The contract ships only the interface.
-  config.custom.platform = {
-    secretFile = name: self.lib.getSecretFile name;
-    secretPath = subpath: self.lib.getSecretPath subpath;
-  };
+  # feature resolves secrets host-agnostically. The contract ships only the interface;
+  # the binding is shared with the home side via self.lib.platformBinding (ADR-0020 Q7).
+  config.custom.platform = self.lib.platformBinding;
 }

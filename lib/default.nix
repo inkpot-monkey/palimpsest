@@ -79,6 +79,15 @@ let
       in
       if builtins.pathExists path then path else warnMock "users/${user}.yaml" ../parts/mock-secrets.yaml;
 
+    # The host's implementation of the contract `platform` interface (ADR-0020 Q7): the
+    # one place the system names its secrets backend. Set as `config.custom.platform` by
+    # both the system and home wiring (users/identity.nix, modules/homeManager/options.nix)
+    # so the binding lives in exactly one place instead of being duplicated per eval-side.
+    platformBinding = {
+      secretFile = helpers.getSecretFile;
+      secretPath = helpers.getSecretPath;
+    };
+
     # Email Config Helpers
     mkMbsyncAccount =
       {

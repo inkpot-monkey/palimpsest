@@ -11,8 +11,7 @@
 {
   imports = [ inputs.contract.homeModules.default ];
 
-  config.custom.platform = {
-    secretFile = name: self.lib.getSecretFile name;
-    secretPath = subpath: self.lib.getSecretPath subpath;
-  };
+  # Same host platform binding as the system side, shared via self.lib.platformBinding
+  # so the secrets-backend wiring lives in exactly one place (ADR-0020 Q7).
+  config.custom.platform = self.lib.platformBinding;
 }

@@ -149,26 +149,22 @@ let
   };
 in
 {
-  # data surface
+  # Public data surface — introspection API for consumers (a host grant matrix, the
+  # greeter reading the safe set). grantedOptions/featureConfigOptions/featureModules are
+  # NOT here: they are internal kit building blocks the umbrella consumes via closure.
   features = registry;
   inherit
     featureMeta
     featureGroups
     privilegedGroups
     safeSet
-    grantedOptions
-    featureConfigOptions
-    featureModules
     ;
-  # lib functions
+  # Public derivation functions actually consumed by hosts (ADR-0020 Q4). The internal
+  # predicates (runtimeEligibleFeature, exposedHostOffenders) stay internal — the umbrella
+  # and `safeSet` close over them, and a consumer reads the derived `safeSet` value above,
+  # not the predicate that built it.
   lib = {
-    inherit
-      runtimeEligibleFeature
-      safeSet
-      mkFeatureRecipients
-      exposedHostOffenders
-      mkHostFacts
-      ;
+    inherit mkFeatureRecipients mkHostFacts;
   };
   # umbrella modules
   inherit nixosModule homeModule;
