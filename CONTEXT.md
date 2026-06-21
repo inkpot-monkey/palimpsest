@@ -94,7 +94,7 @@ The features a *runtime* binding — the greeter — may confer on a user withou
 _Avoid_: default-granted (describes the disposition, not the membership rule).
 
 **Binding path**:
-How a user is bound to a host, of which there are two, with opposite grant defaults *by design*. **Build-time binding** is operator-authored (the fleet declaration) and **default-closed** — the operator grants explicitly, privilege included, subject to prohibitions. **Runtime binding** is the **greeter** (flake URL + username + password) and is **default-open over the safe set** — gui and baseline are auto-granted, privilege is impossible. Both drive the *same* contract, manifests, and feature modules.
+How a user is bound to a host, of which there are two, with opposite grant defaults *by design*. **Build-time binding** is operator-authored (the fleet declaration) and **default-closed** — the operator grants explicitly, privilege included, subject to prohibitions. **Runtime binding** is the **greeter** (flake URL + username + password) and is **default-open over the safe set** — gui and baseline are auto-granted, privilege is impossible. Both call **one host-side `bindUser`** (feed `identity.json` → the realization's account; wire the contract + user home modules; harvest the granted `contract.requests`) — the greeter is not a parallel codepath, it is `bindUser` with the grant computed at runtime (= the safe set). Both drive the *same* contract, manifests, and feature modules.
 _Avoid_: enable (a user is never bound by enabling itself; the host's grant binds).
 
 ### Matrix bridging
