@@ -25,7 +25,11 @@
             epkgs.vterm
             epkgs.eat # fallback terminal backend for claude-code
             epkgs.ghostel # libghostty terminal backend for claude-code (most faithful TUI render)
-            epkgs.claude-code # from MELPA via emacs-overlay (auto-updates on flake update; has ghostel support)
+            # NOTE: claude-code itself is stevemolitor/claude-code.el, hand-built
+            # in packages.nix. Do NOT use epkgs.claude-code here — that MELPA name
+            # is a different project (yuya373/claude-code-emacs) with an
+            # incompatible API (its claude-code-run errors with
+            # "claude-code-vterm-mode void" against this config).
             epkgs.yaml
             epkgs.just-mode
             epkgs.just-ts-mode

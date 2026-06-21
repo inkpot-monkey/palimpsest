@@ -72,4 +72,23 @@
     version = "unstable-202X";
     src = ./just-complete;
   })
+  # stevemolitor/claude-code.el — the project our init.el is actually written
+  # for (claude-code-command-map, claude-code-terminal-backend 'ghostel, etc.).
+  # NOT available from epkgs: the MELPA/emacs-overlay package named `claude-code`
+  # is a DIFFERENT project (yuya373/claude-code-emacs), so it must be built by
+  # hand. Backends (eat/ghostel/vterm) are supplied separately in default.nix.
+  (epkgs.trivialBuild {
+    pname = "claude-code";
+    version = "unstable-2026-06-21";
+    src = pkgs.fetchFromGitHub {
+      owner = "stevemolitor";
+      repo = "claude-code.el";
+      rev = "03199df8b3a1e9cd4857f0851f7a912ba524aff3";
+      hash = "sha256-5QJrWIu4EgnHcOqMwlrs2JBBx7aI9OaSJswesr6Apfk=";
+    };
+    packageRequires = [
+      epkgs.transient
+      epkgs.inheritenv
+    ];
+  })
 ]
