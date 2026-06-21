@@ -20,14 +20,17 @@
 # exposed-host agent box arguably should not have it. general/eyeofalligator still
 # declare `wheel` in identity and will be clamped until migrated to a grant (neither
 # is on a working host today).
+# Closes over its contract data (privilegedGroups, featureGroups) rather than reaching
+# through the consumer's `self` (ADR-0020): contract/default.nix applies this with the
+# registry-derived values, so the shipped module depends on neither `self` nor `inputs`
+# — only the NixOS module args. This is what lets the contract become a standalone flake.
+{ privilegedGroups, featureGroups }:
 {
   lib,
   config,
-  self,
   ...
 }:
 let
-  inherit (self.contract) privilegedGroups featureGroups;
   users = config.custom.users;
   # The gui-session union (ADR-0019): the host display surface is derived from
   # every *granted* gui user's session preference, not from any one user writing a

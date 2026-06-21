@@ -12,14 +12,31 @@
 { lib, ... }:
 let
   registry = import ./features.nix { inherit lib; };
+
+  # The privileged/host groups each feature grant confers (only features that have any).
+  featureGroups = lib.mapAttrs (_: f: f.groups) (lib.filterAttrs (_: f: f ? groups) registry);
+
+  # Groups a user may NOT obtain by merely declaring them in identity.extraGroups
+  # (untrusted input) — they require a feature grant. Enforced by the realization clamp
+  # (ADR-0015 threat model: powers come from grants, not raw data).
+  privilegedGroups = [
+    "docker"
+    "podman"
+    "wheel"
+    "libvirtd"
+    "kvm"
+    "disk"
+    "qemu-libvirtd"
+  ];
 in
 {
   flake.contract = {
     identity = ./identity.nix;
     homeProfiles = ./home-profiles.nix;
     platform = ./platform.nix;
-    # Host-invariant module mapping custom.users.<u> to system accounts.
-    realization = ./realization.nix;
+    # Host-invariant module mapping custom.users.<u> to system accounts. Closed over its
+    # contract data here, so the shipped module needs neither `self` nor `inputs` (ADR-0020).
+    realization = import ./realization.nix { inherit privilegedGroups featureGroups; };
     # Single writer of nixpkgs.config.permittedInsecurePackages (which shallow-merges,
     # so host + feature permits must funnel through one mergeable list option).
     insecurePackages = ./insecure-packages.nix;
@@ -52,20 +69,7 @@ in
       // lib.optionalAttrs (f ? secretFiles) { inherit (f) secretFiles; }
     ) registry;
 
-    # The privileged/host groups each feature grant confers (only features that have any).
-    featureGroups = lib.mapAttrs (_: f: f.groups) (lib.filterAttrs (_: f: f ? groups) registry);
-
-    # Groups a user may NOT obtain by merely declaring them in identity.extraGroups
-    # (untrusted input) — they require a feature grant. Enforced by the clamp in
-    # realization.nix (ADR-0015 threat model: powers come from grants, not raw data).
-    privilegedGroups = [
-      "docker"
-      "podman"
-      "wheel"
-      "libvirtd"
-      "kvm"
-      "disk"
-      "qemu-libvirtd"
-    ];
+    # The group policy (computed in the let above; the realization closes over them).
+    inherit featureGroups privilegedGroups;
   };
 }
