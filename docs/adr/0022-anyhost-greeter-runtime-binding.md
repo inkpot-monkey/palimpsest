@@ -70,6 +70,21 @@ authenticate on inert data *before* running any of the user's Nix:
   greeter affordance simply does not exist there — it is not a deny rule. A seat host enables a
   `greeter` profile (greetd + the binding command); this is where the disabled `regreet`
   profile gets extended.
+- **Secrets degrade gracefully.** A greeter-bound home must *build and activate without the
+  user's private key* — secret-bearing parts gate on the grant/key and go dormant when absent
+  (as `git.nix` already falls back to `~/.ssh` without the `signing` grant). Contract
+  secret-features satisfy this via the safe set; the user's personal secrets must gate likewise.
+  A greeter-bound user gets a secret-free baseline; full secrets need the build-time path (where
+  the key lives). Restoring secrets at a greeter is deferred ([issue 19](../../.scratch/host-user-contract/issues/19-greeter-secret-provisioning.md)).
+- **Portable users build their home with their *own* pkgs, not `useGlobalPkgs`.** Packages are
+  the user's self-contained concern; overlays are `nixpkgs → nixpkgs` (arbitrary code), so a user
+  must never *request* one — instead the user flake carries its overlays and they materialize
+  only in the user's *own* home build (sandboxed), never the host's system pkgs. Cost is a
+  function of nixpkgs divergence: a fully independent nixpkgs duplicates a whole closure
+  (gigabytes) + a second per-login eval; so the user flake's `nixpkgs` should **follow / be
+  host-overridable to the host's pin**, carrying only overlays — the base closure is shared, and
+  the only cost is the overlaid packages' rebuilds (paid anyway) + slightly looser base
+  reproducibility.
 
 ## The genuinely novel work (what is not off-the-shelf)
 
