@@ -131,5 +131,8 @@ in
     # the generic `appservices` consumer in matrix/default.nix.
     custom.profiles.matrix.appservices.whatsapp.registrationPath =
       config.sops.templates."whatsapp-registration.yaml".path;
+
+    # Auto-create the @whatsapp management DM (where `login` etc. are run).
+    custom.profiles.matrix.managementDms = [ botUsername ];
   };
 }

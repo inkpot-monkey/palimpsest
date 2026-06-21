@@ -192,6 +192,9 @@ in
     custom.profiles.matrix.appservices.hookshot.registrationPath =
       config.sops.templates."hookshot-registration.yaml".path;
 
+    # Auto-create the @hookshot admin DM (where `github login` etc. are run).
+    custom.profiles.matrix.managementDms = [ "hookshot" ];
+
     # --- Persistence ---
     # passkey.pem encrypts the stored GitHub/OAuth tokens; lose it and every
     # logged-in connection must be re-authed. Persist the whole state dir.

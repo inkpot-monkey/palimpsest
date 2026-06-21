@@ -119,6 +119,62 @@ let
       fi
     ''}
   '';
+
+  # Auto-create the "management"/"admin" DM between the admin user and each bridge
+  # bot that asks for one (managementDms below), so they're present after a deploy
+  # instead of needing a manual "start chat". Logs in as the admin and, for any bot
+  # not already tracked in m.direct, creates a direct room inviting the bot (which
+  # auto-joins) and records it. The interactive auth INSIDE the room (e.g. hookshot
+  # `github login`, WhatsApp QR) is still done by hand — this only makes the room.
+  provisionDms = pkgs.writeShellScript "matrix-provision-dms" ''
+    set -eu
+    url="http://${address}:${toString matrixPort}"
+    me="@${cfg.adminLocalpart}:${domain}"
+    pass="$(cat "$CREDENTIALS_DIRECTORY/admin_password")"
+    bots="${lib.concatStringsSep " " (map (lp: "@${lp}:${domain}") cfg.managementDms)}"
+
+    for _ in $(seq 1 30); do
+      ${pkgs.curl}/bin/curl -sf "$url/_matrix/client/versions" >/dev/null && break
+      sleep 2
+    done
+
+    at="$(${pkgs.curl}/bin/curl -s -X POST "$url/_matrix/client/v3/login" \
+      -H 'content-type: application/json' \
+      -d "$(${pkgs.jq}/bin/jq -nc --arg u "${cfg.adminLocalpart}" --arg p "$pass" \
+        '{type:"m.login.password",identifier:{type:"m.id.user",user:$u},password:$p}')" \
+      | ${pkgs.jq}/bin/jq -r '.access_token // empty')"
+    [ -n "$at" ] || { echo "dm-provision: admin login failed" >&2; exit 1; }
+    auth=(-H "Authorization: Bearer $at")
+
+    meenc="$(${pkgs.jq}/bin/jq -rn --arg m "$me" '$m|@uri')"
+    direct="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" \
+      "$url/_matrix/client/v3/user/$meenc/account_data/m.direct" \
+      | ${pkgs.jq}/bin/jq -c 'if (type=="object" and (has("errcode")|not)) then . else {} end' \
+        2>/dev/null || echo '{}')"
+
+    changed=0
+    for bot in $bots; do
+      n="$(printf '%s' "$direct" | ${pkgs.jq}/bin/jq -r --arg b "$bot" '(.[$b] // []) | length')"
+      if [ "$n" -gt 0 ]; then echo "dm-provision: DM with $bot already tracked"; continue; fi
+      rid="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" -X POST "$url/_matrix/client/v3/createRoom" \
+        -H 'content-type: application/json' \
+        -d "$(${pkgs.jq}/bin/jq -nc --arg b "$bot" \
+          '{is_direct:true,invite:[$b],preset:"trusted_private_chat"}')" \
+        | ${pkgs.jq}/bin/jq -r '.room_id // empty')"
+      [ -n "$rid" ] || { echo "dm-provision: createRoom for $bot failed" >&2; continue; }
+      direct="$(printf '%s' "$direct" | ${pkgs.jq}/bin/jq -c --arg b "$bot" --arg r "$rid" \
+        '.[$b] = ((.[$b] // []) + [$r])')"
+      changed=1
+      echo "dm-provision: created DM with $bot -> $rid"
+    done
+
+    if [ "$changed" = 1 ]; then
+      ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
+        "$url/_matrix/client/v3/user/$meenc/account_data/m.direct" \
+        -H 'content-type: application/json' -d "$direct" >/dev/null
+      echo "dm-provision: m.direct updated"
+    fi
+  '';
 in
 {
   imports = [
@@ -164,6 +220,15 @@ in
         }
       );
       description = "Appservice registrations contributed by enabled bridge modules.";
+    };
+
+    # Bridge modules add their bot's localpart here to have a management/admin DM
+    # auto-created with the admin user on deploy (see provisionDms above).
+    managementDms = lib.mkOption {
+      internal = true;
+      default = [ ];
+      type = lib.types.listOf lib.types.str;
+      description = "Bridge bot localparts to auto-create an admin/management DM with.";
     };
   };
 
@@ -249,6 +314,31 @@ in
           "admin_password:${config.sops.secrets.matrix_admin_password.path}"
         ];
         ExecStart = registerAdmin;
+      };
+    };
+
+    # Auto-create management/admin DMs with bridge bots (opt-in per bridge via
+    # custom.profiles.matrix.managementDms). Runs after the admin exists and the
+    # bridges are up so the invited bots are present to auto-join.
+    systemd.services.matrix-dm-provision = lib.mkIf (cfg.managementDms != [ ]) {
+      description = "Auto-create management DMs between the admin and bridge bots";
+      after = [
+        "tuwunel.service"
+        "tuwunel-register-admin.service"
+        "matrix-hookshot.service"
+        "mautrix-whatsapp.service"
+      ];
+      requires = [
+        "tuwunel.service"
+        "tuwunel-register-admin.service"
+      ];
+      wantedBy = [ "multi-user.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        DynamicUser = true;
+        LoadCredential = [ "admin_password:${config.sops.secrets.matrix_admin_password.path}" ];
+        ExecStart = provisionDms;
       };
     };
 
