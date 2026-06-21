@@ -49,7 +49,15 @@ in
           password_cmd = "cat ${config.sops.secrets."spotify/password".path}";
           backend = "alsa";
           device = "hw:sndrpihifiberry";
-          mixer = "Digital"; # Use hardware mixer for volume control
+          # Drive the PCM512x's hardware "Digital" mixer with a dB-aware curve.
+          # WITHOUT volume_controller = "alsa", spotifyd silently falls back to its
+          # *software* controller (logged as `softvol ... Log(60.0)`): a 60 dB curve
+          # that sits near-silent until ~70% of the slider, and attenuates digitally
+          # (bit-depth loss). "alsa" maps the slider across the DAC's real dB range
+          # instead — a human-centric curve at full fidelity. `mixer` is only
+          # honoured once the controller is "alsa"; on its own it was a no-op.
+          volume_controller = "alsa";
+          mixer = "Digital";
           bitrate = 320;
           cache_path = "/var/cache/spotifyd";
           volume_normalisation = true;
