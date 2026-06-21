@@ -52,17 +52,20 @@ let
       chmod 600 "$hidfile"
     fi
 
-    # Resolve the alerts room alias, creating it (as the bot) if absent.
+    # Resolve the alerts room alias, creating it if absent. No `?user_id=`: the
+    # as_token already acts as the sender_localpart (@hookshot), and @hookshot is
+    # NOT in the appservice's namespaces, so masquerading to it via ?user_id is
+    # rejected. Acting as the AS's own user needs no ?user_id.
     aliasenc="$(jq -rn --arg a "#aionui-alerts:$dom" '$a|@uri')"
     rid="$(curl "$url/_matrix/client/v3/directory/room/$aliasenc" | jq -r '.room_id // empty')"
     if [ -z "$rid" ]; then
-      rid="$(curl -X POST "$url/_matrix/client/v3/createRoom?user_id=$uid" \
+      resp="$(curl -X POST "$url/_matrix/client/v3/createRoom" \
         -H 'content-type: application/json' \
         -d "$(jq -nc --arg inv "$invite" \
-          '{room_alias_name:"aionui-alerts",name:"AionUi alerts",preset:"private_chat",invite:[$inv]}')" \
-        | jq -r '.room_id // empty')"
+          '{room_alias_name:"aionui-alerts",name:"AionUi alerts",preset:"private_chat",invite:[$inv]}')")"
+      rid="$(printf '%s' "$resp" | jq -r '.room_id // empty')"
+      [ -n "$rid" ] || { echo "could not resolve/create the alerts room: $resp" >&2; exit 1; }
     fi
-    [ -n "$rid" ] || { echo "could not resolve/create the alerts room" >&2; exit 1; }
     ridenc="$(jq -rn --arg r "$rid" '$r|@uri')"
 
     # Pre-seed the hookId in the bot's room account data (merge, don't clobber
@@ -73,7 +76,7 @@ let
       '(if type=="object" then . else {} end) + {($h):"aionui"}')"
     curl -f -X PUT "$url/_matrix/client/v3/user/$uid/rooms/$ridenc/account_data/$adtype" \
       -H 'content-type: application/json' -d "$merged" >/dev/null
-    curl -f -X PUT "$url/_matrix/client/v3/rooms/$ridenc/state/$adtype/aionui?user_id=$uid" \
+    curl -f -X PUT "$url/_matrix/client/v3/rooms/$ridenc/state/$adtype/aionui" \
       -H 'content-type: application/json' -d '{"name":"aionui"}' >/dev/null
 
     # Publish the webhook URL for the notifier (loopback to the webhooks listener).
