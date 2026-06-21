@@ -1,5 +1,7 @@
 {
+  config,
   inputs,
+  lib,
   pkgs,
   self,
   settings,
@@ -24,7 +26,10 @@
     # the sudo password as defense-in-depth. `just deploy kelpy` supplies it via
     # --ask-sudo-password (prompted once, up front).
     proxy.enable = true;
-    backup.enable = true;
+    # Temporarily disabled: the restic repo (zh2046.rsync.net) is unreachable and
+    # holds a stale exclusive lock from stargazer, failing every activation.
+    # Re-enable once the lock is cleared and the host is reachable.
+    backup.enable = false;
     monitoring-server.enable = true;
     monitoring-client.enable = true;
     monitoring-dmarc.enable = false;
@@ -178,7 +183,13 @@
     inherit (settings.nodes.kelpy) hostName domain;
   };
 
-  services.restic.backups.daily.paths = [ "/persistent" ];
+  # Gate the WHOLE `daily` entry on the backup profile: writing `.daily.paths`
+  # alone would still instantiate `restic.backups.daily` (empty → fails the
+  # repository/passwordFile assertions) when the profile, which supplies those,
+  # is disabled. mkIf on the attrset removes the entry entirely.
+  services.restic.backups.daily = lib.mkIf config.custom.profiles.backup.enable {
+    paths = [ "/persistent" ];
+  };
 
   # Persist the agent's home state across impermanence reboots: Claude Code
   # subscription credentials/config and the project checkouts AionUi works in.
