@@ -93,6 +93,22 @@
         "type": "github"
       }
     },
+    "contract": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "path": "./contract",
+        "type": "path"
+      },
+      "original": {
+        "path": "./contract",
+        "type": "path"
+      },
+      "parent": []
+    },
     "crane": {
       "locked": {
         "lastModified": 1781825982,
@@ -917,6 +933,7 @@
     "root": {
       "inputs": {
         "claude-desktop": "claude-desktop",
+        "contract": "contract",
         "disko": "disko",
         "emacs-overlay": "emacs-overlay",
         "flake-parts": "flake-parts",

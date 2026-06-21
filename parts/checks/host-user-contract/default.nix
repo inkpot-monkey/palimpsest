@@ -12,7 +12,12 @@
 # booting a desktop. Slice 03 adds the platform-resolver and exposed-host
 # assertions below. Runtime, VM-boot assertions (a feature secret present at /run
 # on a granting host) need a booted machine and arrive with a later slice.
-{ self, pkgs, ... }:
+{
+  self,
+  pkgs,
+  inputs,
+  ...
+}:
 let
   inherit (pkgs) lib;
 
@@ -124,23 +129,27 @@ let
     }
     {
       name = "gui confers no privileged group (safe set: slice 11 split)";
-      ok = !(lib.any (g: lib.elem g self.contract.privilegedGroups) self.contract.featureGroups.gui);
+      ok = !(lib.any (g: lib.elem g inputs.contract.privilegedGroups) inputs.contract.featureGroups.gui);
     }
     {
       name = "virtualization confers the privileged groups, only via its grant";
-      ok = lib.elem "libvirtd" self.contract.featureGroups.virtualization;
+      ok = lib.elem "libvirtd" inputs.contract.featureGroups.virtualization;
     }
     {
       name = "safe set: gui is runtime-eligible (slice 15)";
-      ok = lib.elem "gui" self.lib.safeSet;
+      ok = lib.elem "gui" inputs.contract.lib.safeSet;
     }
     {
       name = "safe set: privileged features (workstation, virtualization) are excluded";
-      ok = !(lib.elem "workstation" self.lib.safeSet) && !(lib.elem "virtualization" self.lib.safeSet);
+      ok =
+        !(lib.elem "workstation" inputs.contract.lib.safeSet)
+        && !(lib.elem "virtualization" inputs.contract.lib.safeSet);
     }
     {
       name = "safe set: secret-bearing features (restic, signing) are excluded";
-      ok = !(lib.elem "restic" self.lib.safeSet) && !(lib.elem "signing" self.lib.safeSet);
+      ok =
+        !(lib.elem "restic" inputs.contract.lib.safeSet)
+        && !(lib.elem "signing" inputs.contract.lib.safeSet);
     }
     {
       name = "system platform resolves a secret source to an existing file";
@@ -205,7 +214,7 @@ let
     {
       name = "recipients derive from grants: only the granting host is a recipient";
       ok =
-        (self.lib.mkFeatureRecipients {
+        (inputs.contract.lib.mkFeatureRecipients {
           granter = grantedResticSys;
           abstainer = deniedSys;
         })."profiles/restic.yaml" or [ ] == [ "granter" ];

@@ -1,66 +1,20 @@
+# Host-side system wiring for the contract (ADR-0020): import the contract's umbrella
+# nixos kit (the custom.users schema, realization, feature modules, insecure aggregator,
+# exposed-host ban — all closed over the registry) and supply the one thing the contract
+# leaves to the host: the `platform` *binding* (the secrets backend, Q7). Everything
+# else now lives in the contract flake; this file is pure host glue.
 {
-  lib,
-  config,
+  inputs,
   self,
   ...
 }:
 {
-  # The mechanical account realization (custom.users -> users.users, plus the
-  # gui-grant-driven display manager) lives in the contract so a host repo never
-  # re-implements it. See ADR-0015 mechanic 5. The gui feature module rides alongside
-  # it: the host effects of the gui grant come from the contract, not the user
-  # (ADR-0018, slice 10).
-  imports = [
-    self.contract.realization
-    self.contract.insecurePackages
-  ]
-  ++ self.contract.featureModules;
+  imports = [ inputs.contract.nixosModules.default ];
 
-  options.custom.users = lib.mkOption {
-    type = lib.types.attrsOf (
-      lib.types.submodule {
-        # Identity schema comes from the shared contract (ADR-0015), shared with the
-        # home-level `identity` options so the two can't drift.
-        options = {
-          identity = import self.contract.identity { inherit lib; };
-          # Feature grants a host makes for this user, from the contract's vocabulary.
-          # Default-closed (ADR-0015, mechanic 2): a host enables `granted.<feature>`.
-          granted = self.contract.grantedOptions;
-        }
-        # User-owned feature configuration (ADR-0019): parameters like gui.session.
-        # Merged at the top level so a user writes `custom.users.<u>.gui.session`.
-        // self.contract.featureConfigOptions;
-      }
-    );
-    default = { };
-    description = "User-specific configurations including identity";
-  };
-
-  # Platform interface (ADR-0015), system side — bound below.
-  options.custom.platform = import self.contract.platform { inherit lib; };
-
-  # Marks a host as exposed/agent-facing (e.g. runs a code-executing agent). Such a
-  # host must not be granted any secret-bearing feature (ADR-0015 threat model).
-  options.custom.host.exposed = lib.mkEnableOption "an exposed/agent-facing host that may not be granted secret-bearing features";
-
-  config = {
-    # Host-side platform binding (ADR-0015): the single place the system names the
-    # secrets backend, so features resolve secrets host-agnostically.
-    custom.platform = {
-      secretFile = name: self.lib.getSecretFile name;
-      secretPath = subpath: self.lib.getSecretPath subpath;
-    };
-
-    # An exposed host must not be granted any secret-bearing feature — no grant,
-    # no re-key, no cleartext on the box most likely to be compromised.
-    assertions = lib.optional config.custom.host.exposed (
-      let
-        offending = self.lib.exposedHostOffenders config;
-      in
-      {
-        assertion = offending == [ ];
-        message = "exposed host '${config.networking.hostName}' must not be granted secret-bearing feature(s): ${lib.concatStringsSep ", " offending}";
-      }
-    );
+  # The platform binding — the single place the system names its secrets backend, so a
+  # feature resolves secrets host-agnostically. The contract ships only the interface.
+  config.custom.platform = {
+    secretFile = name: self.lib.getSecretFile name;
+    secretPath = subpath: self.lib.getSecretPath subpath;
   };
 }

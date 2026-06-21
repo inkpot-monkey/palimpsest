@@ -16,85 +16,12 @@ let
   helpers = lib // {
     inherit overlays;
 
-    # Recipients-from-grants (ADR-0015, slice 06): derive, for each secret-bearing
-    # feature's sops file, the set of hosts that should be able to decrypt it — namely
-    # the hosts that GRANT that feature. This is the single source of truth for the
-    # stash's .sops.yaml recipients, so they can never silently drift from the grants
-    # (and, since the exposed-host assertion forbids granting a secret-bearing feature
-    # on an exposed host, no such host can ever become a recipient).
+    # Recipients-from-grants applied to THIS fleet (ADR-0015 slice 06, ADR-0020 Q4): the
+    # contract owns the algorithm (inputs.contract.lib.mkFeatureRecipients); the host
+    # applies it to its own nixosConfigurations. The single source of truth for the
+    # stash's .sops.yaml recipients, so they can never drift from the grants.
     #   { "<stash-relative sops file>" = [ "<hostname>" ... ]; }
-    mkFeatureRecipients =
-      nixosConfigurations:
-      let
-        meta = self.contract.featureMeta;
-        secretFeatures = lib.filter (f: meta.${f}.secretBearing or false) (lib.attrNames meta);
-        hostNames = lib.attrNames nixosConfigurations;
-        hostGrants =
-          host: feature:
-          lib.any (u: u.granted.${feature}.enable or false) (
-            lib.attrValues nixosConfigurations.${host}.config.custom.users
-          );
-      in
-      lib.foldl' (
-        acc: feature:
-        let
-          hosts = lib.filter (h: hostGrants h feature) hostNames;
-        in
-        lib.foldl' (a: file: a // { ${file} = lib.unique ((a.${file} or [ ]) ++ hosts); }) acc (
-          meta.${feature}.secretFiles or [ ]
-        )
-      ) { } secretFeatures;
-
-    featureRecipients = helpers.mkFeatureRecipients self.nixosConfigurations;
-
-    # The exposed-host ban (ADR-0015 threat model): the secret-bearing features an
-    # exposed host has been granted — which must be empty. Same user×feature×meta
-    # traversal as mkFeatureRecipients, kept in the canonical layer rather than inlined
-    # in the assertion (ADR-0018 review, finding 4).
-    exposedHostOffenders =
-      config:
-      let
-        meta = self.contract.featureMeta;
-      in
-      lib.concatMap (
-        uname:
-        let
-          granted = config.custom.users.${uname}.granted;
-        in
-        lib.filter (fname: (granted.${fname}.enable or false) && (meta.${fname}.secretBearing or false)) (
-          lib.attrNames meta
-        )
-      ) (lib.attrNames config.custom.users);
-
-    # The derived "safe set" — runtime-eligible features (ADR-0018, slice 15): the
-    # features a runtime/greeter binding may confer on a user without operator
-    # authorship. DERIVED from the existing security primitives, never a manual flag:
-    # a feature is eligible iff it bears no secret, confers no PRIVILEGED group, and
-    # carries no host-executed payload (execPayload). gui qualifies (its input/uinput/
-    # plugdev/dialout are non-privileged); workstation/virtualization (privileged) and
-    # restic/signing (secret-bearing) do not. So privilege and host-run code are
-    # build-time-only — a flake URL at a greeter can never escalate.
-    runtimeEligibleFeature =
-      feature:
-      let
-        f = self.contract.features.${feature} or { };
-      in
-      !(f.secretBearing or false)
-      && (lib.intersectLists (f.groups or [ ]) self.contract.privilegedGroups == [ ])
-      && !(f.execPayload or false);
-
-    safeSet = lib.filter helpers.runtimeEligibleFeature (lib.attrNames self.contract.features);
-
-    # The restricted hostFacts projection (ADR-0018, slice 12): the ONLY host state a
-    # user's home modules may read, in place of raw `osConfig`. Self-scoped — it carries
-    # this host's own facts plus *this user's* grants, never another user's data and
-    # never a secret value. `hostName` is deliberately excluded so a user adapts on
-    # semantic facts, not host identity. Passed to home-manager as a specialArg.
-    mkHostFacts = config: userName: {
-      exposed = config.custom.host.exposed;
-      platform = config.nixpkgs.hostPlatform.system;
-      granted = config.custom.users.${userName}.granted;
-    };
+    featureRecipients = inputs.contract.lib.mkFeatureRecipients self.nixosConfigurations;
 
     mkPkgs =
       system:

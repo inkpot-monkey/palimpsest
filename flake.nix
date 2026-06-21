@@ -93,6 +93,16 @@
       flake = false;
     };
 
+    # The host↔user contract (ADR-0020): the shared schema, host-invariant realization,
+    # derivation logic, and conformance kit. Depends only on nixpkgs lib. Consumed via
+    # `path:` while it stabilises in-tree; flips to a `github:` URL once split out — the
+    # "URL change, not a re-wire" of ADR-0015. nixpkgs follows the fleet pin so there is
+    # one nixpkgs eval and no lib skew.
+    contract = {
+      url = "path:./contract";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
   };
 
   outputs =
@@ -110,7 +120,6 @@
         ./parts/apps
         ./parts/checks
         ./lib
-        ./contract
         ./users
         ./hosts
         ./modules/nixos/services

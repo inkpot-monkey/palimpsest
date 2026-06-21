@@ -50,7 +50,7 @@
           # raw osConfig (ADR-0018, slice 12). The user's own identity is pushed in the
           # same way — both computed from the system config here, in the wiring, not
           # reached for inside a home module.
-          hostFacts = self.lib.mkHostFacts config "inkpotmonkey";
+          hostFacts = inputs.contract.lib.mkHostFacts config "inkpotmonkey";
           inherit (config.custom.users.inkpotmonkey) identity;
         };
         backupFileExtension = "hm-backup";

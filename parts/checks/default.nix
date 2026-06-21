@@ -17,7 +17,7 @@
         # (inputs.jmap-bridge.checks); its CI owns the round-trip test now.
         # Host↔user contract (ADR-0015): gui grant drives the feature; deny is a no-op.
         host_user_contract = import ./host-user-contract {
-          inherit pkgs self;
+          inherit pkgs self inputs;
         };
         # Runtime VM smoke for the gui-session union (ADR-0019): one host, two gui
         # users with different sessions ⇒ both plasma sessions offered live.
