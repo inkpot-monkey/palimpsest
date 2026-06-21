@@ -1,12 +1,12 @@
 # The single writer of nixpkgs.config.permittedInsecurePackages (ADR-0018 review,
 # finding 3). `nixpkgs.config` is types.attrs — it SHALLOW-merges, so two modules each
-# setting permittedInsecurePackages CLOBBER rather than concatenate (a host's value
-# silently dropped the gui feature's electron permit; see the weedySeadragon history).
+# setting permittedInsecurePackages CLOBBER rather than concatenate, and a host's value
+# can silently drop a feature's permit.
 #
-# Funnel every host/feature permit through this mergeable list option, and write the
-# real option exactly once. A feature module (gui → electron) and a host
-# (weedySeadragon → beekeeper) then coexist instead of one winning. Imported on every
-# host via the contract (users/identity.nix), so the option always exists.
+# Funnel every host/feature permit through this mergeable list option, and write the real
+# option exactly once. A feature (e.g. gui → electron) and a host (e.g. → beekeeper) then
+# coexist instead of one winning. Imported on every host via the contract umbrella, so
+# the option always exists.
 {
   lib,
   config,

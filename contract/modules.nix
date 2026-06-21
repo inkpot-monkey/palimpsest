@@ -14,8 +14,8 @@
 }:
 {
   # System kit: the custom.users schema, the platform INTERFACE (host binds it), the
-  # exposed-host marker + ban, and the realization + insecure aggregator.
-  # ≈ the old users/identity.nix MINUS the platform binding.
+  # exposed-host marker + ban, and the realization + insecure aggregator. The host
+  # imports this and supplies the platform binding.
   nixosModule =
     { config, ... }:
     {
@@ -52,7 +52,7 @@
     };
 
   # Home kit: the identity + home-profile vocabulary + the platform INTERFACE (host
-  # binds it). ≈ the old modules/homeManager/options.nix MINUS the platform binding.
+  # binds it). The home identity value is populated from the system identity by the host.
   homeModule = _: {
     options.identity = identityOptions;
     options.custom.home.profiles = homeProfileOptions;

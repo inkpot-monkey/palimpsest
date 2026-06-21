@@ -52,9 +52,9 @@ in
   # The session-union DECISION (ADR-0019), as neutral data — NOT a display backend.
   # The contract decides which sessions the host's shared display surface must offer
   # (the union over granted gui users' preferences, so two users with different
-  # sessions coexist on one seat). A host-side display binding (e.g. the Plasma/SDDM
-  # one in modules/nixos/profiles/gui-desktop.nix) reads this and renders it; the
-  # contract stays desktop-environment-agnostic (ADR-0021 review finding 2).
+  # sessions coexist on one seat). A host-side display binding (e.g. an SDDM/Plasma or
+  # GDM/GNOME one) reads this and renders it; the contract stays desktop-environment-
+  # agnostic (ADR-0021 review finding 2).
   options.custom.gui.surface = {
     enabled = lib.mkOption {
       type = lib.types.bool;

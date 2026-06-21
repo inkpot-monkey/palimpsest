@@ -87,7 +87,7 @@
   # signing: the user's dedicated NON-admin commit-signing key. Secret-bearing (so the
   # exposed-host ban applies and a greeter never auto-grants it), but the secret rides
   # the USER's home sops decrypted by the user's own key — no host re-key, no host
-  # recipients (no secretFiles). See users/inkpotmonkey/home/signing.nix (slice 13).
+  # recipients (no secretFiles), so the user repo's home module owns its provisioning.
   signing = {
     grant = "the commit-signing key for this user (host grant)";
     secretBearing = true;
