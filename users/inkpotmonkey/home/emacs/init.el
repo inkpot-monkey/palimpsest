@@ -738,7 +738,12 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 (use-package ghostel
 		:ensure nil
 		:custom
-		(ghostel-module-auto-install nil))
+		(ghostel-module-auto-install nil)
+		;; Keys that pass through to Emacs instead of being sent to Claude's TUI.
+		;; The default list is C-c/C-x/C-u/C-h/M-x/M-:/C-\; add M-o so global
+		;; `crux-other-window-or-switch-buffer' still works from a Claude buffer.
+		(ghostel-keymap-exceptions
+		 '("C-c" "C-x" "C-u" "C-h" "M-x" "M-:" "C-\\" "M-o")))
 
 ;; stevemolitor/claude-code.el — Claude Code as a full-window coding agent.
 ;; Multiple named sessions per project: claude-code (C-c c c), a second agent
