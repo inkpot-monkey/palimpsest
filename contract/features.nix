@@ -68,6 +68,17 @@
     ];
   };
 
+  # sudo: administrative (wheel) access and nothing more — the MINIMAL privileged grant.
+  # workstation also confers docker/podman; this is for accounts that need sudo without a
+  # dev toolchain (e.g. a break-glass admin, or a co-admin user). wheel is privileged, so
+  # like workstation it is build-time-only and excluded from the safe set — never a
+  # greeter auto-grant. A user can never obtain wheel by declaring it in identity; the
+  # clamp drops it (ADR-0015 threat model) and only this grant restores it.
+  sudo = {
+    grant = "wheel/sudo administrative access for this user (host grant)";
+    groups = [ "wheel" ];
+  };
+
   # virtualization: the privileged disk/libvirtd/qemu-libvirtd groups, split out of gui
   # (slice 11) so gui stays in the safe set — these are build-time-only, never auto-
   # granted at a greeter. (kvm is in privilegedGroups but conferred to no user today.)

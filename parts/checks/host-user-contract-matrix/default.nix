@@ -40,6 +40,14 @@ let
       name = "coherence: every real host's exposed-trait is covered by a conformance archetype";
       ok = exposedCovered;
     }
+    {
+      # Regression guard (cloud-review finding): the privileged-group clamp drops
+      # operator-declared wheel unless granted, which once silently demoted this
+      # break-glass recovery account. Its sudo is a critical safety net — assert it
+      # survives, so the grant in hosts/default.nix can never be dropped unnoticed.
+      name = "coherence: the weedySeadragon break-glass admin retains wheel (sudo)";
+      ok = lib.elem "wheel" (hosts.weedySeadragon.config.users.users.admin.extraGroups or [ ]);
+    }
   ];
   failures = builtins.filter (a: !a.ok) assertions;
   report = lib.concatMapStringsSep "\n" (

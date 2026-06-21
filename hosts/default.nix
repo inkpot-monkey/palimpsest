@@ -37,7 +37,17 @@ in
           workstation.enable = true;
           virtualization.enable = true;
         })
-        (grant "eyeofalligator" { gui.enable = true; })
+        # eyeofalligator co-administers this laptop and had sudo pre-clamp (its identity
+        # declares wheel); the clamp drops untrusted identity groups, so its sudo must be
+        # an explicit grant now (ADR-0015 threat model; cloud-review finding).
+        (grant "eyeofalligator" {
+          gui.enable = true;
+          sudo.enable = true;
+        })
+        # The break-glass admin account (declared in ./weedySeadragon/configuration.nix)
+        # is a contract user too, so its wheel is also clamped unless granted. Grant sudo
+        # so the recovery account keeps root if the primary login breaks.
+        (grant "admin" { sudo.enable = true; })
       ];
     };
 

@@ -15,11 +15,12 @@
 #   profile ...................... no longer gates anything (grants do); kept transitional
 #   extraGroups .................. CLAMPED here — privileged groups need a grant
 #   granted.<feature> ............ the host's decision; the only source of privilege
-# NOTE: kelpy (exposed) currently receives `workstation` (docker/podman/wheel) via
-# the inkpotmonkey cli variant — visible now, and revocable with one line; the
-# exposed-host agent box arguably should not have it. general/eyeofalligator still
-# declare `wheel` in identity and will be clamped until migrated to a grant (neither
-# is on a working host today).
+# NOTE: kelpy (exposed) receives `workstation` (docker/podman/wheel) via its grant in
+# hosts/default.nix — revocable with one line; the exposed-host agent box arguably should
+# not have it. Accounts that declare `wheel` in identity are CLAMPED unless granted, so a
+# host MUST grant their privilege: eyeofalligator + the break-glass admin on weedySeadragon
+# get the `sudo` grant (they declare wheel and are deployed there); `general` declares wheel
+# but is bound to no host today, so its clamp affects nothing deployed.
 # Closes over its contract data (privilegedGroups, featureGroups) rather than reaching
 # through the consumer's `self` (ADR-0020): contract/default.nix applies this with the
 # registry-derived values, so the shipped module depends on neither `self` nor `inputs`
