@@ -74,7 +74,6 @@ in
         self.homeManagerModules.options
         {
           identity = {
-            profile = "gui";
             name = "Inkpot Monkey";
             email = "inkpot-monkey@palebluebytes.space";
             username = "inkpotmonkey";
@@ -93,7 +92,6 @@ in
         {
           # general's home is a flat package list (no base.nix), so the home
           # essentials the nixos integration would supply are set here for standalone.
-          identity.profile = "gui";
           home.username = "general";
           home.homeDirectory = "/home/general";
           home.stateVersion = "25.11";
@@ -107,7 +105,6 @@ in
         ./eyeofalligator/home/default.nix
         self.homeManagerModules.options
         {
-          identity.profile = "gui";
           home.username = "eyeofalligator";
           home.homeDirectory = "/home/eyeofalligator";
           home.stateVersion = "25.11";

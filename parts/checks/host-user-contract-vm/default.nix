@@ -66,7 +66,6 @@ pkgs.testers.runNixOSTest {
             name = "Aurelia Wayland";
             email = "aurelia@example.invalid";
             username = "aurelia";
-            profile = "gui";
           };
           granted.gui.enable = true;
           gui.session = "wayland";
@@ -76,7 +75,6 @@ pkgs.testers.runNixOSTest {
             name = "Borealis X11";
             email = "borealis@example.invalid";
             username = "borealis";
-            profile = "gui";
           };
           granted.gui.enable = true;
           gui.session = "x11";

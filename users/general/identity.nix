@@ -2,7 +2,6 @@
 {
 
   config.custom.users.general.identity = {
-    profile = lib.mkDefault "gui";
     username = "general";
     hashedPassword = ""; # No password set by default
     name = "General User";

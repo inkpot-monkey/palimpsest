@@ -46,7 +46,6 @@
     name = "System Administrator";
     email = "admin@weedySeadragon.local";
     hashedPassword = "$6$Va8FcJEH8x9Hp/iL$EV3Nu3p9jqjin6rhbdQujHcX4LIsuxuzQOSfALpNqAO.LlZXNX/0EadRCfKx4FzqOKKUMGs6Ff4v8yarWjEpY1";
-    profile = "cli";
     extraGroups = [
       "wheel"
       "networkmanager"

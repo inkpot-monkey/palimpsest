@@ -22,7 +22,6 @@ in
     email = getIdent "eyeofalligator" "email" "";
     sshKey = getIdent "eyeofalligator" "sshKey" "";
     hashedPassword = getIdent "eyeofalligator" "hashedPassword" "";
-    profile = "gui";
 
     extraGroups = [
       "networkmanager"

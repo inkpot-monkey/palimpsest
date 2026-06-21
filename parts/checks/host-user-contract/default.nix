@@ -1,11 +1,9 @@
 # Regression gate for the host↔user contract (ADR-0015, slice 08).
 #
 # Proves the gui *grant* drives the gui feature and that *deny* (no grant) is a
-# true no-op. Both configs use the inkpotmonkey **cli** variant — so
-# `identity.profile` is "cli" in both and the only difference is
-# `granted.gui.enable`. That isolates the grant from the legacy
-# `identity.profile == "gui"` proxy: the gui system effects below come purely
-# from the grant.
+# true no-op. Both configs bind the SAME inkpotmonkey manifest; the only difference is
+# `granted.gui.enable`, so the gui system effects below come purely from the grant —
+# nothing about the user changes between them.
 #
 # This is an eval-level check (it inspects real nixosSystem evaluations built via
 # self.lib.mkSystem, exactly as hosts are). It verifies the grant *logic* without
@@ -66,7 +64,6 @@ let
         name = "Gamma";
         email = "gamma@example.invalid";
         username = "gamma";
-        profile = "gui";
       };
       granted.gui.enable = true;
       gui.session = "x11";

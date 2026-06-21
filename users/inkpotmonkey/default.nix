@@ -3,8 +3,8 @@
   # + home + the user's own feature configuration, with NO `granted.*`. Every host that
   # binds this user owns its grants as data (hosts/default.nix) — the user can never
   # self-grant. The self-granting `cli`/`gui` variants are gone, so self-granting is not
-  # even expressible. `identity.profile` is inert (grants gate now) and defaults to
-  # "cli", so the manifest need not set it.
+  # even expressible. The home adapts to host affordances purely via
+  # `hostFacts.granted.gui` (cli base + gui layer), never a per-host variant.
   manifest =
     { ... }:
     {
