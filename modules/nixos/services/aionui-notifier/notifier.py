@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
-"""Poll aioncore's local API and post AionUi agent events to a Matrix room.
+"""Poll aioncore's local API and post AionUi agent events to Matrix.
 
-Self-bootstrapping (declarative): given a bot password (and, for first run, the
+Two delivery modes (aioncore can't push, so a poller is needed either way —
+see ADR-0008):
+
+  - webhook mode (preferred): if MATRIX_WEBHOOK_URL_FILE points at a non-empty
+    file, each event is POSTed as `{"text": …}` to that hookshot generic-webhook
+    URL, and hookshot owns the Matrix side. No bot login, room, or token here.
+  - matrix-direct mode (legacy): otherwise the notifier logs a bot in
+    (registering it first if needed) and posts straight to a room/alias.
+
+Self-bootstrapping (matrix-direct): given a bot password (and, for first run, the
 homeserver's registration token), the notifier logs the bot in — registering it
 first if needed — and ensures the target room exists, resolving a room *alias*
 (creating the room if missing). So a deploy needs only secrets + a room alias in
@@ -16,9 +25,10 @@ Agent event signals (confirmed against aioncore 2.1.x):
 
 aioncore runs in --local mode, so /api/* needs no auth on localhost.
 
-Config via env: AIONUI_URL, MATRIX_URL, MATRIX_USER, MATRIX_PASSWORD_FILE,
-MATRIX_REGISTRATION_TOKEN_FILE (optional), MATRIX_ROOM (alias or id),
-MATRIX_INVITE (optional), STATE_DIR, POLL_INTERVAL.
+Config via env: AIONUI_URL, STATE_DIR, POLL_INTERVAL, and either
+MATRIX_WEBHOOK_URL_FILE (webhook mode) or the matrix-direct set: MATRIX_URL,
+MATRIX_USER, MATRIX_PASSWORD_FILE, MATRIX_REGISTRATION_TOKEN_FILE (optional),
+MATRIX_ROOM (alias or id), MATRIX_INVITE (optional).
 """
 import json
 import os
@@ -30,11 +40,12 @@ import urllib.request
 
 AIONUI_URL = os.environ.get("AIONUI_URL", "http://127.0.0.1:25808").rstrip("/")
 MATRIX_URL = os.environ.get("MATRIX_URL", "http://127.0.0.1:6167").rstrip("/")
-MATRIX_USER = os.environ["MATRIX_USER"]
-PASSWORD_FILE = os.environ["MATRIX_PASSWORD_FILE"]
+MATRIX_USER = os.environ.get("MATRIX_USER", "")
+PASSWORD_FILE = os.environ.get("MATRIX_PASSWORD_FILE", "")
 REG_TOKEN_FILE = os.environ.get("MATRIX_REGISTRATION_TOKEN_FILE", "")
-MATRIX_ROOM = os.environ["MATRIX_ROOM"]
+MATRIX_ROOM = os.environ.get("MATRIX_ROOM", "")
 MATRIX_INVITE = os.environ.get("MATRIX_INVITE", "")
+WEBHOOK_URL_FILE = os.environ.get("MATRIX_WEBHOOK_URL_FILE", "")
 STATE_DIR = os.environ.get("STATE_DIR", "/var/lib/aionui-notifier")
 POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL", "10"))
 
@@ -173,6 +184,33 @@ class Matrix:
             log(f"matrix send failed: {status} {body}")
 
 
+class Webhook:
+    """Webhook-mode sink: POST events to a hookshot generic webhook.
+
+    hookshot renders a generic-webhook payload's `text`/`html` fields directly,
+    so no per-connection JS transform is required. Exposes the same surface as
+    Matrix (token/room_id/ensure_*) so the main loop is mode-agnostic.
+    """
+
+    def __init__(self, url):
+        self.url = url
+        # Always "ready" — there is no auth/room bootstrap in webhook mode.
+        self.token = True
+        self.room_id = True
+
+    def ensure_token(self, force=False):
+        return True
+
+    def ensure_room(self):
+        return True
+
+    def send(self, text, html):
+        status, body = http(self.url, "POST",
+                            {"text": text, "html": html})
+        if status not in (200, 201, 202):
+            log(f"webhook send failed: {status} {body}")
+
+
 def list_conversations():
     _s, d = http(f"{AIONUI_URL}/api/conversations")
     data = d.get("data", d)
@@ -216,15 +254,36 @@ def main():
     state.setdefault("convs", {})
     convs_state = state["convs"]
 
-    mx = Matrix(state)
-    if not mx.ensure_token() or not mx.ensure_room():
-        log("Matrix bootstrap failed; will retry")
+    # MATRIX_WEBHOOK_URL_FILE being configured selects webhook mode; its content
+    # may not exist yet (the hookshot generic webhook is created at runtime via a
+    # bot command, then its URL written to the file), in which case we idle.
+    webhook_mode = bool(WEBHOOK_URL_FILE)
+    if webhook_mode:
+        url = read_file(WEBHOOK_URL_FILE) if os.path.exists(WEBHOOK_URL_FILE) else ""
+        mx = Webhook(url) if url else None
+        if mx is None:
+            log("webhook URL not set yet — create the hookshot generic webhook, "
+                "write its URL to the URL file, then restart; idling until then")
+        target = "hookshot generic webhook"
+    else:
+        mx = Matrix(state)
+        if not mx.ensure_token() or not mx.ensure_room():
+            log("Matrix bootstrap failed; will retry")
+        target = MATRIX_ROOM
     save_state(state)
-    log(f"watching {AIONUI_URL} -> {MATRIX_ROOM} every {POLL_INTERVAL}s"
+    log(f"watching {AIONUI_URL} -> {target} every {POLL_INTERVAL}s"
         + (" (seeding)" if seeding else ""))
 
     while True:
         try:
+            if webhook_mode and mx is None:
+                # Pick up the webhook URL once it's been written (no restart needed).
+                url = read_file(WEBHOOK_URL_FILE) if os.path.exists(WEBHOOK_URL_FILE) else ""
+                if not url:
+                    time.sleep(POLL_INTERVAL)
+                    continue
+                mx = Webhook(url)
+                log("webhook URL loaded; delivering events")
             if not mx.token and not mx.ensure_token():
                 time.sleep(POLL_INTERVAL)
                 continue

@@ -11,7 +11,7 @@ on three transitions:
 | `⚠️ error (<status>): <name>` | conversation `status` becomes `failed`/`cancelled` |
 
 `aioncore` runs in `--local` mode, so its `/api/*` is reachable on localhost without
-auth. Delivery uses the Matrix client-server API.
+auth.
 
 > Why a poller and not a native AionUi Matrix *channel*: on the headless WebUI
 > backend (`aioncore`), extension channel plugins are **metadata-only** — aioncore
@@ -19,47 +19,45 @@ auth. Delivery uses the Matrix client-server API.
 > (Telegram/Lark/DingTalk/WeChat) actually connect. A native Matrix channel would
 > need a fork of `aioncore`. The poller delivers the same events with no fork.
 
-## Setup (mostly declarative — one secret)
+## Delivery modes
 
-The notifier **self-bootstraps**: from the bot password and the homeserver's
-registration token it registers the bot if needed, logs in, and resolves the room
-alias — creating the alerts room (and inviting you) on first run. There is **no
-manual access-token or room-id copying**.
+- **Webhook mode (preferred, current default on kelpy).** Set `webhookUrlFile`
+  to a file holding a [matrix-hookshot](../../profiles/matrix/hookshot.nix) generic
+  webhook URL. Each event is POSTed as `{"text": …}` and hookshot owns the Matrix
+  side — no bot login, room, or token here. See [ADR-0024](../../../../docs/adr/0024-matrix-hookshot-webhooks-and-feeds.md).
+- **Matrix-direct mode (legacy).** Leave `webhookUrlFile` unset and the notifier
+  self-bootstraps a bot (registers if needed, logs in, resolves/creates the room
+  alias) and posts straight to a room via the client-server API.
 
-The single manual step is adding the bot password to sops:
+## Setup (webhook mode)
+
+In Matrix, invite the `@hookshot` bot to a room and create a generic webhook
+(`webhook` bot command); copy its URL into sops (it may start empty — the notifier
+idles until the URL is present, then delivers without a restart):
 
 ```console
-$ sops secrets/profiles/matrix.yaml      # add one line:
-aionui_matrix_bot_password: <a strong password>
+$ sops secrets/profiles/matrix.yaml      # add one line (value can be empty at first):
+aionui_hookshot_webhook_url: https://hookshot.<domain>/webhook/<id>
 ```
 
-Then enable it on the host (e.g. `hosts/kelpy/configuration.nix`):
+Enable it on the host (e.g. `hosts/kelpy/configuration.nix`):
 
 ```nix
 custom.profiles.aionui = {
   enable = true;            # the AionUi WebUI itself
-  notifications.enable = true;
-  # notifications.room and notifications.inviteUser default to
-  #   #aionui-alerts:matrix.<domain>  /  @inkpotmonkey:matrix.<domain>
+  notifications.enable = true;   # wires webhookUrlFile to the sops secret above
 };
 ```
 
-`just deploy kelpy`, then accept the room invite from your phone (Matrix client).
-On first start the journal shows `registered bot …` / `created room … -> !…`.
-
-## What the profile wires (see `modules/nixos/profiles/aionui.nix`)
-
-- sops secrets from `profiles/matrix.yaml`: `aionui_matrix_bot_password` (you add)
-  and `aionui_registration_token` (re-decrypts the existing `registration_token`
-  for the notifier user, so it can self-register the bot).
-- `services.aionui-notifier` pointed at the local Conduit + aioncore, with the
-  room alias / invite derived from `networking.domain`.
+`just deploy kelpy`. On first start the journal shows `webhook URL loaded; delivering
+events` (or an idle notice until the URL is set).
 
 ## Options (`services.aionui-notifier`)
 
-`enable`, `aionuiUrl`, `matrixUrl`, `room` (alias `#…` or id `!…`), `botUser`,
-`passwordFile`, `registrationTokenFile` (optional self-register), `inviteUser`,
-`pollInterval` (default 10s), `stateDir`, `user`/`group`.
+`enable`, `aionuiUrl`, `webhookUrlFile` (webhook mode), `matrixUrl`, `room`
+(matrix-direct, alias `#…` or id `!…`), `botUser`, `passwordFile`,
+`registrationTokenFile` (optional self-register), `inviteUser`, `pollInterval`
+(default 10s), `stateDir`, `user`/`group`.
 
 State (cached token, room id, per-conversation status) lives in `stateDir`
 (`/var/lib/aionui-notifier`, persisted under impermanence). On first ever run the

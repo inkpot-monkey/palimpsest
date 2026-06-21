@@ -11,8 +11,6 @@
 let
   cfg = config.custom.profiles.aionui;
   claude-code = inputs.llm-agents.packages.${pkgs.stdenv.hostPlatform.system}.claude-code;
-  # The local homeserver's name (see modules/nixos/profiles/matrix: server_name).
-  matrixServer = "matrix.${config.networking.domain}";
 in
 {
   options.custom.profiles.aionui = {
@@ -20,21 +18,13 @@ in
 
     notifications = {
       enable = lib.mkEnableOption ''
-        AionUi -> Matrix notifier. The only manual step is adding the bot's
-        password to secrets/profiles/matrix.yaml as `aionui_matrix_bot_password`;
-        the notifier then self-registers the bot (using the homeserver
-        registration token) and creates the alerts room on first run.
+        AionUi -> Matrix notifier (webhook mode). Posts agent events through a
+        matrix-hookshot generic webhook — hookshot owns the Matrix side. Manual
+        step: in Matrix, add the hookshot bot to a room, create a generic webhook
+        there (`webhook`), and store its URL in secrets/profiles/matrix.yaml as
+        `aionui_hookshot_webhook_url` (leave it empty until you have it — the
+        notifier idles until the URL is present).
       '';
-      room = lib.mkOption {
-        type = lib.types.str;
-        default = "#aionui-alerts:${matrixServer}";
-        description = "Room alias (auto-created) or id the notifier posts to.";
-      };
-      inviteUser = lib.mkOption {
-        type = lib.types.str;
-        default = "@inkpotmonkey:${matrixServer}";
-        description = "Matrix account invited when the alerts room is created.";
-      };
     };
   };
 
@@ -77,26 +67,16 @@ in
       inherit (config.services.aionui) group;
     };
 
-    # Matrix notifier (opt-in). Secrets live in profiles/matrix.yaml: the bot
-    # password (add manually) and the homeserver registration token (already
-    # present, re-decrypted here for the notifier user to self-register the bot).
-    sops.secrets = lib.mkIf cfg.notifications.enable {
-      aionui_matrix_bot_password = {
-        sopsFile = self.lib.getSecretPath "profiles/matrix.yaml";
-        owner = config.services.aionui-notifier.user;
-      };
-      aionui_registration_token = {
-        sopsFile = self.lib.getSecretPath "profiles/matrix.yaml";
-        key = "registration_token";
-        owner = config.services.aionui-notifier.user;
-      };
+    # Matrix notifier (opt-in, webhook mode). The only secret is the hookshot
+    # generic-webhook URL in profiles/matrix.yaml (add manually; may start empty
+    # — the notifier idles until it's populated, then delivers without a restart).
+    sops.secrets.aionui_hookshot_webhook_url = lib.mkIf cfg.notifications.enable {
+      sopsFile = self.lib.getSecretPath "profiles/matrix.yaml";
+      owner = config.services.aionui-notifier.user;
     };
     services.aionui-notifier = lib.mkIf cfg.notifications.enable {
       enable = true;
-      inherit (cfg.notifications) room inviteUser;
-      passwordFile = config.sops.secrets.aionui_matrix_bot_password.path;
-      registrationTokenFile = config.sops.secrets.aionui_registration_token.path;
-      matrixUrl = "http://127.0.0.1:${toString settings.services.public.matrix.port}";
+      webhookUrlFile = config.sops.secrets.aionui_hookshot_webhook_url.path;
       aionuiUrl = "http://127.0.0.1:${toString settings.services.private.aionui.port}";
     };
 

@@ -26,13 +26,29 @@ in
       description = "Base URL of the Matrix homeserver client-server API.";
     };
 
+    webhookUrlFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = ''
+        Webhook mode (preferred). File holding a hookshot generic-webhook URL.
+        When set, events are POSTed there and hookshot owns the Matrix side — the
+        {option}`room`, {option}`passwordFile`, {option}`botUser` and
+        {option}`registrationTokenFile` options are then unused. The file's
+        contents may be empty initially (the webhook is created at runtime via a
+        bot command); the notifier idles and picks the URL up once written.
+      '';
+      example = "/run/secrets/aionui_hookshot_webhook_url";
+    };
+
     room = lib.mkOption {
       type = lib.types.str;
+      default = "";
       example = "#aionui-alerts:matrix.example.com";
       description = ''
-        Target room — a room alias (created automatically if missing) or a room
-        id (`!…`). Aliases are recommended: the notifier resolves them and
-        creates the room (inviting {option}`inviteUser`) on first run.
+        Matrix-direct mode only. Target room — a room alias (created
+        automatically if missing) or a room id (`!…`). Aliases are recommended:
+        the notifier resolves them and creates the room (inviting
+        {option}`inviteUser`) on first run. Ignored in webhook mode.
       '';
     };
 
@@ -43,8 +59,9 @@ in
     };
 
     passwordFile = lib.mkOption {
-      type = lib.types.path;
-      description = "File with the bot's password (e.g. a sops secret). Used to log in / register.";
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = "Matrix-direct mode only. File with the bot's password (e.g. a sops secret). Used to log in / register. Ignored in webhook mode.";
       example = "/run/secrets/aionui_matrix_bot_password";
     };
 
@@ -109,16 +126,23 @@ in
 
       environment = {
         AIONUI_URL = cfg.aionuiUrl;
-        MATRIX_URL = cfg.matrixUrl;
-        MATRIX_ROOM = cfg.room;
-        MATRIX_USER = cfg.botUser;
-        MATRIX_PASSWORD_FILE = cfg.passwordFile;
-        MATRIX_INVITE = cfg.inviteUser;
         STATE_DIR = cfg.stateDir;
         POLL_INTERVAL = toString cfg.pollInterval;
       }
-      // lib.optionalAttrs (cfg.registrationTokenFile != null) {
-        MATRIX_REGISTRATION_TOKEN_FILE = cfg.registrationTokenFile;
+      // lib.optionalAttrs (cfg.webhookUrlFile != null) {
+        # Webhook mode: hookshot owns the Matrix side; no bot creds here.
+        MATRIX_WEBHOOK_URL_FILE = toString cfg.webhookUrlFile;
+      }
+      // lib.optionalAttrs (cfg.webhookUrlFile == null) {
+        # Matrix-direct mode.
+        MATRIX_URL = cfg.matrixUrl;
+        MATRIX_ROOM = cfg.room;
+        MATRIX_USER = cfg.botUser;
+        MATRIX_PASSWORD_FILE = toString cfg.passwordFile;
+        MATRIX_INVITE = cfg.inviteUser;
+      }
+      // lib.optionalAttrs (cfg.webhookUrlFile == null && cfg.registrationTokenFile != null) {
+        MATRIX_REGISTRATION_TOKEN_FILE = toString cfg.registrationTokenFile;
       };
 
       serviceConfig = {
