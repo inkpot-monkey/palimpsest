@@ -35,6 +35,14 @@ let
         port = 8082;
         proxy = false;
       };
+      # matrix-hookshot's public webhook/OAuth listener. Caddy auto-fronts it
+      # (proxy omitted → vhost created, DNS grey-clouded) so GitHub and generic
+      # webhooks can POST in. The appservice port (loopback) is internal, kept in
+      # the hookshot module. See modules/nixos/profiles/matrix/hookshot.nix.
+      hookshot = {
+        edge = "kelpy";
+        port = 9000;
+      };
       jellyfin = {
         edge = "kelpy";
         port = 8096;

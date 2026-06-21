@@ -124,6 +124,7 @@ in
   imports = [
     ./mautrix-whatsapp.nix
     ./jmap-bridge.nix
+    ./hookshot.nix
   ];
 
   options.custom.profiles.matrix = {

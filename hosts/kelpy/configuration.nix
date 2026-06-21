@@ -36,6 +36,7 @@
       enable = true;
       whatsapp.enable = true;
       jmap-bridge.enable = true;
+      hookshot.enable = true;
     };
     paperless.enable = true;
     litellm.enable = true;
