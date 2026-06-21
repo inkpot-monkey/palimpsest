@@ -100,14 +100,18 @@
         ]
       },
       "locked": {
-        "path": "./contract",
-        "type": "path"
+        "lastModified": 1782037162,
+        "narHash": "sha256-IOikW9UgCLUZKtz6mkOJ3HR+XVfLj3kEks6gCHX8BRk=",
+        "owner": "palebluebytes",
+        "repo": "host-user-contract",
+        "rev": "764c3750fddea0f6b8771be84152c4dd163cc25c",
+        "type": "github"
       },
       "original": {
-        "path": "./contract",
-        "type": "path"
-      },
-      "parent": []
+        "owner": "palebluebytes",
+        "repo": "host-user-contract",
+        "type": "github"
+      }
     },
     "crane": {
       "locked": {
