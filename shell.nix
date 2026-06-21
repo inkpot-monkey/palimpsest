@@ -28,6 +28,7 @@
 
       # Infrastructure
       vpsfree-client
+      gh # GitHub CLI (PRs, issues, Actions)
 
       # Secrets
       sops
