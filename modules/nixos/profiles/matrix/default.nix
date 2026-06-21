@@ -122,22 +122,35 @@ let
 
   # Auto-create the "management"/"admin" DM between the admin user and each bridge
   # bot that asks for one (managementDms below), so they're present after a deploy
-  # instead of needing a manual "start chat". Logs in as the admin and, for any bot
-  # not already tracked in m.direct, creates a direct room inviting the bot (which
-  # auto-joins) and records it. The interactive auth INSIDE the room (e.g. hookshot
-  # `github login`, WhatsApp QR) is still done by hand — this only makes the room.
+  # instead of needing a manual "start chat". The interactive auth INSIDE the room
+  # (e.g. hookshot `github login`, WhatsApp QR) is still done by hand.
+  #
+  # Idempotency is a PERSISTED per-bot marker in StateDirectory, NOT a re-read of
+  # m.direct: tuwunel doesn't reliably return global account data across runs, so
+  # the old m.direct check spawned a fresh DM on every deploy. The m.direct write
+  # is kept best-effort (so clients render the room as a DM). The marker dir is
+  # persisted (below) so reboots don't re-create either.
   provisionDms = pkgs.writeShellScript "matrix-provision-dms" ''
     set -eu
     url="http://${address}:${toString matrixPort}"
     me="@${cfg.adminLocalpart}:${domain}"
-    pass="$(cat "$CREDENTIALS_DIRECTORY/admin_password")"
     bots="${lib.concatStringsSep " " (map (lp: "@${lp}:${domain}") cfg.managementDms)}"
+    state="$STATE_DIRECTORY"
+    marker() { printf '%s/dm-%s' "$state" "$(printf '%s' "$1" | tr -c 'a-zA-Z0-9' '_')"; }
+
+    # Only bots without a marker need provisioning — skip the login entirely if none.
+    pending=""
+    for bot in $bots; do
+      [ -s "$(marker "$bot")" ] || pending="$pending $bot"
+    done
+    [ -n "$pending" ] || { echo "dm-provision: all management DMs already created"; exit 0; }
 
     for _ in $(seq 1 30); do
       ${pkgs.curl}/bin/curl -sf "$url/_matrix/client/versions" >/dev/null && break
       sleep 2
     done
 
+    pass="$(cat "$CREDENTIALS_DIRECTORY/admin_password")"
     at="$(${pkgs.curl}/bin/curl -s -X POST "$url/_matrix/client/v3/login" \
       -H 'content-type: application/json' \
       -d "$(${pkgs.jq}/bin/jq -nc --arg u "${cfg.adminLocalpart}" --arg p "$pass" \
@@ -145,23 +158,23 @@ let
       | ${pkgs.jq}/bin/jq -r '.access_token // empty')"
     [ -n "$at" ] || { echo "dm-provision: admin login failed" >&2; exit 1; }
     auth=(-H "Authorization: Bearer $at")
-
     meenc="$(${pkgs.jq}/bin/jq -rn --arg m "$me" '$m|@uri')"
+
+    # Seed m.direct from whatever the server returns (best-effort; merged into below).
     direct="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" \
       "$url/_matrix/client/v3/user/$meenc/account_data/m.direct" \
       | ${pkgs.jq}/bin/jq -c 'if (type=="object" and (has("errcode")|not)) then . else {} end' \
         2>/dev/null || echo '{}')"
 
     changed=0
-    for bot in $bots; do
-      n="$(printf '%s' "$direct" | ${pkgs.jq}/bin/jq -r --arg b "$bot" '(.[$b] // []) | length')"
-      if [ "$n" -gt 0 ]; then echo "dm-provision: DM with $bot already tracked"; continue; fi
+    for bot in $pending; do
       rid="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" -X POST "$url/_matrix/client/v3/createRoom" \
         -H 'content-type: application/json' \
         -d "$(${pkgs.jq}/bin/jq -nc --arg b "$bot" \
           '{is_direct:true,invite:[$b],preset:"trusted_private_chat"}')" \
         | ${pkgs.jq}/bin/jq -r '.room_id // empty')"
       [ -n "$rid" ] || { echo "dm-provision: createRoom for $bot failed" >&2; continue; }
+      printf '%s' "$rid" > "$(marker "$bot")"
       direct="$(printf '%s' "$direct" | ${pkgs.jq}/bin/jq -c --arg b "$bot" --arg r "$rid" \
         '.[$b] = ((.[$b] // []) + [$r])')"
       changed=1
@@ -171,7 +184,7 @@ let
     if [ "$changed" = 1 ]; then
       ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
         "$url/_matrix/client/v3/user/$meenc/account_data/m.direct" \
-        -H 'content-type: application/json' -d "$direct" >/dev/null
+        -H 'content-type: application/json' -d "$direct" >/dev/null || true
       echo "dm-provision: m.direct updated"
     fi
   '';
@@ -337,6 +350,10 @@ in
         Type = "oneshot";
         RemainAfterExit = true;
         DynamicUser = true;
+        # Persisted (see environment.persistence below) marker dir — the source of
+        # truth for "this bot's DM already exists", so re-runs don't duplicate it.
+        StateDirectory = "matrix-dm-provision";
+        StateDirectoryMode = "0700";
         LoadCredential = [ "admin_password:${config.sops.secrets.matrix_admin_password.path}" ];
         ExecStart = provisionDms;
       };
@@ -378,5 +395,13 @@ in
       "z /var/lib/private 0700 root root -"
       "z /persistent/var/lib/private 0700 root root -"
     ];
+
+    # Persist the dm-provision markers so reboots (impermanence) don't drop the
+    # "DM already created" state and re-spawn duplicate management DMs.
+    environment.persistence."/persistent" =
+      lib.mkIf (config.custom.profiles.impermanence.enable && cfg.managementDms != [ ])
+        {
+          directories = [ "/var/lib/private/matrix-dm-provision" ];
+        };
   };
 }
