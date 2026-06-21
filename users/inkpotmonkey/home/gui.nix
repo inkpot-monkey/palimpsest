@@ -16,6 +16,8 @@
       NIXOS_OZONE_WL = "1";
     };
 
+    programs.google-chrome.enable = true;
+
     # ==========================================
     # Core UI Components
     # ==========================================
@@ -80,7 +82,6 @@
       libre-caslon
 
       # --- Internet & Browsers ---
-      google-chrome
       brave
       slack
       signal-desktop
