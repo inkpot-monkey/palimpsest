@@ -74,6 +74,11 @@
     hostPlatform = "x86_64-linux";
   };
 
+  # Run unpatched dynamic binaries on NixOS. Claude Desktop's Cowork feature
+  # downloads a generic-glibc Claude Code CLI at runtime (~/.config/Claude/
+  # claude-code/) that expects /lib64/ld-linux-x86-64.so.2; nix-ld supplies it.
+  programs.nix-ld.enable = true;
+
   # Give sawtoothShark the power to build images for the aarch64 raspberry
   # pis (e.g. porcupineFish SD images) locally via emulation, matching
   # stargazer (see hosts/stargazer/boot.nix).
