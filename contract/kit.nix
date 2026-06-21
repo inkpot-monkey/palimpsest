@@ -1,14 +1,14 @@
-# The contract kit — a pure function of nixpkgs `lib`, assembling the entire host↔user
-# contract: the feature registry and its projections, the contract lib functions, and
-# the umbrella nixos/home modules (each closed over the registry). It depends on NOTHING
-# but `lib` — no `self`, no `inputs` — which is what lets the contract be a standalone
-# flake (./flake.nix wraps this). The host supplies only the `platform` *binding* and
-# the package/display *bindings*; none of those live here (ADR-0020).
+# The contract kit — a pure function of nixpkgs `lib` that ASSEMBLES the contract from
+# the registry: it computes the registry's projections (the data), then wires the
+# derivation logic (./lib.nix) and the umbrella modules (./modules.nix) and returns the
+# public surface. It depends on NOTHING but `lib` — no `self`, no `inputs` — which is
+# what lets the contract be a standalone flake (./flake.nix wraps this). The host
+# supplies only the `platform` binding and the package/display bindings (ADR-0020).
 { lib }:
 let
   registry = import ./features.nix { inherit lib; };
 
-  # --- projections of the single registry ---
+  # --- projections of the single registry (the data) ---
   featureGroups = lib.mapAttrs (_: f: f.groups) (lib.filterAttrs (_: f: f ? groups) registry);
   privilegedGroups = [
     "docker"
@@ -31,139 +31,51 @@ let
     // lib.optionalAttrs (f ? secretFiles) { inherit (f) secretFiles; }
   ) registry;
 
+  # --- closed-over modules + option fragments ---
   realization = import ./realization.nix { inherit privilegedGroups featureGroups; };
   identityOptions = import ./identity.nix { inherit lib; };
   platformOptions = import ./platform.nix { inherit lib; };
   homeProfileOptions = import ./home-profiles.nix { inherit lib; };
 
-  # --- contract lib functions (the derivation logic) ---
-
-  # A feature is runtime/greeter-eligible iff it bears no secret, confers no privileged
-  # group, and carries no host-executed payload (ADR-0018, slice 15).
-  runtimeEligibleFeature =
-    feature:
-    let
-      f = registry.${feature} or { };
-    in
-    !(f.secretBearing or false)
-    && (lib.intersectLists (f.groups or [ ]) privilegedGroups == [ ])
-    && !(f.execPayload or false);
-  safeSet = lib.filter runtimeEligibleFeature (lib.attrNames registry);
-
-  # Recipients-from-grants (ADR-0015, slice 06): for each secret-bearing feature's sops
-  # file, the set of hosts that GRANT it — the single source of truth for .sops.yaml
-  # recipients. Applied to a fleet's nixosConfigurations by the host (it reads the fleet).
-  mkFeatureRecipients =
-    nixosConfigurations:
-    let
-      secretFeatures = lib.filter (f: featureMeta.${f}.secretBearing or false) (
-        lib.attrNames featureMeta
-      );
-      hostNames = lib.attrNames nixosConfigurations;
-      hostGrants =
-        host: feature:
-        lib.any (u: u.granted.${feature}.enable or false) (
-          lib.attrValues nixosConfigurations.${host}.config.custom.users
-        );
-    in
-    lib.foldl' (
-      acc: feature:
-      let
-        hosts = lib.filter (h: hostGrants h feature) hostNames;
-      in
-      lib.foldl' (a: file: a // { ${file} = lib.unique ((a.${file} or [ ]) ++ hosts); }) acc (
-        featureMeta.${feature}.secretFiles or [ ]
-      )
-    ) { } secretFeatures;
-
-  # The secret-bearing features an exposed host has been (wrongly) granted — the
-  # exposed-host ban (ADR-0015 threat model). Must be empty.
-  exposedHostOffenders =
-    config:
-    lib.concatMap (
-      uname:
-      let
-        granted = config.custom.users.${uname}.granted;
-      in
-      lib.filter (
-        fname: (granted.${fname}.enable or false) && (featureMeta.${fname}.secretBearing or false)
-      ) (lib.attrNames featureMeta)
-    ) (lib.attrNames config.custom.users);
-
-  # The restricted projection of host state a user's home modules may read (ADR-0018,
-  # slice 12): self-scoped, no hostName, no secret value.
-  mkHostFacts = config: userName: {
-    exposed = config.custom.host.exposed;
-    platform = config.nixpkgs.hostPlatform.system;
-    granted = config.custom.users.${userName}.granted;
+  # --- the two substantial pieces, split out for focus ---
+  contractLib = import ./lib.nix {
+    inherit
+      lib
+      registry
+      privilegedGroups
+      featureMeta
+      ;
   };
-
-  # --- umbrella modules (closed over the projections above) ---
-
-  # System kit: the custom.users schema, the platform INTERFACE (host binds it), the
-  # exposed-host marker + ban, and the realization + insecure aggregator + feature
-  # modules. ≈ the old users/identity.nix MINUS the platform binding (ADR-0020 Q2/Q7).
-  nixosModule =
-    { config, ... }:
-    {
-      imports = [
-        realization
-        ./insecure-packages.nix
-      ];
-
-      options.custom.users = lib.mkOption {
-        type = lib.types.attrsOf (
-          lib.types.submodule {
-            options = {
-              identity = identityOptions;
-              granted = grantedOptions;
-            }
-            // featureConfigOptions;
-          }
-        );
-        default = { };
-        description = "Per-user identity, grants, and feature configuration.";
-      };
-      options.custom.platform = platformOptions;
-      options.custom.host.exposed = lib.mkEnableOption "an exposed/agent-facing host that may not be granted secret-bearing features";
-
-      config.assertions = lib.optional config.custom.host.exposed (
-        let
-          offending = exposedHostOffenders config;
-        in
-        {
-          assertion = offending == [ ];
-          message = "exposed host '${config.networking.hostName}' must not be granted secret-bearing feature(s): ${lib.concatStringsSep ", " offending}";
-        }
-      );
-    };
-
-  # Home kit: the identity + home-profile vocabulary + the platform INTERFACE (host
-  # binds it). ≈ the old modules/homeManager/options.nix MINUS the platform binding.
-  homeModule = _: {
-    options.identity = identityOptions;
-    options.custom.home.profiles = homeProfileOptions;
-    options.custom.platform = platformOptions;
+  modules = import ./modules.nix {
+    inherit
+      lib
+      realization
+      identityOptions
+      platformOptions
+      homeProfileOptions
+      grantedOptions
+      featureConfigOptions
+      ;
+    inherit (contractLib) exposedHostOffenders;
   };
 in
 {
   # Public data surface — introspection API for consumers (a host grant matrix, the
-  # greeter reading the safe set). grantedOptions/featureConfigOptions/featureModules are
-  # NOT here: they are internal kit building blocks the umbrella consumes via closure.
+  # greeter reading the safe set).
   features = registry;
   inherit
     featureMeta
     featureGroups
     privilegedGroups
-    safeSet
     ;
-  # Public derivation functions actually consumed by hosts (ADR-0020 Q4). The internal
-  # predicates (runtimeEligibleFeature, exposedHostOffenders) stay internal — the umbrella
-  # and `safeSet` close over them, and a consumer reads the derived `safeSet` value above,
-  # not the predicate that built it.
+  inherit (contractLib) safeSet;
+
+  # Public derivation functions hosts consume (ADR-0020 Q4). The internal predicates
+  # (runtimeEligibleFeature, exposedHostOffenders) stay internal to ./lib.nix.
   lib = {
-    inherit mkFeatureRecipients mkHostFacts;
+    inherit (contractLib) mkFeatureRecipients mkHostFacts;
   };
-  # umbrella modules
-  inherit nixosModule homeModule;
+
+  # The umbrella modules (one per eval-side).
+  inherit (modules) nixosModule homeModule;
 }
