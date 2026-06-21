@@ -78,7 +78,8 @@
   system.stateVersion = "25.11";
 
   # beekeeper-studio is insecure. Contributed through the contract aggregator (which
-  # merges) rather than nixpkgs.config directly (which would clobber the gui feature's
-  # electron permit). The gui grant supplies electron via contract/features/gui.nix.
+  # merges) rather than nixpkgs.config directly (which would clobber the gui electron
+  # permit). The Claude Desktop electron permit is contributed in inkpotmonkey's own
+  # binding; the aggregator merges the two so both survive.
   custom.insecurePackages = [ "beekeeper-studio-5.5.7" ];
 }

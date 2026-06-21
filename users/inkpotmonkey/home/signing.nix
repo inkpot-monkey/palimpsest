@@ -1,5 +1,5 @@
-# inkpotmonkey's commit-signing key, as a USER (home-sops) feature — mirroring
-# restic.nix (ADR-0018, slice 13). The key is a dedicated NON-admin ed25519 key (see
+# inkpotmonkey's commit-signing key, as a USER (home-sops) feature (ADR-0018, slice 13).
+# The key is a dedicated NON-admin ed25519 key (see
 # git.nix); riding the user's own home sops means it is decrypted by the user's own
 # key, with no host re-key and no footprint on a headless/exposed host (which has no
 # user key to decrypt it, and whose agent should not sign as the user anyway).

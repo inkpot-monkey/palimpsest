@@ -14,9 +14,10 @@
 
   config = lib.mkMerge [
     {
-      # NOTE: the emacs overlay moved to the contract gui feature module
-      # (contract/features/gui.nix) — it rides the gui grant there, so the user no
-      # longer writes it (ADR-0018, slice 10).
+      # NOTE: the gui grant's contract host-effects live in the contract (the
+      # realization's display decision + input groups); inkpotmonkey's package choices
+      # (the emacs overlay + the electron permit) are applied below in this binding glue
+      # — the contract takes no package input (ADR-0020).
 
       # 1. User shell and keys
       custom.users.inkpotmonkey.identity.trustedKeys =
@@ -33,10 +34,10 @@
 
       users.users.inkpotmonkey.shell = pkgs.bash;
 
-      # inkpotmonkey's dedicated commit-signing key now rides the `signing` grant via
-      # the contract signing feature module (contract/features/signing.nix), instead of
-      # a hostName ∈ {…} gate here. Hosts grant signing as data; git.nix keys off
-      # hostFacts.granted.signing (ADR-0018, slice 13).
+      # inkpotmonkey's dedicated commit-signing key rides the `signing` grant: the key is
+      # provisioned in the user's home (home/signing.nix, via home sops) and home/git.nix
+      # keys off hostFacts.granted.signing — not a hostName gate. The contract just carries
+      # the `signing` feature; hosts grant it as data (ADR-0018, slice 13).
 
       # =========================================
       # Home Manager Configuration
@@ -87,13 +88,12 @@
         "/share/applications"
       ];
     }
-    # The gui grant's *contract* host effects — display decision, hardware groups,
-    # uinput, keyboard layout, electron permit — live in the contract (realization +
-    # contract/features/gui.nix). The one thing the contract can't carry is a
-    # package-ecosystem overlay (it takes no package input, ADR-0020): inkpotmonkey's
-    # gui home uses emacs-unstable and useGlobalPkgs makes home share the system pkgs,
-    # so the overlay must land at system level. It is inkpotmonkey's package choice,
-    # applied here by the host binding glue where inkpotmonkey-gui is granted.
+    # The gui grant's *contract* host effects are the session-union DECISION + the input
+    # groups (the contract realization); the device/layout/display rendering is the host
+    # gui-desktop binding. Neither can carry inkpotmonkey's package choices: the
+    # emacs-unstable overlay (the contract takes no package input, ADR-0020; useGlobalPkgs
+    # makes home share the system pkgs, so it must land at system level) and the Claude
+    # Desktop electron permit. Both are applied here, where inkpotmonkey-gui is granted.
     (lib.mkIf config.custom.users.inkpotmonkey.granted.gui.enable {
       nixpkgs.overlays = [ inputs.emacs-overlay.overlays.default ];
       # inkpotmonkey's gui home runs Claude Desktop (electron). The permit is inkpotmonkey's
