@@ -52,19 +52,23 @@ let
       chmod 600 "$hidfile"
     fi
 
-    # Resolve the alerts room alias, creating it if absent. No `?user_id=`: the
-    # as_token already acts as the sender_localpart (@hookshot), and @hookshot is
-    # NOT in the appservice's namespaces, so masquerading to it via ?user_id is
-    # rejected. Acting as the AS's own user needs no ?user_id.
-    aliasenc="$(jq -rn --arg a "#aionui-alerts:$dom" '$a|@uri')"
-    rid="$(curl "$url/_matrix/client/v3/directory/room/$aliasenc" | jq -r '.room_id // empty')"
+    # The alerts room. No `?user_id=` (the as_token already acts as the
+    # sender_localpart @hookshot) and NO room alias: the appservice can only
+    # register aliases in its declared `aliases` namespace, which is empty, so
+    # claiming #aionui-alerts fails with M_EXCLUSIVE. Instead create an
+    # alias-less room as the bot and persist its id for idempotent re-runs; the
+    # user finds it via the invite (room named "AionUi alerts").
+    ridfile="${notifierStateDir}/hookshot_room_id"
+    rid=""
+    [ -s "$ridfile" ] && rid="$(cat "$ridfile")"
     if [ -z "$rid" ]; then
       resp="$(curl -X POST "$url/_matrix/client/v3/createRoom" \
         -H 'content-type: application/json' \
         -d "$(jq -nc --arg inv "$invite" \
-          '{room_alias_name:"aionui-alerts",name:"AionUi alerts",preset:"private_chat",invite:[$inv]}')")"
+          '{name:"AionUi alerts",preset:"private_chat",invite:[$inv]}')")"
       rid="$(printf '%s' "$resp" | jq -r '.room_id // empty')"
-      [ -n "$rid" ] || { echo "could not resolve/create the alerts room: $resp" >&2; exit 1; }
+      [ -n "$rid" ] || { echo "could not create the alerts room: $resp" >&2; exit 1; }
+      printf '%s' "$rid" > "$ridfile"
     fi
     ridenc="$(jq -rn --arg r "$rid" '$r|@uri')"
 
