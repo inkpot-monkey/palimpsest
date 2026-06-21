@@ -74,15 +74,15 @@ let
   };
   twoSession = twoSessionSys.config;
 
-  # Slice 03 — the exposed-host assertion. restic is secret-bearing (contract
+  # Slice 03 — the exposed-host assertion. signing is secret-bearing (contract
   # featureMeta), so an exposed host granting it must raise a failing assertion;
   # a normal host granting the same feature must not.
-  exposedRestic = evalHost {
+  exposedSigning = evalHost {
     custom.host.exposed = true;
-    custom.users.inkpotmonkey.granted.restic.enable = true;
+    custom.users.inkpotmonkey.granted.signing.enable = true;
   };
-  normalRestic = evalHost {
-    custom.users.inkpotmonkey.granted.restic.enable = true;
+  normalSigning = evalHost {
+    custom.users.inkpotmonkey.granted.signing.enable = true;
   };
   failing = cfg: builtins.filter (a: !a.assertion) cfg.assertions;
 
@@ -125,15 +125,15 @@ let
     # resolver) realizing the contract as wired into THIS fleet, on the real manifest.
     {
       name = "system platform resolves a secret source to an existing file";
-      ok = builtins.pathExists (denied.custom.platform.secretFile "restic");
+      ok = builtins.pathExists (denied.custom.platform.secretFile "example");
     }
     {
       name = "exposed host granting a secret-bearing feature fails an assertion";
-      ok = lib.any (a: lib.hasInfix "restic" a.message) (failing exposedRestic);
+      ok = lib.any (a: lib.hasInfix "signing" a.message) (failing exposedSigning);
     }
     {
       name = "non-exposed host granting the same feature raises no exposed-host failure";
-      ok = !(lib.any (a: lib.hasInfix "exposed host" a.message) (failing normalRestic));
+      ok = !(lib.any (a: lib.hasInfix "exposed host" a.message) (failing normalSigning));
     }
     {
       name = "clamp: a privileged group declared in identity is dropped without a grant";

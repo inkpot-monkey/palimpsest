@@ -5,9 +5,9 @@
 # Two layers, both backend-neutral at the feature's eye:
 #   - resolvers (secretFile/secretPath): host-bound, return WHERE a logical secret group's
 #     ciphertext lives. A path is a path; the host decides what it points at.
-#   - provisioning (secrets → secretPaths, secretTemplates → templatePaths, placeholder):
-#     a feature DECLARES a logical secret and reads its runtime path; the host **binding**
-#     realizes it on whatever backend. Features never write `sops.*`; only the binding does.
+#   - provisioning (secrets → secretPaths): a feature DECLARES a logical secret and reads
+#     its runtime path; the host **binding** realizes it on whatever backend. Features
+#     never write `sops.*`; only the binding does.
 #
 # Why a typed option set rather than a specialArgs attrset: a host that fails to bind is a
 # clear *option* error, not a late `attribute missing` (ADR-0015 Q6). Plaintext never
@@ -47,29 +47,5 @@
     type = lib.types.attrsOf lib.types.path;
     default = { };
     description = "Runtime path of each declared secret, populated by the host binding. Read, never set, by features.";
-  };
-
-  # --- Templates: compose a value from secret placeholders at activation. ---
-  placeholder = lib.mkOption {
-    type = lib.types.attrsOf lib.types.str;
-    default = { };
-    description = "Per-secret activation-time placeholder, populated by the host binding, referenced inside secretTemplates.";
-  };
-  secretTemplates = lib.mkOption {
-    type = lib.types.attrsOf (
-      lib.types.submodule {
-        options.content = lib.mkOption {
-          type = lib.types.str;
-          description = "Template content referencing custom.platform.placeholder.<name>.";
-        };
-      }
-    );
-    default = { };
-    description = "Templates composed from secret placeholders; the host binding renders them at activation.";
-  };
-  templatePaths = lib.mkOption {
-    type = lib.types.attrsOf lib.types.path;
-    default = { };
-    description = "Runtime path of each rendered template, populated by the host binding.";
   };
 }

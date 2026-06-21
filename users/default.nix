@@ -18,7 +18,6 @@ let
         platform = system;
         granted = {
           gui.enable = true;
-          restic.enable = false;
           workstation.enable = false;
           virtualization.enable = false;
         };

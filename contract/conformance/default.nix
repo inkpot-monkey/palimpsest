@@ -10,7 +10,6 @@
   lib,
   pkgs,
   contractModule,
-  contractLib,
   safeSet,
   featureGroups,
   privilegedGroups,
@@ -106,32 +105,21 @@ let
   ];
   groupsOf = c: c.users.users.alice.extraGroups;
 
-  # --- the exposed-host ban ---
+  # --- the exposed-host ban (signing is the secret-bearing feature) ---
   failing = c: builtins.filter (a: !a.assertion) c.assertions;
-  exposedRestic = eval [
+  exposedSecret = eval [
     (mkUser "alice" { })
-    (grant "alice" { restic.enable = true; })
+    (grant "alice" { signing.enable = true; })
     {
       custom.host.exposed = true;
       networking.hostName = "agent";
     }
   ];
-  normalRestic = eval [
+  normalSecret = eval [
     (mkUser "alice" { })
-    (grant "alice" { restic.enable = true; })
+    (grant "alice" { signing.enable = true; })
     { networking.hostName = "box"; }
   ];
-
-  # --- recipients-from-grants ---
-  granterSys = base [
-    (mkUser "alice" { })
-    (grant "alice" { restic.enable = true; })
-  ];
-  abstainerSys = base [ (mkUser "alice" { }) ];
-  recipients = contractLib.mkFeatureRecipients {
-    granter = granterSys;
-    abstainer = abstainerSys;
-  };
 
   # --- the matrix: synthetic users × host archetypes ---
   users = {
@@ -186,12 +174,14 @@ let
 
   assertions = [
     {
-      name = "grant: gui confers uinput";
-      ok = granted.hardware.uinput.enable;
+      # The gui grant's contract effect on the account: it confers the non-privileged
+      # input groups (the uinput *device* is a host binding, tested in the host repo).
+      name = "grant: gui confers its input groups (uinput) to the account";
+      ok = lib.elem "uinput" (groupsOf granted);
     }
     {
-      name = "deny: no grant leaves uinput off";
-      ok = !denied.hardware.uinput.enable;
+      name = "deny: no grant leaves the gui input groups off";
+      ok = !(lib.elem "uinput" (groupsOf denied));
     }
     {
       name = "grant: the gui surface decision is enabled";
@@ -226,12 +216,12 @@ let
       ok = lib.elem "docker" (groupsOf clampWithGrant);
     }
     {
-      name = "exposed host granting a secret-bearing feature fails an assertion";
-      ok = lib.any (a: lib.hasInfix "restic" a.message) (failing exposedRestic);
+      name = "exposed host granting a secret-bearing feature (signing) fails an assertion";
+      ok = lib.any (a: lib.hasInfix "signing" a.message) (failing exposedSecret);
     }
     {
       name = "non-exposed host granting the same feature raises no exposed-host failure";
-      ok = !(lib.any (a: lib.hasInfix "exposed host" a.message) (failing normalRestic));
+      ok = !(lib.any (a: lib.hasInfix "exposed host" a.message) (failing normalSecret));
     }
     {
       name = "safe set: gui is runtime-eligible";
@@ -242,7 +232,6 @@ let
       ok =
         !(lib.elem "workstation" safeSet)
         && !(lib.elem "virtualization" safeSet)
-        && !(lib.elem "restic" safeSet)
         && !(lib.elem "signing" safeSet);
     }
     {
@@ -252,10 +241,6 @@ let
     {
       name = "virtualization confers privileged groups (only via its grant)";
       ok = lib.elem "libvirtd" featureGroups.virtualization;
-    }
-    {
-      name = "recipients: only the granting host is a recipient";
-      ok = (recipients."profiles/restic.yaml" or [ ]) == [ "granter" ];
     }
     {
       name = "matrix: every user realizes on every archetype, no failing assertion";

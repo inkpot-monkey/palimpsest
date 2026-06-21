@@ -13,11 +13,10 @@ in
   #
   # We branch on the restricted `hostFacts` projection (ADR-0018, slice 12) rather
   # than this module's own `config` (which would recurse, since imports determine
-  # config) or raw `osConfig` (which exposes the whole system tree). `restic.nix`/
+  # config) or raw `osConfig` (which exposes the whole system tree). `signing.nix`/
   # `git-annex.nix` carry no version-specific options and stay importable everywhere
   # (opt-in per host via their own enable option).
   imports = [
-    ./restic.nix
     ./signing.nix
     ./git-annex.nix
   ]

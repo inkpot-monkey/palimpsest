@@ -23,7 +23,6 @@ let
   featureConfigOptions = lib.foldl' lib.recursiveUpdate { } (
     map (f: f.config or { }) (lib.attrValues registry)
   );
-  featureModules = lib.filter (m: m != null) (lib.mapAttrsToList (_: f: f.module or null) registry);
   featureMeta = lib.mapAttrs (
     _: f:
     {
@@ -110,8 +109,7 @@ let
       imports = [
         realization
         ./insecure-packages.nix
-      ]
-      ++ featureModules;
+      ];
 
       options.custom.users = lib.mkOption {
         type = lib.types.attrsOf (

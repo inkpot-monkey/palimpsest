@@ -73,10 +73,9 @@
             custom.home.profiles = {
               cli.enable = true;
               gui.enable = hostFacts.granted.gui.enable;
-              restic.enable = hostFacts.granted.restic.enable;
-              # signing key rides the user's home sops (like restic), gated on the
-              # signing grant (ADR-0018, slice 13). Headless/exposed hosts can't
-              # decrypt home sops, so they simply don't grant it.
+              # signing key rides the user's home sops, gated on the signing grant
+              # (ADR-0018, slice 13). Headless/exposed hosts can't decrypt home sops,
+              # so they simply don't grant it.
               signing.enable = hostFacts.granted.signing.enable;
             };
           };
@@ -97,6 +96,10 @@
     # applied here by the host binding glue where inkpotmonkey-gui is granted.
     (lib.mkIf config.custom.users.inkpotmonkey.granted.gui.enable {
       nixpkgs.overlays = [ inputs.emacs-overlay.overlays.default ];
+      # inkpotmonkey's gui home runs Claude Desktop (electron). The permit is inkpotmonkey's
+      # app choice, contributed through the contract's mergeable insecure-packages aggregator
+      # (not a contract gui effect — thermo-nuclear review).
+      custom.insecurePackages = [ "electron-39.8.10" ];
     })
   ];
 }

@@ -18,12 +18,14 @@
 #                   eligible (the inert-payload clause; no feature uses it yet).
 #   config        : user-owned option fragment merged into `custom.users.<u>` — the
 #                   feature's *parameters* (host-affecting ones aggregate, ADR-0019).
-#   module        : host-effects module imported alongside the realization.
 { lib }:
 {
-  # gui: desktop environment — display surface (the realization's session union),
-  # non-privileged input groups, and the gui feature module (uinput, overlays, the
-  # electron permit). In the safe set: no secret, no privileged group, no exec payload.
+  # gui: desktop environment. Its host effects are two contract-neutral things only —
+  # the session-union DECISION (realization → custom.gui.surface) and the non-privileged
+  # input groups below. Everything device/package/layout-specific (uinput, keyboard
+  # layout, app permits, the display backend) is a HOST binding (gui-desktop.nix + the
+  # user's glue), so the contract has no gui *module*. In the safe set: no secret, no
+  # privileged group, no exec payload.
   gui = {
     grant = "the GUI feature for this user (host grant)";
     groups = [
@@ -32,7 +34,6 @@
       "plugdev"
       "dialout"
     ];
-    module = ./features/gui.nix;
     config = {
       # gui.session: which display session this user logs into. Host-affecting and
       # UNION-aggregated by the realization (ADR-0019) — a Wayland user and an X11
@@ -47,14 +48,6 @@
         description = "Display session this user logs into; unioned across granted gui users by the realization.";
       };
     };
-  };
-
-  # restic: user-level backup. Secret-bearing ⇒ an exposed host may not be granted it;
-  # the recipient set of its sops file derives from which hosts grant it.
-  restic = {
-    grant = "the restic backup feature for this user (host grant)";
-    secretBearing = true;
-    secretFiles = [ "profiles/restic.yaml" ];
   };
 
   # workstation: privileged host access — the docker/podman/wheel groups. A user can

@@ -23,6 +23,12 @@ in
     # Networking for an interactive desktop host (host policy, finding 1).
     networking.networkmanager.enable = true;
 
+    # The uinput device (input injection for kanata & friends) and the host keyboard
+    # layout — gui-seat host setup, not contract logic. Both used to sit in the contract
+    # gui feature module; moved here so the contract carries no host/package specifics
+    # (thermo-nuclear review). Fire on the same condition the contract feature used to.
+    hardware.uinput.enable = true;
+
     # The display backend rendering the session-union decision. Set ONCE so any number
     # of gui users share it instead of each imposing a (conflicting) display server.
     services = {
@@ -31,6 +37,11 @@ in
       desktopManager.plasma6.enable = lib.mkDefault true;
       # Offer X11 iff some granted gui user wants it.
       xserver.enable = lib.mkDefault surface.x11;
+      # Host keyboard layout for the gui seat (used by Wayland compositors too).
+      xserver.xkb = {
+        layout = lib.mkDefault "gb";
+        variant = lib.mkDefault "";
+      };
       # plasma6 defaults the Wayland greeter on (mkDefault true). Keep that when the
       # union includes a Wayland user; override it off (above mkDefault, below a host
       # mkForce) when the union is X11-only — two mkDefaults of differing values would
