@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Poll aioncore's local API and post AionUi agent events to a hookshot webhook.
 
 aioncore can't push (extension channels run metadata-only on the headless

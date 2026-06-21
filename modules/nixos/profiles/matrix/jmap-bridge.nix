@@ -70,6 +70,9 @@ in
       url = "http://127.0.0.1:8081";
 
       matrixUrl = "http://127.0.0.1:6167";
+      # matrixUrl is loopback, so the module's matrixDomain default (its host,
+      # 127.0.0.1) would mint wrong ghost mxids — pin it to the real server_name.
+      matrixDomain = domain;
       environmentFile = config.sops.templates."jmap-bridge.env".path;
       encryptionKeyFile = config.sops.secrets.email_encryption_key.path;
 
@@ -87,8 +90,6 @@ in
         }
       ];
     };
-
-    systemd.services.jmap-bridge.environment.MATRIX_DOMAIN = domain;
 
     # Contribute this registration to tuwunel's appservice_dir wiring — see
     # the generic `appservices` consumer in matrix/default.nix.

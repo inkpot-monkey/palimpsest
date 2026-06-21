@@ -7,7 +7,10 @@
 let
   cfg = config.services.aionui-notifier;
   notifier = pkgs.writers.writePython3Bin "aionui-notifier" {
-    flakeIgnore = [ "E501" ]; # allow lines slightly over 79 chars
+    flakeIgnore = [
+      "E501" # allow lines slightly over 79 chars
+      "W503" # line break before binary operator (PEP 8 now prefers this; W504 is its opposite)
+    ];
   } (builtins.readFile ./notifier.py);
 in
 {
