@@ -5,17 +5,18 @@
 # contract does, on the host's behalf, only where gui is granted (ADR-0018: a feature
 # module is the only thing that writes host config on a user's behalf).
 #
-# Scope: uinput + the emacs overlay (packages ride features, ADR-0015 mechanic 4) +
-# the host keyboard layout + the electron permit for the gui desktop apps. The desktop
-# hardware groups ride the gui grant via contract.featureGroups.gui (the realization
-# confers them, clamped); the display *surface* is a host binding (gui-desktop.nix)
-# rendering the realization's session-union DECISION (custom.gui.surface, ADR-0019).
-# kanata stays host-side (an executable payload, not a safe-set feature — slice 11;
-# portable kanata is issue 18).
+# Scope: the gui-intrinsic host effects — uinput, the host keyboard layout, and the
+# electron permit for the gui desktop apps. The desktop hardware groups ride the gui
+# grant via contract.featureGroups.gui (the realization confers them, clamped); the
+# display *surface* is a host binding (gui-desktop.nix) rendering the realization's
+# session-union DECISION (custom.gui.surface, ADR-0019). Package-ecosystem overlays
+# (e.g. emacs-unstable) are NOT here — that is a user/host package choice, applied by
+# the binding glue, so the contract takes no package input (ADR-0020). kanata stays
+# host-side (an executable payload, not a safe-set feature — slice 11; portable
+# kanata is issue 18).
 {
   lib,
   config,
-  inputs,
   ...
 }:
 let
@@ -25,9 +26,6 @@ in
   config = lib.mkIf anyGuiGranted {
     # Desktop input tooling (kanata and friends) needs the uinput device.
     hardware.uinput.enable = true;
-    # The emacs feature rides the gui grant: its overlay is applied ONLY where gui is
-    # granted, never fleet-wide.
-    nixpkgs.overlays = [ inputs.emacs-overlay.overlays.default ];
     # Host keyboard layout for the gui seat (used by Wayland compositors too). A host
     # or another gui user may override it; the fleet default is gb.
     services.xserver.xkb = {

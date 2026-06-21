@@ -88,10 +88,15 @@
         "/share/applications"
       ];
     }
-    # All host effects of the gui grant — display surface, hardware groups, uinput,
-    # the emacs overlay, the host keyboard layout, and the electron permit — now live
-    # in the contract (realization + contract/features/gui.nix), so this user module
-    # writes no gui host config at all. That is the point of the feature module: the
-    # contract acts on the host's behalf, the user never does (ADR-0018, slices 10-11).
+    # The gui grant's *contract* host effects — display decision, hardware groups,
+    # uinput, keyboard layout, electron permit — live in the contract (realization +
+    # contract/features/gui.nix). The one thing the contract can't carry is a
+    # package-ecosystem overlay (it takes no package input, ADR-0020): inkpotmonkey's
+    # gui home uses emacs-unstable and useGlobalPkgs makes home share the system pkgs,
+    # so the overlay must land at system level. It is inkpotmonkey's package choice,
+    # applied here by the host binding glue where inkpotmonkey-gui is granted.
+    (lib.mkIf config.custom.users.inkpotmonkey.granted.gui.enable {
+      nixpkgs.overlays = [ inputs.emacs-overlay.overlays.default ];
+    })
   ];
 }
