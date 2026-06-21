@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  pkgs,
   self,
   inputs,
   ...
@@ -66,6 +67,13 @@ in
     # --- Bridge service (disabled by default) ---
     services.jmap-bridge = {
       enable = true;
+
+      # Use the bridge flake's OWN package output (built against its pinned
+      # nixpkgs) rather than the overlay's `pkgs.jmap-matrix-bridge` (which would
+      # rebuild against the fleet nixpkgs). This is the closure the bridge CI
+      # pushes to the palebluebytes cachix, so kelpy substitutes it — see the
+      # jmap-bridge input note in flake.nix.
+      package = inputs.jmap-bridge.packages.${pkgs.stdenv.hostPlatform.system}.default;
 
       url = "http://127.0.0.1:8081";
 

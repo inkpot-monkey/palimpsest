@@ -80,13 +80,15 @@
       url = "github:Reginleif88/claude-cowork-nix";
     };
 
-    # The email bridge lives in its own repo (ADR-0017), consumed via its overlay
-    # (adds pkgs.jmap-matrix-bridge) + nixosModule. Its nixpkgs follows ours so
-    # the crate builds against the fleet pin.
-    jmap-bridge = {
-      url = "github:palebluebytes/jmap-matrix-bridge";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    # The email bridge lives in its own repo (ADR-0017), consumed via its
+    # nixosModule. Deliberately NOT `inputs.nixpkgs.follows = "nixpkgs"`: the
+    # bridge's CI builds the crate against its OWN pinned nixpkgs and pushes the
+    # closure to the palebluebytes cachix (trusted in nixConfig.nix). Following
+    # the fleet nixpkgs would change the store hash and force a from-source Rust
+    # rebuild on every bump. We consume `inputs.jmap-bridge.packages.<system>`
+    # directly (see matrix/jmap-bridge.nix) so kelpy substitutes the prebuilt
+    # binary instead of compiling matrix-sdk/sqlx from source.
+    jmap-bridge.url = "github:palebluebytes/jmap-matrix-bridge";
 
     secrets = {
       url = "git+ssh://git@github.com/inkpot-monkey/stash.git";
