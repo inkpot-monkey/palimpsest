@@ -29,6 +29,7 @@
       # Infrastructure
       vpsfree-client
       gh # GitHub CLI (PRs, issues, Actions)
+      cachix # push uncached kernel outputs to palebluebytes.cachix.org (see `just cache-kernel`)
 
       # Secrets
       sops

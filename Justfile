@@ -32,6 +32,25 @@ deployBoot host:
 build host="":
   nh os build . --no-nom {{ if host == "" { "" } else { "--hostname " + host } }}
 
+# Push a host's kernel outputs (out/dev/modules) to palebluebytes.cachix.org.
+# nixos-raspberrypi.cachix.org caches ONLY the kernel's `out` output; a normal system
+# closure also needs `dev`+`modules` (uncached), so after a GC the next deploy recompiles
+# the whole kernel from source on the rk1b builder (~tens of min). Pushing all three to our
+# own cache makes future deploys substitute them. Re-run after any kernel-pin bump.
+# Needs a write token: `export CACHIX_AUTH_TOKEN=...` (or `cachix authtoken <tok>`) first.
+cache-kernel host="porcupineFish":
+  #!/usr/bin/env bash
+  set -euo pipefail
+  paths=$(nix eval --no-eval-cache --raw --expr \
+    'let k = (builtins.getFlake (toString ./.)).nixosConfigurations.{{host}}.config.boot.kernelPackages.kernel; \
+     in builtins.concatStringsSep "\n" (map (o: k.${o}.outPath) k.outputs)')
+  echo "kernel outputs for {{host}}:"; echo "$paths"
+  # The deploy builds these on the rk1b aarch64 builder; pull any that aren't local yet.
+  for p in $paths; do
+    nix path-info "$p" >/dev/null 2>&1 || { echo "copying $p from rk1b"; nix copy --from ssh-ng://inkpotmonkey@rk1b "$p"; }
+  done
+  echo "$paths" | xargs cachix push palebluebytes
+
 # Run checks
 check:
   nix flake check -L
