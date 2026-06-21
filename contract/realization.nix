@@ -46,26 +46,35 @@ let
   safeDeclared = u: lib.filter (g: !lib.elem g privilegedGroups) u.identity.extraGroups;
 in
 {
-  config = {
-    networking.networkmanager.enable = lib.mkIf anyGuiGranted true;
+  # The session-union DECISION (ADR-0019), as neutral data — NOT a display backend.
+  # The contract decides which sessions the host's shared display surface must offer
+  # (the union over granted gui users' preferences, so two users with different
+  # sessions coexist on one seat). A host-side display binding (e.g. the Plasma/SDDM
+  # one in modules/nixos/profiles/gui-desktop.nix) reads this and renders it; the
+  # contract stays desktop-environment-agnostic (ADR-0021 review finding 2).
+  options.custom.gui.surface = {
+    enabled = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Some gui user is granted on this host — a shared display surface is needed.";
+    };
+    wayland = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Some granted gui user wants a Wayland session, so the host must offer one.";
+    };
+    x11 = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = "Some granted gui user wants an X11 session, so the host must offer one.";
+    };
+  };
 
-    # Shared GUI host infrastructure, conferred by the gui grant and set ONCE here
-    # so any number of gui users on a host share it instead of each imposing a
-    # (conflicting) display server. SDDM + plasma6 are present whenever any gui user
-    # is granted; the *session surface* is the union of their preferences (ADR-0019):
-    #   - the Wayland greeter iff some granted gui user wants Wayland
-    #   - services.xserver    iff some granted gui user wants X11
-    # both when both.
-    services = lib.mkIf anyGuiGranted {
-      displayManager.sddm.enable = lib.mkDefault true;
-      displayManager.defaultSession = lib.mkDefault "plasma";
-      desktopManager.plasma6.enable = lib.mkDefault true;
-      xserver.enable = lib.mkDefault anyX11;
-      # plasma6 defaults the Wayland greeter on (mkDefault true). Keep that when the
-      # union includes a Wayland user; override it off (above mkDefault, below a host
-      # mkForce) when the union is X11-only. Two mkDefaults of differing values would
-      # *conflict* — hence the explicit priority (ADR-0019).
-      displayManager.sddm.wayland.enable = lib.mkIf (!anyWayland) (lib.mkOverride 900 false);
+  config = {
+    custom.gui.surface = {
+      enabled = anyGuiGranted;
+      wayland = anyWayland;
+      x11 = anyX11;
     };
 
     users.users = lib.mapAttrs (_name: u: {

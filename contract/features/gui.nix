@@ -8,9 +8,10 @@
 # Scope: uinput + the emacs overlay (packages ride features, ADR-0015 mechanic 4) +
 # the host keyboard layout + the electron permit for the gui desktop apps. The desktop
 # hardware groups ride the gui grant via contract.featureGroups.gui (the realization
-# confers them, clamped); the display surface (sddm/plasma6/xserver) is the
-# realization's session union (ADR-0019). kanata stays host-side (an executable
-# payload, not a safe-set feature — slice 11; portable kanata is issue 18).
+# confers them, clamped); the display *surface* is a host binding (gui-desktop.nix)
+# rendering the realization's session-union DECISION (custom.gui.surface, ADR-0019).
+# kanata stays host-side (an executable payload, not a safe-set feature — slice 11;
+# portable kanata is issue 18).
 {
   lib,
   config,

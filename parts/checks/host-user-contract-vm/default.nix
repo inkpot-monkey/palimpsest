@@ -41,8 +41,12 @@ pkgs.testers.runNixOSTest {
     {
       imports = [
         # Brings the `custom.users` schema + the host-invariant realization that
-        # derives the display surface from granted users' sessions.
+        # derives the gui-session *decision* (custom.gui.surface).
         ../../../users/identity.nix
+        # The host display binding that renders that decision (SDDM + Plasma 6) — the
+        # contract decides, the binding implements (ADR-0021 review). The VM asserts the
+        # rendered plasma sessions, so it needs the binding, not just the decision.
+        ../../../modules/nixos/profiles/gui-desktop.nix
       ];
 
       config = {

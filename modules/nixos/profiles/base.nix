@@ -10,6 +10,11 @@ in
 {
   imports = [
     ../../../users/identity.nix
+    # The host's display binding for the contract's gui-session decision (ADR-0021
+    # review): the contract decides which sessions to offer, this renders them with
+    # SDDM + Plasma 6. Swap this module to change desktop environment; the contract is
+    # unchanged. Self-gated on custom.gui.surface, so it's inert on non-gui hosts.
+    ./gui-desktop.nix
   ];
 
   options.custom.profiles = {
