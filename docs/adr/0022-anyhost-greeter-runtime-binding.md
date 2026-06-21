@@ -20,10 +20,14 @@ and the tier is a *parameter* over one mechanism — eval strictness, build limi
 persistence are knobs the tier sets, not separate code paths:
 
 - **Tier 1 — semi-trusted (own identities). Built now.** The flake URL is in the host's
-  operator-trusted set (your own user repos roaming across your own hosts). The threat is
-  "my own repo is buggy/stale," not adversarial: restricted eval (no-IFD, locked inputs)
-  guards *accidents*; builds use the normal daemon sandbox + trusted substituters; the home
-  is **persisted** (it's you).
+  operator-trusted set — concretely, the repo is **signed by a registered key** (the public
+  half lives in the user's `identity.json`; the greeter verifies the signature over the whole
+  tree before evaluating anything). The threat is "my own repo is buggy/stale," not
+  adversarial: restricted eval (no-IFD, locked inputs) guards *accidents*; builds use the
+  normal daemon sandbox + trusted substituters; the home is **persisted** (it's you). Signing
+  is what makes "semi-trusted" concrete — a verified signature proves *this exact config is
+  mine, untampered* — but it is **authenticity + integrity, not safety**: a signed config can
+  still be buggy, so restricted eval still applies.
 - **Tier 2 — untrusted (anyone). Designed-for, deferred.** Any flake URL. Now it's "run a
   stranger's Nix on my hardware": **hardened** eval (enforced no-IFD, restricted builtins so
   no arbitrary `builtins.fetch*`, eval resource limits against DoS), builds under cgroup +
@@ -33,29 +37,35 @@ persistence are knobs the tier sets, not separate code paths:
 
 ## The runtime binding flow
 
-A seat host's greeter (greetd + a custom greeter):
+A seat host's greeter (greetd + a custom greeter). The ordering is **data before code** —
+authenticate on inert data *before* running any of the user's Nix:
 
 1. **Prompt** — flake URL, username, password.
-2. **Classify** the URL → Tier 1 (trusted set) or Tier 2.
-3. **Evaluate** the flake → the user's manifest (the home-manager module emitting
-   `contract.requests` + the `identity`), under the tier's eval posture.
-4. **Authenticate** — verify the password against the manifest's `identity.hashedPassword`.
-   The flake URL + the password together prove "this is my repo and I am its owner"; there is
-   no separate password store.
-5. **Grant** — the host auto-grants the user the **safe set** (today `gui` ⇒ desktop). The
-   grant is computed at runtime but flows through the *same* contract umbrella + `hostFacts`
-   projection as a build-time grant, so the resulting home is identical to an
-   operator-granted one.
-6. **Build** the user's home (sandboxed per tier).
-7. **Provision** the account (persisted for Tier 1 / ephemeral for Tier 2) and start the
-   session.
+2. **Fetch source only** — fetch the repo tree (`git`/`nix flake prefetch`) **without
+   evaluating its outputs**.
+3. **Authenticate, eval-free** — read the contract-conventional **`identity.json`** with `jq`
+   (no Nix) and verify the password against `identity.hashedPassword`; for Tier 1, also
+   **verify the repo signature** against the key in `identity.json` (whole-config authenticity).
+   This completes auth having run **zero lines of the user's Nix** — because evaluating an
+   untrusted home module runs every module body (IFD, `builtins.fetch*`, non-termination).
+4. **Classify** → Tier 1 (signed/trusted) or Tier 2 (untrusted), selecting the eval posture.
+5. **Evaluate** the home module under the tier's eval posture → its `contract.requests`.
+6. **Grant** — the host auto-grants the **safe set** (today `gui` ⇒ desktop), and harvests the
+   *granted* requests. The grant flows through the *same* contract umbrella + `hostFacts`
+   projection as a build-time grant, so the resulting home is identical to an operator-granted one.
+7. **Build** the user's home (sandboxed per tier).
+8. **Provision** the account (persisted for Tier 1 / ephemeral for Tier 2) and start the session.
 
 ## Decisions that follow from the tier model
 
 - **Persistence is a tier property**, not a separate choice: Tier 1 persisted, Tier 2
   ephemeral. (Tier 1 may later expose an opt-in ephemeral mode, but the default is persisted.)
-- **Auth is the manifest's `identity.hashedPassword`** — the credential already lives in the
-  contract identity schema; the greeter verifies against it. No new secret store.
+- **Auth is eval-free, on `identity.json` + signature.** The credential lives in the user
+  repo's `identity.json` (data, not Nix), so the greeter reads it with `jq` and verifies the
+  password *before* evaluating any of the user's Nix; Tier 1 additionally verifies the repo
+  signature against the key in `identity.json`. No new secret store. (A *public* user repo
+  exposes `hashedPassword` publicly, so it must be a strong hash — a property of putting
+  identity in a fetchable repo, not of the file form.)
 - **Which hosts: seat hosts, by *incapacity* not ban.** A headless host has no display, so the
   greeter affordance simply does not exist there — it is not a deny rule. A seat host enables a
   `greeter` profile (greetd + the binding command); this is where the disabled `regreet`
