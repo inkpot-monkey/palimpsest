@@ -400,6 +400,7 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 		(dired-subtree-use-backgrounds nil))
 
 (use-package wdired
+		:ensure nil
 		:after dired
 		:custom
 		(wdired-allow-to-change-permissions t)
@@ -414,8 +415,6 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 ;; C-c C-t in dired. Settings (model etc.) are set once via the `whisperx-*' vars.
 (use-package whisperx
 		:after dired
-		:load-path "~/code/nixos/users/inkpotmonkey/home/emacs/lisp/"
-		:ensure nil
 		:bind (:map dired-mode-map
 								("C-c C-t" . whisperx-transcribe-dired)))
 
@@ -460,7 +459,6 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 	(global-visible-mark-mode +1))
 
 (use-package orderless
-		:ensure t
 		:custom
 		;; Configure a custom style dispatcher (see the Consult wiki)
 		;; (orderless-style-dispatchers '(+orderless-consult-dispatch orderless-affix-dispatch))
@@ -636,8 +634,6 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 		:mode ("\\Justfile\\'" . just-ts-mode))
 
 (use-package just-complete
-		:load-path "./just-complete"
-		:ensure nil
 		:bind (("C-c j" . just-run+)))
 
 
@@ -672,7 +668,6 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 
 ;; Consult users will also want the embark-consult package.
 (use-package embark-consult
-		:ensure t
 		:hook
 		(embark-collect-mode . consult-preview-at-point-mode))
 
@@ -861,6 +856,7 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 		(proced-tree-flag t))
 
 (use-package eww
+		:ensure nil
 		:bind
 	("s-w" . eww))
 
@@ -1162,7 +1158,6 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 		(add-hook 'eshell-mode-hook #'my/eshell-setup))
 
 (use-package ement
-		:ensure nil		;; Provided by Nix
 		:commands (ement-connect ement-list-rooms ement-view-room ement-describe-room)
 		:custom
 		(ement-save-sessions t)
@@ -1309,7 +1304,6 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 		(html-ts-mode . eglot-ensure))
 
 (use-package svelte-ts-mode
-		:ensure nil
 		:demand t
 		:after eglot
 		:config
@@ -1348,9 +1342,7 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 
 (use-package php-mode)
 
-(use-package pritunl-connect
-		:load-path "~/code/nixos/users/inkpotmonkey/home/emacs/lisp/"
-		:ensure nil)
+(use-package pritunl-connect)
 
 ;;; Network Management
 (use-package enwc
@@ -1391,7 +1383,6 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 				("q" "Quit" transient-quit-one)]]))
 
 (use-package consult-omni
-		:ensure nil
 		:after consult
 		:init
 		(let ((dir (file-name-directory (locate-library "consult-omni"))))

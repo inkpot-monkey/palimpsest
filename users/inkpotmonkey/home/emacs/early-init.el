@@ -1,7 +1,12 @@
 ;;; early-init.el --- Early Init File -*- lexical-binding: t; no-byte-compile: t -*-
 
 (setq gc-cons-threshold most-positive-fixnum)
-(setq package-check-signature nil)
+
+;; package.el is disabled entirely — all packages come from Nix
+;; (emacsWithPackagesFromUsePackage with alwaysEnsure = true). This stops Emacs
+;; from auto-activating ~/.config/emacs/elpa at startup, which otherwise shadows
+;; the Nix-provided packages on load-path.
+(setq package-enable-at-startup nil)
 
 ;; Force non-interactive answers for any prompts during initialization
 (setf (symbol-function 'yes-or-no-p) (lambda (&rest _) t))

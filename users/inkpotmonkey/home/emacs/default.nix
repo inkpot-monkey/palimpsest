@@ -18,36 +18,28 @@
       package = pkgs.emacsWithPackagesFromUsePackage {
         config = builtins.readFile ./init.el;
         package = pkgs.emacs-pgtk;
-        alwaysEnsure = false;
-        extraEmacsPackages =
+        alwaysEnsure = true;
+        override =
           epkgs:
-          [
-            epkgs.vterm
-            epkgs.eat # fallback terminal backend for claude-code
-            epkgs.ghostel # libghostty terminal backend for claude-code (most faithful TUI render)
-            # NOTE: claude-code itself is stevemolitor/claude-code.el, hand-built
-            # in packages.nix. Do NOT use epkgs.claude-code here — that MELPA name
-            # is a different project (yuya373/claude-code-emacs) with an
-            # incompatible API (its claude-code-run errors with
-            # "claude-code-vterm-mode void" against this config).
-            epkgs.yaml
-            epkgs.just-mode
-            epkgs.just-ts-mode
-            epkgs.justl
-            epkgs.shell-command-plus
-            epkgs.xterm-color
-            epkgs.eshell-syntax-highlighting
-            # treesit-grammars-patched
-            epkgs.treesit-grammars.with-all-grammars
+          epkgs
+          // (import ./packages.nix { inherit epkgs pkgs; })
+          // {
+            "shell-command+" = epkgs.shell-command-plus;
+          };
+        extraEmacsPackages = epkgs: [
+          epkgs.vterm
+          epkgs.eat # fallback terminal backend for claude-code
+          epkgs.eshell-syntax-highlighting
+          epkgs.just-mode
+          epkgs.just-ts-mode
+          epkgs.justl
+          epkgs.treesit-grammars.with-all-grammars
 
-            # MCP server for agentic Elisp development — describes functions,
-            # reads source files, looks up Info docs, etc.
-            epkgs.elisp-dev-mcp
-            epkgs.mcp-server-lib
-          ]
-          ++ (import ./packages.nix {
-            inherit epkgs pkgs;
-          });
+          # MCP server for agentic Elisp development — describes functions,
+          # reads source files, looks up Info docs, etc.
+          epkgs.elisp-dev-mcp
+          epkgs.mcp-server-lib
+        ];
       };
     };
 

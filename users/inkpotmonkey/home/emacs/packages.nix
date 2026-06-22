@@ -1,6 +1,6 @@
 { pkgs, epkgs }:
-[
-  (epkgs.trivialBuild {
+{
+  auth-source-sops = epkgs.trivialBuild {
     pname = "auth-source-sops";
     version = "unstable-202X";
     src = pkgs.fetchFromGitHub {
@@ -10,8 +10,9 @@
       hash = "sha256-XPhiwX0GqneIS7bBxvSxW4LpP1/emYEPmcBG9mT6qUs=";
     };
     packageRequires = [ epkgs.yaml ];
-  })
-  (epkgs.trivialBuild {
+  };
+
+  ai-code-interface = epkgs.trivialBuild {
     pname = "ai-code-interface";
     version = "unstable-2026-06-19";
     src = pkgs.fetchFromGitHub {
@@ -21,8 +22,9 @@
       hash = "sha256-7nx86SC/KFQ4v85YuwdCSyqnjXUkQp9/eiJnIn/QYGo=";
     };
     packageRequires = [ epkgs.magit ];
-  })
-  (epkgs.trivialBuild {
+  };
+
+  gptel-quick = epkgs.trivialBuild {
     pname = "gptel-quick";
     version = "unstable-202X";
     src = pkgs.fetchFromGitHub {
@@ -35,8 +37,9 @@
       epkgs.gptel
       epkgs.embark
     ];
-  })
-  (epkgs.trivialBuild {
+  };
+
+  svelte-ts-mode = epkgs.trivialBuild {
     pname = "svelte-ts-mode";
     version = "unstable-202X";
     src = pkgs.fetchFromGitHub {
@@ -45,8 +48,9 @@
       rev = "d079050fc1ba70f8fba9e596638daa2ca96e0fdd";
       hash = "sha256-uYHJP0PyGE27SsztrQCZyuIeHA9Y2x5cfD16BZihg5k=";
     };
-  })
-  (epkgs.trivialBuild {
+  };
+
+  consult-omni = epkgs.trivialBuild {
     pname = "consult-omni";
     version = "unstable-202X";
     src = pkgs.fetchFromGitHub {
@@ -66,18 +70,15 @@
     postInstall = ''
       cp -rv sources $out/share/emacs/site-lisp/
     '';
-  })
-  (epkgs.trivialBuild {
+  };
+
+  just-complete = epkgs.trivialBuild {
     pname = "just-complete";
     version = "unstable-202X";
     src = ./just-complete;
-  })
-  # stevemolitor/claude-code.el — the project our init.el is actually written
-  # for (claude-code-command-map, claude-code-terminal-backend 'ghostel, etc.).
-  # NOT available from epkgs: the MELPA/emacs-overlay package named `claude-code`
-  # is a DIFFERENT project (yuya373/claude-code-emacs), so it must be built by
-  # hand. Backends (eat/ghostel/vterm) are supplied separately in default.nix.
-  (epkgs.trivialBuild {
+  };
+
+  claude-code = epkgs.trivialBuild {
     pname = "claude-code";
     version = "unstable-2026-06-21";
     src = pkgs.fetchFromGitHub {
@@ -90,5 +91,17 @@
       epkgs.transient
       epkgs.inheritenv
     ];
-  })
-]
+  };
+
+  pritunl-connect = epkgs.trivialBuild {
+    pname = "pritunl-connect";
+    version = "unstable-202X";
+    src = ./pritunl-connect;
+  };
+
+  whisperx = epkgs.trivialBuild {
+    pname = "whisperx";
+    version = "unstable-202X";
+    src = ./whisperx;
+  };
+}
