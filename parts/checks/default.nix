@@ -24,11 +24,11 @@
         host_user_contract = import ./host-user-contract {
           inherit pkgs self;
         };
-        # Runtime VM smoke for the gui-session union (ADR-0019): one host, two gui users
-        # with different sessions ⇒ the host's display binding offers both plasma sessions.
-        host_user_contract_vm = import ./host-user-contract-vm {
-          inherit pkgs self inputs;
-        };
+        # The gui-union runtime VM moved into the contract's own suite (ADR-0020:
+        # checks.<system>.conformance-vm there). It uses a test-only display binding, so
+        # it no longer covers this fleet's gui-desktop.nix; re-surface it from
+        # inputs.contract.checks once the contract is published with that check if a
+        # fleet-side runtime smoke is wanted.
         # The host-side COHERENCE GATE (ADR-0020 Q5): the real fleet ties back to the
         # contract's conformance suite (the display binding is wired wherever the contract
         # decides a surface is needed; real exposed-traits are archetype-covered).
