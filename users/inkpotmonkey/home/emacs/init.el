@@ -1293,8 +1293,6 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 
 (use-package php-mode)
 
-(use-package pritunl-connect)
-
 ;;; Network Management
 (use-package enwc
 		:custom

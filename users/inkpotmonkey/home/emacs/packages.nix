@@ -93,12 +93,6 @@
     ];
   };
 
-  pritunl-connect = epkgs.trivialBuild {
-    pname = "pritunl-connect";
-    version = "unstable-202X";
-    src = ./pritunl-connect;
-  };
-
   whisperx = epkgs.trivialBuild {
     pname = "whisperx";
     version = "unstable-202X";
