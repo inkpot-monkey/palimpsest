@@ -27,8 +27,6 @@
             "shell-command+" = epkgs.shell-command-plus;
           };
         extraEmacsPackages = epkgs: [
-          epkgs.vterm
-          epkgs.eat # fallback terminal backend for claude-code
           epkgs.eshell-syntax-highlighting
           epkgs.just-mode
           epkgs.just-ts-mode

@@ -722,16 +722,10 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 (use-package popup)
 (use-package projectile)
 
-(use-package eat
-		:ensure nil
-		:custom
-		(eat-term-scrollback-size 200000)) ;; keep plenty of scrollback for long Claude responses
-
 ;; ghostel — libghostty terminal, the claude-code backend (renders the Claude
 ;; TUI most faithfully, no eat-style repaint ghosting). The native module ships
 ;; prebuilt in the Nix package, so never let ghostel try to download/compile it.
 (use-package ghostel
-		:ensure nil
 		:custom
 		(ghostel-module-auto-install nil)
 		;; Keys that pass through to Emacs instead of being sent to Claude's TUI.
@@ -748,7 +742,6 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 ;;
 ;; Keys: C-c c is the command prefix (C-c c m = transient menu).
 (use-package claude-code
-		:ensure nil
 		:bind-keymap ("C-c c" . claude-code-command-map)
 		:custom
 		;; libghostty backend — faithful TUI render, no eat repaint ghosting.
@@ -758,9 +751,6 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 		;; selected window (full height + width); switch buffers to get back to
 		;; code. Leaves any other windows you've split intact.
 		(claude-code-display-window-fn #'display-buffer)
-		;; Never truncate the eat buffer — keep the whole session scrollable so
-		;; long responses don't get clipped off-screen (the original problem).
-		(claude-code-eat-never-truncate-claude-buffer t)
 		:config
 		(add-to-list 'display-buffer-alist
 								 '("\\`\\*claude:" (display-buffer-same-window))))
@@ -876,20 +866,7 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 
 ;; https://github.com/sgpthomas/async-shell
 
-(use-package vterm
-		:ensure nil ;; It's installed via Nix, so don't try to download it
-		:bind (:map vterm-mode-map
-								("C-y" . vterm-yank)       ;; Make paste work as expected
-								("M-y" . vterm-yank-pop)   ;; Yank-pop support
-								("C-q" . vterm-send-next-key)) ;; Pass next key to shell specifically
-		:config
-		(setq vterm-max-scrollback 10000)
 
-		(setq vterm-eval-cmds '(("find-file" find-file)
-														("message" message)
-														("vterm-clear-scrollback" vterm-clear-scrollback)))
-
-		(add-hook 'vterm-mode-hook (lambda () (set-window-fringes nil 0 0))))
 
 (use-package org
 		:after (cape tempel)
@@ -1006,23 +983,17 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 
 (use-package project
 		:ensure nil
-		:hook
-		(vterm-copy-mode . (lambda ()
-												 (if vterm-copy-mode
-														 (progn (setq cursor-type 'box) (hl-line-mode 1))
-													 (setq cursor-type nil) (hl-line-mode -1))))
 		:config
-		(defun project-run-vterm+ ()
-			"Open vterm in the current project root."
+		(defun project-run-ghostel+ ()
+			"Open ghostel in the current project root."
 			(interactive)
-			(defvar vterm-buffer-name)
-			(let* ((default-directory (project-root (project-current t)))
-						 (vterm-buffer-name (project-prefixed-buffer-name "vterm"))
-						 (buffer (get-buffer vterm-buffer-name)))
-				
-				(if (and buffer (not current-prefix-arg))
-						(pop-to-buffer buffer (bound-and-true-p display-comint-buffer-action))
-					(vterm vterm-buffer-name))))
+			(ghostel-project))
+
+		(defun project-claude-code ()
+			"Open Claude Code in the current project root."
+			(interactive)
+			(let ((default-directory (project-root (project-current t))))
+				(claude-code)))
 
 		(setq project-switch-commands
 					'((project-find-file "Find file" ?f)
@@ -1030,12 +1001,14 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 						(consult-project-buffer "Buffer" ?b)
 						(magit-project-status "Magit" ?m)
 						(project-find-dir "Find directory" ?d)
-						(project-run-vterm+ "Vterm" ?v)
+						(project-run-ghostel+ "Ghostel" ?v)
+						(project-claude-code "Claude Code" ?c)
 						(project-any-command "Other" ?o)))
 
 		:bind (:map project-prefix-map
 								("m" . magit-project-status)
-								("v" . project-run-vterm+)))
+								("v" . project-run-ghostel+)
+								("c" . project-claude-code)))
 
 (use-package apheleia
 		:init (apheleia-global-mode))
