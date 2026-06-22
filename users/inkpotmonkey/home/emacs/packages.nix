@@ -24,21 +24,6 @@
     packageRequires = [ epkgs.magit ];
   };
 
-  gptel-quick = epkgs.trivialBuild {
-    pname = "gptel-quick";
-    version = "unstable-202X";
-    src = pkgs.fetchFromGitHub {
-      owner = "karthink";
-      repo = "gptel-quick";
-      rev = "018ff2be8f860a1e8fe3966eec418ad635620c38";
-      hash = "sha256-7a5+YQifwtVYHP6qQXS1yxA42bVGXmErirra0TrSSQ0=";
-    };
-    packageRequires = [
-      epkgs.gptel
-      epkgs.embark
-    ];
-  };
-
   svelte-ts-mode = epkgs.trivialBuild {
     pname = "svelte-ts-mode";
     version = "unstable-202X";

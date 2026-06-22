@@ -805,29 +805,12 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 	 ("C-, A" . gptel-abort)
 	 ("C-, a" . gptel-add)
 	 ("C-, m" . gptel-menu)
-	 ("C-, q" . gptel-quick)
 	 :map gptel-mode-map
 	 ("C-c RET" . gptel-send)
 	 ("C-, s" . gptel-send)
 	 ("C-, A" . gptel-abort)
 	 ("C-, a" . gptel-add)
-	 ("C-, m" . gptel-menu)
-	 ("C-, q" . gptel-quick)))
-
-(use-package gptel-quick
-		:ensure nil
-		:after gptel embark
-		:bind (:map embark-general-map
-								("?" . gptel-quick))
-		:config
-		(defun gptel-quick--update-posframe-with-custom-border (orig-fun &rest args)
-			"Temporarily modify border for gptel-quick posframe during update."
-			(let ((face-attribute-orig (face-attribute 'vertical-border :foreground)))
-				(set-face-attribute 'vertical-border nil :foreground (face-attribute 'child-frame-border :background))
-				(apply orig-fun args)
-				(set-face-attribute 'vertical-border nil :foreground face-attribute-orig)))
-
-		(advice-add 'gptel-quick--update-posframe :around #'gptel-quick--update-posframe-with-custom-border))
+	 ("C-, m" . gptel-menu)))
 
 (use-package mcp
 		:after gptel
