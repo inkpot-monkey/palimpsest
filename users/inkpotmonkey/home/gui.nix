@@ -118,7 +118,7 @@
 
       # --- Utilities & AI ---
       # Claude Desktop (community Linux repackaging; no official Linux build)
-      inputs.claude-desktop.packages.${pkgs.stdenv.hostPlatform.system}.claude-desktop
+      inputs.claude-desktop.packages.${pkgs.stdenv.hostPlatform.system}.claude-desktop-fhs
       ocr-shot
       anki-bin
       whisper-cpp
