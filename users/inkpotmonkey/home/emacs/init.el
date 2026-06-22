@@ -1106,29 +1106,7 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 
 (advice-add 'async-shell-command :after #'my/set-shell-mode-for-async-shell)
 
-(use-package eshell
-		:ensure nil
-		:bind (("C-c e" . eshell))
-		:custom
-		(eshell-history-size 10000)
-		(eshell-buffer-maximum-lines 10000)
-		(eshell-hist-ignoredups t)
-		(eshell-scroll-to-bottom-on-input t)
-		(eshell-destroy-buffer-when-process-dies t)
-		(eshell-visual-commands '("top" "htop" "less" "more" "lynx" "ncdu" "vifm"))
-		:config
-		(use-package eshell-syntax-highlighting
-				:config
-			(eshell-syntax-highlighting-global-mode +1))
 
-		(defun my/eshell-setup ()
-			"Custom setup for Eshell."
-			(add-hook 'completion-at-point-functions #'cape-file nil t)
-			(add-hook 'completion-at-point-functions #'cape-history nil t)
-			(setq-local corfu-auto nil)
-			(corfu-mode +1))
-		
-		(add-hook 'eshell-mode-hook #'my/eshell-setup))
 
 (use-package ement
 		:commands (ement-connect ement-list-rooms ement-view-room ement-describe-room)

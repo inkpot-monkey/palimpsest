@@ -27,7 +27,6 @@
             "shell-command+" = epkgs.shell-command-plus;
           };
         extraEmacsPackages = epkgs: [
-          epkgs.eshell-syntax-highlighting
           epkgs.just-mode
           epkgs.just-ts-mode
           epkgs.justl
