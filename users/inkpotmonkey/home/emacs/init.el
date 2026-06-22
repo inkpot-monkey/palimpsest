@@ -258,7 +258,6 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 				 ("C-c C-d" . sops-edit-file)))
 
 (use-package auth-source-sops
-		:ensure nil
 		:demand t
 		:custom
 		(auth-source-sops-file "@secrets@")
@@ -742,6 +741,10 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 ;;
 ;; Keys: C-c c is the command prefix (C-c c m = transient menu).
 (use-package claude-code
+		;; Autoload the entry command so `project-claude-code' below can call
+		;; (claude-code) directly — :bind-keymap alone only defers the prefix map,
+		;; leaving the command void until C-c c is first pressed.
+		:commands (claude-code)
 		:bind-keymap ("C-c c" . claude-code-command-map)
 		:custom
 		;; libghostty backend — faithful TUI render, no eat repaint ghosting.
@@ -756,7 +759,6 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 								 '("\\`\\*claude:" (display-buffer-same-window))))
 
 (use-package ai-code-interface
-		:ensure nil
 		;; Enable global keybinding for the main menu
 		:bind
 		(("C-, g" . ai-code-menu))
