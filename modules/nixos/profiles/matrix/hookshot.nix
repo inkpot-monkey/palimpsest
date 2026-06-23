@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  pkgs,
   self,
   settings,
   ...
@@ -27,6 +28,10 @@ let
   # settings.nix so the proxy + DNS pick it up automatically.
   webhookPort = settings.services.public.hookshot.port;
   publicUrl = "https://hookshot.${config.networking.domain}";
+
+  # Builder for this bridge's own management-DM auto-provisioner (split out of the
+  # central matrix-dm-provision so each bridge owns its auto-join wiring).
+  mkDmService = import ./dm-provision.nix { inherit pkgs config; };
 in
 {
   options.custom.profiles.matrix.hookshot = {
@@ -192,12 +197,32 @@ in
     custom.profiles.matrix.appservices.hookshot.registrationPath =
       config.sops.templates."hookshot-registration.yaml".path;
 
-    # Auto-create the @hookshot admin DM (where `github login` etc. are run).
-    custom.profiles.matrix.managementDms = [ "hookshot" ];
+    # Auto-create the @hookshot admin DM (where `github login` etc. are run). The
+    # bridge bot auto-joins the invite. Ordered after the bridge so its appservice
+    # link is up to receive the invite.
+    systemd.services."matrix-dm-hookshot" = mkDmService {
+      bot = "hookshot";
+      afterUnit = "matrix-hookshot.service";
+    };
+
+    # Contribute to `matrix-reset`: the bridge service + its DM provisioner, and
+    # the state dirs wiped for a from-scratch start (OAuth/passkey, and the marker).
+    custom.profiles.matrix.resetState = [
+      {
+        service = "matrix-hookshot.service";
+        paths = [ stateDir ];
+      }
+      {
+        service = "matrix-dm-hookshot.service";
+        isDm = true;
+        paths = [ "/var/lib/private/matrix-dm-hookshot" ];
+      }
+    ];
 
     # --- Persistence ---
     # passkey.pem encrypts the stored GitHub/OAuth tokens; lose it and every
-    # logged-in connection must be re-authed. Persist the whole state dir.
+    # logged-in connection must be re-authed. Persist the whole state dir. The DM
+    # marker is persisted in lockstep with the homeserver (default.nix).
     environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
       directories = [
         {
@@ -206,6 +231,7 @@ in
           group = user;
           mode = "0750";
         }
+        "/var/lib/private/matrix-dm-hookshot"
       ];
     };
   };

@@ -104,6 +104,16 @@ in
     custom.profiles.matrix.appservices.jmap.registrationPath =
       config.sops.templates."jmap-registration.yaml".path;
 
+    # Contribute to `matrix-reset`. No DM provisioner: the bridge self-provisions
+    # its email rooms from the declarative `users` (matrixPasswordFile auto-accept),
+    # so a fresh start only needs the bridge DB wiped and the service restarted.
+    custom.profiles.matrix.resetState = [
+      {
+        service = "jmap-bridge.service";
+        paths = [ "/var/lib/private/jmap-bridge" ];
+      }
+    ];
+
     # --- Persistence ---
     environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
       directories = [

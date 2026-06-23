@@ -120,74 +120,73 @@ let
     ''}
   '';
 
-  # Auto-create the "management"/"admin" DM between the admin user and each bridge
-  # bot that asks for one (managementDms below), so they're present after a deploy
-  # instead of needing a manual "start chat". The interactive auth INSIDE the room
-  # (e.g. hookshot `github login`, WhatsApp QR) is still done by hand.
-  #
-  # Idempotency is a PERSISTED per-bot marker in StateDirectory, NOT a re-read of
-  # m.direct: tuwunel doesn't reliably return global account data across runs, so
-  # the old m.direct check spawned a fresh DM on every deploy. The m.direct write
-  # is kept best-effort (so clients render the room as a DM). The marker dir is
-  # persisted (below) so reboots don't re-create either.
-  provisionDms = pkgs.writeShellScript "matrix-provision-dms" ''
-    set -eu
-    url="http://${address}:${toString matrixPort}"
-    me="@${cfg.adminLocalpart}:${domain}"
-    bots="${lib.concatStringsSep " " (map (lp: "@${lp}:${domain}") cfg.managementDms)}"
-    state="$STATE_DIRECTORY"
-    marker() { printf '%s/dm-%s' "$state" "$(printf '%s' "$1" | tr -c 'a-zA-Z0-9' '_')"; }
+  # Per-bridge management DMs now live in each bridge module (see dm-provision.nix
+  # and the `matrix-dm-<bot>` service each bridge declares). This file only owns
+  # the homeserver, the admin account, and the cross-bridge `matrix-reset` helper.
 
-    # Only bots without a marker need provisioning — skip the login entirely if none.
-    pending=""
-    for bot in $bots; do
-      [ -s "$(marker "$bot")" ] || pending="$pending $bot"
-    done
-    [ -n "$pending" ] || { echo "dm-provision: all management DMs already created"; exit 0; }
+  # `matrix-reset` — wipe the homeserver + every bridge's state + the DM markers
+  # and bring the stack back up clean, for quick from-scratch testing. Each bridge
+  # contributes its units/paths via custom.profiles.matrix.resetState, so this
+  # never needs editing when a bridge is added. Replaces the hand-rolled
+  # `ssh kelpy "sudo bash -c 'systemctl stop … && rm -rf …'"` one-liner, and
+  # crucially clears the DM markers in lockstep with the homeserver (the bind-mount
+  # markers can't be `rm`'d, only emptied) so DMs are actually recreated.
+  bridgeUnits = map (e: e.service) (lib.filter (e: !e.isDm) cfg.resetState);
+  dmUnits = map (e: e.service) (lib.filter (e: e.isDm) cfg.resetState);
+  # /var/lib/private/tuwunel is the homeserver's (DynamicUser) state dir.
+  wipePaths = lib.unique (
+    lib.concatMap (e: e.paths) cfg.resetState ++ [ "/var/lib/private/tuwunel" ]
+  );
 
-    for _ in $(seq 1 30); do
-      ${pkgs.curl}/bin/curl -sf "$url/_matrix/client/versions" >/dev/null && break
-      sleep 2
-    done
+  matrixReset = pkgs.writeShellApplication {
+    name = "matrix-reset";
+    runtimeInputs = [
+      pkgs.systemd
+      pkgs.coreutils
+      pkgs.findutils
+    ];
+    text = ''
+      if [ "$(id -u)" -ne 0 ]; then
+        echo "matrix-reset: must run as root (try: sudo matrix-reset)" >&2
+        exit 1
+      fi
 
-    pass="$(cat "$CREDENTIALS_DIRECTORY/admin_password")"
-    at="$(${pkgs.curl}/bin/curl -s -X POST "$url/_matrix/client/v3/login" \
-      -H 'content-type: application/json' \
-      -d "$(${pkgs.jq}/bin/jq -nc --arg u "${cfg.adminLocalpart}" --arg p "$pass" \
-        '{type:"m.login.password",identifier:{type:"m.id.user",user:$u},password:$p}')" \
-      | ${pkgs.jq}/bin/jq -r '.access_token // empty')"
-    [ -n "$at" ] || { echo "dm-provision: admin login failed" >&2; exit 1; }
-    auth=(-H "Authorization: Bearer $at")
-    meenc="$(${pkgs.jq}/bin/jq -rn --arg m "$me" '$m|@uri')"
+      bridges=(${lib.escapeShellArgs bridgeUnits})
+      dms=(${lib.escapeShellArgs dmUnits})
+      paths=(${lib.escapeShellArgs wipePaths})
 
-    # Seed m.direct from whatever the server returns (best-effort; merged into below).
-    direct="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" \
-      "$url/_matrix/client/v3/user/$meenc/account_data/m.direct" \
-      | ${pkgs.jq}/bin/jq -c 'if (type=="object" and (has("errcode")|not)) then . else {} end' \
-        2>/dev/null || echo '{}')"
+      echo "matrix-reset: stopping stack..."
+      systemctl stop "''${dms[@]}" "''${bridges[@]}" \
+        tuwunel-register-admin.service tuwunel.service || true
 
-    changed=0
-    for bot in $pending; do
-      rid="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" -X POST "$url/_matrix/client/v3/createRoom" \
-        -H 'content-type: application/json' \
-        -d "$(${pkgs.jq}/bin/jq -nc --arg b "$bot" \
-          '{is_direct:true,invite:[$b],preset:"trusted_private_chat"}')" \
-        | ${pkgs.jq}/bin/jq -r '.room_id // empty')"
-      [ -n "$rid" ] || { echo "dm-provision: createRoom for $bot failed" >&2; continue; }
-      printf '%s' "$rid" > "$(marker "$bot")"
-      direct="$(printf '%s' "$direct" | ${pkgs.jq}/bin/jq -c --arg b "$bot" --arg r "$rid" \
-        '.[$b] = ((.[$b] // []) + [$r])')"
-      changed=1
-      echo "dm-provision: created DM with $bot -> $rid"
-    done
+      echo "matrix-reset: wiping homeserver + bridge + DM-marker state..."
+      for d in "''${paths[@]}"; do
+        if [ -d "$d" ]; then
+          # Contents only: persisted dirs are bind-mounts whose mountpoint can't be removed.
+          find "$d" -mindepth 1 -delete 2>/dev/null || true
+          echo "  wiped $d"
+        fi
+      done
 
-    if [ "$changed" = 1 ]; then
-      ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
-        "$url/_matrix/client/v3/user/$meenc/account_data/m.direct" \
-        -H 'content-type: application/json' -d "$direct" >/dev/null || true
-      echo "dm-provision: m.direct updated"
-    fi
-  '';
+      echo "matrix-reset: starting homeserver..."
+      systemctl start tuwunel.service
+      systemctl start tuwunel-register-admin.service
+
+      echo "matrix-reset: starting bridges..."
+      [ "''${#bridges[@]}" -gt 0 ] && systemctl start "''${bridges[@]}"
+
+      # Let the bridges' appservice links come up before inviting the bots, so the
+      # bots receive and auto-join the DM invites instead of losing the startup race.
+      sleep 15
+
+      echo "matrix-reset: provisioning management DMs..."
+      # restart (not start): the DM oneshots are RemainAfterExit and may still be
+      # "active (exited)" from boot, which makes `start` a no-op.
+      [ "''${#dms[@]}" -gt 0 ] && { systemctl restart "''${dms[@]}" || true; }
+
+      echo "matrix-reset: done."
+    '';
+  };
 in
 {
   imports = [
@@ -235,13 +234,34 @@ in
       description = "Appservice registrations contributed by enabled bridge modules.";
     };
 
-    # Bridge modules add their bot's localpart here to have a management/admin DM
-    # auto-created with the admin user on deploy (see provisionDms above).
-    managementDms = lib.mkOption {
+    # Bridge modules describe their resettable units and state dirs here; the
+    # `matrix-reset` helper aggregates the lot, so adding a bridge never touches
+    # this file. DM provisioner oneshots set isDm = true so reset restarts them
+    # AFTER the bridges are back up.
+    resetState = lib.mkOption {
       internal = true;
       default = [ ];
-      type = lib.types.listOf lib.types.str;
-      description = "Bridge bot localparts to auto-create an admin/management DM with.";
+      type = lib.types.listOf (
+        lib.types.submodule {
+          options = {
+            service = lib.mkOption {
+              type = lib.types.str;
+              description = "systemd unit to stop and (re)start on reset.";
+            };
+            isDm = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = "DM provisioner oneshots: restarted after the bridges, with a delay.";
+            };
+            paths = lib.mkOption {
+              type = lib.types.listOf lib.types.str;
+              default = [ ];
+              description = "Directories whose contents are wiped on reset.";
+            };
+          };
+        }
+      );
+      description = "Per-bridge resettable units/paths aggregated into the matrix-reset helper.";
     };
   };
 
@@ -330,34 +350,10 @@ in
       };
     };
 
-    # Auto-create management/admin DMs with bridge bots (opt-in per bridge via
-    # custom.profiles.matrix.managementDms). Runs after the admin exists and the
-    # bridges are up so the invited bots are present to auto-join.
-    systemd.services.matrix-dm-provision = lib.mkIf (cfg.managementDms != [ ]) {
-      description = "Auto-create management DMs between the admin and bridge bots";
-      after = [
-        "tuwunel.service"
-        "tuwunel-register-admin.service"
-        "matrix-hookshot.service"
-        "mautrix-whatsapp.service"
-      ];
-      requires = [
-        "tuwunel.service"
-        "tuwunel-register-admin.service"
-      ];
-      wantedBy = [ "multi-user.target" ];
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-        DynamicUser = true;
-        # Persisted (see environment.persistence below) marker dir — the source of
-        # truth for "this bot's DM already exists", so re-runs don't duplicate it.
-        StateDirectory = "matrix-dm-provision";
-        StateDirectoryMode = "0700";
-        LoadCredential = [ "admin_password:${config.sops.secrets.matrix_admin_password.path}" ];
-        ExecStart = provisionDms;
-      };
-    };
+    # `matrix-reset` (root): wipe the homeserver + all bridge state + DM markers
+    # and bring the stack back up clean. Quick from-scratch testing without the
+    # error-prone manual `systemctl stop … && rm -rf …` one-liner.
+    environment.systemPackages = [ matrixReset ];
 
     # ----------------------------------------------------------------------------
     # Caddy Reverse Proxy
@@ -396,12 +392,13 @@ in
       "z /persistent/var/lib/private 0700 root root -"
     ];
 
-    # Persist the dm-provision markers so reboots (impermanence) don't drop the
-    # "DM already created" state and re-spawn duplicate management DMs.
-    environment.persistence."/persistent" =
-      lib.mkIf (config.custom.profiles.impermanence.enable && cfg.managementDms != [ ])
-        {
-          directories = [ "/var/lib/private/matrix-dm-provision" ];
-        };
+    # Persist the homeserver state across impermanence reboots. Without this,
+    # tuwunel comes up empty every boot (all rooms/accounts/m.direct gone) while
+    # the persisted bridge logins + DM markers survive — exactly the desync that
+    # leaves the management DMs unrecreated. Per-bridge state and the DM markers
+    # are persisted alongside, by each bridge module (same lifetime as here).
+    environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
+      directories = [ "/var/lib/private/tuwunel" ];
+    };
   };
 }
