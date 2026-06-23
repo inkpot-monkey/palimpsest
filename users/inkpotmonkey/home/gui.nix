@@ -117,8 +117,19 @@
       mpv
 
       # --- Utilities & AI ---
-      # Claude Desktop (community Linux repackaging; no official Linux build)
-      inputs.claude-desktop.packages.${pkgs.stdenv.hostPlatform.system}.claude-desktop-fhs
+      # Claude Desktop + Cowork (community Linux repackaging; no official Linux
+      # build). Runs Cowork skills natively under bubblewrap — see the
+      # claude-cowork-linux input comment in flake.nix.
+      #
+      # NixOS gotcha: Cowork's exec registry resolves the Claude CLI and system
+      # tools (bash, git, curl, …) only from fixed FHS/dotfile paths, never
+      # $PATH. Two pieces outside this package are REQUIRED, or tasks die with
+      # "bash not found" / exit code 127:
+      #   - host: services.envfs.enable + git/libnotify/glib in systemPackages
+      #           (hosts/sawtoothShark/configuration.nix)
+      #   - user: the native claude CLI symlinked into ~/.local/bin
+      #           (../ai/default.nix)
+      inputs.claude-cowork-linux.packages.${pkgs.stdenv.hostPlatform.system}.claude-cowork-linux
       ocr-shot
       anki-bin
       whisper-cpp

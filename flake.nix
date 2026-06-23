@@ -71,13 +71,18 @@
     };
 
     # Community repackaging of the Claude Desktop app for Linux (no official
-    # Linux build exists). Extracts the Windows app's resources and rebuilds a
-    # native Electron app, with Cowork support. Actively maintained fork of the
-    # original k3d3 flake — tracks current Claude Desktop versions and vendors
-    # its own asar tool (the upstream's `nodePackages.asar` was removed from
-    # nixpkgs on 2026-03-03). Keep its own nixpkgs pin (what the author tests).
-    claude-desktop = {
-      url = "github:Reginleif88/claude-cowork-nix";
+    # Linux build exists). Extracts the macOS app's resources, stubs the
+    # macOS-native modules (@ant/claude-swift, @ant/claude-native) with a Linux
+    # orchestration layer, and runs the Claude Code binary directly on the host
+    # under bubblewrap — so Cowork *skills actually execute* on Linux. We
+    # switched off Reginleif88/claude-cowork-nix because that fork ships only the
+    # Electron shell: it never downloads the Cowork VM rootfs nor stubs the VM
+    # backend, so every launch logged `rootfs.img missing` and any skill that
+    # needed code execution failed (no sandbox to run in). Keep its own nixpkgs
+    # pin (nixos-25.11, what the author tests). Trade-off: no real VM — skills
+    # run on the host under bubblewrap, weaker isolation than the macOS VM.
+    claude-cowork-linux = {
+      url = "github:johnzfitch/claude-cowork-linux";
     };
 
     # The email bridge lives in its own repo (ADR-0017), consumed via its
