@@ -69,10 +69,11 @@ in
       enable = true;
 
       # Use the bridge flake's OWN package output (built against its pinned
-      # nixpkgs) rather than the overlay's `pkgs.jmap-matrix-bridge` (which would
-      # rebuild against the fleet nixpkgs). This is the closure the bridge CI
-      # pushes to the palebluebytes cachix, so kelpy substitutes it — see the
-      # jmap-bridge input note in flake.nix.
+      # nixpkgs) directly. We deliberately do NOT pull the bridge through the
+      # fleet overlay: overlaying it would rebuild against the fleet nixpkgs and
+      # change the store hash. This is the closure the bridge CI pushes to the
+      # palebluebytes cachix, so kelpy substitutes it — see the jmap-bridge input
+      # note in flake.nix.
       package = inputs.jmap-bridge.packages.${pkgs.stdenv.hostPlatform.system}.default;
 
       url = "http://127.0.0.1:8081";

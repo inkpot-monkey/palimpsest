@@ -69,7 +69,6 @@ in
   # Using composeManyExtensions is more robust than manual attribute merging
   default = inputs.nixpkgs.lib.composeManyExtensions [
     additions
-    inputs.jmap-bridge.overlays.default
     modifications.tree-sitter
     # modifications.antigravity
     flexget
