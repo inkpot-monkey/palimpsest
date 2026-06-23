@@ -57,7 +57,12 @@ in
           # instead — a human-centric curve at full fidelity. `mixer` is only
           # honoured once the controller is "alsa"; on its own it was a no-op.
           volume_controller = "alsa";
-          mixer = "Digital";
+          # In spotifyd 0.4.2 these keys are the reverse of what `--help`'s terse
+          # labels imply: `mixer` is the ALSA *control device* (which card to
+          # open) and `control` is the *name* of the simple mixer element on it.
+          # The PCM512x's hardware volume element is "Digital".
+          control = "Digital";
+          mixer = "default:CARD=sndrpihifiberry";
           bitrate = 320;
           cache_path = "/var/cache/spotifyd";
           volume_normalisation = true;

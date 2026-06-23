@@ -32,6 +32,13 @@ in
           };
         };
         dt-overlays = {
+          # `slave` makes the card *open* here: in master mode the PCM512x refuses
+          # the PCM (-EINVAL at every rate), so slave (Pi drives the bit-clock) is
+          # what we currently rely on. BUT slave is the leading suspect for the
+          # intermittent silent-wedge (the Pi then synthesises the I²S clock with a
+          # jitter-prone fractional divider; this is a "Pro" board built for MASTER
+          # mode). Fixing the -EINVAL and moving to master is the real cure — see
+          # hosts/porcupineFish/RUNBOOK-audio-silence.md before changing this.
           hifiberry-dacplusadcpro = {
             enable = true;
             params = {

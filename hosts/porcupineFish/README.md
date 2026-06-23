@@ -2,6 +2,11 @@
 
 NixOS configuration for a Raspberry Pi 4 equipped with a HiFiBerry DAC2 ADC Pro, serving as a Spotify Connect and Mopidy audio node.
 
+> ⚠️ **Speakers silent ("puff, then nothing")?** It's an SoC I²S/clock wedge, not config
+> or hardware. **Fix = COLD power-cycle the Pi** (unplug power, wait 30 s, replug); a warm
+> `reboot`/redeploy/rollback will NOT fix it, and **don't** run `speaker-test` to "check"
+> (it re-triggers the wedge). Full post-mortem: **[`RUNBOOK-audio-silence.md`](./RUNBOOK-audio-silence.md)**.
+
 ## Quick Specs
 - **Hostname**: `porcupineFish`
 - **IP**: DHCP/reserved on LAN (often `192.168.1.21`)
