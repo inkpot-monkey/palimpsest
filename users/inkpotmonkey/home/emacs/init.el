@@ -731,7 +731,28 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 		;; The default list is C-c/C-x/C-u/C-h/M-x/M-:/C-\; add M-o so global
 		;; `crux-other-window-or-switch-buffer' still works from a Claude buffer.
 		(ghostel-keymap-exceptions
-		 '("C-c" "C-x" "C-u" "C-h" "M-x" "M-:" "C-\\" "M-o")))
+		 '("C-c" "C-x" "C-u" "C-h" "M-x" "M-:" "C-\\" "M-o"))
+		:config
+		;; --- claude-code.el <-> ghostel 0.31 API shim ----------------------------
+		;; stevemolitor/claude-code.el (<=0.4.5, == current upstream HEAD) targets
+		;; ghostel's pre-0.31 mode API, but ghostel 0.31 reworked it: the
+		;; `ghostel--copy-mode-active' flag was dropped in favour of buffer-local
+		;; `ghostel--input-mode' (= `copy while in copy/read-only mode), and
+		;; `ghostel-copy-mode-exit' was renamed to `ghostel-readonly-exit'. Without
+		;; this bridge, opening Claude Code signals `void-variable
+		;; ghostel--copy-mode-active' during window-size adjustment, which aborts the
+		;; resize and leaves the buffer short. Drop this once claude-code.el adopts
+		;; the new API upstream.
+		(unless (fboundp 'ghostel-copy-mode-exit)
+			(defalias 'ghostel-copy-mode-exit #'ghostel-readonly-exit))
+		(defvar-local ghostel--copy-mode-active nil
+			"Compat shim for claude-code.el; mirrors (eq ghostel--input-mode 'copy).")
+		(add-variable-watcher
+		 'ghostel--input-mode
+		 (lambda (_sym newval op where)
+			 (when (eq op 'set)
+				 (with-current-buffer (or where (current-buffer))
+					 (setq-local ghostel--copy-mode-active (eq newval 'copy)))))))
 
 ;; stevemolitor/claude-code.el — Claude Code as a full-window coding agent.
 ;; Multiple named sessions per project: claude-code (C-c c c), a second agent
