@@ -13,6 +13,12 @@
         annas_opds = import ./annas-opds {
           inherit pkgs;
         };
+        # Claude relay (ADR-0025) slice 01: allowlist-gated echo over a minimal
+        # tuwunel homeserver. The relay's mechanics are proven here (stub-driven in
+        # later slices) so an AFK agent can verify via `nix flake check`.
+        claude_relay = import ./claude-relay {
+          inherit pkgs self;
+        };
         # jmap_bridge VM check moved to the bridge's own repo
         # (inputs.jmap-bridge.checks); its CI owns the round-trip test now.
         # The contract's OWN conformance suite (ADR-0020 Q5), surfaced from the contract

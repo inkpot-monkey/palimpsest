@@ -1,0 +1,34 @@
+[package]
+name = "claude-relay"
+version = "0.1.0"
+edition = "2021"
+description = "Relay persistent claude CLI sessions to/from Matrix (ADR-0025)"
+
+[[bin]]
+name = "claude-relay"
+path = "src/main.rs"
+
+[dependencies]
+# No E2E (ADR-0025: rooms are non-federated instead), so default-features off keeps
+# the build lean — no vodozemac, no sqlite store; the in-memory store is enough.
+# (matrix-sdk 0.18 wires TLS via its default deps, not a feature flag.)
+matrix-sdk = { version = "0.18", default-features = false }
+tokio = { version = "1", features = [
+  "macros",
+  "rt-multi-thread",
+  "signal",
+  "process",
+  "fs",
+  "io-util",
+  "time",
+  "sync",
+] }
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+# Keep the relay small; it is glue, not hot-path compute.
+opt-level = "s"
