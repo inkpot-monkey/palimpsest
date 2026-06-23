@@ -86,38 +86,9 @@
       '';
     };
 
-    home.packages = with pkgs; [
-      # Emacs specific tools that are not general dev tools
-      # (All LSPs and general dev tools are now in dev.nix)
-    ];
-
-    programs.bash.bashrcExtra = ''
-      # ========================================================================
-      # vterm integration (akermu/emacs-libvterm)
-      # ========================================================================
-      if [[ "$INSIDE_EMACS" = 'vterm' ]]; then
-        # Define vterm_printf for proper escape sequence handling
-        vterm_printf() {
-          if [ -n "$TMUX" ] && ([ "''${TERM%%-*}" = "tmux" ] || [ "''${TERM%%-*}" = "screen" ]); then
-            # Tell tmux to pass the escape sequences through
-            printf "\ePtmux;\e\e]%s\007\e\\" "$1"
-          elif [ "''${TERM%%-*}" = "screen" ]; then
-            # GNU screen
-            printf "\eP\e]%s\007\e\\" "$1"
-          else
-            printf "\e]%s\e\\" "$1"
-          fi
-        }
-
-        # Enable directory tracking and prompt recognition
-        vterm_prompt_end() {
-          vterm_printf "51;A$(whoami)@$(hostname):$(pwd)"
-        }
-
-        # Hook into PROMPT_COMMAND for reliable execution
-        PROMPT_COMMAND="''${PROMPT_COMMAND:+''${PROMPT_COMMAND}; }vterm_prompt_end"
-      fi
-    '';
+    # Emacs-specific tools that are not general dev tools live here; all LSPs and
+    # general dev tools are in dev.nix, so this stays empty for now.
+    home.packages = [ ];
 
     programs.info.enable = true;
   };
