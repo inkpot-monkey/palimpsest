@@ -79,9 +79,28 @@ let
         | jq -r '.chunk[] | select(.type=="m.room.message") | "\(.sender)\t\(.content.body)"'
     }
   '';
+
+  # Stand-in for the real `claude` CLI: reads input lines from its tmux pane, writes
+  # a transcript turn (assistant text + a tool_use), then fires the relay-provisioned
+  # Stop hook — exercising the relay's send-keys -> hook -> transcript -> post path.
+  stub = pkgs.writeShellScript "claude-stub" ''
+    set -eu
+    sid="stub-$$"
+    proj="$HOME/.claude/projects/stub"
+    mkdir -p "$proj"
+    tr="$proj/$sid.jsonl"
+    : > "$tr"
+    hook=$(jq -r '.hooks.Stop[0].hooks[0].command' "$HOME/.claude/settings.json")
+    while IFS= read -r line; do
+      jq -nc --arg t "$line" '{type:"user",message:{role:"user",content:[{type:"text",text:$t}]}}' >> "$tr"
+      jq -nc --arg t "You said: $line" '{type:"assistant",message:{role:"assistant",content:[{type:"text",text:$t}]}}' >> "$tr"
+      jq -nc '{type:"assistant",message:{role:"assistant",content:[{type:"tool_use",name:"Bash",input:{command:"echo hi"}}]}}' >> "$tr"
+      jq -nc --arg s "$sid" --arg tp "$tr" '{session_id:$s,transcript_path:$tp,hook_event_name:"Stop",cwd:"/tmp"}' | sh -c "$hook"
+    done
+  '';
 in
 pkgs.testers.nixosTest {
-  name = "claude-relay-allowlist";
+  name = "claude-relay-spine";
 
   nodes.machine =
     { lib, ... }:
@@ -117,6 +136,7 @@ pkgs.testers.nixosTest {
         user = botLocalpart;
         passwordFile = "/etc/claude-relay-pw";
         allowedSender = allowedMxid;
+        claudeCommand = "${stub}";
       };
       # Don't race the bot account into existence — the driver registers it, then
       # (re)starts the relay. Relay also self-heals via Restart=on-failure.
@@ -169,20 +189,25 @@ pkgs.testers.nixosTest {
         timeout=60,
     )
 
-    # The allowlisted sender's message must be echoed.
-    sh(f"mx_send {allowed_tok} {room} {shlex.quote('ping')}")
+    # The allowlisted sender's message is injected into the claude (stub) session;
+    # the resulting transcript turn is posted back: assistant text ...
+    sh(f"mx_send {allowed_tok} {room} {shlex.quote('hello')}")
     machine.wait_until_succeeds(
-        f"{H}; mx_texts {allowed_tok} {room} | grep -F '@${botLocalpart}:${serverName}	echo: ping'",
+        f"{H}; mx_texts {allowed_tok} {room} | grep -F 'You said: hello'",
         timeout=60,
     )
-    print("OK: allowlisted message echoed")
+    # ... and tool calls render as one-line summaries.
+    machine.wait_until_succeeds(
+        f"{H}; mx_texts {allowed_tok} {room} | grep -F '⚙ Bash'",
+        timeout=30,
+    )
+    print("OK: allowlisted message injected; transcript turn + tool summary posted")
 
-    # A non-allowlisted sender's message must be IGNORED. Send, wait, then assert
-    # the bot never echoed it.
+    # A non-allowlisted sender is never injected, so no transcript turn comes back.
     sh(f"mx_send {mallory_tok} {room} {shlex.quote('sneaky')}")
     machine.sleep(8)
     texts = sh(f"mx_texts {allowed_tok} {room}")
-    assert "echo: sneaky" not in texts, f"relay echoed a non-allowlisted sender!\n{texts}"
+    assert "You said: sneaky" not in texts, f"relay acted on a non-allowlisted sender!\n{texts}"
     print("OK: non-allowlisted message ignored")
   '';
 }

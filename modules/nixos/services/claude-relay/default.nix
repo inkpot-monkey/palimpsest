@@ -7,6 +7,7 @@
 
 let
   cfg = config.services.claude-relay;
+  home = "/var/lib/claude-relay";
 in
 {
   options.services.claude-relay = {
@@ -48,6 +49,18 @@ in
       '';
     };
 
+    claudeCommand = lib.mkOption {
+      type = lib.types.str;
+      default = "claude";
+      description = "Command tmux runs in a session (overridden by tests with a stub).";
+    };
+
+    hookPort = lib.mkOption {
+      type = lib.types.port;
+      default = 8787;
+      description = "Loopback port the provisioned claude Stop/Notification hooks POST to.";
+    };
+
     serviceUser = lib.mkOption {
       type = lib.types.str;
       default = "claude-relay";
@@ -60,7 +73,7 @@ in
     users.users.${cfg.serviceUser} = {
       isSystemUser = true;
       group = cfg.serviceUser;
-      home = "/var/lib/claude-relay";
+      inherit home;
       createHome = true;
     };
     users.groups.${cfg.serviceUser} = { };
@@ -71,10 +84,27 @@ in
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
 
+      # The relay shells out to tmux (send-keys / session mgmt); the provisioned
+      # hook uses curl; a real/stub claude in the session uses jq + a shell.
+      path = [
+        pkgs.tmux
+        pkgs.curl
+        pkgs.jq
+        pkgs.bash
+        pkgs.coreutils
+        pkgs.gnugrep
+      ];
+
       environment = {
+        HOME = home;
+        # tmux runs a session's command via this shell; the relay's system user has
+        # `nologin`, which fails ("Attempted login by UNKNOWN") and kills the pane.
+        SHELL = "${pkgs.bash}/bin/bash";
         RELAY_HOMESERVER = cfg.homeserver;
         RELAY_USER = cfg.user;
         RELAY_ALLOWED_SENDER = cfg.allowedSender;
+        RELAY_CLAUDE_CMD = cfg.claudeCommand;
+        RELAY_HOOK_PORT = toString cfg.hookPort;
         RUST_LOG = lib.mkDefault "claude_relay=info,matrix_sdk=warn";
       };
 
