@@ -11,6 +11,25 @@
 (require 'use-package)
 (setq use-package-always-ensure nil)
 
+;; --- Site/identity facts (Nix seam) -----------------------------------------
+;; Host- and user-specific values are injected by Nix as a generated
+;; `my-site-config.el' (see users/inkpotmonkey/home/emacs/default.nix), loaded
+;; below. The `defvar' fallbacks keep this init.el valid, loadable, and
+;; byte-compilable on its own — no @token@ string-substitution required, so the
+;; file can be tested outside Nix. The generated module is the prod adapter; the
+;; fallbacks are the dev adapter.
+(defvar my-site/username "inkpotmonkey"
+  "User full name. Overridden by the Nix-generated `my-site-config.el'.")
+(defvar my-site/email ""
+  "User mail address. Overridden by the Nix-generated `my-site-config.el'.")
+(defvar my-site/secrets-file nil
+  "Path to the sops secrets file for auth-source.
+Overridden by the Nix-generated `my-site-config.el'.")
+(defvar my-site/treesit-load-path nil
+  "Directory holding compiled tree-sitter grammars.
+Overridden by the Nix-generated `my-site-config.el'.")
+(load (locate-user-emacs-file "my-site-config") :noerror :nomessage)
+
 (use-package no-littering
     :config
   (no-littering-theme-backups)
@@ -37,7 +56,7 @@
   (setq select-enable-clipboard t)
   (setq select-enable-primary t)
   
-  (setq treesit-extra-load-path '("@treesit-grammars@"))
+  (setq treesit-extra-load-path (delq nil (list my-site/treesit-load-path)))
 
   ;; -- Global Modes --
   (delete-selection-mode t)
@@ -52,8 +71,8 @@
 
   :custom
   ;; -- User Details --
-  (user-full-name "@username@")
-  (user-mail-address "@email@")
+  (user-full-name my-site/username)
+  (user-mail-address my-site/email)
 
   ;; -- UI & Visuals --
   (visible-bell t)
@@ -260,7 +279,7 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 (use-package auth-source-sops
 		:demand t
 		:custom
-		(auth-source-sops-file "@secrets@")
+		(auth-source-sops-file my-site/secrets-file)
 		(auth-sources '(sops))
 		(auth-source-save-behavior nil)
 		:config
