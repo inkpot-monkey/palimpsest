@@ -1049,145 +1049,33 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 (use-package shell-command+
 		:bind (([remap shell-command] . shell-command+)))
 
-(use-package xterm-color
-		:init
-	(setq comint-terminfo-terminal "xterm-256color")
-	(setq compilation-environment '("TERM=xterm-256color"))
+(use-package compile-ansi
 	:config
-	(defun my/advice-compilation-filter (f proc string)
-		"Advice for `compilation-filter' to handle ANSI colors."
-		(let ((filtered (xterm-color-filter string)))
-			(when (string-match-p "\033\\[[0-9;]*H\\|\033\\[[23]?J\\|\033c" string)
-				(let ((inhibit-read-only t))
-					(erase-buffer))
-				(setq filtered (replace-regexp-in-string "\\`\n+" "" filtered)))
-			(unless (string-empty-p filtered)
-				(funcall f proc filtered))))
-
-	(advice-add 'compilation-filter :around #'my/advice-compilation-filter)
-
-	(defun my/advice-compile-sudo (orig-fun command &optional comint)
-		"Automatically enable comint-mode for sudo commands in `compile`."
-		(let ((cmd (string-trim command)))
-			(if (string-match-p "^sudo " cmd)
-					(funcall orig-fun command t)
-				(funcall orig-fun command comint))))
-
-	(advice-add 'compile :around #'my/advice-compile-sudo)
-
-	(defun my/ansi-colorize-buffer ()
-		(let ((inhibit-read-only t))
-			(xterm-color-colorize-buffer)))
-
-	;; Carriage Return (CR) filter for clean progress bars (e.g. Nix builds)
-	(defun my/process-filter-cr (&rest _)
-		"Handle carriage returns by deleting to the beginning of the line."
-		(let ((inhibit-read-only t))
-			(save-excursion
-				(let ((start (cond
-											 ((bound-and-true-p compilation-filter-start) compilation-filter-start)
-											 ((bound-and-true-p comint-last-output-start) comint-last-output-start)
-											 (t (point-min)))))
-					(goto-char start)
-					(while (search-forward "\r" nil t)
-						(delete-region (line-beginning-position) (point)))))))
-
-	(add-hook 'compilation-filter-hook #'my/process-filter-cr)
-
-	(add-hook 'shell-mode-hook (lambda ()
-															 (setq-local xterm-color-preserve-properties t)
-															 (setq-local comint-inhibit-carriage-motion nil)
-															 (add-hook 'comint-preoutput-filter-functions 'xterm-color-filter nil t)
-															 (add-hook 'comint-output-filter-functions #'my/process-filter-cr nil t))))
-
-;; Force async-shell-command buffers to use shell-mode so they get our filters
-(defun my/set-shell-mode-for-async-shell (&rest _)
-	"Enable shell-mode in the async shell command buffer."
-	(when-let ((buf (get-buffer "*Async Shell Command*")))
-		(with-current-buffer buf
-			(unless (derived-mode-p 'shell-mode)
-				(shell-mode)))))
-
-(advice-add 'async-shell-command :after #'my/set-shell-mode-for-async-shell)
+	(compile-ansi-setup))
 
 
 
 (use-package ement
-		:commands (ement-connect ement-list-rooms ement-view-room ement-describe-room)
-		:custom
-		(ement-save-sessions t)
-		(ement-auto-sync t)
-		(ement-initial-sync-timeout 40)
+	:commands (ement-connect ement-list-rooms ement-view-room ement-describe-room)
+	:custom
+	(ement-save-sessions t)
+	(ement-auto-sync t)
+	(ement-initial-sync-timeout 40))
 
-		:init
-		;; Convenience: connect with pre-filled user ID for matrix.palebluebytes.space
-		(defun my/ement-connect ()
-			"Connect to Matrix at matrix.palebluebytes.space as inkpotmonkey."
-			(interactive)
-			(require 'ement)
-			(if-let ((session (cdr (assoc "@inkpotmonkey:matrix.palebluebytes.space"
-																		ement-sessions))))
-					(ement-connect :session session)
-				(ement-connect :user-id "@inkpotmonkey:matrix.palebluebytes.space")))
-
-		(defun my/ement-list ()
-			"Show the Ement room list, connecting first if needed."
-			(interactive)
-			(require 'ement)
-			(unless ement-sessions
-				(if (y-or-n-p "Not connected to Matrix. Connect now?")
-						(my/ement-connect)
-					(user-error "Not connected to Matrix")))
-			(ement-list-rooms))
-
-		;; Define a prefix map for Ement commands under C-c m
-		(define-prefix-command 'my/ement-map)
-		(define-key 'my/ement-map (kbd "c") 'my/ement-connect)
-		(define-key 'my/ement-map (kbd "m") 'my/ement-connect)
-		(define-key 'my/ement-map (kbd "d") (lambda () (interactive)
-																					(require 'ement)
-																					(ement-disconnect
-																					 (mapcar #'cdr ement-sessions))))
-		(define-key 'my/ement-map (kbd "l") 'my/ement-list)
-		(define-key 'my/ement-map (kbd "v") 'ement-view-room)
-		(define-key 'my/ement-map (kbd "s") 'ement-room-send-image)
-		(define-key 'my/ement-map (kbd "f") 'ement-room-send-file)
-		(define-key 'my/ement-map (kbd "i") 'ement-invite-user)
-		(define-key 'my/ement-map (kbd "S") 'ement-directory-search)
-
-		:bind
-		(("C-c m" . my/ement-map)))
+(use-package ement-glue
+	:after ement
+	:bind ("C-c m" . ement-glue-map))
 
 
 (use-package nix-ts-mode
-		:mode "\\.nix\\'"
-		:custom
-		(treesit-font-lock-level 4)
-		:hook
-		(nix-ts-mode . eglot-ensure)
+	:mode "\\.nix\\'"
+	:custom
+	(treesit-font-lock-level 4)
+	:hook
+	(nix-ts-mode . eglot-ensure))
 
-		:init
-		;; Some custom functions to ease my life
-		(defun nix-rebuild-system+ (&optional host)
-			"Build Nixos HOST. Defaults to function `system-name'."
-			(interactive)
-			(let ((compilation-scroll-output t)
-						(default-directory "/sudo::/home/inkpotmonkey/code/nixos")
-						(compilation-buffer-name-function
-						 (lambda (_) (concat "*" (symbol-name this-command) "*")))
-						(show-trace (if current-prefix-arg "--show-trace" "")))
-				(envrc--clear (buffer-name))
-				(compile
-				 (format "nixos-rebuild switch %s --flake .#%s" show-trace system-name))))
-
-		(defun nix-update-system-flake+ (&optional flake-path)
-			"Update a flake. Defaults to system flake."
-			(interactive)
-			(let ((default-directory "~/code/nixos")
-						(compilation-buffer-name-function
-						 (lambda (_) (concat "*" (symbol-name this-command) "*"))))
-				(envrc--clear (buffer-name))
-				(compile (concat "nix flake update --flake " (or flake-path default-directory))))))
+(use-package nix-system
+	:commands (nix-rebuild-system+ nix-update-system-flake+ nix-system-network-transient))
 
 (use-package pretty-sha-path
 		:init
@@ -1304,102 +1192,48 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 	(enwc-auto-scan t)
 	(enwc-nm-edit-settings-in-new-frame nil))
 
-(use-package transient
-		:defer t
-		:config
-		(defun my/get-ipv4-address ()
-			"Get the current IPv4 address of the main interface."
-			(let ((addr (string-trim (shell-command-to-string "nmcli -t -f IP4.ADDRESS dev show $(nmcli -t -f DEVICE,TYPE dev status | grep wifi | cut -d: -f1) | cut -d: -f2 | head -n1"))))
-				(if (string-empty-p addr) "Disconnected" addr)))
-
-		(defun my/delete-connection ()
-			"Delete a network connection using nmcli."
-			(interactive)
-			(let* ((connections (split-string (shell-command-to-string "nmcli -t -f UUID,NAME con show") "\n" t))
-						 (candidates (mapcar (lambda (line)
-																	 (let ((parts (split-string line ":" t)))
-																		 (cons (cadr parts) (car parts))))
-																 connections))
-						 (selection (completing-read "Delete connection: " candidates)))
-				(shell-command (format "nmcli con delete %s" (cdr (assoc selection candidates))))
-				(message "Deleted connection: %s" selection)))
-
-		(transient-define-prefix my/network-transient ()
-			"Network management menu."
-			[:description
-			 (lambda () (format "Network Manager (IP: %s)" (my/get-ipv4-address)))
-			 ["Actions"
-				("e" "ENWC Interface" enwc)
-				("s" "Scan Networks" enwc-scan)
-				("r" "Restart NetworkManager" (lambda () (interactive) (start-process "pkexec" nil "pkexec" "systemctl" "restart" "NetworkManager")))
-				("f" "Forget Connection" my/delete-connection)
-				("q" "Quit" transient-quit-one)]]))
-
 (use-package consult-omni
-		:after consult
-		:init
-		(let ((dir (file-name-directory (locate-library "consult-omni"))))
-			(when dir
-				(add-to-list 'load-path (expand-file-name "sources" dir))
-				(add-to-list 'load-path (expand-file-name "apps" dir))))
-		(require 'consult-omni)
-		(require 'consult-omni-sources)
-		(require 'consult-omni-apps)
+	:after consult
+	:init
+	(let ((dir (file-name-directory (locate-library "consult-omni"))))
+		(when dir
+			(add-to-list 'load-path (expand-file-name "sources" dir))
+			(add-to-list 'load-path (expand-file-name "apps" dir))))
+	(require 'consult-omni)
+	(require 'consult-omni-sources)
+	(require 'consult-omni-apps)
 
-		:custom
-		;; 1. Speed & UI settings
-		(consult-async-min-input 2)
-		(consult-omni-show-preview nil)
-		(consult-omni-group-by nil)
+	:custom
+	(consult-async-min-input 2)
+	(consult-omni-show-preview nil)
+	(consult-omni-group-by nil)
 
-		;; 2. NixOS Paths (Required for apps to show up)
-		;; (consult-omni-apps-paths 
-		;;  '("/run/current-system/sw/share/applications"
-		;;    "~/.nix-profile/share/applications"
-		;;    "/usr/share/applications"
-		;;    "~/.local/share/applications"))
+	:config
+	;; Set 'Apps' as the primary source for the launcher
+	(setq consult-omni-multi-sources '("Apps"))
 
-		:preface
-		(defun my/consult-omni-launcher ()
-			"Launch apps or search via `consult-omni` in a dedicated popup frame.
-This function is designed to be called when Emacs is started with a
-specific frame name (e.g., 'emacs-launcher'). It ensures the frame is
-focused, runs the multi-source search, and deletes the frame upon
-exit or completion."
-			(interactive)
-			(select-frame-set-input-focus (selected-frame))
-			(condition-case nil
-					(progn
-						(consult-omni-multi nil "Run: ")
-						;; Small delay to ensure the action is initiated before frame deletion
-						(run-at-time "0.1 sec" nil #'delete-frame))
-				(quit (delete-frame))
-				(error (message "Launcher error occurred")
-							 (delete-frame))))
-
-		:config
-		;; Set 'Apps' as the primary source for the launcher
-		(setq consult-omni-multi-sources '("Apps"))
-
-		(defun consult-omni--apps-callback (cand)
-			"Callback to launch an application from a `consult-omni` candidate.
+	(defun consult-omni--apps-callback (cand)
+		"Callback to launch an application from a `consult-omni' candidate.
 This directly spawns the process as a child of the Emacs daemon to
 ensure it persists and captures any startup errors in a dedicated
 buffer (*App: Name*)."
-			(let* ((cmd (get-text-property 0 :exec cand))
-						 ;; Strip desktop-file placeholders (e.g., %u, %f)
-						 (clean-cmd (and cmd (replace-regexp-in-string " %[a-zA-Z].*" "" cmd))))
-				(if clean-cmd
-						(let ((buffer-name (format "*App: %s*" (get-text-property 0 :title cand))))
-							(message "Launching %s..." clean-cmd)
-							(start-process-shell-command 
-							 "nixos-app" 
-							 (generate-new-buffer buffer-name) 
-							 clean-cmd))
-					(message "Error: No executable found for %s" (get-text-property 0 :title cand)))))
+		(let* ((cmd (get-text-property 0 :exec cand))
+					 ;; Strip desktop-file placeholders (e.g., %u, %f)
+					 (clean-cmd (and cmd (replace-regexp-in-string " %[a-zA-Z].*" "" cmd))))
+			(if clean-cmd
+				(let ((buffer-name (format "*App: %s*" (get-text-property 0 :title cand))))
+					(message "Launching %s..." clean-cmd)
+					(start-process-shell-command
+					 "nixos-app"
+					 (generate-new-buffer buffer-name)
+					 clean-cmd))
+				(message "Error: No executable found for %s" (get-text-property 0 :title cand)))))
 
-		:bind
-		("C-c s" . my/consult-omni-launcher))
+	:bind
+	("C-c s" . consult-omni-launch))
+
+(use-package consult-omni-launch
+	:commands (consult-omni-launch))
 
 (use-package sly
 		:commands (sly sly-connect)

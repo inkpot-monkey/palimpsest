@@ -102,9 +102,39 @@
     ];
   };
 
-  whisperx = epkgs.trivialBuild {
+  whisperx = epkgs.melpaBuild {
     pname = "whisperx";
-    version = "unstable-202X";
+    version = "0.1-unstable-2024-01-01";
     src = ./whisperx;
+  };
+
+  # Deep implementations lifted out of init.el into named modules (same shape as
+  # whisperx/just-complete: local src, melpaBuild so autoloads are generated).
+  # init.el holds only the use-package wiring; these own the logic.
+  compile-ansi = epkgs.melpaBuild {
+    pname = "compile-ansi";
+    version = "0.1";
+    src = ./compile-ansi;
+    packageRequires = [ epkgs.xterm-color ];
+  };
+
+  ement-glue = epkgs.melpaBuild {
+    pname = "ement-glue";
+    version = "0.1";
+    src = ./ement-glue;
+    packageRequires = [ epkgs.ement ];
+  };
+
+  nix-system = epkgs.melpaBuild {
+    pname = "nix-system";
+    version = "0.1";
+    src = ./nix-system;
+    packageRequires = [ epkgs.transient ];
+  };
+
+  consult-omni-launch = epkgs.melpaBuild {
+    pname = "consult-omni-launch";
+    version = "0.1";
+    src = ./consult-omni-launch;
   };
 }
