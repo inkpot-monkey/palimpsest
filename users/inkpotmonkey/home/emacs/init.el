@@ -729,9 +729,11 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 		(ghostel-module-auto-install nil)
 		;; Keys that pass through to Emacs instead of being sent to Claude's TUI.
 		;; The default list is C-c/C-x/C-u/C-h/M-x/M-:/C-\; add M-o so global
-		;; `crux-other-window-or-switch-buffer' still works from a Claude buffer.
+		;; `crux-other-window-or-switch-buffer' still works from a Claude buffer,
+		;; and M-s so `search-map' (M-s g = consult-ripgrep) reaches Emacs. C-x is
+		;; already here, so the C-x p prefix (C-x p f = project-find-file) works too.
 		(ghostel-keymap-exceptions
-		 '("C-c" "C-x" "C-u" "C-h" "M-x" "M-:" "C-\\" "M-o"))
+		 '("C-c" "C-x" "C-u" "C-h" "M-x" "M-:" "C-\\" "M-o" "M-s"))
 		:config
 		;; --- claude-code.el <-> ghostel 0.31 API shim ----------------------------
 		;; stevemolitor/claude-code.el (<=0.4.5, == current upstream HEAD) targets
