@@ -128,6 +128,41 @@ defect is in the SoC/kernel I²S clock handling.
    or available**. **Do not** bump to an unstable kernel anyway — see memory +
    `audio_blog.md` (6.12.87/6.18.x hang in initrd).
 
+## Master-mode bring-up — the real fix (TO ATTEMPT, needs the device)
+
+This is the root-cause fix (see "Leading structural suspect" above): get the DAC onto
+its own oscillators so the Pi stops synthesising a jitter/wedge-prone clock. It is **not
+yet validated** — capture results here when you run it. Confirmed groundwork (web research
+2026-06-23 + on-host inspection):
+
+- **Master is the documented default** for the single `hifiberry-dacplusadcpro` overlay —
+  you select it simply by **dropping `dtparam=slave`** (there is no separate `-pro`
+  overlay; `,slave` is positioned by HiFiBerry as a *Pi-5* workaround, not for a Pi 4).
+- The clock-select is **codec-internal** (PCM5122 GPIO over I²C), so **no Pi-header GPIO**
+  can be missing/contended — that's not the cause of the earlier `-EINVAL`.
+- A per-rate **`-EINVAL` on open is a deterministic *config rejection*, NOT the wedge**
+  (the wedge lets open succeed, then goes silent). So master-mode bring-up is
+  **warm-reboot-iterable** — you only need a cold boot to (a) start from an un-wedged
+  board and (b) recover if you accidentally open the device off-rate in slave mode.
+
+**Procedure (at the device — expect cold-boot cycles):**
+
+1. **Cold power-cycle first** (clear any wedge; start clean).
+2. Edit `modules/nixos/profiles/pi/hifiberry.nix`: change the overlay block from
+   `params = { slave.enable = true; };` to `params = { };` (drops `dtparam=slave`).
+3. Deploy + reboot. Check the PCM **opens** without playing audibly first:
+   `journalctl -k | grep -iE 'pcm512x|i2s|EINVAL'` and a quiet
+   `aplay -D hw:sndrpihifiberry --dump-hw-params /dev/zero` (it lists params / errors
+   without committing a stream). If it still `-EINVAL`s:
+4. **Knob 1 — drop the redundant base I²S param.** In the same file remove
+   `base-dt-params.i2s` (the `dtparam=i2s=on` line); the overlay enables I²S itself, and
+   the extra base param is a known master-mode DAI-format conflict source.
+5. Only once it opens cleanly: play real 44.1 kHz content via spotifyd and confirm sound.
+   **If master mode works, the wedge should be gone** (the Pi is no longer the clock
+   source) — at which point the rate-lock mitigation becomes unnecessary.
+6. If master mode genuinely cannot be made to open after the above, fall back to slave +
+   the rate-lock mitigation and record the exact `-EINVAL` (with `dmesg`) here.
+
 ## Detecting a recurrence (honest constraints)
 
 The wedge is **not observable in software** (proven: DAC regs, clock tree, and dmesg are
