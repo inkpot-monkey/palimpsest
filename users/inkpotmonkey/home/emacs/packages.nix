@@ -1,8 +1,28 @@
 { pkgs, epkgs }:
+# Custom Emacs packages not in MELPA/nixpkgs.
+#
+# Build choice — melpaBuild vs trivialBuild:
+#   `melpaBuild` runs MELPA's package-build, which preserves upstream
+#   `;;;###autoload` cookies into a generated `<pkg>-autoloads.el` and installs
+#   under `share/emacs/site-lisp/elpa/`. The emacs wrapper loads those autoloads
+#   at startup, so the package's commands are bound without the package being
+#   required — exactly like a real MELPA package. `trivialBuild` only
+#   byte-compiles top-level `.el` and emits NO autoloads, so deferred commands
+#   stay void until something requires the package (this is what made
+#   `(claude-code)` a void-function until a hand-added `:commands` patched it).
+#
+#   So melpaBuild is the default. Two packages stay on trivialBuild because their
+#   structure is incompatible with package-build:
+#     - consult-omni  ships a `sources/` subdir of backend files that must NOT be
+#       byte-compiled (many soft-require absent network packages); trivialBuild
+#       copies them verbatim, package-build would compile them and fail.
+#     - ai-code-interface  has its main library in `ai-code.el`, not
+#       `ai-code-interface.el`; package-build derives the main file from the
+#       package name and would not find it.
 {
-  auth-source-sops = epkgs.trivialBuild {
+  auth-source-sops = epkgs.melpaBuild {
     pname = "auth-source-sops";
-    version = "unstable-202X";
+    version = "0.1-unstable-2024-01-01";
     src = pkgs.fetchFromGitHub {
       owner = "inkpot-monkey";
       repo = "auth-source-sops";
@@ -12,6 +32,8 @@
     packageRequires = [ epkgs.yaml ];
   };
 
+  # Main library is `ai-code.el` (≠ pname), so package-build can't find the main
+  # file — stays on trivialBuild. See the header note.
   ai-code-interface = epkgs.trivialBuild {
     pname = "ai-code-interface";
     version = "unstable-2026-06-19";
@@ -24,9 +46,9 @@
     packageRequires = [ epkgs.magit ];
   };
 
-  svelte-ts-mode = epkgs.trivialBuild {
+  svelte-ts-mode = epkgs.melpaBuild {
     pname = "svelte-ts-mode";
-    version = "unstable-202X";
+    version = "0.1-unstable-2024-01-01";
     src = pkgs.fetchFromGitHub {
       owner = "leafOfTree";
       repo = "svelte-ts-mode";
@@ -35,6 +57,8 @@
     };
   };
 
+  # `sources/` backend files must ship uncompiled (they soft-require absent
+  # network packages), so this stays on trivialBuild. See the header note.
   consult-omni = epkgs.trivialBuild {
     pname = "consult-omni";
     version = "unstable-202X";
@@ -57,15 +81,15 @@
     '';
   };
 
-  just-complete = epkgs.trivialBuild {
+  just-complete = epkgs.melpaBuild {
     pname = "just-complete";
-    version = "unstable-202X";
+    version = "1.2";
     src = ./just-complete;
   };
 
-  claude-code = epkgs.trivialBuild {
+  claude-code = epkgs.melpaBuild {
     pname = "claude-code";
-    version = "unstable-2026-06-21";
+    version = "0.4.5";
     src = pkgs.fetchFromGitHub {
       owner = "stevemolitor";
       repo = "claude-code.el";
