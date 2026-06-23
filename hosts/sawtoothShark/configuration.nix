@@ -1,6 +1,7 @@
 {
   self,
   inputs,
+  pkgs,
   ...
 }:
 {
@@ -78,6 +79,24 @@
   # downloads a generic-glibc Claude Code CLI at runtime (~/.config/Claude/
   # claude-code/) that expects /lib64/ld-linux-x86-64.so.2; nix-ld supplies it.
   programs.nix-ld.enable = true;
+
+  # Claude Desktop's Cowork shells out to system tools through hardcoded FHS
+  # paths (/usr/bin/git, /bin/bash, /usr/bin/curl, …) — its exec-capability
+  # registry never consults $PATH, so on NixOS those lookups miss and tasks die
+  # with "bash not found" / exit code 127. envfs mounts a FUSE /bin and
+  # /usr/bin that resolves any binary on the SYSTEM PATH on demand, satisfying
+  # the lookups (it keeps the stock /bin/sh and /usr/bin/env).
+  services.envfs.enable = true;
+
+  # envfs only exposes binaries that are in the system profile. Cowork's
+  # registry expects git, notify-send (libnotify) and gdbus (glib), which were
+  # otherwise only in inkpotmonkey's per-user profile (curl/which/xdg-open/
+  # xdg-mime are already system-wide). Add them so /usr/bin/<tool> resolves.
+  environment.systemPackages = with pkgs; [
+    git
+    libnotify
+    glib
+  ];
 
   # Give sawtoothShark the power to build images for the aarch64 raspberry
   # pis (e.g. porcupineFish SD images) locally via emulation, matching
