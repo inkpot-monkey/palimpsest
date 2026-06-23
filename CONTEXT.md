@@ -117,6 +117,20 @@ _Avoid_: channel, chat.
 **Double-puppet**:
 Logging the bridge in *as the real user* (not a ghost) so the user's own Matrix account appears to send bridged messages and auto-joins rooms. Established with a one-time login token, never declaratively.
 
+### Claude-in-Matrix
+
+**Claude relay**:
+The bespoke service that runs persistent `claude` CLI sessions on a host (in `tmux`) and exposes them *through Matrix* as the primary interface — posting each turn into Matrix and injecting Matrix messages back into the session. It is **not** an appservice bridge in the jmap sense; "the bridge" stays reserved for jmap. The relay supersedes the AionUi frontend and the AionUi→Matrix notifier.
+_Avoid_: bridge (reserved for jmap), gateway, AionUi (the thing it replaces).
+
+**Control room**:
+The single persistent Matrix room where the operator drives the relay — starting (`new <cwd>`), listing, and killing sessions. One per host, not per session.
+_Avoid_: alerts room (that was the AionUi notifier's single one-way room).
+
+**Session room**:
+The dedicated Matrix room the relay creates for one `claude` session — a 1:1 chat with that agent. Operator messages there are injected into *that* session; the session's turns and permission/choice **polls** are posted there. Room-per-session mirrors the jmap bridge's room-per-thread idiom (see **Contact room / Thread room**).
+_Avoid_: channel, chat, thread (a session is its own room, not a thread).
+
 ### Local LLMs
 
 **RK1 node** (or just **node**):

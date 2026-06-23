@@ -1,4 +1,13 @@
+---
+status: superseded by ADR-0025
+---
+
 # AionUi has no app-level auth; the Tailscale boundary is load-bearing
+
+> **Superseded by [ADR-0025](0025-claude-relay-matrix-interface.md):** AionUi is replaced
+> by the Claude relay; its security reasoning no longer applies. Note the relay's boundary
+> is *weaker* than this one (a public federated homeserver, not the Tailscale range) — see
+> ADR-0025's security model for the deliberate trade-off.
 
 AionUi is deployed on `kelpy` as a phone-accessible Claude Code frontend. In the headless `aionui-web` mode it always launches its `aioncore` backend with `--local`, which **disables the admin password** — `/api/*` answers 200 with no credentials. We accept this rather than patching auth in, because the surrounding network controls already constrain access.
 
