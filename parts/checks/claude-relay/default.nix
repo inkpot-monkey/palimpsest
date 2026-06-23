@@ -78,6 +78,21 @@ let
         -H "authorization: Bearer $1" \
         | jq -r '.chunk[] | select(.type=="m.room.message") | "\(.sender)\t\(.content.body)"'
     }
+
+    mx_poll_event() { # token room -> latest poll.start event_id
+      curl -s "$URL/_matrix/client/v3/rooms/$2/messages?dir=b&limit=50" \
+        -H "authorization: Bearer $1" \
+        | jq -r '[.chunk[] | select(.type=="org.matrix.msc3381.poll.start")][0].event_id // empty'
+    }
+
+    mx_poll_respond() { # token room poll_id answer_id
+      txn="p$(date +%s%N)"
+      curl -sf -o /dev/null -X PUT \
+        "$URL/_matrix/client/v3/rooms/$2/send/org.matrix.msc3381.poll.response/$txn" \
+        -H "authorization: Bearer $1" -H 'content-type: application/json' \
+        -d "$(jq -nc --arg e "$3" --arg a "$4" \
+          '{"m.relates_to":{rel_type:"m.reference",event_id:$e},"org.matrix.msc3381.poll.response":{answers:[$a]}}')"
+    }
   '';
 
   # Stand-in for the real `claude` CLI: reads input lines from its tmux pane, writes
@@ -92,6 +107,16 @@ let
     : > "$tr"
     hook=$(jq -r '.hooks.Stop[0].hooks[0].command' "$HOME/.claude/settings.json")
     while IFS= read -r line; do
+      # "needperm": fire a permission Notification, wait for the granted number
+      # the relay types back after the poll vote, then record the grant.
+      if [ "$line" = "needperm" ]; then
+        notif=$(jq -r '.hooks.Notification[0].hooks[0].command' "$HOME/.claude/settings.json")
+        jq -nc --arg s "$sid" '{session_id:$s,hook_event_name:"Notification",notification_type:"permission_prompt",message:"Run Bash command?"}' | sh -c "$notif"
+        IFS= read -r choice
+        jq -nc --arg t "granted: $choice" '{type:"assistant",message:{role:"assistant",content:[{type:"text",text:$t}]}}' >> "$tr"
+        jq -nc --arg s "$sid" --arg tp "$tr" '{session_id:$s,transcript_path:$tp,hook_event_name:"Stop",cwd:"/tmp"}' | sh -c "$hook"
+        continue
+      fi
       jq -nc --arg t "$line" '{type:"user",message:{role:"user",content:[{type:"text",text:$t}]}}' >> "$tr"
       jq -nc --arg t "You said: $line" '{type:"assistant",message:{role:"assistant",content:[{type:"text",text:$t}]}}' >> "$tr"
       jq -nc '{type:"assistant",message:{role:"assistant",content:[{type:"tool_use",name:"Bash",input:{command:"echo hi"}}]}}' >> "$tr"
@@ -100,7 +125,7 @@ let
   '';
 in
 pkgs.testers.nixosTest {
-  name = "claude-relay-spine";
+  name = "claude-relay-grants";
 
   nodes.machine =
     { lib, ... }:
@@ -209,5 +234,20 @@ pkgs.testers.nixosTest {
     texts = sh(f"mx_texts {allowed_tok} {room}")
     assert "You said: sneaky" not in texts, f"relay acted on a non-allowlisted sender!\n{texts}"
     print("OK: non-allowlisted message ignored")
+
+    # Permission flow: a needperm prompt -> grant poll -> vote -> the chosen number
+    # is typed back into the session, producing the grant turn.
+    sh(f"mx_send {allowed_tok} {room} needperm")
+    machine.wait_until_succeeds(
+        f"{H}; mx_poll_event {allowed_tok} {room} | grep -q .", timeout=60
+    )
+    poll_id = sh(f"mx_poll_event {allowed_tok} {room}")
+    print(f"poll = {poll_id}")
+    # Event IDs start with '$' — single-quote so the shell doesn't expand it.
+    sh(f"mx_poll_respond {allowed_tok} {room} {shlex.quote(poll_id)} 1")
+    machine.wait_until_succeeds(
+        f"{H}; mx_texts {allowed_tok} {room} | grep -F 'granted: 1'", timeout=60
+    )
+    print("OK: permission poll -> vote -> grant injected")
   '';
 }

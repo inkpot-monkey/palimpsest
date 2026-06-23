@@ -13,6 +13,11 @@ path = "src/main.rs"
 # the build lean — no vodozemac, no sqlite store; the in-memory store is enough.
 # (matrix-sdk 0.18 wires TLS via its default deps, not a feature flag.)
 matrix-sdk = { version = "0.18", default-features = false }
+# Enable MSC3381 poll events on the shared ruma (matrix-sdk doesn't expose this
+# feature itself); used for permission-grant / choice polls.
+ruma = { version = "0.16", default-features = false, features = [
+  "unstable-msc3381",
+] }
 tokio = { version = "1", features = [
   "macros",
   "rt-multi-thread",

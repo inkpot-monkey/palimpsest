@@ -11,14 +11,17 @@
 use anyhow::{Context, Result};
 use matrix_sdk::{
     config::SyncSettings,
-    ruma::events::room::{
-        member::StrippedRoomMemberEvent,
-        message::{MessageType, OriginalSyncRoomMessageEvent, RoomMessageEventContent},
+    ruma::events::{
+        poll::unstable_response::OriginalSyncUnstablePollResponseEvent,
+        room::{
+            member::StrippedRoomMemberEvent,
+            message::{MessageType, OriginalSyncRoomMessageEvent, RoomMessageEventContent},
+        },
     },
     ruma::{OwnedRoomId, OwnedUserId, UserId},
     Client, Room,
 };
-use serde_json::Value;
+use serde_json::{json, Value};
 use std::{collections::HashMap, sync::Arc};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -161,6 +164,26 @@ async fn main() -> Result<()> {
         },
     );
 
+    // A vote on a grant/choice poll types the chosen number into the session.
+    let poll_app = app.clone();
+    client.add_event_handler(
+        move |ev: OriginalSyncUnstablePollResponseEvent, _room: Room, client: Client| {
+            let app = poll_app.clone();
+            async move {
+                if client.user_id().is_some_and(|me| me == ev.sender) {
+                    return;
+                }
+                if ev.sender != app.allowed {
+                    return;
+                }
+                if let Some(answer) = ev.content.poll_response.answers.first() {
+                    tracing::info!(answer = %answer, "poll vote -> injecting choice");
+                    inject(&app.session, answer).await;
+                }
+            }
+        },
+    );
+
     tracing::info!("entering sync loop");
     client
         .sync(SyncSettings::default().token(response.next_batch))
@@ -189,8 +212,9 @@ async fn provision_hook(config: &Config) -> Result<()> {
         tokio::fs::set_permissions(&hook_script, perms).await?;
     }
 
-    let settings = serde_json::json!({
-        "hooks": { "Stop": [ { "hooks": [ { "type": "command", "command": hook_script } ] } ] }
+    let hook_entry = json!([ { "hooks": [ { "type": "command", "command": hook_script } ] } ]);
+    let settings = json!({
+        "hooks": { "Stop": hook_entry, "Notification": hook_entry }
     });
     tokio::fs::write(
         format!("{dir}/settings.json"),
@@ -261,9 +285,58 @@ async fn handle_conn(app: Arc<App>, mut stream: tokio::net::TcpStream) -> Result
         .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
         .await?;
     if let Ok(json) = serde_json::from_slice::<Value>(&body) {
-        on_stop(app, json).await;
+        on_hook(app, json).await;
     }
     Ok(())
+}
+
+/// Dispatch a claude hook by event name: `Stop` posts the transcript turn;
+/// `Notification(permission_prompt)` posts a grant poll.
+async fn on_hook(app: Arc<App>, hook: Value) {
+    match hook.get("hook_event_name").and_then(Value::as_str) {
+        Some("Stop") => on_stop(app, hook).await,
+        Some("Notification") => {
+            if hook.get("notification_type").and_then(Value::as_str) == Some("permission_prompt") {
+                on_permission(app, hook).await;
+            }
+        }
+        other => tracing::debug!(?other, "ignoring hook event"),
+    }
+}
+
+/// Post an MSC3381 poll asking the operator to grant/deny. Answer ids are the
+/// literal keystrokes (`1`/`2`/`3`) typed back into the session on a vote.
+async fn on_permission(app: Arc<App>, hook: Value) {
+    let question = hook
+        .get("message")
+        .and_then(Value::as_str)
+        .unwrap_or("Permission requested")
+        .to_string();
+    let Some(room_id) = app.room.lock().await.clone() else {
+        tracing::warn!("permission prompt but no bound room");
+        return;
+    };
+    let Some(room) = app.client.get_room(&room_id) else {
+        return;
+    };
+    let content = json!({
+        "org.matrix.msc1767.text":
+            format!("{question}\n1) Yes   2) Yes, don't ask again   3) No"),
+        "org.matrix.msc3381.poll.start": {
+            "kind": "org.matrix.msc3381.poll.undisclosed",
+            "max_selections": 1,
+            "question": { "org.matrix.msc1767.text": question },
+            "answers": [
+                { "id": "1", "org.matrix.msc1767.text": "Yes" },
+                { "id": "2", "org.matrix.msc1767.text": "Yes, don't ask again" },
+                { "id": "3", "org.matrix.msc1767.text": "No" }
+            ]
+        }
+    });
+    match room.send_raw("org.matrix.msc3381.poll.start", content).await {
+        Ok(_) => tracing::info!("posted permission poll"),
+        Err(e) => tracing::warn!(error = ?e, "failed to post poll"),
+    }
 }
 
 /// Read an HTTP request and return the body, honouring Content-Length.
