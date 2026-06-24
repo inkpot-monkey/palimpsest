@@ -137,6 +137,10 @@ let
   wipePaths = lib.unique (
     lib.concatMap (e: e.paths) cfg.resetState ++ [ "/var/lib/private/tuwunel" ]
   );
+  # Per-bridge reminders of state a from-scratch wipe destroys that only a human
+  # can restore (re-pair WhatsApp, re-add hookshot connections, …). Printed at the
+  # end of the run so the aftermath is never a surprise.
+  resetNotes = map (e: e.postResetNote) (lib.filter (e: e.postResetNote != null) cfg.resetState);
 
   matrixReset = pkgs.writeShellApplication {
     name = "matrix-reset";
@@ -185,6 +189,15 @@ let
       [ "''${#dms[@]}" -gt 0 ] && { systemctl restart "''${dms[@]}" || true; }
 
       echo "matrix-reset: done."
+
+      notes=(${lib.escapeShellArgs resetNotes})
+      if [ "''${#notes[@]}" -gt 0 ]; then
+        echo
+        echo "matrix-reset: a from-scratch wipe cleared state only you can restore:"
+        for n in "''${notes[@]}"; do
+          echo "  - $n"
+        done
+      fi
     '';
   };
 in
@@ -257,6 +270,15 @@ in
               type = lib.types.listOf lib.types.str;
               default = [ ];
               description = "Directories whose contents are wiped on reset.";
+            };
+            postResetNote = lib.mkOption {
+              type = lib.types.nullOr lib.types.str;
+              default = null;
+              description = ''
+                One-line reminder of state the wipe destroys that only a human can
+                restore (e.g. "re-pair WhatsApp: open the @whatsapp DM and run
+                login"). Printed at the end of a `matrix-reset` run.
+              '';
             };
           };
         }

@@ -157,6 +157,7 @@ in
       {
         service = "mautrix-whatsapp.service";
         paths = [ "/var/lib/mautrix-whatsapp" ];
+        postResetNote = "re-pair WhatsApp: open the @${botUsername} DM and send 'login' (the QR-paired session was wiped)";
       }
       {
         service = "matrix-dm-${botUsername}.service";

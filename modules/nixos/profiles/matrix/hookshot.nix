@@ -211,6 +211,7 @@ in
       {
         service = "matrix-hookshot.service";
         paths = [ stateDir ];
+        postResetNote = "re-add hookshot connections in the @hookshot DM (send '!hookshot help'; GitHub/webhook/feed subscriptions are stored as room state and were wiped)";
       }
       {
         service = "matrix-dm-hookshot.service";
