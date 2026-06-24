@@ -19,6 +19,12 @@
         claude_relay = import ./claude-relay {
           inherit pkgs self;
         };
+        # Per-bridge management-DM auto-provisioning (dm-provision.nix): room
+        # creation + invite + m.direct + welcome (unencrypted) / encryption
+        # (encrypted) + idempotency, against a minimal tuwunel.
+        matrix_dm_provision = import ./dm-provision {
+          inherit pkgs self;
+        };
         # jmap_bridge VM check moved to the bridge's own repo
         # (inputs.jmap-bridge.checks); its CI owns the round-trip test now.
         # The contract's OWN conformance suite (ADR-0020 Q5), surfaced from the contract
