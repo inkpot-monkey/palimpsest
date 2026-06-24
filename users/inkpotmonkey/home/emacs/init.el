@@ -789,6 +789,20 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 		:custom
 		;; libghostty backend — faithful TUI render, no eat repaint ghosting.
 		(claude-code-terminal-backend 'ghostel)
+		;; MUST be nil for the ghostel backend. claude-code's resize optimisation
+		;; (=t) wraps the backend's process-window-size fn with :around advice that
+		;; returns nil on height-only changes to suppress the SIGWINCH. That model
+		;; assumes a *pure* size-calculator (true for eat/vterm). But ghostel
+		;; (>=0.34) made `ghostel--window-adjust-process-window-size' impure: it
+		;; resizes its own grid + redraws synchronously as a side effect, then
+		;; relies on Emacs sending the SIGWINCH afterwards. The advice runs that
+		;; side-effecting resize but then returns nil → SIGWINCH suppressed → the
+		;; Claude CLI never learns the new row count. ghostel renders at the new
+		;; height while Claude's TUI still believes the old one, so its bottom
+		;; spinner/input frame repaints at the wrong row and leaves a stale copy
+		;; (the duplicated "Recombobulating…" + doubled input box). ghostel already
+		;; does this reflow-avoidance itself, so the advice is redundant anyway.
+		(claude-code-optimize-window-resize nil)
 		;; Full window, not the default split-below: route display through
 		;; display-buffer so the same-window rule below applies. Reuses the
 		;; selected window (full height + width); switch buffers to get back to
