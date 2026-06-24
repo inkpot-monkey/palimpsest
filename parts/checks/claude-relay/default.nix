@@ -99,6 +99,11 @@ let
         | jq -r '.rooms.invite // {} | keys[]'
     }
 
+    mx_joined() { # token -> joined room ids
+      curl -s "$URL/_matrix/client/v3/joined_rooms" -H "authorization: Bearer $1" \
+        | jq -r '.joined_rooms[]?'
+    }
+
     mx_federate() { # token room -> m.federate of the create event ("true"/"false")
       curl -s "$URL/_matrix/client/v3/rooms/$2/state/m.room.create" \
         -H "authorization: Bearer $1" | jq -r '."m.federate"'
@@ -171,6 +176,8 @@ pkgs.testers.nixosTest {
 
       # The relay bot's password file.
       environment.etc."claude-relay-pw".text = "botpass";
+      # The operator (allowed) account's password — drives operator auto-join.
+      environment.etc."claude-relay-operator-pw".text = "apass";
 
       services.claude-relay = {
         enable = true;
@@ -183,6 +190,10 @@ pkgs.testers.nixosTest {
         # oneshot registers @claude-relay via the shared token before the relay
         # logs in (no driver-side mx_register for the bot).
         registrationTokenFile = "/etc/tuwunel-reg-token";
+        # Exercise operator auto-join: the relay logs in a second client as the
+        # operator (allowed) and joins it into every room the bot invites, so the
+        # driver never calls mx_join to discover rooms.
+        operatorPasswordFile = "/etc/claude-relay-operator-pw";
       };
       # Don't race the relay's login — the driver (re)starts it after confirming
       # the account exists. Relay also self-heals via Restart=on-failure.
@@ -229,25 +240,33 @@ pkgs.testers.nixosTest {
     allowed_tok = sh("mx_login allowed apass")
     mallory_tok = sh("mx_login mallory mpass")
 
-    joined = set()
+    seen = set()
 
+    # The relay's operator client auto-joins the operator (allowed) into each room
+    # the bot creates — so a "new room" surfaces as a freshly *joined* room, with
+    # NO mx_join from the driver. This is the operator-auto-join contract.
     def wait_new_room(tok):
         for _ in range(60):
-            fresh = [r for r in sh(f"mx_invited {tok}").split() if r not in joined]
+            fresh = [r for r in sh(f"mx_joined {tok}").split() if r not in seen]
             if fresh:
-                sh(f"mx_join {tok} {fresh[0]}")
-                joined.add(fresh[0])
+                seen.add(fresh[0])
                 return fresh[0]
             machine.sleep(1)
-        raise Exception("timed out waiting for a new invite")
+        raise Exception("timed out waiting for an auto-joined room")
 
     control = wait_new_room(allowed_tok)
-    print(f"control = {control}")
+    print(f"control = {control} (auto-joined, no manual accept)")
+
+    # The relay itself logs the operator auto-join — confirm the contract directly.
+    machine.wait_until_succeeds(
+        "journalctl -u claude-relay.service | grep -q 'operator auto-joined'", timeout=60
+    )
+    print("OK: operator auto-joined by the relay (no invite to accept)")
 
     def send_control(text):
         sh(f"mx_send {allowed_tok} {control} {shlex.quote(text)}")
 
-    # `new` creates a session room (non-federated) we get invited to.
+    # `new` creates a session room (non-federated) the operator is auto-joined into.
     send_control("new /tmp")
     room1 = wait_new_room(allowed_tok)
     fed = sh(f"mx_federate {allowed_tok} {room1}")

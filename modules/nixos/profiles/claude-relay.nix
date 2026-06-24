@@ -60,6 +60,11 @@ in
       # Auto-create @claude-relay via the homeserver's shared registration token
       # (the same secret tuwunel-register-admin uses).
       registrationTokenFile = config.sops.secrets.registration_token.path;
+      # Auto-join the operator (@inkpotmonkey) into the bot's rooms — tuwunel has
+      # no server-side force-join, so the relay accepts on the operator's behalf
+      # using inkpotmonkey's existing admin password. allowedSender's localpart
+      # (inkpotmonkey) is the operator account this password belongs to.
+      operatorPasswordFile = config.sops.secrets.matrix_admin_password.path;
     };
 
     # Order after the admin registration so inkpotmonkey (not the bot) wins

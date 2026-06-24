@@ -87,6 +87,18 @@ in
       '';
     };
 
+    operatorPasswordFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = ''
+        Path to a file holding the operator (allowedSender) account's password.
+        When set, the relay logs in a second, post-nothing client as the operator
+        purely to auto-join the rooms the bot invites it to — tuwunel offers no
+        server-side force-join, so the invitee must accept, and this does it for
+        you. Null (default) leaves rooms invite-only (manual accept).
+      '';
+    };
+
     claudeCommand = lib.mkOption {
       type = lib.types.str;
       default = "claude";
@@ -222,11 +234,20 @@ in
         # root-owned) sops secret and exposes it in $CREDENTIALS_DIRECTORY readable
         # by the run-as user — so this works even when running as inkpotmonkey,
         # without loosening the secret's permissions.
-        LoadCredential = [ "password:${toString cfg.passwordFile}" ];
+        LoadCredential = [
+          "password:${toString cfg.passwordFile}"
+        ]
+        ++ lib.optional (
+          cfg.operatorPasswordFile != null
+        ) "operator_password:${toString cfg.operatorPasswordFile}";
         ExecStart = pkgs.writeShellScript "claude-relay-start" ''
           set -eu
           RELAY_PASSWORD="$(cat "$CREDENTIALS_DIRECTORY/password")"
           export RELAY_PASSWORD
+          ${lib.optionalString (cfg.operatorPasswordFile != null) ''
+            RELAY_OPERATOR_PASSWORD="$(cat "$CREDENTIALS_DIRECTORY/operator_password")"
+            export RELAY_OPERATOR_PASSWORD
+          ''}
           exec ${lib.getExe cfg.package}
         '';
         Restart = "on-failure";

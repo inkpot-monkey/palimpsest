@@ -41,6 +41,11 @@ struct Config {
     user: String,
     password: String,
     allowed_sender: OwnedUserId,
+    /// Optional password for the operator (allowed_sender) account. When set, the
+    /// relay logs in a second, post-nothing client as the operator whose only job
+    /// is to auto-join the rooms the bot invites it to (no server-side force-join
+    /// exists on tuwunel). The operator localpart is taken from allowed_sender.
+    operator_password: Option<String>,
     claude_cmd: String,
     hook_port: u16,
     /// HOME of the run-as user (`~/.claude` lives here — claude auth + hooks).
@@ -64,6 +69,9 @@ impl Config {
             user: std::env::var("RELAY_USER").context("RELAY_USER")?,
             password: std::env::var("RELAY_PASSWORD").context("RELAY_PASSWORD")?,
             allowed_sender: UserId::parse(&allowed).context("RELAY_ALLOWED_SENDER is not a MXID")?,
+            operator_password: std::env::var("RELAY_OPERATOR_PASSWORD")
+                .ok()
+                .filter(|s| !s.is_empty()),
             claude_cmd: std::env::var("RELAY_CLAUDE_CMD").unwrap_or_else(|_| "claude".into()),
             hook_port: std::env::var("RELAY_HOOK_PORT")
                 .ok()
@@ -102,6 +110,9 @@ struct PersistState {
 
 struct App {
     client: Client,
+    /// Operator (allowed_sender) client used solely to auto-join rooms the bot
+    /// invites it to. None when no operator password is configured (invite-only).
+    operator: Option<Client>,
     allowed: OwnedUserId,
     claude_cmd: String,
     cap: usize,
@@ -282,8 +293,39 @@ async fn main() -> Result<()> {
         .context("login failed")?;
     tracing::info!(user = %config.user, allowed = %config.allowed_sender, "logged in");
 
+    // Optional operator client: logs in as allowed_sender purely to auto-join the
+    // rooms the bot invites it to (tuwunel offers no server-side force-join). It
+    // posts nothing and runs no handlers; a failed login degrades to invite-only.
+    let operator = match &config.operator_password {
+        Some(pw) => {
+            let op = Client::builder()
+                .homeserver_url(&config.homeserver)
+                .build()
+                .await
+                .context("building operator client")?;
+            match op
+                .matrix_auth()
+                .login_username(config.allowed_sender.localpart(), pw)
+                .initial_device_display_name("claude-relay-operator")
+                .await
+            {
+                Ok(_) => {
+                    let _ = op.sync_once(SyncSettings::default()).await;
+                    tracing::info!(operator = %config.allowed_sender, "operator auto-join enabled");
+                    Some(op)
+                }
+                Err(e) => {
+                    tracing::warn!(error = ?e, "operator login failed; rooms will need manual accept");
+                    None
+                }
+            }
+        }
+        None => None,
+    };
+
     let app = Arc::new(App {
         client: client.clone(),
+        operator,
         allowed: config.allowed_sender.clone(),
         claude_cmd: config.claude_cmd.clone(),
         cap: config.cap,
@@ -487,7 +529,16 @@ async fn create_room(app: &Arc<App>, name: &str) -> Result<Room> {
         invite: vec![app.allowed.clone()],
         creation_content: Some(Raw::new(&creation)?),
     });
-    app.client.create_room(request).await.context("create_room")
+    let room = app.client.create_room(request).await.context("create_room")?;
+    // Auto-join the operator into the freshly-invited room (best-effort; the
+    // invite still stands if this fails, so the operator can accept manually).
+    if let Some(op) = &app.operator {
+        match op.join_room_by_id(room.room_id()).await {
+            Ok(_) => tracing::info!(room = %room.room_id(), "operator auto-joined"),
+            Err(e) => tracing::warn!(error = ?e, room = %room.room_id(), "operator auto-join failed"),
+        }
+    }
+    Ok(room)
 }
 
 async fn reply_control(app: &Arc<App>, msg: &str) {
