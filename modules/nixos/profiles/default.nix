@@ -37,6 +37,7 @@
     litellm = ./litellm.nix;
     openclaw = ./openclaw.nix;
     aionui = ./aionui.nix;
+    claude-relay = ./claude-relay.nix;
     homeassistant = ./homeassistant.nix;
     backup = ./backup.nix;
     blocky = ./blocky.nix;

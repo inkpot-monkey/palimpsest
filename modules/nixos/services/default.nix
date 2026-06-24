@@ -12,5 +12,6 @@
     dmarc-metrics-exporter = ./dmarc-metrics-exporter;
     aionui = ./aionui;
     aionui-notifier = ./aionui-notifier;
+    claude-relay = ./claude-relay;
   };
 }

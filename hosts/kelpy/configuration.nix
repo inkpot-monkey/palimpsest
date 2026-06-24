@@ -50,6 +50,11 @@
       enable = true;
       notifications.enable = true;
     };
+    # The Claude relay (ADR-0025) runs beside AionUi for now; reuses inkpotmonkey's
+    # ~/.claude login. Deploy + real-claude smoke + AionUi retirement are slices
+    # 06/07 (operator steps): create the @claude-relay account and add
+    # claude_relay_bot_password to the matrix secrets, then `just deploy kelpy`.
+    claude-relay.enable = true;
     blocky.enable = true;
     media = {
       enable = true;
