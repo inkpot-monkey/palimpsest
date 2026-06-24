@@ -93,6 +93,16 @@ let
         -d "$(jq -nc --arg e "$3" --arg a "$4" \
           '{"m.relates_to":{rel_type:"m.reference",event_id:$e},"org.matrix.msc3381.poll.response":{answers:[$a]}}')"
     }
+
+    mx_invited() { # token -> invited room ids
+      curl -s "$URL/_matrix/client/v3/sync?timeout=0" -H "authorization: Bearer $1" \
+        | jq -r '.rooms.invite // {} | keys[]'
+    }
+
+    mx_federate() { # token room -> m.federate of the create event ("true"/"false")
+      curl -s "$URL/_matrix/client/v3/rooms/$2/state/m.room.create" \
+        -H "authorization: Bearer $1" | jq -r '."m.federate"'
+    }
   '';
 
   # Stand-in for the real `claude` CLI: reads input lines from its tmux pane, writes
@@ -125,7 +135,7 @@ let
   '';
 in
 pkgs.testers.nixosTest {
-  name = "claude-relay-grants";
+  name = "claude-relay-lifecycle";
 
   nodes.machine =
     { lib, ... }:
@@ -189,10 +199,9 @@ pkgs.testers.nixosTest {
     sh("mx_register allowed apass")
     sh("mx_register mallory mpass")
 
-    # Now the bot account exists — start the relay and let it sync.
+    # Start the relay; it logs in and stands up a control room (inviting us).
     machine.systemctl("start claude-relay.service")
     machine.wait_for_unit("claude-relay.service")
-    # Wait until the relay has actually logged in + entered the sync loop.
     machine.wait_until_succeeds(
         "journalctl -u claude-relay.service | grep -q 'entering sync loop'", timeout=90
     )
@@ -200,54 +209,87 @@ pkgs.testers.nixosTest {
     allowed_tok = sh("mx_login allowed apass")
     mallory_tok = sh("mx_login mallory mpass")
 
-    room = sh(f"mx_create_room {allowed_tok}")
-    print(f"room = {room}")
+    joined = set()
 
-    # Invite the bot; it should auto-join. Invite mallory too so she can post.
-    sh(f"mx_invite {allowed_tok} {room} @${botLocalpart}:${serverName}")
-    sh(f"mx_invite {allowed_tok} {room} @mallory:${serverName}")
-    sh(f"mx_join {mallory_tok} {room}")
+    def wait_new_room(tok):
+        for _ in range(60):
+            fresh = [r for r in sh(f"mx_invited {tok}").split() if r not in joined]
+            if fresh:
+                sh(f"mx_join {tok} {fresh[0]}")
+                joined.add(fresh[0])
+                return fresh[0]
+            machine.sleep(1)
+        raise Exception("timed out waiting for a new invite")
 
-    # Bot auto-joins on invite.
+    control = wait_new_room(allowed_tok)
+    print(f"control = {control}")
+
+    def send_control(text):
+        sh(f"mx_send {allowed_tok} {control} {shlex.quote(text)}")
+
+    # `new` creates a session room (non-federated) we get invited to.
+    send_control("new /tmp")
+    room1 = wait_new_room(allowed_tok)
+    fed = sh(f"mx_federate {allowed_tok} {room1}")
+    assert fed == "false", f"session room must be non-federated, got m.federate={fed}"
+    print("OK: new -> non-federated session room")
+
+    # Routing: a message in the session room reaches its session; reply comes back.
+    sh(f"mx_send {allowed_tok} {room1} hello")
     machine.wait_until_succeeds(
-        f"{H}; mx_members {allowed_tok} {room} | grep -qx @${botLocalpart}:${serverName}",
-        timeout=60,
+        f"{H}; mx_texts {allowed_tok} {room1} | grep -F 'You said: hello'", timeout=60
     )
+    print("OK: message routed to its session")
 
-    # The allowlisted sender's message is injected into the claude (stub) session;
-    # the resulting transcript turn is posted back: assistant text ...
-    sh(f"mx_send {allowed_tok} {room} {shlex.quote('hello')}")
-    machine.wait_until_succeeds(
-        f"{H}; mx_texts {allowed_tok} {room} | grep -F 'You said: hello'",
-        timeout=60,
-    )
-    # ... and tool calls render as one-line summaries.
-    machine.wait_until_succeeds(
-        f"{H}; mx_texts {allowed_tok} {room} | grep -F '⚙ Bash'",
-        timeout=30,
-    )
-    print("OK: allowlisted message injected; transcript turn + tool summary posted")
-
-    # A non-allowlisted sender is never injected, so no transcript turn comes back.
-    sh(f"mx_send {mallory_tok} {room} {shlex.quote('sneaky')}")
+    # Allowlist still holds inside a session room: mallory is ignored.
+    sh(f"mx_invite {allowed_tok} {room1} @mallory:${serverName}")
+    sh(f"mx_join {mallory_tok} {room1}")
+    sh(f"mx_send {mallory_tok} {room1} evil")
     machine.sleep(8)
-    texts = sh(f"mx_texts {allowed_tok} {room}")
-    assert "You said: sneaky" not in texts, f"relay acted on a non-allowlisted sender!\n{texts}"
-    print("OK: non-allowlisted message ignored")
+    assert "You said: evil" not in sh(f"mx_texts {allowed_tok} {room1}"), "non-allowlisted sender acted on!"
+    print("OK: non-allowlisted sender ignored in session room")
 
-    # Permission flow: a needperm prompt -> grant poll -> vote -> the chosen number
-    # is typed back into the session, producing the grant turn.
-    sh(f"mx_send {allowed_tok} {room} needperm")
+    # Permission poll still works, scoped to this session room.
+    sh(f"mx_send {allowed_tok} {room1} needperm")
     machine.wait_until_succeeds(
-        f"{H}; mx_poll_event {allowed_tok} {room} | grep -q .", timeout=60
+        f"{H}; mx_poll_event {allowed_tok} {room1} | grep -q .", timeout=60
     )
-    poll_id = sh(f"mx_poll_event {allowed_tok} {room}")
-    print(f"poll = {poll_id}")
-    # Event IDs start with '$' — single-quote so the shell doesn't expand it.
-    sh(f"mx_poll_respond {allowed_tok} {room} {shlex.quote(poll_id)} 1")
+    poll_id = sh(f"mx_poll_event {allowed_tok} {room1}")
+    sh(f"mx_poll_respond {allowed_tok} {room1} {shlex.quote(poll_id)} 1")
     machine.wait_until_succeeds(
-        f"{H}; mx_texts {allowed_tok} {room} | grep -F 'granted: 1'", timeout=60
+        f"{H}; mx_texts {allowed_tok} {room1} | grep -F 'granted: 1'", timeout=60
     )
-    print("OK: permission poll -> vote -> grant injected")
+    print("OK: permission poll -> vote -> grant, scoped to the session")
+
+    # A second session, isolated from the first.
+    send_control("new /tmp")
+    room2 = wait_new_room(allowed_tok)
+    sh(f"mx_send {allowed_tok} {room2} world")
+    machine.wait_until_succeeds(
+        f"{H}; mx_texts {allowed_tok} {room2} | grep -F 'You said: world'", timeout=60
+    )
+    assert "You said: world" not in sh(f"mx_texts {allowed_tok} {room1}"), "routing leaked across sessions!"
+    print("OK: two sessions, per-room routing isolated")
+
+    # Cap = 2: a third `new` is refused.
+    send_control("new /tmp")
+    machine.wait_until_succeeds(
+        f"{H}; mx_texts {allowed_tok} {control} | grep -iF 'limit'", timeout=30
+    )
+    print("OK: concurrency cap enforced")
+
+    # list shows both sessions; kill removes one.
+    send_control("list")
+    machine.wait_until_succeeds(
+        f"{H}; mx_texts {allowed_tok} {control} | grep -F 'claude-1'", timeout=30
+    )
+    machine.wait_until_succeeds(
+        f"{H}; mx_texts {allowed_tok} {control} | grep -F 'claude-2'", timeout=30
+    )
+    send_control("kill claude-1")
+    machine.wait_until_succeeds(
+        f"{H}; mx_texts {allowed_tok} {control} | grep -F 'killed claude-1'", timeout=30
+    )
+    print("OK: list + kill")
   '';
 }

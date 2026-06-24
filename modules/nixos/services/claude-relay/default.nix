@@ -61,6 +61,12 @@ in
       description = "Loopback port the provisioned claude Stop/Notification hooks POST to.";
     };
 
+    maxSessions = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 2;
+      description = "Concurrency cap: the most simultaneous claude sessions the relay will run.";
+    };
+
     serviceUser = lib.mkOption {
       type = lib.types.str;
       default = "claude-relay";
@@ -105,6 +111,7 @@ in
         RELAY_ALLOWED_SENDER = cfg.allowedSender;
         RELAY_CLAUDE_CMD = cfg.claudeCommand;
         RELAY_HOOK_PORT = toString cfg.hookPort;
+        RELAY_MAX_SESSIONS = toString cfg.maxSessions;
         RUST_LOG = lib.mkDefault "claude_relay=info,matrix_sdk=warn";
       };
 

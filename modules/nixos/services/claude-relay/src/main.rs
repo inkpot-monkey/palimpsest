@@ -2,25 +2,31 @@
 //!
 //! See `docs/adr/0025-claude-relay-matrix-interface.md`.
 //!
-//! Slice 01: log in as a bot account, sync, act ONLY on a hard-allowlisted sender.
-//! Slice 02 (this): inject the allowlisted sender's text into a `claude` tmux
-//! session via `send-keys`, provision the `Stop` hook into `~/.claude/settings.json`,
-//! receive the hook on a localhost endpoint, and post the assistant turn (with
-//! one-line tool summaries) read from the session transcript back to the room.
+//! Slice 01: allowlist-gated bot. Slice 02: send-keys injection + transcript-driven
+//! replies via a Stop hook. Slice 03: MSC3381 polls for permission/choice grants.
+//! Slice 04 (this): a CONTROL room drives `new <cwd>` / `list` / `kill <name>`; each
+//! session gets its own non-federated room; messages/hooks/poll-votes route per
+//! session; a concurrency cap bounds it; the session map is persisted.
 
-use anyhow::{Context, Result};
+use anyhow::{ensure, Context, Result};
 use matrix_sdk::{
     config::SyncSettings,
-    ruma::events::{
-        poll::unstable_response::OriginalSyncUnstablePollResponseEvent,
-        room::{
-            member::StrippedRoomMemberEvent,
-            message::{MessageType, OriginalSyncRoomMessageEvent, RoomMessageEventContent},
+    ruma::{
+        api::client::room::create_room::v3::{CreationContent, Request as CreateRoomRequest},
+        assign,
+        events::{
+            poll::unstable_response::OriginalSyncUnstablePollResponseEvent,
+            room::{
+                member::StrippedRoomMemberEvent,
+                message::{MessageType, OriginalSyncRoomMessageEvent, RoomMessageEventContent},
+            },
         },
+        serde::Raw,
+        OwnedRoomId, OwnedUserId, UserId,
     },
-    ruma::{OwnedRoomId, OwnedUserId, UserId},
     Client, Room,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{collections::HashMap, sync::Arc};
 use tokio::{
@@ -30,20 +36,15 @@ use tokio::{
     sync::Mutex,
 };
 
-/// Relay configuration from the environment.
 struct Config {
     homeserver: String,
     user: String,
     password: String,
     allowed_sender: OwnedUserId,
-    /// tmux session name the relay drives.
-    session: String,
-    /// Command tmux runs in that session (real `claude`, or a test stub).
     claude_cmd: String,
-    /// Localhost port the provisioned hook POSTs to.
     hook_port: u16,
-    /// HOME of the relay user (`~/.claude` lives here).
     home: String,
+    cap: usize,
 }
 
 impl Config {
@@ -54,28 +55,78 @@ impl Config {
             user: std::env::var("RELAY_USER").context("RELAY_USER")?,
             password: std::env::var("RELAY_PASSWORD").context("RELAY_PASSWORD")?,
             allowed_sender: UserId::parse(&allowed).context("RELAY_ALLOWED_SENDER is not a MXID")?,
-            session: std::env::var("RELAY_SESSION").unwrap_or_else(|_| "claude".into()),
             claude_cmd: std::env::var("RELAY_CLAUDE_CMD").unwrap_or_else(|_| "claude".into()),
             hook_port: std::env::var("RELAY_HOOK_PORT")
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(8787),
             home: std::env::var("HOME").context("HOME")?,
+            cap: std::env::var("RELAY_MAX_SESSIONS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(2),
         })
     }
 }
 
-/// Shared relay state.
+#[derive(Clone, Serialize, Deserialize)]
+struct Session {
+    room: OwnedRoomId,
+    cwd: String,
+}
+
+/// Persisted relay state (for slice-05 reconciliation).
+#[derive(Default, Serialize, Deserialize)]
+struct PersistState {
+    control_room: Option<OwnedRoomId>,
+    sessions: HashMap<String, Session>,
+    counter: u32,
+}
+
 struct App {
     client: Client,
     allowed: OwnedUserId,
-    session: String,
-    /// The single session's bound room (slice 02 is one session; slice 04 makes
-    /// this a session↔room map).
-    room: Mutex<Option<OwnedRoomId>>,
-    /// transcript_path -> number of JSONL lines already posted, so a `Stop` only
-    /// posts the turn(s) appended since the last one.
+    claude_cmd: String,
+    cap: usize,
+    state_file: String,
+    control_room: Mutex<Option<OwnedRoomId>>,
+    /// tmux session name -> session.
+    sessions: Mutex<HashMap<String, Session>>,
+    counter: Mutex<u32>,
+    /// transcript_path -> JSONL lines already posted.
     processed: Mutex<HashMap<String, usize>>,
+}
+
+impl App {
+    /// The room hosting a given tmux session, if any.
+    async fn session_room(&self, tmux: &str) -> Option<OwnedRoomId> {
+        self.sessions.lock().await.get(tmux).map(|s| s.room.clone())
+    }
+    /// The tmux session a given room hosts, if any.
+    async fn session_for_room(&self, room: &OwnedRoomId) -> Option<String> {
+        self.sessions
+            .lock()
+            .await
+            .iter()
+            .find(|(_, s)| &s.room == room)
+            .map(|(name, _)| name.clone())
+    }
+    async fn snapshot(&self) -> PersistState {
+        PersistState {
+            control_room: self.control_room.lock().await.clone(),
+            sessions: self.sessions.lock().await.clone(),
+            counter: *self.counter.lock().await,
+        }
+    }
+}
+
+async fn save_state(app: &Arc<App>) {
+    let state = app.snapshot().await;
+    if let Ok(bytes) = serde_json::to_vec_pretty(&state) {
+        if let Err(e) = tokio::fs::write(&app.state_file, bytes).await {
+            tracing::warn!(error = ?e, "failed to persist state");
+        }
+    }
 }
 
 #[tokio::main]
@@ -88,13 +139,7 @@ async fn main() -> Result<()> {
         .init();
 
     let config = Config::from_env()?;
-
-    // Provision the claude Stop hook and ensure the tmux session, BEFORE logging in
-    // so a session that comes up fast already has somewhere to send keys.
     provision_hook(&config).await.context("provisioning hook")?;
-    ensure_session(&config)
-        .await
-        .context("starting tmux session")?;
 
     let client = Client::builder()
         .homeserver_url(&config.homeserver)
@@ -112,19 +157,29 @@ async fn main() -> Result<()> {
     let app = Arc::new(App {
         client: client.clone(),
         allowed: config.allowed_sender.clone(),
-        session: config.session.clone(),
-        room: Mutex::new(None),
+        claude_cmd: config.claude_cmd.clone(),
+        cap: config.cap,
+        state_file: format!("{}/state.json", config.home),
+        control_room: Mutex::new(None),
+        sessions: Mutex::new(HashMap::new()),
+        counter: Mutex::new(0),
         processed: Mutex::new(HashMap::new()),
     });
 
-    // Receive `Stop` hooks on localhost and post the new transcript turn(s).
     tokio::spawn(hook_server(app.clone(), config.hook_port));
 
-    // Consume backlog without handlers, then join pending invites.
     let response = client.sync_once(SyncSettings::default()).await?;
     for room in client.invited_rooms() {
         let _ = room.join().await;
     }
+
+    // Stand up the control room (where the operator drives new/list/kill).
+    let control = create_room(&app, "claude control")
+        .await
+        .context("creating control room")?;
+    *app.control_room.lock().await = Some(control.room_id().to_owned());
+    save_state(&app).await;
+    tracing::info!(room = %control.room_id(), "control room ready");
 
     client.add_event_handler(
         |ev: StrippedRoomMemberEvent, room: Room, client: Client| async move {
@@ -136,49 +191,43 @@ async fn main() -> Result<()> {
         },
     );
 
-    let handler_app = app.clone();
+    let msg_app = app.clone();
     client.add_event_handler(
         move |ev: OriginalSyncRoomMessageEvent, room: Room, client: Client| {
-            let app = handler_app.clone();
+            let app = msg_app.clone();
             async move {
-                if client.user_id().is_some_and(|me| me == ev.sender) {
-                    return;
-                }
-                if ev.sender != app.allowed {
-                    tracing::info!(sender = %ev.sender, "ignoring non-allowlisted sender");
+                if client.user_id().is_some_and(|me| me == ev.sender) || ev.sender != app.allowed {
                     return;
                 }
                 let MessageType::Text(text) = ev.content.msgtype else {
                     return;
                 };
-                // Bind the single session to the first room we hear from.
-                {
-                    let mut bound = app.room.lock().await;
-                    if bound.is_none() {
-                        *bound = Some(room.room_id().to_owned());
-                        tracing::info!(room = %room.room_id(), "bound session to room");
-                    }
+                let body = text.body.trim().to_string();
+                let rid = room.room_id().to_owned();
+                if app.control_room.lock().await.as_ref() == Some(&rid) {
+                    handle_command(&app, &body).await;
+                } else if let Some(tmux) = app.session_for_room(&rid).await {
+                    inject(&tmux, &body).await;
                 }
-                inject(&app.session, &text.body).await;
             }
         },
     );
 
-    // A vote on a grant/choice poll types the chosen number into the session.
+    // A poll vote types the chosen number into that room's session.
     let poll_app = app.clone();
     client.add_event_handler(
-        move |ev: OriginalSyncUnstablePollResponseEvent, _room: Room, client: Client| {
+        move |ev: OriginalSyncUnstablePollResponseEvent, room: Room, client: Client| {
             let app = poll_app.clone();
             async move {
-                if client.user_id().is_some_and(|me| me == ev.sender) {
+                if client.user_id().is_some_and(|me| me == ev.sender) || ev.sender != app.allowed {
                     return;
                 }
-                if ev.sender != app.allowed {
-                    return;
-                }
-                if let Some(answer) = ev.content.poll_response.answers.first() {
-                    tracing::info!(answer = %answer, "poll vote -> injecting choice");
-                    inject(&app.session, answer).await;
+                let rid = room.room_id().to_owned();
+                if let Some(tmux) = app.session_for_room(&rid).await {
+                    if let Some(answer) = ev.content.poll_response.answers.first() {
+                        tracing::info!(answer = %answer, "poll vote -> injecting choice");
+                        inject(&tmux, answer).await;
+                    }
                 }
             }
         },
@@ -191,16 +240,145 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Write `~/.claude/settings.json` (a `Stop` hook) and the hook script that POSTs
-/// to the relay. The hook stays dumb: it forwards the hook JSON verbatim.
+// ---- control-room commands -------------------------------------------------
+
+async fn handle_command(app: &Arc<App>, body: &str) {
+    let mut parts = body.splitn(2, char::is_whitespace);
+    let cmd = parts.next().unwrap_or("");
+    let arg = parts.next().unwrap_or("").trim();
+    match cmd {
+        "new" => {
+            let cwd = if arg.is_empty() { "." } else { arg };
+            if app.sessions.lock().await.len() >= app.cap {
+                reply_control(app, &format!("session limit reached ({} max)", app.cap)).await;
+                return;
+            }
+            match create_session(app, cwd).await {
+                Ok(name) => reply_control(app, &format!("started {name} in {cwd}")).await,
+                Err(e) => reply_control(app, &format!("failed to start session: {e}")).await,
+            }
+        }
+        "list" => {
+            let sessions = app.sessions.lock().await;
+            let msg = if sessions.is_empty() {
+                "no sessions".to_string()
+            } else {
+                let mut lines: Vec<String> =
+                    sessions.iter().map(|(t, s)| format!("{t} — {}", s.cwd)).collect();
+                lines.sort();
+                lines.join("\n")
+            };
+            drop(sessions);
+            reply_control(app, &msg).await;
+        }
+        "kill" => {
+            if arg.is_empty() {
+                reply_control(app, "usage: kill <name>").await;
+            } else {
+                kill_session(app, arg).await;
+            }
+        }
+        _ => reply_control(app, "commands: new <cwd> | list | kill <name>").await,
+    }
+}
+
+async fn create_session(app: &Arc<App>, cwd: &str) -> Result<String> {
+    let n = {
+        let mut c = app.counter.lock().await;
+        *c += 1;
+        *c
+    };
+    let name = format!("claude-{n}");
+    let status = Command::new("tmux")
+        .args(["new-session", "-d", "-s", &name, "-c", cwd, &app.claude_cmd])
+        .status()
+        .await
+        .context("tmux new-session")?;
+    ensure!(status.success(), "tmux new-session failed");
+
+    let room = create_room(app, &format!("claude: {cwd}")).await?;
+    let room_id = room.room_id().to_owned();
+    app.sessions.lock().await.insert(
+        name.clone(),
+        Session {
+            room: room_id,
+            cwd: cwd.to_string(),
+        },
+    );
+    save_state(app).await;
+    tracing::info!(session = %name, cwd, "session created");
+    Ok(name)
+}
+
+async fn kill_session(app: &Arc<App>, name: &str) {
+    let info = app.sessions.lock().await.remove(name);
+    let _ = Command::new("tmux")
+        .args(["kill-session", "-t", name])
+        .status()
+        .await;
+    match info {
+        Some(info) => {
+            if let Some(room) = app.client.get_room(&info.room) {
+                let _ = room.leave().await;
+            }
+            save_state(app).await;
+            reply_control(app, &format!("killed {name}")).await;
+        }
+        None => reply_control(app, &format!("no such session: {name}")).await,
+    }
+}
+
+/// Create a non-federated room inviting the operator (ADR-0025: rooms never
+/// federate, which replaces E2E given the co-located homeserver).
+async fn create_room(app: &Arc<App>, name: &str) -> Result<Room> {
+    let mut creation = CreationContent::new();
+    creation.federate = false;
+    let request = assign!(CreateRoomRequest::new(), {
+        name: Some(name.to_string()),
+        invite: vec![app.allowed.clone()],
+        creation_content: Some(Raw::new(&creation)?),
+    });
+    app.client.create_room(request).await.context("create_room")
+}
+
+async fn reply_control(app: &Arc<App>, msg: &str) {
+    let Some(room_id) = app.control_room.lock().await.clone() else {
+        return;
+    };
+    if let Some(room) = app.client.get_room(&room_id) {
+        let _ = room.send(RoomMessageEventContent::text_plain(msg)).await;
+    }
+}
+
+// ---- tmux ------------------------------------------------------------------
+
+async fn inject(session: &str, body: &str) {
+    match Command::new("tmux")
+        .args(["send-keys", "-t", session, "--", body, "Enter"])
+        .status()
+        .await
+    {
+        Ok(s) if s.success() => tracing::info!(session, "injected into session"),
+        Ok(s) => tracing::warn!(session, ?s, "tmux send-keys non-zero"),
+        Err(e) => tracing::warn!(session, error = ?e, "tmux send-keys failed"),
+    }
+}
+
+// ---- hook provisioning + server --------------------------------------------
+
+/// Write `~/.claude/settings.json` (Stop + Notification hooks) and the hook script.
+/// The script tags each POST with its tmux session so the relay can route it.
 async fn provision_hook(config: &Config) -> Result<()> {
     let dir = format!("{}/.claude", config.home);
     tokio::fs::create_dir_all(&dir).await?;
 
     let hook_script = format!("{dir}/relay-hook.sh");
     let script = format!(
-        "#!/bin/sh\nexec curl -s -X POST \"http://127.0.0.1:{}/hook\" \
-         -H 'content-type: application/json' --data-binary @-\n",
+        "#!/bin/sh\n\
+         sess=$(tmux display-message -p '#S' 2>/dev/null || echo '')\n\
+         jq -c --arg s \"$sess\" '. + {{tmux_session:$s}}' \
+         | curl -s -X POST \"http://127.0.0.1:{}/hook\" \
+           -H 'content-type: application/json' --data-binary @-\n",
         config.hook_port
     );
     tokio::fs::write(&hook_script, script).await?;
@@ -212,10 +390,8 @@ async fn provision_hook(config: &Config) -> Result<()> {
         tokio::fs::set_permissions(&hook_script, perms).await?;
     }
 
-    let hook_entry = json!([ { "hooks": [ { "type": "command", "command": hook_script } ] } ]);
-    let settings = json!({
-        "hooks": { "Stop": hook_entry, "Notification": hook_entry }
-    });
+    let entry = json!([ { "hooks": [ { "type": "command", "command": hook_script } ] } ]);
+    let settings = json!({ "hooks": { "Stop": entry, "Notification": entry } });
     tokio::fs::write(
         format!("{dir}/settings.json"),
         serde_json::to_vec_pretty(&settings)?,
@@ -225,38 +401,6 @@ async fn provision_hook(config: &Config) -> Result<()> {
     Ok(())
 }
 
-/// Ensure a detached tmux session running the claude command exists.
-async fn ensure_session(config: &Config) -> Result<()> {
-    // Reset any stale session from a prior run, then create fresh.
-    let _ = Command::new("tmux")
-        .args(["kill-session", "-t", &config.session])
-        .status()
-        .await;
-    let status = Command::new("tmux")
-        .args(["new-session", "-d", "-s", &config.session, &config.claude_cmd])
-        .status()
-        .await
-        .context("tmux new-session")?;
-    anyhow::ensure!(status.success(), "tmux new-session failed");
-    tracing::info!(session = %config.session, "tmux session started");
-    Ok(())
-}
-
-/// Type a line into the session, followed by Enter.
-async fn inject(session: &str, body: &str) {
-    match Command::new("tmux")
-        .args(["send-keys", "-t", session, "--", body, "Enter"])
-        .status()
-        .await
-    {
-        Ok(s) if s.success() => tracing::info!("injected message into session"),
-        Ok(s) => tracing::warn!(?s, "tmux send-keys non-zero"),
-        Err(e) => tracing::warn!(error = ?e, "tmux send-keys failed"),
-    }
-}
-
-/// Minimal localhost HTTP server: accept a single POST per connection, hand the
-/// JSON body to `on_stop`, reply 200.
 async fn hook_server(app: Arc<App>, port: u16) {
     let listener = match TcpListener::bind(("127.0.0.1", port)).await {
         Ok(l) => l,
@@ -272,14 +416,14 @@ async fn hook_server(app: Arc<App>, port: u16) {
         };
         let app = app.clone();
         tokio::spawn(async move {
-            if let Err(e) = handle_conn(app, stream).await {
+            if let Err(e) = handle_conn(&app, stream).await {
                 tracing::warn!(error = ?e, "hook connection error");
             }
         });
     }
 }
 
-async fn handle_conn(app: Arc<App>, mut stream: tokio::net::TcpStream) -> Result<()> {
+async fn handle_conn(app: &Arc<App>, mut stream: tokio::net::TcpStream) -> Result<()> {
     let body = read_http_body(&mut stream).await?;
     stream
         .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
@@ -290,60 +434,9 @@ async fn handle_conn(app: Arc<App>, mut stream: tokio::net::TcpStream) -> Result
     Ok(())
 }
 
-/// Dispatch a claude hook by event name: `Stop` posts the transcript turn;
-/// `Notification(permission_prompt)` posts a grant poll.
-async fn on_hook(app: Arc<App>, hook: Value) {
-    match hook.get("hook_event_name").and_then(Value::as_str) {
-        Some("Stop") => on_stop(app, hook).await,
-        Some("Notification") => {
-            if hook.get("notification_type").and_then(Value::as_str) == Some("permission_prompt") {
-                on_permission(app, hook).await;
-            }
-        }
-        other => tracing::debug!(?other, "ignoring hook event"),
-    }
-}
-
-/// Post an MSC3381 poll asking the operator to grant/deny. Answer ids are the
-/// literal keystrokes (`1`/`2`/`3`) typed back into the session on a vote.
-async fn on_permission(app: Arc<App>, hook: Value) {
-    let question = hook
-        .get("message")
-        .and_then(Value::as_str)
-        .unwrap_or("Permission requested")
-        .to_string();
-    let Some(room_id) = app.room.lock().await.clone() else {
-        tracing::warn!("permission prompt but no bound room");
-        return;
-    };
-    let Some(room) = app.client.get_room(&room_id) else {
-        return;
-    };
-    let content = json!({
-        "org.matrix.msc1767.text":
-            format!("{question}\n1) Yes   2) Yes, don't ask again   3) No"),
-        "org.matrix.msc3381.poll.start": {
-            "kind": "org.matrix.msc3381.poll.undisclosed",
-            "max_selections": 1,
-            "question": { "org.matrix.msc1767.text": question },
-            "answers": [
-                { "id": "1", "org.matrix.msc1767.text": "Yes" },
-                { "id": "2", "org.matrix.msc1767.text": "Yes, don't ask again" },
-                { "id": "3", "org.matrix.msc1767.text": "No" }
-            ]
-        }
-    });
-    match room.send_raw("org.matrix.msc3381.poll.start", content).await {
-        Ok(_) => tracing::info!("posted permission poll"),
-        Err(e) => tracing::warn!(error = ?e, "failed to post poll"),
-    }
-}
-
-/// Read an HTTP request and return the body, honouring Content-Length.
 async fn read_http_body(stream: &mut tokio::net::TcpStream) -> Result<Vec<u8>> {
     let mut buf = Vec::with_capacity(4096);
     let mut tmp = [0u8; 4096];
-    // Read until headers complete.
     let header_end = loop {
         let n = stream.read(&mut tmp).await?;
         if n == 0 {
@@ -374,11 +467,28 @@ fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack.windows(needle.len()).position(|w| w == needle)
 }
 
-/// Handle a `Stop` hook: read the transcript, render the turn(s) appended since
-/// last time, and post them to the bound room.
-async fn on_stop(app: Arc<App>, hook: Value) {
+// ---- hook handlers ---------------------------------------------------------
+
+async fn on_hook(app: &Arc<App>, hook: Value) {
+    match hook.get("hook_event_name").and_then(Value::as_str) {
+        Some("Stop") => on_stop(app, hook).await,
+        Some("Notification") => {
+            if hook.get("notification_type").and_then(Value::as_str) == Some("permission_prompt") {
+                on_permission(app, hook).await;
+            }
+        }
+        other => tracing::debug!(?other, "ignoring hook event"),
+    }
+}
+
+/// The room hosting the session a hook came from (by its tmux_session tag).
+async fn hook_room(app: &Arc<App>, hook: &Value) -> Option<OwnedRoomId> {
+    let tmux = hook.get("tmux_session").and_then(Value::as_str)?;
+    app.session_room(tmux).await
+}
+
+async fn on_stop(app: &Arc<App>, hook: Value) {
     let Some(path) = hook.get("transcript_path").and_then(Value::as_str) else {
-        tracing::warn!("hook missing transcript_path");
         return;
     };
     let Ok(contents) = tokio::fs::read_to_string(path).await else {
@@ -386,7 +496,6 @@ async fn on_stop(app: Arc<App>, hook: Value) {
         return;
     };
     let lines: Vec<&str> = contents.lines().collect();
-
     let start = {
         let mut processed = app.processed.lock().await;
         let seen = processed.entry(path.to_string()).or_insert(0);
@@ -394,21 +503,49 @@ async fn on_stop(app: Arc<App>, hook: Value) {
         *seen = lines.len();
         start
     };
-
     let rendered = render_turn(&lines[start.min(lines.len())..]);
     if rendered.trim().is_empty() {
         return;
     }
-
-    let room_id = app.room.lock().await.clone();
-    let Some(room_id) = room_id else {
-        tracing::warn!("Stop hook but no bound room yet");
+    let Some(room_id) = hook_room(app, &hook).await else {
+        tracing::warn!("Stop hook for unknown session");
         return;
     };
     if let Some(room) = app.client.get_room(&room_id) {
-        if let Err(e) = room.send(RoomMessageEventContent::text_plain(rendered)).await {
-            tracing::warn!(error = ?e, "failed to post assistant turn");
+        let _ = room.send(RoomMessageEventContent::text_plain(rendered)).await;
+    }
+}
+
+async fn on_permission(app: &Arc<App>, hook: Value) {
+    let question = hook
+        .get("message")
+        .and_then(Value::as_str)
+        .unwrap_or("Permission requested")
+        .to_string();
+    let Some(room_id) = hook_room(app, &hook).await else {
+        tracing::warn!("permission prompt for unknown session");
+        return;
+    };
+    let Some(room) = app.client.get_room(&room_id) else {
+        return;
+    };
+    let content = json!({
+        "org.matrix.msc1767.text":
+            format!("{question}\n1) Yes   2) Yes, don't ask again   3) No"),
+        "org.matrix.msc3381.poll.start": {
+            "kind": "org.matrix.msc3381.poll.undisclosed",
+            "max_selections": 1,
+            "question": { "org.matrix.msc1767.text": question },
+            "answers": [
+                { "id": "1", "org.matrix.msc1767.text": "Yes" },
+                { "id": "2", "org.matrix.msc1767.text": "Yes, don't ask again" },
+                { "id": "3", "org.matrix.msc1767.text": "No" }
+            ]
         }
+    });
+    match room.send_raw("org.matrix.msc3381.poll.start", content).await {
+        Ok(_) => tracing::info!("posted permission poll"),
+        Err(e) => tracing::warn!(error = ?e, "failed to post poll"),
     }
 }
 
