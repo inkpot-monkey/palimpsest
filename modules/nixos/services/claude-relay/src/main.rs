@@ -43,13 +43,22 @@ struct Config {
     allowed_sender: OwnedUserId,
     claude_cmd: String,
     hook_port: u16,
+    /// HOME of the run-as user (`~/.claude` lives here — claude auth + hooks).
     home: String,
+    /// Where the relay persists its own state.json. Kept off HOME so running as a
+    /// shared login (e.g. inkpotmonkey) doesn't litter that home.
+    state_dir: String,
     cap: usize,
 }
 
 impl Config {
     fn from_env() -> Result<Self> {
         let allowed = std::env::var("RELAY_ALLOWED_SENDER").context("RELAY_ALLOWED_SENDER")?;
+        let home = std::env::var("HOME").context("HOME")?;
+        let state_dir = std::env::var("RELAY_STATE_DIR")
+            .ok()
+            .or_else(|| std::env::var("STATE_DIRECTORY").ok())
+            .unwrap_or_else(|| home.clone());
         Ok(Self {
             homeserver: std::env::var("RELAY_HOMESERVER").context("RELAY_HOMESERVER")?,
             user: std::env::var("RELAY_USER").context("RELAY_USER")?,
@@ -60,7 +69,8 @@ impl Config {
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(8787),
-            home: std::env::var("HOME").context("HOME")?,
+            home,
+            state_dir,
             cap: std::env::var("RELAY_MAX_SESSIONS")
                 .ok()
                 .and_then(|s| s.parse().ok())
@@ -277,7 +287,7 @@ async fn main() -> Result<()> {
         allowed: config.allowed_sender.clone(),
         claude_cmd: config.claude_cmd.clone(),
         cap: config.cap,
-        state_file: format!("{}/state.json", config.home),
+        state_file: format!("{}/state.json", config.state_dir),
         control_room: Mutex::new(None),
         sessions: Mutex::new(HashMap::new()),
         counter: Mutex::new(0),
@@ -529,13 +539,26 @@ async fn provision_hook(config: &Config) -> Result<()> {
         tokio::fs::set_permissions(&hook_script, perms).await?;
     }
 
+    // Merge our hooks into any existing settings.json (the run-as user's ~/.claude
+    // may be shared with another claude consumer, e.g. AionUi) — set only the Stop
+    // and Notification hooks, preserving everything else.
+    let settings_path = format!("{dir}/settings.json");
+    let mut settings: Value = tokio::fs::read(&settings_path)
+        .await
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .filter(Value::is_object)
+        .unwrap_or_else(|| json!({}));
     let entry = json!([ { "hooks": [ { "type": "command", "command": hook_script } ] } ]);
-    let settings = json!({ "hooks": { "Stop": entry, "Notification": entry } });
-    tokio::fs::write(
-        format!("{dir}/settings.json"),
-        serde_json::to_vec_pretty(&settings)?,
-    )
-    .await?;
+    let obj = settings.as_object_mut().expect("settings is an object");
+    let hooks = obj.entry("hooks").or_insert_with(|| json!({}));
+    if !hooks.is_object() {
+        *hooks = json!({});
+    }
+    let hooks_obj = hooks.as_object_mut().expect("hooks is an object");
+    hooks_obj.insert("Stop".to_string(), entry.clone());
+    hooks_obj.insert("Notification".to_string(), entry);
+    tokio::fs::write(&settings_path, serde_json::to_vec_pretty(&settings)?).await?;
     tracing::info!("provisioned ~/.claude/settings.json + hook");
     Ok(())
 }

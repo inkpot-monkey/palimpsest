@@ -7,7 +7,6 @@
 
 let
   cfg = config.services.claude-relay;
-  home = "/var/lib/claude-relay";
 in
 {
   options.services.claude-relay = {
@@ -70,19 +69,46 @@ in
     serviceUser = lib.mkOption {
       type = lib.types.str;
       default = "claude-relay";
-      description = "System user the relay runs as.";
-      internal = true;
+      description = "System user the relay runs as (set to an existing login to reuse its ~/.claude).";
+    };
+
+    group = lib.mkOption {
+      type = lib.types.str;
+      default = cfg.serviceUser;
+      defaultText = lib.literalExpression "config.services.claude-relay.serviceUser";
+      description = "Primary group of the run-as user.";
+    };
+
+    createUser = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Whether to create the run-as system user/group. Disable when reusing an
+        existing login (e.g. inkpotmonkey) so the relay's claude sessions inherit
+        that account's ~/.claude credentials.
+      '';
+    };
+
+    home = lib.mkOption {
+      type = lib.types.path;
+      default = "/var/lib/claude-relay";
+      description = ''
+        HOME for the run-as user — ~/.claude (claude auth + the relay-provisioned
+        Stop/Notification hooks) lives here. Set to the login's home when reusing
+        an existing account.
+      '';
     };
   };
 
   config = lib.mkIf cfg.enable {
-    users.users.${cfg.serviceUser} = {
-      isSystemUser = true;
-      group = cfg.serviceUser;
-      inherit home;
-      createHome = true;
+    users.users = lib.mkIf cfg.createUser {
+      ${cfg.serviceUser} = {
+        isSystemUser = true;
+        inherit (cfg) group home;
+        createHome = true;
+      };
     };
-    users.groups.${cfg.serviceUser} = { };
+    users.groups = lib.mkIf cfg.createUser { ${cfg.serviceUser} = { }; };
 
     systemd.services.claude-relay = {
       description = "Claude relay (Matrix <-> claude sessions)";
@@ -102,7 +128,7 @@ in
       ];
 
       environment = {
-        HOME = home;
+        HOME = cfg.home;
         # tmux runs a session's command via this shell; the relay's system user has
         # `nologin`, which fails ("Attempted login by UNKNOWN") and kills the pane.
         SHELL = "${pkgs.bash}/bin/bash";
@@ -117,7 +143,7 @@ in
 
       serviceConfig = {
         User = cfg.serviceUser;
-        Group = cfg.serviceUser;
+        Group = cfg.group;
         StateDirectory = "claude-relay";
         # Read the bot password out of its file into the env, then exec the relay.
         ExecStart = pkgs.writeShellScript "claude-relay-start" ''
