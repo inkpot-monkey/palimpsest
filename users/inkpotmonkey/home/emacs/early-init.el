@@ -2,11 +2,13 @@
 
 (setq gc-cons-threshold most-positive-fixnum)
 
-;; package.el is disabled entirely — all packages come from Nix
-;; (emacsWithPackagesFromUsePackage with alwaysEnsure = true). This stops Emacs
-;; from auto-activating ~/.config/emacs/elpa at startup, which otherwise shadows
-;; the Nix-provided packages on load-path.
-(setq package-enable-at-startup nil)
+;; All packages come from Nix (emacsWithPackagesFromUsePackage with
+;; alwaysEnsure = true). Let Emacs's normal startup `package-activate-all' load
+;; their autoloads — do NOT disable it, or `:init'-time mode calls
+;; (vertico-mode, gcmh-mode, …) hit "Symbol's function definition is void".
+;; Prevent ~/.config/emacs/elpa clones from shadowing the Nix site-lisp/elpa by
+;; emptying package-user-dir, so the Nix store is the only package source.
+(setq package-user-dir "/var/empty/nonexistent-elpa")
 
 ;; Force non-interactive answers for any prompts during initialization
 (setf (symbol-function 'yes-or-no-p) (lambda (&rest _) t))

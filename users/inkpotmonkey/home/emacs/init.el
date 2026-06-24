@@ -1,13 +1,14 @@
 ;;; init.el --- Init File -*- lexical-binding: t -*-
 
-(require 'package)
-
 (setq native-comp-async-report-warnings-errors 'silent)
 (setq warning-minimum-level :error)
 
-;; Initialize the package system so Emacs can see the Nix-provided packages in load-path
-(package-initialize)
-
+;; package.el is intentionally NOT initialized: every package comes from Nix
+;; (emacsWithPackagesFromUsePackage, alwaysEnsure = true), whose generated
+;; site-start sets up the load-path and autoloads at startup. Calling
+;; `package-initialize' would re-activate ~/.config/emacs/elpa and shadow the
+;; Nix-provided packages on load-path — the cause of the stale `sops-edit-file'
+;; autoload bug. Nothing is installed via package.el or package-vc.
 (require 'use-package)
 (setq use-package-always-ensure nil)
 
