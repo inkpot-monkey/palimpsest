@@ -269,13 +269,15 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 					("s-e" . wgrep-finish-edit)
 					("s-k" . wgrep-abort-changes)))
 
+;; sops 0.2 is a rewrite: decryption is transparent via `global-sops-mode'
+;; (find-file-hook decrypts on open, save-buffer re-encrypts) — so the old
+;; manual commands are gone: `sops-edit-file' → `sops-find-file', and
+;; `sops-save-file'/`sops-cancel' are replaced by plain `C-x C-s' / revert.
 (use-package sops
 		:init
 	(global-sops-mode t)
 
-	:bind (("C-c C-c" . sops-save-file)
-				 ("C-c C-k" . sops-cancel)
-				 ("C-c C-d" . sops-edit-file)))
+	:bind (("C-c C-d" . sops-find-file)))
 
 (use-package auth-source-sops
 		:demand t
