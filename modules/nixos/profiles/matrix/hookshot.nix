@@ -32,6 +32,15 @@ let
   # Builder for this bridge's own management-DM auto-provisioner (split out of the
   # central matrix-dm-provision so each bridge owns its auto-join wiring).
   mkDmService = import ./dm-provision.nix { inherit pkgs config; };
+
+  # The upstream hookshot logo, pinned to our deployed version, so the bot gets a
+  # recognisable display name + avatar instead of a bare @hookshot MXID. Hookshot
+  # accepts a file path for bot.avatar and uploads it idempotently on each start
+  # (BotUsersManager.ensureProfile), so this also self-heals after a matrix-reset.
+  hookshotLogo = pkgs.fetchurl {
+    url = "https://raw.githubusercontent.com/matrix-org/matrix-hookshot/${config.services.matrix-hookshot.package.version}/logo.png";
+    hash = "sha256-tbyMe0p6ech3l21n9MX+o1C2zftUm9m6z3x/i1kTBNo=";
+  };
 in
 {
   options.custom.profiles.matrix.hookshot = {
@@ -93,6 +102,9 @@ in
           mediaUrl: https://${domain}
           port: ${toString appservicePort}
           bindAddress: 127.0.0.1
+        bot:
+          displayname: Hookshot
+          avatar: ${hookshotLogo}
         passFile: ${stateDir}/passkey.pem
         logging:
           level: info
