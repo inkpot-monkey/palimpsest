@@ -73,6 +73,13 @@ impl Config {
 struct Session {
     room: OwnedRoomId,
     cwd: String,
+    /// claude's own session id, learned from hooks; lets us `claude --resume`.
+    #[serde(default)]
+    claude_session_id: Option<String>,
+    /// Transient: set during reconciliation when the tmux session is gone, so a
+    /// poll vote in this room resumes rather than injects. Never persisted.
+    #[serde(default, skip)]
+    needs_resume: bool,
 }
 
 /// Persisted relay state (for slice-05 reconciliation).
@@ -129,6 +136,117 @@ async fn save_state(app: &Arc<App>) {
     }
 }
 
+async fn load_state(app: &Arc<App>) {
+    let Ok(bytes) = tokio::fs::read(&app.state_file).await else {
+        return;
+    };
+    match serde_json::from_slice::<PersistState>(&bytes) {
+        Ok(state) => {
+            *app.control_room.lock().await = state.control_room;
+            *app.sessions.lock().await = state.sessions;
+            *app.counter.lock().await = state.counter;
+            tracing::info!("loaded persisted state");
+        }
+        Err(e) => tracing::warn!(error = ?e, "could not parse state file"),
+    }
+}
+
+/// On startup, check each persisted session's tmux; for dead ones (e.g. after a
+/// reboot) mark needs_resume and post a one-tap resume poll in its room.
+async fn reconcile(app: &Arc<App>) {
+    let names: Vec<String> = app.sessions.lock().await.keys().cloned().collect();
+    for name in names {
+        let alive = Command::new("tmux")
+            .args(["has-session", "-t", &name])
+            .status()
+            .await
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if alive {
+            continue;
+        }
+        let room_id = {
+            let mut sessions = app.sessions.lock().await;
+            sessions.get_mut(&name).map(|s| {
+                s.needs_resume = true;
+                s.room.clone()
+            })
+        };
+        if let Some(room) = room_id.and_then(|r| app.client.get_room(&r)) {
+            let _ = room
+                .send_raw("org.matrix.msc3381.poll.start", resume_poll())
+                .await;
+            tracing::info!(session = %name, "dead on startup; posted resume poll");
+        }
+    }
+}
+
+fn resume_poll() -> Value {
+    json!({
+        "org.matrix.msc1767.text": "Session ended (host restarted). Vote to resume.",
+        "org.matrix.msc3381.poll.start": {
+            "kind": "org.matrix.msc3381.poll.undisclosed",
+            "max_selections": 1,
+            "question": { "org.matrix.msc1767.text": "Session ended — resume?" },
+            "answers": [ { "id": "resume", "org.matrix.msc1767.text": "Resume" } ]
+        }
+    })
+}
+
+/// Relaunch a dead session's tmux, resuming claude's prior context if known.
+async fn resume_session(app: &Arc<App>, name: &str) {
+    let Some(info) = app.sessions.lock().await.get(name).cloned() else {
+        return;
+    };
+    let cmd = match &info.claude_session_id {
+        Some(sid) => format!("{} --resume {}", app.claude_cmd, sid),
+        None => app.claude_cmd.clone(),
+    };
+    let ok = Command::new("tmux")
+        .args(["new-session", "-d", "-s", name, "-c", &info.cwd, &cmd])
+        .status()
+        .await
+        .map(|s| s.success())
+        .unwrap_or(false);
+    if !ok {
+        tracing::warn!(session = name, "resume tmux new-session failed");
+        return;
+    }
+    if let Some(s) = app.sessions.lock().await.get_mut(name) {
+        s.needs_resume = false;
+    }
+    save_state(app).await;
+    if let Some(room) = app.client.get_room(&info.room) {
+        let _ = room
+            .send(RoomMessageEventContent::text_plain(format!("resumed {name}")))
+            .await;
+    }
+    tracing::info!(session = name, "resumed");
+}
+
+/// Record claude's session id for the tmux session a hook came from.
+async fn record_session_id(app: &Arc<App>, hook: &Value) {
+    let (Some(tmux), Some(sid)) = (
+        hook.get("tmux_session").and_then(Value::as_str),
+        hook.get("session_id").and_then(Value::as_str),
+    ) else {
+        return;
+    };
+    let changed = {
+        let mut sessions = app.sessions.lock().await;
+        match sessions.get_mut(tmux) {
+            Some(s) if s.claude_session_id.as_deref() != Some(sid) => {
+                s.claude_session_id = Some(sid.to_string());
+                true
+            }
+            _ => false,
+        }
+    };
+    if changed {
+        save_state(app).await;
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -173,13 +291,20 @@ async fn main() -> Result<()> {
         let _ = room.join().await;
     }
 
-    // Stand up the control room (where the operator drives new/list/kill).
-    let control = create_room(&app, "claude control")
-        .await
-        .context("creating control room")?;
-    *app.control_room.lock().await = Some(control.room_id().to_owned());
-    save_state(&app).await;
-    tracing::info!(room = %control.room_id(), "control room ready");
+    // Restore prior control room + sessions across restarts.
+    load_state(&app).await;
+
+    // Stand up the control room, or reuse the persisted one.
+    if app.control_room.lock().await.is_none() {
+        let control = create_room(&app, "claude control")
+            .await
+            .context("creating control room")?;
+        *app.control_room.lock().await = Some(control.room_id().to_owned());
+        save_state(&app).await;
+        tracing::info!(room = %control.room_id(), "control room created");
+    } else {
+        tracing::info!("reusing persisted control room");
+    }
 
     client.add_event_handler(
         |ev: StrippedRoomMemberEvent, room: Room, client: Client| async move {
@@ -223,15 +348,27 @@ async fn main() -> Result<()> {
                     return;
                 }
                 let rid = room.room_id().to_owned();
-                if let Some(tmux) = app.session_for_room(&rid).await {
-                    if let Some(answer) = ev.content.poll_response.answers.first() {
-                        tracing::info!(answer = %answer, "poll vote -> injecting choice");
-                        inject(&tmux, answer).await;
-                    }
+                let Some(tmux) = app.session_for_room(&rid).await else {
+                    return;
+                };
+                let needs_resume = app
+                    .sessions
+                    .lock()
+                    .await
+                    .get(&tmux)
+                    .is_some_and(|s| s.needs_resume);
+                if needs_resume {
+                    resume_session(&app, &tmux).await;
+                } else if let Some(answer) = ev.content.poll_response.answers.first() {
+                    tracing::info!(answer = %answer, "poll vote -> injecting choice");
+                    inject(&tmux, answer).await;
                 }
             }
         },
     );
+
+    // Offer resume for any persisted session whose tmux didn't survive.
+    reconcile(&app).await;
 
     tracing::info!("entering sync loop");
     client
@@ -303,6 +440,8 @@ async fn create_session(app: &Arc<App>, cwd: &str) -> Result<String> {
         Session {
             room: room_id,
             cwd: cwd.to_string(),
+            claude_session_id: None,
+            needs_resume: false,
         },
     );
     save_state(app).await;
@@ -470,6 +609,7 @@ fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
 // ---- hook handlers ---------------------------------------------------------
 
 async fn on_hook(app: &Arc<App>, hook: Value) {
+    record_session_id(app, &hook).await;
     match hook.get("hook_event_name").and_then(Value::as_str) {
         Some("Stop") => on_stop(app, hook).await,
         Some("Notification") => {

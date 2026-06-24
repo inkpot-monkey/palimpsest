@@ -110,11 +110,18 @@ let
   # Stop hook — exercising the relay's send-keys -> hook -> transcript -> post path.
   stub = pkgs.writeShellScript "claude-stub" ''
     set -eu
-    sid="stub-$$"
     proj="$HOME/.claude/projects/stub"
     mkdir -p "$proj"
-    tr="$proj/$sid.jsonl"
-    : > "$tr"
+    # `--resume <id>` reuses an existing transcript (don't truncate); else fresh.
+    if [ "$#" -ge 2 ] && [ "$1" = "--resume" ]; then
+      sid="$2"
+      tr="$proj/$sid.jsonl"
+      touch "$tr"
+    else
+      sid="stub-$$"
+      tr="$proj/$sid.jsonl"
+      : > "$tr"
+    fi
     hook=$(jq -r '.hooks.Stop[0].hooks[0].command' "$HOME/.claude/settings.json")
     while IFS= read -r line; do
       # "needperm": fire a permission Notification, wait for the granted number
@@ -135,7 +142,7 @@ let
   '';
 in
 pkgs.testers.nixosTest {
-  name = "claude-relay-lifecycle";
+  name = "claude-relay";
 
   nodes.machine =
     { lib, ... }:
@@ -291,5 +298,21 @@ pkgs.testers.nixosTest {
         f"{H}; mx_texts {allowed_tok} {control} | grep -F 'killed claude-1'", timeout=30
     )
     print("OK: list + kill")
+
+    # Slice 05: ephemeral but resumable. Simulate a reboot (kill tmux + restart the
+    # relay); the persisted-but-dead session (claude-2) gets a one-tap resume poll,
+    # and voting it relaunches the session via `claude --resume`.
+    machine.succeed("pkill -u claude-relay -f tmux || true")
+    machine.systemctl("restart claude-relay.service")
+    machine.wait_for_unit("claude-relay.service")
+    machine.wait_until_succeeds(
+        f"{H}; mx_poll_event {allowed_tok} {room2} | grep -q .", timeout=90
+    )
+    rpoll = sh(f"mx_poll_event {allowed_tok} {room2}")
+    sh(f"mx_poll_respond {allowed_tok} {room2} {shlex.quote(rpoll)} resume")
+    machine.wait_until_succeeds(
+        f"{H}; mx_texts {allowed_tok} {room2} | grep -F 'resumed claude-2'", timeout=60
+    )
+    print("OK: dead session offered resume; vote relaunched it")
   '';
 }
