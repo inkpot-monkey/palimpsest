@@ -218,10 +218,14 @@ in
         User = cfg.serviceUser;
         Group = cfg.group;
         StateDirectory = "claude-relay";
-        # Read the bot password out of its file into the env, then exec the relay.
+        # The bot password arrives as a systemd credential: root reads the (0400,
+        # root-owned) sops secret and exposes it in $CREDENTIALS_DIRECTORY readable
+        # by the run-as user — so this works even when running as inkpotmonkey,
+        # without loosening the secret's permissions.
+        LoadCredential = [ "password:${toString cfg.passwordFile}" ];
         ExecStart = pkgs.writeShellScript "claude-relay-start" ''
           set -eu
-          RELAY_PASSWORD="$(cat ${lib.escapeShellArg (toString cfg.passwordFile)})"
+          RELAY_PASSWORD="$(cat "$CREDENTIALS_DIRECTORY/password")"
           export RELAY_PASSWORD
           exec ${lib.getExe cfg.package}
         '';
