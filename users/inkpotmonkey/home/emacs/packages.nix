@@ -32,10 +32,14 @@
     packageRequires = [ epkgs.yaml ];
   };
 
-  # Main library is `ai-code.el` (≠ pname), so package-build can't find the main
-  # file — stays on trivialBuild. See the header note.
-  ai-code-interface = epkgs.trivialBuild {
-    pname = "ai-code-interface";
+  # Upstream repo is `ai-code-interface.el`, but its main library is `ai-code.el`
+  # and it `(provide 'ai-code)` — so the Emacs feature, the use-package name, and
+  # this attr are all `ai-code`. (melpaBuild's package-build derives the main file
+  # from pname and wouldn't find `ai-code.el`, so this stays on trivialBuild; see
+  # the header note. trivialBuild emits no autoloads, so init.el's `:bind`
+  # autoloads `ai-code-menu' from the `ai-code' feature directly.)
+  ai-code = epkgs.trivialBuild {
+    pname = "ai-code";
     version = "unstable-2026-06-19";
     src = pkgs.fetchFromGitHub {
       owner = "tninja";

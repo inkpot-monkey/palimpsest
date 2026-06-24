@@ -799,7 +799,10 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 		(add-to-list 'display-buffer-alist
 								 '("\\`\\*claude:" (display-buffer-same-window))))
 
-(use-package ai-code-interface
+;; Package + feature are both `ai-code' (packages.nix; main library is
+;; `ai-code.el', which `(provide 'ai-code)'). trivialBuild emits no autoloads,
+;; so `:bind' autoloads `ai-code-menu' from the `ai-code' feature directly.
+(use-package ai-code
 		;; Enable global keybinding for the main menu
 		:bind
 		(("C-, g" . ai-code-menu))
