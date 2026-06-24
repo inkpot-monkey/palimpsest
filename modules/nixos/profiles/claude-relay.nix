@@ -77,6 +77,23 @@ in
       requires = [ "tuwunel.service" ];
     };
 
+    # Wire the relay into `matrix-reset` so a from-scratch wipe stays coherent.
+    # Without this, reset deletes the homeserver (so @claude-relay, the control
+    # room and every session room vanish) but the relay keeps running against a
+    # dead account with a state.json pointing at deleted rooms. Listing both units
+    # makes reset stop them, wipe /var/lib/claude-relay (the persisted control-room
+    # + session map), and on restart re-run claude-relay-register — recreating
+    # @claude-relay (after the admin re-registers) before the relay logs back in.
+    # Not isDm: started right after tuwunel/admin (the After= ordering on
+    # claude-relay-register holds), not deferred to the post-bridge DM phase.
+    custom.profiles.matrix.resetState = [
+      {
+        service = "claude-relay-register.service";
+        paths = [ "/var/lib/claude-relay" ];
+      }
+      { service = "claude-relay.service"; }
+    ];
+
     # Persist the session<->room map across reboots (ephemeral-resumable, slice 05).
     environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
       directories = [ "/var/lib/claude-relay" ];
