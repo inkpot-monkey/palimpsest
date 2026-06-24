@@ -893,10 +893,6 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 	(run-with-idle-timer 60 t (lambda ()
 															(recall-save))))
 
-;; https://github.com/sgpthomas/async-shell
-
-
-
 (use-package org
 		:after (cape tempel)
 		:bind
@@ -1073,6 +1069,62 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 
 (use-package shell-command+
 		:bind (([remap shell-command] . shell-command+)))
+
+;; Front-load `shell-command-history' (savehist-persisted) as completion
+;; candidates so `M-&' shows past commands immediately instead of an empty
+;; prompt — pick-or-type, always in the current `default-directory'.  recall
+;; still surveils every launch; `C-x C-r' (recall-rerun) remains the
+;; rerun-in-original-context tool.
+(use-package emacs
+		:bind (([remap async-shell-command] . my/async-shell-command-from-history)
+					 ("C-c &" . my/async-shell-command-rerun-last))
+		:config
+		(defun my/async-shell-command-from-history (command &optional output-buffer error-buffer)
+			"Like `async-shell-command' but completes from `shell-command-history'.
+COMMAND is read with `shell-command-history' as candidates (pick an old
+command or type a new one).  OUTPUT-BUFFER and ERROR-BUFFER are passed
+through unchanged, mirroring `async-shell-command' (prefix arg inserts
+output at point)."
+			(interactive
+			 (list (completing-read "Async shell command: "
+															shell-command-history
+															nil nil nil 'shell-command-history)
+						 current-prefix-arg
+						 shell-command-default-error-buffer))
+			(async-shell-command command output-buffer error-buffer))
+
+		(defun my/async-shell-command-rerun-last ()
+			"Rerun the most recent `shell-command-history' entry, no prompt.
+Runs in the current `default-directory'.  For rerun in a command's
+original directory use `recall-rerun' (\\[recall-rerun])."
+			(interactive)
+			(if-let ((command (car shell-command-history)))
+					(progn (message "Rerunning: %s" command)
+								 (async-shell-command command))
+				(user-error "No shell command history yet"))))
+
+;; In an async-shell-command output buffer, `g' reruns that buffer's own
+;; command in place — same buffer, same `default-directory' — like
+;; `g'/`recompile' in a compilation buffer.  Emacs already sets a buffer-local
+;; `revert-buffer-function' to `(async-shell-command command buffer)'.
+;;
+;; But `shell-command-mode' derives from `comint-mode', so the buffer is
+;; interactive: while a process is live you may be sending it stdin, and `g'
+;; must self-insert.  So only hijack `g' once the process has exited (the
+;; common case for async output); otherwise type it normally.
+(use-package shell
+		:ensure nil
+		:bind (:map shell-command-mode-map
+								("g" . my/async-shell-command-rerun-buffer))
+		:config
+		(defun my/async-shell-command-rerun-buffer (n)
+			"Rerun this async-shell buffer's command, like compile's \\`g'.
+If a process is still live in the buffer, self-insert instead (N times)
+so stdin still works — only rerun once the command has exited."
+			(interactive "p")
+			(if (process-live-p (get-buffer-process (current-buffer)))
+					(self-insert-command n)
+				(revert-buffer-quick))))
 
 (use-package compile-ansi
 	:config
