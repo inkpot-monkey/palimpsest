@@ -7,6 +7,45 @@
 
 let
   cfg = config.services.claude-relay;
+
+  # Idempotently create the relay's bot account via the homeserver's shared
+  # registration token (the standard UIA m.login.registration_token flow, also
+  # used by tuwunel-register-admin). Runs once before the relay starts so a fresh
+  # deploy needs only the password secret in place — no manual account creation.
+  registerScript = pkgs.writeShellScript "claude-relay-register" ''
+    set -eu
+    url=${lib.escapeShellArg cfg.homeserver}
+    user=${lib.escapeShellArg cfg.user}
+    pass="$(cat "$CREDENTIALS_DIRECTORY/password")"
+    token="$(cat "$CREDENTIALS_DIRECTORY/token")"
+
+    for _ in $(seq 1 60); do
+      ${pkgs.curl}/bin/curl -sf "$url/_matrix/client/versions" >/dev/null && break
+      sleep 2
+    done
+
+    # Step 1: initiate registration to obtain a UIA session. If the account
+    # already exists the server answers M_USER_IN_USE with no session.
+    session="$(${pkgs.curl}/bin/curl -s -X POST "$url/_matrix/client/v3/register" \
+      -H 'content-type: application/json' \
+      -d "$(${pkgs.jq}/bin/jq -nc --arg u "$user" --arg p "$pass" \
+        '{username:$u,password:$p,inhibit_login:true}')" \
+      | ${pkgs.jq}/bin/jq -r '.session // empty')"
+
+    if [ -z "$session" ]; then
+      echo "relay account $user already exists"
+    else
+      # Step 2: complete registration with the token.
+      code="$(${pkgs.curl}/bin/curl -s -o /dev/null -w '%{http_code}' -X POST "$url/_matrix/client/v3/register" \
+        -H 'content-type: application/json' \
+        -d "$(${pkgs.jq}/bin/jq -nc --arg u "$user" --arg p "$pass" --arg t "$token" --arg s "$session" \
+          '{username:$u,password:$p,inhibit_login:true,auth:{type:"m.login.registration_token",token:$t,session:$s}}')")"
+      echo "relay registration HTTP $code"
+      [ "$code" = "200" ]
+    fi
+  '';
+
+  autoRegister = cfg.registrationTokenFile != null;
 in
 {
   options.services.claude-relay = {
@@ -89,6 +128,18 @@ in
       '';
     };
 
+    registrationTokenFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = ''
+        Path to a file holding the homeserver's shared registration token. When
+        set, a `claude-relay-register` oneshot creates the bot account (localpart
+        `user`, password from `passwordFile`) via the UIA registration-token flow
+        before the relay starts, so deploy needs only the password secret — no
+        manual account creation. Null (default) assumes the account already exists.
+      '';
+    };
+
     home = lib.mkOption {
       type = lib.types.path;
       default = "/var/lib/claude-relay";
@@ -110,11 +161,33 @@ in
     };
     users.groups = lib.mkIf cfg.createUser { ${cfg.serviceUser} = { }; };
 
+    # Declaratively create the bot account before the relay logs in (opt-in via
+    # registrationTokenFile). A near-verbatim copy of tuwunel-register-admin's
+    # UIA token flow; the matrix profile orders it after the admin registration
+    # so the admin (not the bot) wins grant_admin_to_first_user.
+    systemd.services.claude-relay-register = lib.mkIf autoRegister {
+      description = "Register the @${cfg.user} Matrix account (UIA registration-token flow)";
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
+      wantedBy = [ "multi-user.target" ];
+      before = [ "claude-relay.service" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        DynamicUser = true;
+        LoadCredential = [
+          "token:${toString cfg.registrationTokenFile}"
+          "password:${toString cfg.passwordFile}"
+        ];
+        ExecStart = registerScript;
+      };
+    };
+
     systemd.services.claude-relay = {
       description = "Claude relay (Matrix <-> claude sessions)";
       wantedBy = [ "multi-user.target" ];
-      after = [ "network-online.target" ];
-      wants = [ "network-online.target" ];
+      after = [ "network-online.target" ] ++ lib.optional autoRegister "claude-relay-register.service";
+      wants = [ "network-online.target" ] ++ lib.optional autoRegister "claude-relay-register.service";
 
       # The relay shells out to tmux (send-keys / session mgmt); the provisioned
       # hook uses curl; a real/stub claude in the session uses jq + a shell.

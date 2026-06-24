@@ -179,9 +179,13 @@ pkgs.testers.nixosTest {
         passwordFile = "/etc/claude-relay-pw";
         allowedSender = allowedMxid;
         claudeCommand = "${stub}";
+        # Exercise the declarative account creation: the claude-relay-register
+        # oneshot registers @claude-relay via the shared token before the relay
+        # logs in (no driver-side mx_register for the bot).
+        registrationTokenFile = "/etc/tuwunel-reg-token";
       };
-      # Don't race the bot account into existence — the driver registers it, then
-      # (re)starts the relay. Relay also self-heals via Restart=on-failure.
+      # Don't race the relay's login — the driver (re)starts it after confirming
+      # the account exists. Relay also self-heals via Restart=on-failure.
       systemd.services.claude-relay.wantedBy = lib.mkForce [ ];
 
       virtualisation.memorySize = 2048;
@@ -201,8 +205,17 @@ pkgs.testers.nixosTest {
     def sh(cmd):
         return machine.succeed(f"{H}; {cmd}").strip()
 
-    # Accounts: bot first (becomes admin, harmless), then the two humans.
-    sh("mx_register ${botLocalpart} botpass")
+    # The bot account is created declaratively by the claude-relay-register
+    # oneshot (UIA registration-token flow), NOT by the driver. Wait for it to
+    # complete, proving the deploy-time auto-registration path.
+    machine.wait_for_unit("claude-relay-register.service")
+    machine.wait_until_succeeds(
+        "journalctl -u claude-relay-register.service | grep -qE 'relay registration HTTP 200|already exists'",
+        timeout=60,
+    )
+    print("OK: bot account auto-registered declaratively")
+
+    # The two human accounts the test drives with.
     sh("mx_register allowed apass")
     sh("mx_register mallory mpass")
 

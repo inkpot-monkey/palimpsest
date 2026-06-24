@@ -33,8 +33,16 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    # The relay bot account's password. Lives in the matrix secrets file; the
-    # operator creates the @claude-relay account and adds this key to stash.
+    # The relay bot account is created declaratively (registrationTokenFile below),
+    # so deploy needs only this password secret in stash — no manual account setup.
+    assertions = [
+      {
+        assertion = config.custom.profiles.matrix.enable;
+        message = "custom.profiles.claude-relay needs the matrix profile (local tuwunel + registration_token) on the same host.";
+      }
+    ];
+
+    # The relay bot account's password. Lives in the matrix secrets file (stash).
     sops.secrets.claude_relay_bot_password.sopsFile = self.lib.getSecretFile "matrix";
 
     services.claude-relay = {
@@ -49,6 +57,19 @@ in
       user = "claude-relay";
       inherit (cfg) allowedSender;
       passwordFile = config.sops.secrets.claude_relay_bot_password.path;
+      # Auto-create @claude-relay via the homeserver's shared registration token
+      # (the same secret tuwunel-register-admin uses).
+      registrationTokenFile = config.sops.secrets.registration_token.path;
+    };
+
+    # Order after the admin registration so inkpotmonkey (not the bot) wins
+    # grant_admin_to_first_user, and only attempt once tuwunel is up.
+    systemd.services.claude-relay-register = {
+      after = [
+        "tuwunel.service"
+        "tuwunel-register-admin.service"
+      ];
+      requires = [ "tuwunel.service" ];
     };
 
     # Persist the session<->room map across reboots (ephemeral-resumable, slice 05).
