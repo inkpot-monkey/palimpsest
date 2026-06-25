@@ -80,11 +80,11 @@
           statix.enable = true;
           nixfmt.enable = true;
 
-          # Python — formatting only. `ruff-check` (lint) is deliberately left
-          # out of the commit gate: the tree has pre-existing violations it
-          # can't auto-fix (and its autofix deletes imports), which would block
-          # unrelated commits. Run `ruff check` manually to lint.
+          # Python — format + lint. ruff-check autofixes the safe cases (e.g.
+          # unused imports) and fails the gate on the rest (bare except,
+          # redefinitions), which is the point.
           ruff-format.enable = true;
+          ruff-check.enable = true;
 
           # Rust (both crates are edition 2021; rustfmt defaults to 2015).
           rustfmt = {

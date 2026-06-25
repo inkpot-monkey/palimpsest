@@ -3,9 +3,9 @@
 ## Build / lint / test commands
 
 - **Check:** `nix flake check -L`
-- **Format:** `nix fmt` (treefmt; runs nixfmt/deadnix/statix, ruff-format,
-  rustfmt, shfmt, taplo, prettier, mdformat, elisp-autofmt — enforced via
-  pre-commit hook). Config in `parts/treefmt.nix`.
+- **Format:** `nix fmt` (treefmt; runs nixfmt/deadnix/statix, ruff
+  (format+check), rustfmt, shfmt, taplo, prettier, mdformat, elisp-autofmt —
+  enforced via pre-commit hook). Config in `parts/treefmt.nix`.
 - **Lint (statix):** `statix check .`
 - **Lint (deadnix):** `deadnix .`
 - **Nix packages:** `nix build .#<name>`
