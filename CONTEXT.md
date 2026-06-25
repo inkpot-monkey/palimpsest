@@ -144,3 +144,31 @@ _Avoid_: GPU node, inference server.
 
 **Gateway**:
 The `litellm` proxy on `kelpy` that presents the local LLM nodes (and remote fallbacks) under stable backend names (`qwen-general`, `qwen-coder`).
+
+### Monitoring & alerting
+
+> The existing **monitoring stack** (VictoriaMetrics/VictoriaLogs/Grafana/Vector/node-exporter) is *collection-only* — it stores metrics and logs but raises no alerts. The terms below name the alerting tier layered on top of it.
+
+**Uptime watcher** (or **watcher**):
+The off-host process that probes the fleet's services over the network and alerts when one stops answering — Gatus on the always-on voice node `rk1b`, deliberately *not* on `kelpy`, so it can still observe `kelpy` itself failing. Distinct from the **monitoring stack**, which only collects.
+_Avoid_: monitor, uptime robot.
+
+**Reachability probe**:
+A black-box check that a service *answers* on its endpoint (HTTP/TCP/ICMP). Catches a service that is down **or** running-but-degraded, but is blind to a service with no listening port.
+_Avoid_: ping (too narrow), healthcheck (reserve for a single named check).
+
+**Unit-state check**:
+The white-box counterpart, run on the host itself: it asserts each **expected-up service**'s systemd unit is actually `active`. It catches what a reachability probe cannot — a port-less service, or a unit that exits *cleanly yet dead* (Stalwart's store-misconfig abort exits `0`, so it is `inactive`, never `failed`, and an `OnFailure=`/failed-state alert would miss it).
+_Avoid_: failure hook (it must catch inactive-not-failed, not only failures).
+
+**Expected-up service**:
+A service classified as one that must always be `active`, and therefore subject to alerting. Classification is **monitor-by-default** — derived from the `settings.services.*` registry so a new service is watched unless explicitly opted out — and enforced by a `nix flake check` that fails on any unclassified service, so nothing can silently go unmonitored.
+_Avoid_: critical service (criticality is a separate axis), watched service.
+
+**Infra Alerts room**:
+The dedicated Matrix room (inside the **Hookshot Space**) where uptime alerts land, delivered through a hookshot generic webhook so the **watcher** and the **unit-state check** share one delivery path. Kept apart from operational rooms so alerts stay scannable and muteable. It is the **primary** channel, used only while `kelpy` is up.
+_Avoid_: alerts channel.
+
+**Out-of-band channel**:
+A notification path that shares none of `kelpy`'s failure domain, used for the alerts the Matrix path can't carry (because Matrix runs on `kelpy`). Currently one realized kind — an **off-site push** (ntfy from `rk1b`) reporting "a service / `kelpy` is down" while the site is still online. Its named-but-unbuilt counterpart is an external **dead-man's switch** that would report a *full-site blackout* by alerting on the *silence* of an expected periodic ping — the only mechanism needing nothing at home alive. The deliberate counterpart to the rejected idea of a highly-available Matrix.
+_Avoid_: fallback channel (too vague), secondary Matrix.
