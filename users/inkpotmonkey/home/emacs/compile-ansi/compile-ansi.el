@@ -30,7 +30,8 @@
 F is the original filter and PROC its process.  Screen-clear / cursor-home
 sequences erase the buffer first so redraws don't accumulate."
   (let ((filtered (xterm-color-filter string)))
-    (when (string-match-p "\033\\[[0-9;]*H\\|\033\\[[23]?J\\|\033c" string)
+    (when (string-match-p
+           "\033\\[[0-9;]*H\\|\033\\[[23]?J\\|\033c" string)
       (let ((inhibit-read-only t))
         (erase-buffer))
       (setq filtered (replace-regexp-in-string "\\`\n+" "" filtered)))
@@ -57,10 +58,14 @@ ORIG-FUN is the original `compile' and COMINT its interactive flag."
 Keeps progress bars (e.g. Nix builds) to one updating line."
   (let ((inhibit-read-only t))
     (save-excursion
-      (let ((start (cond
-                    ((bound-and-true-p compilation-filter-start) compilation-filter-start)
-                    ((bound-and-true-p comint-last-output-start) comint-last-output-start)
-                    (t (point-min)))))
+      (let ((start
+             (cond
+              ((bound-and-true-p compilation-filter-start)
+               compilation-filter-start)
+              ((bound-and-true-p comint-last-output-start)
+               comint-last-output-start)
+              (t
+               (point-min)))))
         (goto-char start)
         (while (search-forward "\r" nil t)
           (delete-region (line-beginning-position) (point)))))))
@@ -69,8 +74,12 @@ Keeps progress bars (e.g. Nix builds) to one updating line."
   "Buffer-local xterm-color + CR filtering for the current `shell-mode' buffer."
   (setq-local xterm-color-preserve-properties t)
   (setq-local comint-inhibit-carriage-motion nil)
-  (add-hook 'comint-preoutput-filter-functions 'xterm-color-filter nil t)
-  (add-hook 'comint-output-filter-functions #'compile-ansi--process-filter-cr nil t))
+  (add-hook 'comint-preoutput-filter-functions 'xterm-color-filter
+            nil
+            t)
+  (add-hook
+   'comint-output-filter-functions #'compile-ansi--process-filter-cr
+   nil t))
 
 (defun compile-ansi--async-shell-mode (&rest _)
   "Switch the `*Async Shell Command*' buffer to `shell-mode' for filtering."
@@ -84,11 +93,16 @@ Keeps progress bars (e.g. Nix builds) to one updating line."
   "Install ANSI colour and carriage-return filtering across compile/shell buffers."
   (setq comint-terminfo-terminal "xterm-256color")
   (setq compilation-environment '("TERM=xterm-256color"))
-  (advice-add 'compilation-filter :around #'compile-ansi--compilation-filter)
+  (advice-add
+   'compilation-filter
+   :around #'compile-ansi--compilation-filter)
   (advice-add 'compile :around #'compile-ansi--compile-sudo)
-  (add-hook 'compilation-filter-hook #'compile-ansi--process-filter-cr)
+  (add-hook
+   'compilation-filter-hook #'compile-ansi--process-filter-cr)
   (add-hook 'shell-mode-hook #'compile-ansi--shell-mode-setup)
-  (advice-add 'async-shell-command :after #'compile-ansi--async-shell-mode))
+  (advice-add
+   'async-shell-command
+   :after #'compile-ansi--async-shell-mode))
 
 (provide 'compile-ansi)
 ;;; compile-ansi.el ends here

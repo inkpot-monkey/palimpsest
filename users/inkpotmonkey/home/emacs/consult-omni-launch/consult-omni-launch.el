@@ -30,9 +30,11 @@ runs, and the frame is removed on completion, quit, or error."
         (consult-omni-multi nil "Run: ")
         ;; Small delay so the action is initiated before the frame is deleted.
         (run-at-time "0.1 sec" nil #'delete-frame))
-    (quit (delete-frame))
-    (error (message "Launcher error occurred")
-           (delete-frame))))
+    (quit
+     (delete-frame))
+    (error
+     (message "Launcher error occurred")
+     (delete-frame))))
 
 (provide 'consult-omni-launch)
 ;;; consult-omni-launch.el ends here

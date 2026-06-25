@@ -28,7 +28,8 @@
   :group 'comm
   :prefix "ement-glue-")
 
-(defcustom ement-glue-user-id "@inkpotmonkey:matrix.palebluebytes.space"
+(defcustom ement-glue-user-id
+  "@inkpotmonkey:matrix.palebluebytes.space"
   "Matrix user ID to connect as."
   :type 'string)
 

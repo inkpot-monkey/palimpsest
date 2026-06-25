@@ -1,6 +1,6 @@
----
-status: superseded by ADR-0025
----
+______________________________________________________________________
+
+## status: superseded by ADR-0025
 
 # AionUi→Matrix notifications via a REST poller, not a native aioncore channel
 

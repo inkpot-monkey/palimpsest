@@ -29,11 +29,14 @@ pub struct Config {
 
 impl Config {
     pub fn from_env() -> anyhow::Result<Self> {
-        let bind_addr =
-            std::env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:8787".to_string());
-        let public_base_url = std::env::var("PUBLIC_BASE_URL").ok().filter(|s| !s.is_empty());
+        let bind_addr = std::env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:8787".to_string());
+        let public_base_url = std::env::var("PUBLIC_BASE_URL")
+            .ok()
+            .filter(|s| !s.is_empty());
 
-        let annas_search_url = std::env::var("ANNAS_SEARCH_URL").ok().filter(|s| !s.is_empty());
+        let annas_search_url = std::env::var("ANNAS_SEARCH_URL")
+            .ok()
+            .filter(|s| !s.is_empty());
 
         let mode_raw = std::env::var("ANNAS_SEARCH_MODE").ok();
         let search_mode = match mode_raw.as_deref() {
@@ -55,9 +58,8 @@ impl Config {
             anyhow::bail!("ANNAS_SEARCH_URL is required when ANNAS_SEARCH_MODE=http");
         }
 
-        let annas_fast_download_url = std::env::var("ANNAS_FAST_DOWNLOAD_URL").unwrap_or_else(|_| {
-            "https://annas-archive.org/dyn/api/fast_download.json".to_string()
-        });
+        let annas_fast_download_url = std::env::var("ANNAS_FAST_DOWNLOAD_URL")
+            .unwrap_or_else(|_| "https://annas-archive.org/dyn/api/fast_download.json".to_string());
 
         let annas_member_secret = std::env::var("ANNAS_MEMBER_SECRET")
             .ok()
@@ -76,8 +78,12 @@ impl Config {
 
         let stump_graphql_url = std::env::var("STUMP_GRAPHQL_URL")
             .unwrap_or_else(|_| "http://127.0.0.1:10801/api/graphql".to_string());
-        let stump_library_id = std::env::var("STUMP_LIBRARY_ID").ok().filter(|s| !s.is_empty());
-        let stump_api_key = std::env::var("STUMP_API_KEY").ok().filter(|s| !s.is_empty());
+        let stump_library_id = std::env::var("STUMP_LIBRARY_ID")
+            .ok()
+            .filter(|s| !s.is_empty());
+        let stump_api_key = std::env::var("STUMP_API_KEY")
+            .ok()
+            .filter(|s| !s.is_empty());
 
         Ok(Self {
             bind_addr,

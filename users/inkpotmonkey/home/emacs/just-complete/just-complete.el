@@ -54,10 +54,12 @@ Key is project root, value is (mod-time . candidates).")
   "Annotate a just recipe candidate CAND for Marginalia."
   (let ((args (get-text-property 0 'just-args cand))
         (comment (get-text-property 0 'just-comment cand)))
-    (concat (when (and args (not (string-empty-p args)))
-              (propertize (concat " " args) 'face 'just-complete-args))
-            (when (and comment (not (string-empty-p comment)))
-              (concat "  " (propertize comment 'face 'just-complete-comment))))))
+    (concat
+     (when (and args (not (string-empty-p args)))
+       (propertize (concat " " args) 'face 'just-complete-args))
+     (when (and comment (not (string-empty-p comment)))
+       (concat
+        "  " (propertize comment 'face 'just-complete-comment))))))
 
 (defun just-complete--parse-args (args-str)
   "Parse arguments string from just output.
@@ -86,37 +88,59 @@ Returns a list of lists: ((name default is-variadic) ...)."
 (defun just-complete--get-candidates ()
   "Get candidates for completion, using cache if valid."
   (let* ((project (project-current))
-         (root (if project (project-root project) default-directory))
+         (root
+          (if project
+              (project-root project)
+            default-directory))
          (justfile (expand-file-name "Justfile" root))
          (cache-val (gethash root just-complete--cache))
-         (mod-time (when (file-exists-p justfile)
-                     (file-attribute-modification-time (file-attributes justfile))))
+         (mod-time
+          (when (file-exists-p justfile)
+            (file-attribute-modification-time
+             (file-attributes justfile))))
          (candidates nil))
     (if (and cache-val (equal (car cache-val) mod-time))
         (setq candidates (cdr cache-val))
       ;; Cache invalid or missing, parse file
       (with-temp-buffer
         (condition-case nil
-            (let ((exit-code (call-process just-complete-executable nil t nil "--list"))
+            (let ((exit-code
+                   (call-process just-complete-executable
+                                 nil
+                                 t
+                                 nil
+                                 "--list"))
                   (output (buffer-string)))
               (if (/= exit-code 0)
-                  (message "Error: `just --list` failed with exit code %d." exit-code)
+                  (message
+                   "Error: `just --list` failed with exit code %d."
+                   exit-code)
                 (let ((lines (split-string output "\n" t)))
                   (dolist (line lines)
-                    (when (string-match "^[ \t]+\\([^ ]+\\)\\([^#]*\\)[ \t]*\\(# \\(.*\\)\\)?$" line)
+                    (when
+                        (string-match
+                         "^[ \t]+\\([^ ]+\\)\\([^#]*\\)[ \t]*\\(# \\(.*\\)\\)?$"
+                         line)
                       (let* ((recipe (match-string 1 line))
                              (args-raw (match-string 2 line))
                              (comment (match-string 4 line))
                              (args (string-trim (or args-raw "")))
-                             (cand (propertize recipe 
-                                              'just-args args 
-                                              'just-comment (or comment ""))))
+                             (cand
+                              (propertize recipe
+                                          'just-args
+                                          args
+                                          'just-comment
+                                          (or comment ""))))
                         (push cand candidates))))
                   (setq candidates (nreverse candidates))
                   ;; Update cache
-                  (puthash root (cons mod-time candidates) just-complete--cache))))
+                  (puthash
+                   root
+                   (cons mod-time candidates)
+                   just-complete--cache))))
           (file-missing
-           (message "Error: `just` executable not found in exec-path.")))))
+           (message
+            "Error: `just` executable not found in exec-path.")))))
     candidates))
 
 (defun just-run+ ()
@@ -125,23 +149,31 @@ Returns a list of lists: ((name default is-variadic) ...)."
   (let ((candidates (just-complete--get-candidates)))
     (if (not candidates)
         (message "No just recipes found")
-      (let* ((choice (completing-read
-                      "Just recipe: "
-                      (lambda (string pred action)
-                        (if (eq action 'metadata)
-                            '(metadata (category . just-recipe))
-                          (complete-with-action action candidates string pred)))
-                      nil t nil 'just-complete-history))
+      (let* ((choice
+              (completing-read "Just recipe: "
+                               (lambda (string pred action)
+                                 (if (eq action 'metadata)
+                                     '(metadata
+                                       (category . just-recipe))
+                                   (complete-with-action
+                                    action candidates string pred)))
+                               nil t nil 'just-complete-history))
              (selected-cand (car (member choice candidates)))
-             (args-str (when selected-cand (get-text-property 0 'just-args selected-cand)))
+             (args-str
+              (when selected-cand
+                (get-text-property 0 'just-args selected-cand)))
              (parsed-args (just-complete--parse-args args-str))
              (project (project-current))
-             (proj-name (if project 
-                            (file-name-nondirectory (directory-file-name (project-root project)))
-                          (file-name-nondirectory (directory-file-name default-directory))))
+             (proj-name
+              (if project
+                  (file-name-nondirectory
+                   (directory-file-name (project-root project)))
+                (file-name-nondirectory
+                 (directory-file-name default-directory))))
              (buf-name (format "*just [%s] %s*" proj-name choice)))
         (when (and choice (not (string-empty-p choice)))
-          (let ((compilation-buffer-name-function (lambda (_) buf-name)))
+          (let ((compilation-buffer-name-function
+                 (lambda (_) buf-name)))
             (if parsed-args
                 ;; Smart argument prompting
                 (let ((collected-args nil))
@@ -149,14 +181,23 @@ Returns a list of lists: ((name default is-variadic) ...)."
                     (let* ((name (nth 0 arg))
                            (default (nth 1 arg))
                            (is-variadic (nth 2 arg))
-                           (prompt (if is-variadic
-                                       (format "Argument %s (variadic): " name)
-                                     (format "Argument %s: " name)))
-                           (val (read-string prompt default 'just-complete-argument-history)))
+                           (prompt
+                            (if is-variadic
+                                (format "Argument %s (variadic): "
+                                        name)
+                              (format "Argument %s: " name)))
+                           (val
+                            (read-string
+                             prompt
+                             default
+                             'just-complete-argument-history)))
                       (when (and val (not (string-empty-p val)))
                         (push val collected-args))))
                   (setq collected-args (nreverse collected-args))
-                  (let ((cmd (concat "just " choice " " (mapconcat #'identity collected-args " "))))
+                  (let ((cmd
+                         (concat
+                          "just " choice " "
+                          (mapconcat #'identity collected-args " "))))
                     (compile (string-trim cmd))))
               ;; No arguments needed
               (compile (format "just %s" choice)))))))))
@@ -173,7 +214,10 @@ Returns a list of lists: ((name default is-variadic) ...)."
   "View source of just recipe CAND."
   (interactive "s")
   (let* ((project (project-current))
-         (root (if project (project-root project) default-directory))
+         (root
+          (if project
+              (project-root project)
+            default-directory))
          (justfile (expand-file-name "Justfile" root)))
     (if (file-exists-p justfile)
         (progn
@@ -187,12 +231,17 @@ Returns a list of lists: ((name default is-variadic) ...)."
 ;; Register with Marginalia
 (with-eval-after-load 'marginalia
   (if (boundp 'marginalia-annotators)
-      (add-to-list 'marginalia-annotators '(just-recipe just-recipe-annotator none))
-    (add-to-list 'marginalia-annotator-registry '(just-recipe just-recipe-annotator none))))
+      (add-to-list
+       'marginalia-annotators
+       '(just-recipe just-recipe-annotator none))
+    (add-to-list
+     'marginalia-annotator-registry
+     '(just-recipe just-recipe-annotator none))))
 
 ;; Register with Embark
 (with-eval-after-load 'embark
-  (add-to-list 'embark-keymap-alist '(just-recipe . just-complete-recipe-map)))
+  (add-to-list
+   'embark-keymap-alist '(just-recipe . just-complete-recipe-map)))
 
 (provide 'just-complete)
 

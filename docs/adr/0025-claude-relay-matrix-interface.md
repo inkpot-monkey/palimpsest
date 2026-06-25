@@ -1,6 +1,6 @@
----
-status: accepted
----
+______________________________________________________________________
+
+## status: accepted
 
 # Claude relay: Matrix is the primary interface to persistent `claude` sessions
 

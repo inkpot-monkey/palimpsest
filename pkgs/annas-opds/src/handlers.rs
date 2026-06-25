@@ -44,14 +44,8 @@ fn build_base(headers: &HeaderMap, cfg: &Config) -> String {
 }
 
 fn hit_to_pub(hit: &AnnaHit, base: &str) -> Publication {
-    let title = hit
-        .title
-        .clone()
-        .unwrap_or_else(|| "Untitled".to_string());
-    let author_name = hit
-        .author
-        .clone()
-        .unwrap_or_else(|| "Unknown".to_string());
+    let title = hit.title.clone().unwrap_or_else(|| "Untitled".to_string());
+    let author_name = hit.author.clone().unwrap_or_else(|| "Unknown".to_string());
 
     let q_title = urlencoding::encode(&title);
     let q_author = urlencoding::encode(&author_name);
@@ -161,10 +155,7 @@ pub async fn download(
         )));
     }
 
-    let bytes = req
-        .bytes()
-        .await
-        .map_err(|e| ApiError::Anna(e.into()))?;
+    let bytes = req.bytes().await.map_err(|e| ApiError::Anna(e.into()))?;
     if bytes.len() as u64 > state.config.max_epub_bytes {
         return Err(ApiError::TooLarge);
     }
@@ -208,7 +199,8 @@ pub async fn download(
     );
     res.headers_mut().insert(
         header::CONTENT_DISPOSITION,
-        HeaderValue::from_str(&disposition).unwrap_or_else(|_| HeaderValue::from_static("attachment")),
+        HeaderValue::from_str(&disposition)
+            .unwrap_or_else(|_| HeaderValue::from_static("attachment")),
     );
 
     Ok(res)
@@ -240,8 +232,12 @@ impl IntoResponse for ApiError {
             )
                 .into_response(),
             ApiError::Upstream(s) => (StatusCode::BAD_GATEWAY, s).into_response(),
-            ApiError::TooLarge => (StatusCode::PAYLOAD_TOO_LARGE, "EPUB exceeds MAX_EPUB_BYTES").into_response(),
-            ApiError::Scrub => (StatusCode::INTERNAL_SERVER_ERROR, "EPUB scrub failed").into_response(),
+            ApiError::TooLarge => {
+                (StatusCode::PAYLOAD_TOO_LARGE, "EPUB exceeds MAX_EPUB_BYTES").into_response()
+            }
+            ApiError::Scrub => {
+                (StatusCode::INTERNAL_SERVER_ERROR, "EPUB scrub failed").into_response()
+            }
         }
     }
 }

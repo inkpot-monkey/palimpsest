@@ -8,6 +8,7 @@ NixOS configuration for a Raspberry Pi 4 equipped with a HiFiBerry DAC2 ADC Pro,
 > (it re-triggers the wedge). Full post-mortem: **[`RUNBOOK-audio-silence.md`](./RUNBOOK-audio-silence.md)**.
 
 ## Quick Specs
+
 - **Hostname**: `porcupineFish`
 - **IP**: DHCP/reserved on LAN (often `192.168.1.21`)
 - **Architecture**: `aarch64-linux`
@@ -21,7 +22,9 @@ Deploy updates directly from your laptop (Stargazer). This command builds the sy
 ```bash
 nixos-rebuild switch --flake .#porcupineFish --target-host root@porcupineFish --accept-flake-config
 ```
+
 > Notes:
+>
 > - `--accept-flake-config` is required for binary caches.
 > - If `porcupineFish` is not resolvable via DNS/hosts, use `root@<ip>` instead.
 
@@ -31,6 +34,7 @@ We use the `build-pi` helper for bootstrapping and flashing. You can run it
 either directly or via the flake app.
 
 ### 1. Provision (Build, Flash, & Setup)
+
 The `provision` command automatically generates SSH identity keys, updates SOPS secrets, builds the SD image, flashes it to the SD card, and injects the new keys into the flashed image.
 
 ```bash
@@ -57,13 +61,15 @@ If you omit `config_name` or `device`, `build-pi` shows interactive menus
 ordered from most likely to least likely:
 
 1. **Host targets** (`provision`):
+
    - Tries to include only flake hosts that expose `config.system.build.images.sd-card`
    - Falls back to hosts found under `hosts/*/configuration.nix` if evaluation fails
    - `porcupineFish` first (default)
    - Pi-like names next (e.g. names containing `pi`, `rpi`, `porcupine`)
    - Remaining hosts alphabetically
 
-2. **Flash devices** (`provision`):
+1. **Flash devices** (`provision`):
+
    - Writable block devices from `lsblk`
    - `/dev/mmcblk*` first (very likely SD slot)
    - Removable/USB disks next
@@ -77,6 +83,7 @@ nix run .#build-pi -- devices
 ```
 
 ### 2. Boot
+
 Insert card and power on. The Pi checks into WiFi automatically using secrets managed by SOPS.
 There is **no console on HDMI** during boot (`config.txt` sets `disable_fw_kms_setup=1`, so the
 framebuffer only comes up once the `vc4` KMS driver loads late in boot) and `headless.nix`
@@ -92,6 +99,7 @@ vendor kernel from the **stable** branch (`linux_rpi-bcm2711-6.12.34-stable`) to
 (`6.12.87-unstable`), which **hangs porcupineFish in the initrd before systemd ever starts**.
 
 ### How to recognise this failure (it's deceptive)
+
 - Monitor stays black the whole time (see above — that's normal here, not the bug).
 - Never joins wifi/tailscale.
 - Mount the flashed card and check the root partition: **`/var` is empty** and the **root fs was
@@ -100,6 +108,7 @@ vendor kernel from the **stable** branch (`linux_rpi-bcm2711-6.12.34-stable`) to
   boot, populate `/var`, and grow the root.)
 
 ### Forward path (don't stay on Feb 2026 forever)
+
 The current `nixos-raspberrypi` still ships the good kernel alongside the broken default
 (`pkgs/linux-rpi/kernels.nix` lists `v6_12_34` … `v6_12_87`). So you can move to a *newer*
 `nixos-raspberrypi` (newer u-boot/firmware/fixes) and just `lib.mkForce`
@@ -118,6 +127,7 @@ lands and the Pi silently fails to join the network. porcupineFish references **
 `media.yaml`, `garnix.yaml`.
 
 **Re-key all six (manual, until `build-pi` is fixed):**
+
 ```bash
 # porcupineFish's age key (from its preserved host key):
 #   age1aq4fp9qrhz03vqrzj8gjw4xm2dgkueudflzex8vmmrg8efe0rswqcv8jah
@@ -127,6 +137,7 @@ for f in github wireless restic networking media garnix; do sops updatekeys -y p
 git commit -am "re-key porcupineFish" && git push
 cd .. && nix flake update secrets    # bump the input so the build sees it
 ```
+
 Audit which files a host needs vs which are keyed:
 `nix eval .#nixosConfigurations.porcupineFish.config.sops.secrets --apply 's: map (v: v.sopsFile) (builtins.attrValues s)'`,
 then grep each for the age key.
@@ -135,6 +146,7 @@ then grep each for the age key.
 
 Reflashing regenerates the SSH host key, which changes the derived age key and breaks SOPS
 decryption. **Preserve the existing key** so the (already-keyed) secrets stay valid:
+
 ```bash
 # BEFORE flashing — capture from the old card's root partition:
 mkdir -p ~/porcupineFish-hostkey && cp -a /mnt/oldroot/etc/ssh/ssh_host_ed25519_key{,.pub} ~/porcupineFish-hostkey/
@@ -144,23 +156,27 @@ sudo install -o root -g root -m0600 ~/porcupineFish-hostkey/ssh_host_ed25519_key
 sudo install -o root -g root -m0644 ~/porcupineFish-hostkey/ssh_host_ed25519_key.pub /mnt/new/etc/ssh/
 sudo sync && sudo umount /mnt/new
 ```
+
 Verify the key derives to the expected identity:
 `ssh-to-age < ~/porcupineFish-hostkey/ssh_host_ed25519_key.pub` ⇒ `age1aq4fp9…`.
 
 ## Alternative: Native Build (On Pi)
+
 If local emulation is too slow, you can build natively on the Pi.
 
-1.  **Sync Source**:
-    ```bash
-    rsync -avz --delete --exclude='.git' ~/code/nixos/ root@porcupineFish:~/nixos-config/
-    ```
+1. **Sync Source**:
 
-2.  **Build on Pi (tmux recommended)**:
-    ```bash
-    ssh root@porcupineFish
-    tmux new -s update
-    nixos-rebuild switch --flake ~/nixos-config#porcupineFish
-    ```
+   ```bash
+   rsync -avz --delete --exclude='.git' ~/code/nixos/ root@porcupineFish:~/nixos-config/
+   ```
+
+1. **Build on Pi (tmux recommended)**:
+
+   ```bash
+   ssh root@porcupineFish
+   tmux new -s update
+   nixos-rebuild switch --flake ~/nixos-config#porcupineFish
+   ```
 
 ## Why this host is pinned to nixpkgs / home-manager 25.11 (and paths to 26.11)
 
@@ -178,6 +194,7 @@ option (e.g. `programs.ssh.settings`, `programs.git.settings`, `xdg.userDirs.set
 `home.stateVersion = "26.11"`) will fail to *evaluate* here — and `lib.mkIf`/profile-disable does
 **not** suppress "option does not exist" errors (unknown-option checks run during structural
 name-collection, before the condition). The repo handles this two ways:
+
 - **De-monolith:** `users/inkpotmonkey/home/profiles.nix` imports the desktop/dev modules
   (`gui`/`dev`/`ai`/`emacs`) **only on gui hosts** (branching on
   `osConfig.custom.users.inkpotmonkey.identity.profile`), so headless/cli hosts never import them.
@@ -192,7 +209,7 @@ Ranked by risk (researched 2026-06; archive dates current as of then):
 1. **Wait for `nvmd/nixos-raspberrypi` to track the next stable (26.x), then bump** the
    `nixos-raspberrypi` + `home-manager-25_11` inputs. *Lowest risk* — keeps the vendor kernel and
    curated HiFiBerry overlay; the version-guards above degrade to no-ops. Recommended default.
-2. **Switch toolchain to `nixos-hardware` (`raspberry-pi/4`) + the upstream generic aarch64 SD
+1. **Switch toolchain to `nixos-hardware` (`raspberry-pi/4`) + the upstream generic aarch64 SD
    image**, which follows your own nixpkgs (tracks unstable cleanly). *This is the only live
    unstable-tracking option* — `nix-community/raspberry-pi-nix` (archived 2025-03-23) and the
    `Ramblurr` fork (archived 2025-05-15) are dead. **Decisive caveat:** that path defaults to the
@@ -202,7 +219,7 @@ Ranked by risk (researched 2026-06; archive dates current as of then):
    confirm the `snd-soc` codec loads on mainline. Also a boot/firmware model change
    (`config.txt` → deviceTree/extlinux) and intermittent unstable breakages. **Verify the DAC2 ADC
    Pro on mainline on real hardware before committing.**
-3. **Force `inputs.nixos-raspberrypi.inputs.nixpkgs.follows = "nixpkgs"`** (26.11). *Not
+1. **Force `inputs.nixos-raspberrypi.inputs.nixpkgs.follows = "nixpkgs"`** (26.11). *Not
    recommended* — unsupported by the flake (a real-world override was found to be non-working) and
    risks the vendor kernel/firmware/overlay the flake exists to curate.
 

@@ -1,6 +1,6 @@
----
-status: superseded by ADR-0025
----
+______________________________________________________________________
+
+## status: superseded by ADR-0025
 
 # AionUi has no app-level auth; the Tailscale boundary is load-bearing
 

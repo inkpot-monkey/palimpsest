@@ -76,11 +76,7 @@ fn normalize_zip_path(name: &str) -> String {
 }
 
 /// Replace dc:title and dc:creator in the package OPF; repack EPUB bytes.
-pub fn scrub_epub(
-    epub_bytes: &[u8],
-    title: &str,
-    author: &str,
-) -> Result<Vec<u8>, ScrubError> {
+pub fn scrub_epub(epub_bytes: &[u8], title: &str, author: &str) -> Result<Vec<u8>, ScrubError> {
     let cursor = Cursor::new(epub_bytes);
     let mut archive = ZipArchive::new(cursor)?;
 
@@ -119,8 +115,7 @@ pub fn scrub_epub(
     let mut out = Cursor::new(Vec::new());
     {
         let mut writer = ZipWriter::new(&mut out);
-        let opts = SimpleFileOptions::default()
-            .compression_method(Deflated);
+        let opts = SimpleFileOptions::default().compression_method(Deflated);
 
         for i in 0..archive.len() {
             let mut file = archive.by_index(i)?;

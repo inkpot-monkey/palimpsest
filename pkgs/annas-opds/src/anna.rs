@@ -98,8 +98,7 @@ fn parse_search_json(body: &[u8]) -> Result<Vec<AnnaHit>, AnnaError> {
 fn hits_from_array(arr: &[Value]) -> Result<Vec<AnnaHit>, AnnaError> {
     let mut out = Vec::with_capacity(arr.len());
     for v in arr {
-        let h: HitLoose = serde_json::from_value(v.clone())
-            .map_err(|_| AnnaError::SearchShape)?;
+        let h: HitLoose = serde_json::from_value(v.clone()).map_err(|_| AnnaError::SearchShape)?;
         let md5 = h.md5.clone().filter(|s| !s.is_empty());
         let Some(md5) = md5 else {
             continue;

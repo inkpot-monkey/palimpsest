@@ -23,6 +23,7 @@ The split is clean because the seam already existed: the ~14k-LOC Rust crate has
 The original "`jmap-bridge.nixpkgs` follows the fleet" choice meant the crate was always built **from source against the fleet's nixpkgs** — so every fleet nixpkgs bump (not just a bridge-rev bump) triggered a full matrix-sdk/sqlx Rust rebuild. The bridge's CI pushes its crane closure to the `palebluebytes` cachix, but the fleet could never use it: `follows` rebuilt against a *different* nixpkgs than CI, guaranteeing a cache miss.
 
 Reversed for cache reuse:
+
 - The `jmap-bridge` input **no longer follows** this repo's nixpkgs (`flake.nix`), so it keeps the bridge's own pinned nixpkgs — the one CI built against.
 - The matrix profile sets `services.jmap-bridge.package = inputs.jmap-bridge.packages.<system>.default` (the bridge flake's own output) instead of the overlay's `pkgs.jmap-matrix-bridge` (which would rebuild against the fleet pin).
 - `nixConfig.nix` trusts `palebluebytes.cachix.org`, so the prebuilt binary substitutes.

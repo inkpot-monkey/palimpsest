@@ -23,22 +23,24 @@
 (push '(fullscreen . maximized) initial-frame-alist)
 
 ;; Disable resizing early
-(setq frame-inhibit-implied-resize t
-      frame-resize-pixelwise t)
+(setq
+ frame-inhibit-implied-resize t
+ frame-resize-pixelwise t)
 
 ;; UI inhibition
-(setq inhibit-startup-screen t
-      inhibit-startup-message t
-      inhibit-startup-echo-area-message user-login-name
-      initial-scratch-message nil)
+(setq
+ inhibit-startup-screen t
+ inhibit-startup-message t
+ inhibit-startup-echo-area-message user-login-name
+ initial-scratch-message nil)
 
-(setq package-native-compile t) 
+(setq package-native-compile t)
 
 (when (and (fboundp 'startup-redirect-eln-cache)
            (fboundp 'native-comp-available-p)
            (native-comp-available-p))
   (startup-redirect-eln-cache
    (convert-standard-filename
-    (expand-file-name  "var/eln-cache/" user-emacs-directory))))
+    (expand-file-name "var/eln-cache/" user-emacs-directory))))
 
 ;;; early-init.el ends here

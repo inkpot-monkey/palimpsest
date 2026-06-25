@@ -19,6 +19,7 @@ aioncore runs in --local mode, so /api/* needs no auth on localhost.
 
 Config via env: AIONUI_URL, MATRIX_WEBHOOK_URL_FILE, STATE_DIR, POLL_INTERVAL.
 """
+
 import json
 import os
 import sys
@@ -114,8 +115,10 @@ def main():
     state.setdefault("convs", {})
     convs_state = state["convs"]
     save_state(state)
-    log(f"watching {AIONUI_URL} every {POLL_INTERVAL}s"
-        + (" (seeding)" if seeding else ""))
+    log(
+        f"watching {AIONUI_URL} every {POLL_INTERVAL}s"
+        + (" (seeding)" if seeding else "")
+    )
 
     while True:
         try:
@@ -147,8 +150,12 @@ def main():
             if new_confs:
                 titles = ", ".join(conf_titles[i] for i in new_confs)
                 events.append(f"❓ needs input: {name} — {titles}")
-            elif status == "finished" and modified > p.get("modified_at", 0) \
-                    and not conf_ids and p:
+            elif (
+                status == "finished"
+                and modified > p.get("modified_at", 0)
+                and not conf_ids
+                and p
+            ):
                 events.append(f"✅ finished: {name}")
             if status in ERROR_STATUSES and status != p.get("status"):
                 events.append(f"⚠️ error ({status}): {name}")
@@ -158,8 +165,11 @@ def main():
                     log(msg)
                     post_event(url, msg)
 
-            convs_state[cid] = {"modified_at": modified, "status": status,
-                                "conf_ids": conf_ids}
+            convs_state[cid] = {
+                "modified_at": modified,
+                "status": status,
+                "conf_ids": conf_ids,
+            }
 
         for cid in list(convs_state.keys()):
             if cid not in seen:

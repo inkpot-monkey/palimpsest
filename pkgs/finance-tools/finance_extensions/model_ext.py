@@ -9,6 +9,7 @@ import logging
 
 log = logging.getLogger(__name__)
 
+
 class ModelExtension(FavaExtensionBase):
     report_title = "Auto tagging"
 
@@ -41,7 +42,7 @@ class ModelExtension(FavaExtensionBase):
         data = request.get_json()
         error_message = data.get("message", "")
         context = data.get("context", "")
-        
+
         prompt = f"""
         Explain the following Beancount error to a user and suggest a fix.
         Error: {error_message}
@@ -49,7 +50,7 @@ class ModelExtension(FavaExtensionBase):
         
         Keep it concise and helpful.
         """
-        
+
         try:
             # Load config using shared util
             cfg = load_ai_config()
@@ -58,21 +59,21 @@ class ModelExtension(FavaExtensionBase):
             # Ensure model has 'ollama/' prefix if needed or plain
             # The utils.config.get_model_name already defaults to "ollama/qwen2.5:7b"
             # We trust the config/default here.
-                 # Wait, for subprocess call we use 'ollama run model'
-                 # We don't use litellm here yet, we used subprocess in other methods.
-                 # Let's use subprocess for consistency with 'pull' method in this class.
-            
+            # Wait, for subprocess call we use 'ollama run model'
+            # We don't use litellm here yet, we used subprocess in other methods.
+            # Let's use subprocess for consistency with 'pull' method in this class.
+
             try:
                 res = subprocess.run(
                     ["ollama", "run", model, prompt],
                     capture_output=True,
                     text=True,
                     check=True,
-                    timeout=30  # 30 second timeout for explanation
+                    timeout=30,  # 30 second timeout for explanation
                 )
                 return jsonify({"success": True, "explanation": res.stdout.strip()})
             except subprocess.TimeoutExpired:
-                 return jsonify({"success": False, "error": "AI request timed out"}), 504
+                return jsonify({"success": False, "error": "AI request timed out"}), 504
         except Exception as e:
             return jsonify({"success": False, "error": str(e)}), 500
 
@@ -98,11 +99,11 @@ class ModelExtension(FavaExtensionBase):
         model = data.get("model")
         try:
             res = subprocess.run(
-                ["ollama", "pull", model], 
-                capture_output=True, 
-                text=True, 
+                ["ollama", "pull", model],
+                capture_output=True,
+                text=True,
                 check=True,
-                timeout=300 # 5 minute timeout for pull
+                timeout=300,  # 5 minute timeout for pull
             )
             return jsonify({"success": True, "output": res.stdout})
         except subprocess.CalledProcessError as e:

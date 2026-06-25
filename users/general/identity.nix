@@ -1,5 +1,4 @@
-{ lib, ... }:
-{
+_: {
 
   config.custom.users.general.identity = {
     username = "general";

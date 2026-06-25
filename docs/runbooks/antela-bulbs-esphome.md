@@ -6,14 +6,14 @@ How to bring an Antela Filament A60 WiFi bulb under local Home Assistant control
 
 Two **independent repo tasks** (do anytime) plus a **per-bulb pipeline**. The pipeline has a chicken-and-egg quirk: cloudcutter flashes a firmware *file*, so you build the ESPHome firmware **first**, then cloudcutter pushes it. After that first flash, every change goes over WiFi (OTA) — you never cloudcutter the same bulb twice.
 
-Recommended order: 
+Recommended order:
 
 ① deploy rk1b
-② seed the stash secret 
-③ first bulb 
+② seed the stash secret
+③ first bulb
 ④ remaining bulbs.
 
----
+______________________________________________________________________
 
 ## ① Deploy rk1b
 
@@ -26,7 +26,7 @@ just deploy rk1b
 
 Verify: HA (`https://home.palebluebytes.space`) → Settings → Devices & Services → Add Integration → "ESPHome" should be listed. No device is added yet.
 
----
+______________________________________________________________________
 
 ## ② Seed the ESPHome secrets in stash
 
@@ -61,7 +61,7 @@ cd /path/to/nixos && nix flake update secrets
 > The bulbs are **2.4 GHz only** (no 5 GHz radio). A combined SSID is fine; if 2.4/5 are
 > split, use the 2.4 GHz one.
 
----
+______________________________________________________________________
 
 ## ③ First bulb, end-to-end
 
@@ -99,13 +99,14 @@ sudo ./tuya-cloudcutter.sh
 ```
 
 In the menu:
+
 1. Select profile — search "antela"; if absent, pick by chip → **BK7231N**, then the
    profile matching the bulb's firmware (or closest / build-a-profile flow).
-2. Choose **flash 3rd-party firmware** → your `firmware.uf2`.
-3. Put the bulb in pairing mode when prompted: power-cycle ~3× (on/off/on/off/on) until it
+1. Choose **flash 3rd-party firmware** → your `firmware.uf2`.
+1. Put the bulb in pairing mode when prompted: power-cycle ~3× (on/off/on/off/on) until it
    **blinks fast**.
-4. Cloudcutter stands up an AP, the bulb joins, the exploit runs, the UF2 is written.
-5. If offered, **save/extract the device config** — the dumped Tuya GPIO schema is needed
+1. Cloudcutter stands up an AP, the bulb joins, the exploit runs, the UF2 is written.
+1. If offered, **save/extract the device config** — the dumped Tuya GPIO schema is needed
    for the light config in step E.
 
 **Go/no-go:** success → bulb reboots into ESPHome, proceed. Failure → firmware is patched;
@@ -135,7 +136,7 @@ nix run nixpkgs#esphome -- run esphome/antela-a60-1.yaml
 
 The light entity appears in HA and is controllable. First bulb done.
 
----
+______________________________________________________________________
 
 ## ④ Remaining bulbs + Areas + voice
 
@@ -144,11 +145,11 @@ secret, copy the YAML to `antela-a60-N.yaml` (unique `name`), repeat B–E. Iden
 means the light config from bulb 1 carries over — no re-discovery.
 
 Then assign each bulb to an HA **Area** (Settings → Areas, or per-device). Since rk1b is the
-voice node, that is all Assist needs — confirm with *"turn on the &lt;area&gt; light"*.
+voice node, that is all Assist needs — confirm with *"turn on the \<area> light"*.
 
 Automations are phase 2 (declarative in nix per ADR-0016), tracked separately.
 
----
+______________________________________________________________________
 
 ## Quick reference
 

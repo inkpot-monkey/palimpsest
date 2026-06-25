@@ -3,9 +3,11 @@
 This guide documents the server-side `git-annex` configuration using the NixOS module located in `modules/nixos/git-annex.nix`.
 
 ## Overview
+
 The NixOS module allows you to declaratively configure `git-annex` repositories, services, and clustering on your server.
 
 ## Key Features
+
 - **Declarative Repositories**: Define repositories, paths, and descriptions in Nix.
 - **Cluster Management**: Automatically initialize and update `git-annex` clusters.
 - **Stateless Gateway**: Configure a gateway node that receives files but drops them after forwarding to a backup.
@@ -16,6 +18,7 @@ The NixOS module allows you to declaratively configure `git-annex` repositories,
 ## Configuration Reference
 
 ### Enabling the Module
+
 ```nix
 imports = [ ./modules/nixos/git-annex.nix ];
 services.git-annex.enable = true;
@@ -24,9 +27,11 @@ services.git-annex.gpgKeyFile = config.sops.secrets.git_annex_gpg_key.path;
 ```
 
 ### Defining Repositories
+
 Repositories are defined under `services.git-annex.repositories`.
 
 #### Example: Stateless Gateway & Backup
+
 This setup configures a "Gateway" that forwards data to a "Backup" and then drops its own copy.
 
 ```nix
@@ -70,33 +75,36 @@ services.git-annex.repositories = {
 ### Options Detail
 
 #### Repository Options
-*   `sshKeyFile` (path, optional): Path to the private SSH key file to use for git-annex operations (e.g. from `sops-nix`).
-*   `gpgKeyFile` (path, optional): Path to the GPG key file to import for git-annex.
-*   `path` (path): Absolute path to the repository.
-*   `description` (str): Description for `git annex init`.
-*   `uuid` (str, optional): The UUID of this repository. Useful for referencing it from other configs.
-*   `gateway` (bool): If true, runs `git annex initcluster`.
-*   `assistant` (bool): Enables the `git-annex-assistant` systemd service.
-*   `wanted` (str): Preferred content expression.
-    *   `standard`: Default behavior based on group.
-    *   `nothing`: Store nothing (pure router).
-    *   `not copies=backup:1`: Store nothing *if* a backup exists.
-*   `group` (str): Standard group assignment (e.g., `backup`, `transfer`, `client`).
-*   `numcopies` (int): Global minimum copies setting.
-*   `user` / `ownerGroup` (str): User/Group to own the repository (default: `git-annex`).
-*   `tags` (list): List of tags to automatically apply to new files.
+
+- `sshKeyFile` (path, optional): Path to the private SSH key file to use for git-annex operations (e.g. from `sops-nix`).
+- `gpgKeyFile` (path, optional): Path to the GPG key file to import for git-annex.
+- `path` (path): Absolute path to the repository.
+- `description` (str): Description for `git annex init`.
+- `uuid` (str, optional): The UUID of this repository. Useful for referencing it from other configs.
+- `gateway` (bool): If true, runs `git annex initcluster`.
+- `assistant` (bool): Enables the `git-annex-assistant` systemd service.
+- `wanted` (str): Preferred content expression.
+  - `standard`: Default behavior based on group.
+  - `nothing`: Store nothing (pure router).
+  - `not copies=backup:1`: Store nothing *if* a backup exists.
+- `group` (str): Standard group assignment (e.g., `backup`, `transfer`, `client`).
+- `numcopies` (int): Global minimum copies setting.
+- `user` / `ownerGroup` (str): User/Group to own the repository (default: `git-annex`).
+- `tags` (list): List of tags to automatically apply to new files.
 
 #### Remote Options
-*   `name` (str): Name of the remote.
-*   `url` (str): Git URL (for history).
-*   `type` (str): Special remote type (e.g., `rsync`, `S3`). Default `git`.
-*   `encryption` (str): Encryption mode (e.g., `none`, `shared`, `pubkey`).
-*   `expectedUUID` (str): **Critical**. Fails activation if the remote's UUID doesn't match.
-*   `clusterNode` (str): If set, registers this remote as a node in the specified cluster.
+
+- `name` (str): Name of the remote.
+- `url` (str): Git URL (for history).
+- `type` (str): Special remote type (e.g., `rsync`, `S3`). Default `git`.
+- `encryption` (str): Encryption mode (e.g., `none`, `shared`, `pubkey`).
+- `expectedUUID` (str): **Critical**. Fails activation if the remote's UUID doesn't match.
+- `clusterNode` (str): If set, registers this remote as a node in the specified cluster.
 
 ## Advanced Usage
 
 ### Hybrid Remotes (e.g., Rsync.net)
+
 You can define a remote that acts as both a Git remote (for syncing git history) and a Special remote (for storing file content).
 
 ```nix
@@ -108,6 +116,7 @@ remotes = [{
   expectedUUID = "...";
 }];
 ```
+
 **Note**: The module automatically handles the naming conflict by appending `-content` to the special remote name internally (e.g., `rsync_net-content`).
 
 > [!IMPORTANT]
@@ -120,6 +129,7 @@ remotes = [{
 > ```
 
 ### Encrypted Remotes
+
 To encrypt data before sending it to a remote (e.g., an untrusted backup), set `encryption = "shared"`.
 
 ```nix
@@ -131,10 +141,11 @@ remotes = [{
 }];
 ```
 
-*   **Shared Encryption**: The key is stored in the git repository itself. This means anyone with access to the git repository can decrypt the content, but the remote storage provider (who only sees the encrypted files) cannot.
-*   **Assistant Support**: The `git-annex-assistant` service automatically handles encryption and decryption transparently. The module ensures `gnupg` is available to the service.
+- **Shared Encryption**: The key is stored in the git repository itself. This means anyone with access to the git repository can decrypt the content, but the remote storage provider (who only sees the encrypted files) cannot.
+- **Assistant Support**: The `git-annex-assistant` service automatically handles encryption and decryption transparently. The module ensures `gnupg` is available to the service.
 
 ### Integration with Services (e.g., Paperless)
+
 You can create repositories owned by other users/services.
 
 ```nix
@@ -151,16 +162,21 @@ services.git-annex.repositories.paperless = {
 ## Troubleshooting
 
 ### Service Status
+
 Check the status of the assistant service:
+
 ```bash
 systemctl status git-annex-assistant-<repo-name>
 ```
 
 ### Initialization Logs
+
 Check the initialization service logs if a repo isn't created:
+
 ```bash
 systemctl status git-annex-init-<repo-name>
 ```
 
 ### UUID Mismatch
+
 If you see "UUID mismatch" errors in the logs, it means the remote's actual UUID doesn't match `expectedUUID`. This is a safety feature. Update your configuration with the correct UUID.

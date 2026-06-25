@@ -20,6 +20,7 @@ model they serve (set in `../default.nix`).
 > **Why CPU, not the NPU?** The NPU (RKLLM runtime) genuinely *does* win at two things:
 > **prefill** (compute-bound — ~130 tok/s on a ~2B model) and **small dense** models
 > (1–4B at ~15–20 tok/s, at lower power). It's just the wrong tool for *this* fleet:
+>
 > - **Decode stays bandwidth-bound** even on the NPU — a small model still decodes at
 >   single-digit tok/s, so the NPU doesn't break the wall we actually wait on.
 > - **No MoE support** in RKLLM (as of toolkit v1.2.3, Nov 2025) → our Qwen3 `*-A3B`
@@ -85,7 +86,7 @@ ssh inkpotmonkey@rk1a journalctl -u llama-cpp -f
 
 1. Compiles the curl-enabled `llama-cpp` (the `modules/shared/overlays/llama-cpp.nix`
    override — nixpkgs ships `llama-cpp` without curl, which `-hf` needs).
-2. Downloads the GGUF (~17–20 GB) into `/var/cache/llama-cpp` (persists across rebuilds).
+1. Downloads the GGUF (~17–20 GB) into `/var/cache/llama-cpp` (persists across rebuilds).
 
 ## 4. Verify
 

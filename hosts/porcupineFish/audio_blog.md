@@ -2,21 +2,21 @@
 
 ## Introduction
 
-The Raspberry Pi 4 is a versatile SBC, but for audiophiles, the onboard audio is often the weakest link. Enter the **HiFiBerry DAC2 ADC Pro**—a high-end HAT featuring a Burr-Brown DAC and a high-performance ADC. 
+The Raspberry Pi 4 is a versatile SBC, but for audiophiles, the onboard audio is often the weakest link. Enter the **HiFiBerry DAC2 ADC Pro**—a high-end HAT featuring a Burr-Brown DAC and a high-performance ADC.
 
 On a standard Linux distribution, enabling this hardware is as simple as adding a line to `config.txt`. On **NixOS**, however, where every part of the system is meant to be defined declaratively, we enter a world of competing bootloaders, kernel mismatches, and the immutable nature of the hardware-software interface. This post chronicles the journey of getting this specific HAT working reliably on NixOS.
 
----
+______________________________________________________________________
 
 ## The Challenge
 
 Configuring a HAT on NixOS RPi4 presents three primary hurdles:
 
-1.  **Mainline vs. Vendor Kernels**: Standard NixOS often pulls the mainline Linux kernel. While great for generic servers, mainline often lacks the specialized overlays and driver symbols required for HiFiBerry cards. 
-2.  **U-Boot Overlay Ignorance**: Most NixOS SD images use U-Boot (`generic-extlinux-compatible`). By the time NixOS tries to patch the Device Tree (DTB) using `hardware.deviceTree.overlays`, U-Boot has already "baked in" the hardware state passed from the RPi firmware.
-3.  **The Write-Access Problem**: The Raspberry Pi firmware looks for `config.txt` and overlays on a VFAT partition (usually `/boot/firmware`). NixOS manages its store in a read-only fashion, making direct declarative management of this partition non-trivial.
+1. **Mainline vs. Vendor Kernels**: Standard NixOS often pulls the mainline Linux kernel. While great for generic servers, mainline often lacks the specialized overlays and driver symbols required for HiFiBerry cards.
+1. **U-Boot Overlay Ignorance**: Most NixOS SD images use U-Boot (`generic-extlinux-compatible`). By the time NixOS tries to patch the Device Tree (DTB) using `hardware.deviceTree.overlays`, U-Boot has already "baked in" the hardware state passed from the RPi firmware.
+1. **The Write-Access Problem**: The Raspberry Pi firmware looks for `config.txt` and overlays on a VFAT partition (usually `/boot/firmware`). NixOS manages its store in a read-only fashion, making direct declarative management of this partition non-trivial.
 
----
+______________________________________________________________________
 
 ## The Solution: A Technical Deep Dive
 
@@ -78,15 +78,17 @@ services.pipewire = {
 };
 ```
 
----
+______________________________________________________________________
 
 ## Troubleshooting: From "No Card" to Hi-Fi
 
 During the implementation, several key issues were encountered. These logs serve as a guide for anyone following this path:
 
 ### Issue: "Card Not Found" in `aplay -l`
+
 Even with the overlay enabled, the card might not appear if the necessary I2C codecs aren't loaded into the kernel early enough.
 **Fix**: Explicitly add the modules to `boot.kernelModules`:
+
 ```nix
 boot.kernelModules = [ 
   "snd-soc-hifiberry-dacplusadcpro"
@@ -96,10 +98,11 @@ boot.kernelModules = [
 ```
 
 ### Issue: Device Tree Mismatch
+
 If you see `dmesg` errors like `failed to load overlay 'hifiberry-dacplusadcpro'`, it usually means you are running a mainline kernel while trying to use vendor overlays.
 **Resolution**: Using the `nixos-raspberrypi` flake ensures you are using the matched vendor kernel and firmware tree.
 
----
+______________________________________________________________________
 
 ## Verification
 
@@ -111,11 +114,12 @@ card 0: sndrpihifiberry [snd_rpi_hifiberry_dacplusadcpro], device 0: HiFiBerry D
 ```
 
 To perform a quick audio test (requires `sox`):
+
 ```bash
 play -n synth 1 sin 440
 ```
 
----
+______________________________________________________________________
 
 ## Conclusion
 

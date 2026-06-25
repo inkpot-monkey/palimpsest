@@ -2,15 +2,15 @@
 name = "finance-tools"
 version = "0.1.12"
 description = "Personal finance ingestion tools"
-authors = [{name = "Inkpot Monkey", email = "inkpotmonkey@example.com"}]
+authors = [{ name = "Inkpot Monkey", email = "inkpotmonkey@example.com" }]
 dependencies = [
-    "beangulp",
-    "beancount",
-    "fava",
-    "python-dateutil",
-    "openai",
-    "scikit-learn",
-    "litellm",
+  "beangulp",
+  "beancount",
+  "fava",
+  "python-dateutil",
+  "openai",
+  "scikit-learn",
+  "litellm",
 ]
 requires-python = ">=3.10"
 

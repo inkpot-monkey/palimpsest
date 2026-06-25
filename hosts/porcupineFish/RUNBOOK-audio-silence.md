@@ -3,7 +3,7 @@
 **Status:** Known, recurring. Root cause is an SoC-level I²S/clock wedge, **not** a
 config or hardware fault. **Incident documented: 2026-06-22.**
 
----
+______________________________________________________________________
 
 ## TL;DR — if the speakers are silent
 
@@ -13,9 +13,11 @@ when playback starts, then silence. No sound from any source.
 **Recovery (do this first):**
 
 > ### ⚡ COLD power-cycle the Pi. Unplug the power, wait ~30 s, plug back in.
+>
 > A `reboot` / `systemctl reboot` / redeploy **will not fix it.** Only cutting power does.
 
 **Do NOT, while diagnosing:**
+
 - ❌ Run `speaker-test` / play a test tone "to check" — **opening the audio device
   re-triggers the wedge**, so each test puts you back to square one and needs another
   cold boot. (This is how the 2026-06-22 investigation kept "un-fixing" itself.)
@@ -25,7 +27,7 @@ when playback starts, then silence. No sound from any source.
   forces a **power-off**; the cold power-cycle above is the same fix in 30 seconds and
   loses no state.
 
----
+______________________________________________________________________
 
 ## Signal chain / hardware inventory
 
@@ -104,7 +106,7 @@ defect is in the SoC/kernel I²S clock handling.
 
 1. **Operational (in place via this runbook):** recover with a **cold power-cycle**,
    never a warm reboot. Never debug with `speaker-test`.
-2. **Reduce triggering — lock the sample rate** so the I²S divider never switches. The
+1. **Reduce triggering — lock the sample rate** so the I²S divider never switches. The
    proximate trigger is an audio-device open at an off-rate (a 48 k open re-wedged it
    immediately, 2026-06-22). Locking to one fixed rate end-to-end (ALSA `plug`+`rate`
    wrapper PCM, since there's no PulseAudio/PipeWire) stops the switch. This is a
@@ -116,14 +118,14 @@ defect is in the SoC/kernel I²S clock handling.
      on the Pi. So "lock to 44.1" keeps spotifyd bit-perfect but on the dirtier clock;
      "lock to 48" gives a cleaner clock but resamples everything. ([RPi forums: I2S clocks /
      fractional-vs-integer division](https://forums.raspberrypi.com/viewtopic.php?t=193550))
-3. **Root-cause fix (better, but needs hands-on bring-up): get this Pro board onto its own
+1. **Root-cause fix (better, but needs hands-on bring-up): get this Pro board onto its own
    master clock.** Per the structural suspect above, the real fix is master mode
    (`hifiberry-dacplus-pro` / drop `dtparam=slave`) so the HAT's 22.5792 MHz oscillator
    clocks 44.1 k cleanly and the rate-cleanliness tension disappears. Blocked by the
    observed `-EINVAL` (the ADC half may force slave); resolving this means working out
    master-mode operation for the dual-codec ADC-Pro overlay. **Do this at the device** (it
    re-wedges on device open, so expect cold-boot cycles).
-4. **Kernel/clock fix:** research found **no specific upstream commit** for an I²S
+1. **Kernel/clock fix:** research found **no specific upstream commit** for an I²S
    wedge-on-rate-switch, so there's nothing to chase here — and **no kernel bump is needed
    or available**. **Do not** bump to an unstable kernel anyway — see memory +
    `audio_blog.md` (6.12.87/6.18.x hang in initrd).
@@ -148,19 +150,19 @@ yet validated** — capture results here when you run it. Confirmed groundwork (
 **Procedure (at the device — expect cold-boot cycles):**
 
 1. **Cold power-cycle first** (clear any wedge; start clean).
-2. Edit `modules/nixos/profiles/pi/hifiberry.nix`: change the overlay block from
+1. Edit `modules/nixos/profiles/pi/hifiberry.nix`: change the overlay block from
    `params = { slave.enable = true; };` to `params = { };` (drops `dtparam=slave`).
-3. Deploy + reboot. Check the PCM **opens** without playing audibly first:
+1. Deploy + reboot. Check the PCM **opens** without playing audibly first:
    `journalctl -k | grep -iE 'pcm512x|i2s|EINVAL'` and a quiet
    `aplay -D hw:sndrpihifiberry --dump-hw-params /dev/zero` (it lists params / errors
    without committing a stream). If it still `-EINVAL`s:
-4. **Knob 1 — drop the redundant base I²S param.** In the same file remove
+1. **Knob 1 — drop the redundant base I²S param.** In the same file remove
    `base-dt-params.i2s` (the `dtparam=i2s=on` line); the overlay enables I²S itself, and
    the extra base param is a known master-mode DAI-format conflict source.
-5. Only once it opens cleanly: play real 44.1 kHz content via spotifyd and confirm sound.
+1. Only once it opens cleanly: play real 44.1 kHz content via spotifyd and confirm sound.
    **If master mode works, the wedge should be gone** (the Pi is no longer the clock
    source) — at which point the rate-lock mitigation becomes unnecessary.
-6. If master mode genuinely cannot be made to open after the above, fall back to slave +
+1. If master mode genuinely cannot be made to open after the above, fall back to slave +
    the rate-lock mitigation and record the exact `-EINVAL` (with `dmesg`) here.
 
 ## Detecting a recurrence (honest constraints)

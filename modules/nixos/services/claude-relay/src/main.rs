@@ -68,7 +68,8 @@ impl Config {
             homeserver: std::env::var("RELAY_HOMESERVER").context("RELAY_HOMESERVER")?,
             user: std::env::var("RELAY_USER").context("RELAY_USER")?,
             password: std::env::var("RELAY_PASSWORD").context("RELAY_PASSWORD")?,
-            allowed_sender: UserId::parse(&allowed).context("RELAY_ALLOWED_SENDER is not a MXID")?,
+            allowed_sender: UserId::parse(&allowed)
+                .context("RELAY_ALLOWED_SENDER is not a MXID")?,
             operator_password: std::env::var("RELAY_OPERATOR_PASSWORD")
                 .ok()
                 .filter(|s| !s.is_empty()),
@@ -239,7 +240,9 @@ async fn resume_session(app: &Arc<App>, name: &str) {
     save_state(app).await;
     if let Some(room) = app.client.get_room(&info.room) {
         let _ = room
-            .send(RoomMessageEventContent::text_plain(format!("resumed {name}")))
+            .send(RoomMessageEventContent::text_plain(format!(
+                "resumed {name}"
+            )))
             .await;
     }
     tracing::info!(session = name, "resumed");
@@ -452,8 +455,10 @@ async fn handle_command(app: &Arc<App>, body: &str) {
             let msg = if sessions.is_empty() {
                 "no sessions".to_string()
             } else {
-                let mut lines: Vec<String> =
-                    sessions.iter().map(|(t, s)| format!("{t} — {}", s.cwd)).collect();
+                let mut lines: Vec<String> = sessions
+                    .iter()
+                    .map(|(t, s)| format!("{t} — {}", s.cwd))
+                    .collect();
                 lines.sort();
                 lines.join("\n")
             };
@@ -529,13 +534,19 @@ async fn create_room(app: &Arc<App>, name: &str) -> Result<Room> {
         invite: vec![app.allowed.clone()],
         creation_content: Some(Raw::new(&creation)?),
     });
-    let room = app.client.create_room(request).await.context("create_room")?;
+    let room = app
+        .client
+        .create_room(request)
+        .await
+        .context("create_room")?;
     // Auto-join the operator into the freshly-invited room (best-effort; the
     // invite still stands if this fails, so the operator can accept manually).
     if let Some(op) = &app.operator {
         match op.join_room_by_id(room.room_id()).await {
             Ok(_) => tracing::info!(room = %room.room_id(), "operator auto-joined"),
-            Err(e) => tracing::warn!(error = ?e, room = %room.room_id(), "operator auto-join failed"),
+            Err(e) => {
+                tracing::warn!(error = ?e, room = %room.room_id(), "operator auto-join failed")
+            }
         }
     }
     Ok(room)
@@ -726,7 +737,9 @@ async fn on_stop(app: &Arc<App>, hook: Value) {
         return;
     };
     if let Some(room) = app.client.get_room(&room_id) {
-        let _ = room.send(RoomMessageEventContent::text_plain(rendered)).await;
+        let _ = room
+            .send(RoomMessageEventContent::text_plain(rendered))
+            .await;
     }
 }
 
@@ -757,7 +770,10 @@ async fn on_permission(app: &Arc<App>, hook: Value) {
             ]
         }
     });
-    match room.send_raw("org.matrix.msc3381.poll.start", content).await {
+    match room
+        .send_raw("org.matrix.msc3381.poll.start", content)
+        .await
+    {
         Ok(_) => tracing::info!("posted permission poll"),
         Err(e) => tracing::warn!(error = ?e, "failed to post poll"),
     }

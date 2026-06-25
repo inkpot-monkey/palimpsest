@@ -42,13 +42,20 @@ With a prefix argument, pass `--show-trace'.  Runs via TRAMP sudo in a
 buffer named after the command."
   (interactive)
   (let ((compilation-scroll-output t)
-        (default-directory (concat "/sudo::" (expand-file-name nix-system-flake-directory)))
+        (default-directory
+         (concat
+          "/sudo::" (expand-file-name nix-system-flake-directory)))
         (compilation-buffer-name-function
          (lambda (_) (concat "*" (symbol-name this-command) "*")))
-        (show-trace (if current-prefix-arg "--show-trace" "")))
+        (show-trace
+         (if current-prefix-arg
+             "--show-trace"
+           "")))
     (envrc--clear (buffer-name))
     (compile
-     (format "nixos-rebuild switch %s --flake .#%s" show-trace (or host (system-name))))))
+     (format "nixos-rebuild switch %s --flake .#%s"
+             show-trace
+             (or host (system-name))))))
 
 ;;;###autoload
 (defun nix-update-system-flake+ (&optional flake-path)
@@ -58,41 +65,60 @@ buffer named after the command."
         (compilation-buffer-name-function
          (lambda (_) (concat "*" (symbol-name this-command) "*"))))
     (envrc--clear (buffer-name))
-    (compile (concat "nix flake update --flake " (or flake-path default-directory)))))
+    (compile
+     (concat
+      "nix flake update --flake "
+      (or flake-path default-directory)))))
 
 (defun nix-system--ipv4-address ()
   "Return the current IPv4 address of the active wifi interface, or \"Disconnected\"."
-  (let ((addr (string-trim
-               (shell-command-to-string
-                "nmcli -t -f IP4.ADDRESS dev show $(nmcli -t -f DEVICE,TYPE dev status | grep wifi | cut -d: -f1) | cut -d: -f2 | head -n1"))))
-    (if (string-empty-p addr) "Disconnected" addr)))
+  (let
+      ((addr
+        (string-trim
+         (shell-command-to-string
+          "nmcli -t -f IP4.ADDRESS dev show $(nmcli -t -f DEVICE,TYPE dev status | grep wifi | cut -d: -f1) | cut -d: -f2 | head -n1"))))
+    (if (string-empty-p addr)
+        "Disconnected"
+      addr)))
 
 (defun nix-system-delete-connection ()
   "Delete a NetworkManager connection chosen by name (via nmcli)."
   (interactive)
-  (let* ((connections (split-string
-                       (shell-command-to-string "nmcli -t -f UUID,NAME con show") "\n" t))
-         (candidates (mapcar (lambda (line)
-                               (let ((parts (split-string line ":" t)))
-                                 (cons (cadr parts) (car parts))))
-                             connections))
-         (selection (completing-read "Delete connection: " candidates)))
-    (shell-command (format "nmcli con delete %s" (cdr (assoc selection candidates))))
+  (let* ((connections
+          (split-string (shell-command-to-string
+                         "nmcli -t -f UUID,NAME con show")
+                        "\n" t))
+         (candidates
+          (mapcar
+           (lambda (line)
+             (let ((parts (split-string line ":" t)))
+               (cons (cadr parts) (car parts))))
+           connections))
+         (selection
+          (completing-read "Delete connection: " candidates)))
+    (shell-command
+     (format "nmcli con delete %s"
+             (cdr (assoc selection candidates))))
     (message "Deleted connection: %s" selection)))
 
 ;;;###autoload (autoload 'nix-system-network-transient "nix-system" nil t)
-(transient-define-prefix nix-system-network-transient ()
-  "NetworkManager control menu."
-  [:description
-   (lambda () (format "Network Manager (IP: %s)" (nix-system--ipv4-address)))
-   ["Actions"
-    ("e" "ENWC Interface" enwc)
-    ("s" "Scan Networks" enwc-scan)
-    ("r" "Restart NetworkManager"
-     (lambda () (interactive)
-       (start-process "pkexec" nil "pkexec" "systemctl" "restart" "NetworkManager")))
-    ("f" "Forget Connection" nix-system-delete-connection)
-    ("q" "Quit" transient-quit-one)]])
+(transient-define-prefix
+ nix-system-network-transient () "NetworkManager control menu."
+ [:description
+  (lambda ()
+    (format "Network Manager (IP: %s)" (nix-system--ipv4-address)))
+  ["Actions"
+   ("e" "ENWC Interface" enwc)
+   ("s" "Scan Networks" enwc-scan)
+   ("r" "Restart NetworkManager"
+    (lambda ()
+      (interactive)
+      (start-process "pkexec" nil "pkexec"
+                     "systemctl"
+                     "restart"
+                     "NetworkManager")))
+   ("f" "Forget Connection" nix-system-delete-connection)
+   ("q" "Quit" transient-quit-one)]])
 
 (provide 'nix-system)
 ;;; nix-system.el ends here

@@ -24,7 +24,9 @@ pub async fn scan_library(http: &reqwest::Client, cfg: &Config) {
 
     let body = GraphqlBody {
         query: "mutation ScanLibrary($id: ID!) { scanLibrary(id: $id) }",
-        variables: ScanVars { id: lib_id.as_str() },
+        variables: ScanVars {
+            id: lib_id.as_str(),
+        },
     };
 
     let mut req = http

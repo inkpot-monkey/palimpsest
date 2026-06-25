@@ -2,10 +2,15 @@ import unittest
 from unittest.mock import patch, mock_open
 import os
 from pathlib import Path
-from utils.config import get_config_dir, get_model_name, get_expense_patterns, load_ai_config
+from utils.config import (
+    get_config_dir,
+    get_model_name,
+    get_expense_patterns,
+    load_ai_config,
+)
+
 
 class TestConfig(unittest.TestCase):
-    
     @patch.dict(os.environ, {"XDG_CONFIG_HOME": "/tmp/custom_config"})
     def test_get_config_dir_xdg(self):
         expected = Path("/tmp/custom_config/finance")
@@ -25,9 +30,10 @@ class TestConfig(unittest.TestCase):
     def test_get_expense_patterns(self, mock_load):
         mock_load.return_value = {"expense_patterns": ["Food", "Transport"]}
         self.assertEqual(get_expense_patterns(None), ["Food", "Transport"])
-        
+
         mock_load.return_value = {}
         self.assertEqual(get_expense_patterns(None), ["Expenses", "Income"])
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

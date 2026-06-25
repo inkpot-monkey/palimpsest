@@ -20,10 +20,7 @@ async fn main() -> anyhow::Result<()> {
         .user_agent(concat!("annas-opds/", env!("CARGO_PKG_VERSION")))
         .build()?;
 
-    let state = AppState {
-        config,
-        http,
-    };
+    let state = AppState { config, http };
 
     let app = Router::new()
         .route("/opds/search", get(opds_search))

@@ -53,16 +53,29 @@ from HuggingFace on first use and caches them under ~/.cache."
 
 (defcustom whisperx-compute-type "int8"
   "faster-whisper compute type; \"int8\" is the CPU pick."
-  :type '(choice (const "int8") (const "float32") (const "float16") (const "default")))
+  :type
+  '(choice
+    (const "int8")
+    (const "float32")
+    (const "float16")
+    (const "default")))
 
 (defcustom whisperx-language nil
   "Source language code (e.g. \"en\", \"es\"), or nil to auto-detect."
-  :type '(choice (const :tag "Auto-detect" nil) (string :tag "Language code")))
+  :type
+  '(choice
+    (const :tag "Auto-detect" nil) (string :tag "Language code")))
 
 (defcustom whisperx-output-format "srt"
   "Output format passed to --output_format."
-  :type '(choice (const "all") (const "srt") (const "vtt")
-                 (const "txt") (const "tsv") (const "json")))
+  :type
+  '(choice
+    (const "all")
+    (const "srt")
+    (const "vtt")
+    (const "txt")
+    (const "tsv")
+    (const "json")))
 
 (defcustom whisperx-batch-size 8
   "Batched-inference batch size, or nil to leave the WhisperX default."
@@ -113,29 +126,40 @@ The \"%|\" form matches tqdm download bars; transcription progress prints
 
 (defun whisperx--hf-token ()
   "Return the HuggingFace token string, or nil."
-  (when (and whisperx-hf-token-file (file-readable-p whisperx-hf-token-file))
-    (string-trim (with-temp-buffer
-                   (insert-file-contents whisperx-hf-token-file)
-                   (buffer-string)))))
+  (when (and whisperx-hf-token-file
+             (file-readable-p whisperx-hf-token-file))
+    (string-trim
+     (with-temp-buffer
+       (insert-file-contents whisperx-hf-token-file)
+       (buffer-string)))))
 
 (defun whisperx--build-args (file dir)
   "Build the WhisperX argument list for FILE writing into DIR.
 All settings come from the `whisperx-*' variables (set once, never per-run)."
   (append
-   (list (expand-file-name file)
-         "--model" whisperx-model
-         "--device" whisperx-device
-         "--compute_type" whisperx-compute-type
-         "--output_dir" (expand-file-name dir)
-         "--output_format" whisperx-output-format
-         "--print_progress" "True")
+   (list
+    (expand-file-name file)
+    "--model"
+    whisperx-model
+    "--device"
+    whisperx-device
+    "--compute_type"
+    whisperx-compute-type
+    "--output_dir"
+    (expand-file-name dir)
+    "--output_format"
+    whisperx-output-format
+    "--print_progress"
+    "True")
    (when whisperx-batch-size
      (list "--batch_size" (number-to-string whisperx-batch-size)))
-   (when whisperx-language (list "--language" whisperx-language))
+   (when whisperx-language
+     (list "--language" whisperx-language))
    (when whisperx-diarize
-     (append (list "--diarize")
-             (when-let ((tok (whisperx--hf-token)))
-               (list "--hf_token" tok))))
+     (append
+      (list "--diarize")
+      (when-let ((tok (whisperx--hf-token)))
+        (list "--hf_token" tok))))
    whisperx-extra-args))
 
 (defun whisperx--log (fmt &rest args)
@@ -161,41 +185,54 @@ model fetch is visible instead of looking like a stalled transcription."
             (insert string)
             (comint-carriage-motion start (point)))
           (set-marker (process-mark proc) (point)))
-        (when moving (goto-char (process-mark proc))))))
+        (when moving
+          (goto-char (process-mark proc))))))
   (when (and (not whisperx--downloading)
              (string-match-p whisperx--download-regexp string))
     (setq whisperx--downloading t)
-    (message "WhisperX: downloading model data (one-time, several GB) — watch %s"
-             whisperx--buffer)
-    (when whisperx-show-progress (display-buffer whisperx--buffer))))
+    (message
+     "WhisperX: downloading model data (one-time, several GB) — watch %s"
+     whisperx--buffer)
+    (when whisperx-show-progress
+      (display-buffer whisperx--buffer))))
 
 (defun whisperx--sentinel (proc event)
   "Process sentinel: report on PROC's EVENT and start the next queued job."
   (when (memq (process-status proc) '(exit signal))
     (let* ((job whisperx--current)
            (file (plist-get job :file))
-           (dir  (plist-get job :dir))
-           (ok   (and (eq (process-status proc) 'exit)
-                      (zerop (process-exit-status proc)))))
-      (setq whisperx--process nil
-            whisperx--current nil)
+           (dir (plist-get job :dir))
+           (ok
+            (and (eq (process-status proc) 'exit)
+                 (zerop (process-exit-status proc)))))
+      (setq
+       whisperx--process nil
+       whisperx--current nil)
       (if ok
           (progn
             (whisperx--log "✓ done: %s" file)
-            (message "WhisperX: finished %s" (file-name-nondirectory file))
+            (message "WhisperX: finished %s"
+                     (file-name-nondirectory file))
             (let ((dired-buf (plist-get job :dired)))
               (when (buffer-live-p dired-buf)
-                (with-current-buffer dired-buf (revert-buffer))))
+                (with-current-buffer dired-buf
+                  (revert-buffer))))
             (when whisperx-open-result
-              (let ((out (expand-file-name
-                          (concat (file-name-base file) "."
-                                  (if (string= whisperx-output-format "all")
-                                      "txt" whisperx-output-format))
-                          dir)))
-                (when (file-exists-p out) (find-file-other-window out)))))
+              (let ((out
+                     (expand-file-name (concat
+                                        (file-name-base file) "."
+                                        (if (string=
+                                             whisperx-output-format
+                                             "all")
+                                            "txt"
+                                          whisperx-output-format))
+                                       dir)))
+                (when (file-exists-p out)
+                  (find-file-other-window out)))))
         (whisperx--log "✗ FAILED (%s): %s" (string-trim event) file)
         (message "WhisperX: FAILED on %s — see %s"
-                 (file-name-nondirectory file) whisperx--buffer)
+                 (file-name-nondirectory file)
+                 whisperx--buffer)
         (display-buffer whisperx--buffer))
       (whisperx--start-next))))
 
@@ -204,20 +241,25 @@ model fetch is visible instead of looking like a stalled transcription."
   (when (and whisperx--queue (not whisperx--process))
     (unless (executable-find whisperx-executable)
       (setq whisperx--queue nil)
-      (user-error "WhisperX: executable %S not found on PATH" whisperx-executable))
+      (user-error "WhisperX: executable %S not found on PATH"
+                  whisperx-executable))
     (let* ((job (pop whisperx--queue))
            (file (plist-get job :file))
            (dir (plist-get job :dir))
            (args (whisperx--build-args file dir)))
-      (setq whisperx--current job
-            whisperx--downloading nil)
+      (setq
+       whisperx--current job
+       whisperx--downloading nil)
       (whisperx--log "\n$ %s %s\n  (%d more queued)"
-                     whisperx-executable (string-join args " ")
+                     whisperx-executable
+                     (string-join args " ")
                      (length whisperx--queue))
       (message "WhisperX: transcribing %s%s"
                (file-name-nondirectory file)
                (if whisperx--queue
-                   (format " (%d more queued)" (length whisperx--queue)) ""))
+                   (format " (%d more queued)"
+                           (length whisperx--queue))
+                 ""))
       (setq whisperx--process
             (make-process
              :name "whisperx"
@@ -232,10 +274,14 @@ model fetch is visible instead of looking like a stalled transcription."
   "Queue FILES for transcription, reverting DIRED-BUFFER when each finishes."
   (dolist (file files)
     (setq whisperx--queue
-          (append whisperx--queue
-                  (list (list :file file
-                              :dir (file-name-directory (expand-file-name file))
-                              :dired dired-buffer)))))
+          (append
+           whisperx--queue
+           (list
+            (list
+             :file file
+             :dir
+             (file-name-directory (expand-file-name file))
+             :dired dired-buffer)))))
   (whisperx--start-next))
 
 ;;;###autoload
@@ -246,7 +292,8 @@ prompted).  Jobs run sequentially in the background; transcripts land beside
 each source file."
   (interactive)
   (let ((files (dired-get-marked-files nil nil #'file-regular-p)))
-    (unless files (user-error "No (regular) files selected"))
+    (unless files
+      (user-error "No (regular) files selected"))
     (whisperx--enqueue files (current-buffer))))
 
 ;;;###autoload

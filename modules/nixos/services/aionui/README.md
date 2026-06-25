@@ -38,8 +38,8 @@ package-version change. Without this, AionUi is non-functional for running agent
 
 1. **Claude login** as the service user over SSH: run `claude` (or `claude login`)
    once to populate `~/.claude` (persisted under impermanence).
-2. **Clone projects** into `~/code` (e.g. this repo, `inventoria`).
-3. Open `https://aionui.<domain>` from your phone (on the tailnet), pick the Claude
+1. **Clone projects** into `~/code` (e.g. this repo, `inventoria`).
+1. Open `https://aionui.<domain>` from your phone (on the tailnet), pick the Claude
    Code agent in a project, and go.
 
 The first launch also seeds the SQLite DB and an admin user (~30s) — `TimeoutStartSec`
