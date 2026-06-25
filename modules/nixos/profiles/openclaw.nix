@@ -40,6 +40,12 @@ in
       '';
     };
 
+    # Pin the openclaw uid/gid. Otherwise auto-allocated, they get reshuffled by a
+    # reboot that re-derives the system-user map, which orphans /var/lib/openclaw
+    # (its sqlite ends up owned by another service's id) and crash-loops the gateway.
+    users.users.openclaw.uid = 989;
+    users.groups.openclaw.gid = 987;
+
     services.openclaw-gateway = {
       enable = true;
       package = inputs.openclaw-nix.packages.${pkgs.stdenv.hostPlatform.system}.openclaw-gateway;

@@ -64,6 +64,12 @@ in
           ];
         };
 
+        # Pin the stalwart-mail uid/gid. These are otherwise auto-allocated and
+        # can be reshuffled by a rebuild that adds/removes other system users,
+        # which orphans the RocksDB store dir (owned by the old numeric id) and
+        # makes Stalwart abort startup with "Store not configured".
+        users.users.stalwart-mail.uid = 985;
+        users.groups.stalwart-mail.gid = 981;
         users.groups.stalwart-mail.members = [ "caddy" ];
 
         systemd.services.stalwart.serviceConfig.LoadCredential = [
