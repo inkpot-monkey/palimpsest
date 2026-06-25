@@ -159,6 +159,9 @@ let
   # can restore (re-pair WhatsApp, re-add hookshot connections, …). Printed at the
   # end of the run so the aftermath is never a surprise.
   resetNotes = map (e: e.postResetNote) (lib.filter (e: e.postResetNote != null) cfg.resetState);
+  # For selective reset (`matrix-reset <bridge>`): one "service:::space-joined-paths"
+  # token per resetState entry, so the script can stop/wipe/restart just the matches.
+  resetEntryStrings = map (e: "${e.service}:::${lib.concatStringsSep " " e.paths}") cfg.resetState;
 
   matrixReset = pkgs.writeShellApplication {
     name = "matrix-reset";
@@ -168,9 +171,61 @@ let
       pkgs.findutils
     ];
     text = ''
+      if [ "''${1:-}" = "-h" ] || [ "''${1:-}" = "--help" ]; then
+        echo "Usage: matrix-reset [BRIDGE]"
+        echo "  (no arg)  Full from-scratch reset: wipe the homeserver + every bridge"
+        echo "            + DM markers and bring the whole stack back up clean."
+        echo "  BRIDGE    Reset ONLY the matching bridge(s): stop, wipe their local"
+        echo "            state, restart -- leaving the homeserver + other bridges up."
+        echo "            Matches resetState service names by substring, e.g."
+        echo "            'matrix-reset jmap', 'matrix-reset hookshot'."
+        echo "            NOTE: wipes the bridge's LOCAL state only; rooms it created"
+        echo "            on the homeserver are NOT removed (use a full reset)."
+        exit 0
+      fi
+
       if [ "$(id -u)" -ne 0 ]; then
         echo "matrix-reset: must run as root (try: sudo matrix-reset)" >&2
         exit 1
+      fi
+
+      # --- Selective reset: `matrix-reset <bridge>` wipes + restarts just that
+      # bridge, without touching the homeserver or the other bridges. ---
+      if [ "$#" -gt 0 ]; then
+        pat="$1"
+        entries=(${lib.escapeShellArgs resetEntryStrings})
+        svcs=()
+        wipes=()
+        for entry in "''${entries[@]}"; do
+          svc="''${entry%%:::*}"
+          epaths="''${entry#*:::}"
+          case "$svc" in
+            *"$pat"*)
+              svcs+=("$svc")
+              read -ra ep <<< "$epaths"
+              wipes+=("''${ep[@]}")
+              ;;
+          esac
+        done
+        if [ "''${#svcs[@]}" -eq 0 ]; then
+          echo "matrix-reset: no bridge matches '$pat'. Known services:" >&2
+          for entry in "''${entries[@]}"; do echo "  ''${entry%%:::*}" >&2; done
+          exit 1
+        fi
+        echo "matrix-reset: resetting ''${svcs[*]} (homeserver + other bridges untouched)..."
+        systemctl stop "''${svcs[@]}" || true
+        for d in "''${wipes[@]}"; do
+          if [ -d "$d" ]; then
+            find "$d" -mindepth 1 -delete 2>/dev/null || true
+            echo "  wiped $d"
+          fi
+        done
+        # restart (not start): re-runs the RemainAfterExit oneshots too; After=
+        # ordering (bridge before its DM) is honoured by systemd.
+        systemctl restart "''${svcs[@]}" || true
+        echo "matrix-reset: done — '$pat' wiped + restarted."
+        echo "  (Rooms it created on the homeserver persist; run a full 'matrix-reset' for a clean slate.)"
+        exit 0
       fi
 
       bridges=(${lib.escapeShellArgs bridgeUnits})
