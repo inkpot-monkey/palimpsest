@@ -17,6 +17,7 @@
 
       nodejs
       vscode-langservers-extracted
+      marksman # markdown LSP (ADR/CONTEXT doc navigation)
 
       simple-http-server
 
