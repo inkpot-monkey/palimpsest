@@ -106,6 +106,61 @@
     ];
   };
 
+  # ghostel pinned ahead of nixpkgs to 0.37.0. The nixos-unstable channel still
+  # ships 0.34.0, which has a redraw-timer race that surfaces as
+  # `Error running timer 'ghostel--redraw-now': (args-out-of-range N N)' when an
+  # alt-screen TUI (Claude Code) resizes. 0.37 carries the fixes that close that
+  # class: "Restructure Renderer invalidation", "Move term-cols/rows to
+  # Renderer", "Fix rendering bug when resizing with cursor not at bottom", plus
+  # the 0.35 native-race hardening. Re-derives the nixpkgs manual-package (native
+  # Zig libghostty module + melpaBuild) at the bumped rev — there is no override
+  # path because the upstream recipe captures the module as a `let`-binding.
+  # `:defaults' already globs `lisp/*.el', so the files spec is unchanged despite
+  # 0.37's lisp/ restructure. Drop this once nixpkgs advances past 0.37.
+  ghostel =
+    let
+      pname = "ghostel";
+      version = "0.37.0";
+      src = pkgs.fetchFromGitHub {
+        owner = "dakra";
+        repo = "ghostel";
+        rev = "0194b15ec957a6ce4be2ff49c4c485f648f86d0d";
+        hash = "sha256-IyQhedcGp82sftgM2YXKJDgVloBLMUBDTaNO290ItB4=";
+      };
+      zig = pkgs.zig_0_15;
+      module = pkgs.stdenv.mkDerivation (finalAttrs: {
+        inherit pname version src;
+        deps = zig.fetchDeps {
+          inherit (finalAttrs) src pname version;
+          fetchAll = true;
+          hash = "sha256-CTsG3dXu3DECDbklBAtr2fYou82WNvQ1Q3JET0TmuyM=";
+        };
+        nativeBuildInputs = [ zig ];
+        env.EMACS_INCLUDE_DIR = "${pkgs.emacs}/include";
+        dontSetZigDefaultFlags = true;
+        doCheck = true;
+        zigCheckFlags = [
+          "-Dcpu=baseline"
+          "-Doptimize=ReleaseFast"
+        ];
+        zigBuildFlags = finalAttrs.zigCheckFlags;
+        postConfigure = ''
+          cp -rLT ${finalAttrs.deps} "$ZIG_GLOBAL_CACHE_DIR/p"
+          chmod -R u+w "$ZIG_GLOBAL_CACHE_DIR/p"
+        '';
+      });
+      libExt = pkgs.stdenv.hostPlatform.extensions.sharedLibrary;
+    in
+    epkgs.melpaBuild {
+      inherit pname version src;
+      files = ''
+        (:defaults "etc" "ghostel-module${libExt}")
+      '';
+      preBuild = ''
+        install ${module}/lib/libghostel-module${libExt} ghostel-module${libExt}
+      '';
+    };
+
   whisperx = epkgs.melpaBuild {
     pname = "whisperx";
     version = "0.1-unstable-2024-01-01";
