@@ -82,20 +82,31 @@ let
       sleep 2
     done
 
+    # Ensure the admin-room marker exists (idempotent write).
     cur="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" \
       "$url/_matrix/client/v3/user/$botenc/rooms/$ridenc/account_data/${adminRoomType}?$q" \
       | ${pkgs.jq}/bin/jq -r '.admin_user // empty' 2>/dev/null || echo "")"
-    if [ "$cur" = "$me" ]; then
-      echo "hookshot-adminroom: $rid already marked as admin room for $me"
-      exit 0
+    if [ "$cur" != "$me" ]; then
+      ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
+        "$url/_matrix/client/v3/user/$botenc/rooms/$ridenc/account_data/${adminRoomType}?$q" \
+        -H 'content-type: application/json' \
+        -d "$(${pkgs.jq}/bin/jq -nc --arg u "$me" '{admin_user:$u}')"
+      echo "hookshot-adminroom: wrote admin marker for $rid"
     fi
 
-    ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
-      "$url/_matrix/client/v3/user/$botenc/rooms/$ridenc/account_data/${adminRoomType}?$q" \
-      -H 'content-type: application/json' \
-      -d "$(${pkgs.jq}/bin/jq -nc --arg u "$me" '{admin_user:$u}')"
-    echo "hookshot-adminroom: marked $rid as admin room for $me; restarting hookshot"
+    # Hookshot only *loads* an admin room from this account-data on startup (the
+    # is_direct invite path is what tuwunel breaks), so the marker existing isn't
+    # enough — hookshot must have (re)started since it was set. Restart once per
+    # room id, tracked in our (persisted) state, so a marker set after hookshot's
+    # last start still takes effect, without restarting on every boot/deploy.
+    act="$STATE_DIRECTORY/activated"
+    if [ "$(cat "$act" 2>/dev/null || true)" = "$rid" ]; then
+      echo "hookshot-adminroom: $rid already active as an admin room"
+      exit 0
+    fi
+    echo "hookshot-adminroom: restarting hookshot to load admin room $rid"
     ${pkgs.systemd}/bin/systemctl restart matrix-hookshot.service
+    printf '%s' "$rid" > "$act"
   '';
 in
 {
@@ -291,6 +302,10 @@ in
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
+        # Records the room id we've restarted hookshot for, so we restart only when
+        # the admin room is new — survives reboots (persisted below).
+        StateDirectory = "matrix-hookshot-adminroom";
+        StateDirectoryMode = "0700";
         LoadCredential = [ "as_token:${config.sops.secrets.hookshot_as_token.path}" ];
         ExecStart = markAdminRoom;
       };
@@ -315,6 +330,7 @@ in
         # by its After=. Restarts hookshot itself when it (re)writes the marker.
         service = "matrix-hookshot-adminroom.service";
         isDm = true;
+        paths = [ "/var/lib/matrix-hookshot-adminroom" ];
       }
     ];
 
@@ -331,6 +347,9 @@ in
           mode = "0750";
         }
         "/var/lib/private/matrix-dm-hookshot"
+        # The admin-room "activated" marker — same lifetime as the DM marker so a
+        # matrix-reset (new DM id) re-triggers the one-time hookshot restart.
+        "/var/lib/matrix-hookshot-adminroom"
       ];
     };
   };
