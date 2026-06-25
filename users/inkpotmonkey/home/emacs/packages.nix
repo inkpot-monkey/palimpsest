@@ -141,4 +141,15 @@
     version = "0.1";
     src = ./consult-omni-launch;
   };
+
+  # History-aware async-shell-command: front-loads `shell-command-history' as
+  # completion candidates and marginalia-annotates each with recall's record
+  # (dir/exit/when). recall is a soft dependency (guarded by `fboundp'), so it
+  # is not listed in packageRequires.
+  async-shell-history = epkgs.melpaBuild {
+    pname = "async-shell-history";
+    version = "0.1";
+    src = ./async-shell-history;
+    packageRequires = [ epkgs.marginalia ];
+  };
 }
