@@ -12,7 +12,10 @@ use anyhow::{ensure, Context, Result};
 use matrix_sdk::{
     config::SyncSettings,
     ruma::{
-        api::client::room::create_room::v3::{CreationContent, Request as CreateRoomRequest},
+        api::client::{
+            media::create_content,
+            room::create_room::v3::{CreationContent, Request as CreateRoomRequest},
+        },
         assign,
         events::{
             poll::unstable_response::OriginalSyncUnstablePollResponseEvent,
@@ -20,10 +23,12 @@ use matrix_sdk::{
                 member::StrippedRoomMemberEvent,
                 message::{MessageType, OriginalSyncRoomMessageEvent, RoomMessageEventContent},
             },
+            space::{child::SpaceChildEventContent, parent::SpaceParentEventContent},
             tag::{TagInfo, TagName},
         },
+        room::RoomType,
         serde::Raw,
-        OwnedRoomId, OwnedUserId, UserId,
+        OwnedMxcUri, OwnedRoomId, OwnedUserId, UserId,
     },
     Client, Room,
 };
@@ -47,6 +52,9 @@ struct Config {
     /// is to auto-join the rooms the bot invites it to (no server-side force-join
     /// exists on tuwunel). The operator localpart is taken from allowed_sender.
     operator_password: Option<String>,
+    /// Optional path to an image used as the avatar for the bot, the Claude space,
+    /// and every relay room (control + sessions). None = no avatars set.
+    avatar: Option<String>,
     claude_cmd: String,
     hook_port: u16,
     /// HOME of the run-as user (`~/.claude` lives here — claude auth + hooks).
@@ -74,6 +82,7 @@ impl Config {
             operator_password: std::env::var("RELAY_OPERATOR_PASSWORD")
                 .ok()
                 .filter(|s| !s.is_empty()),
+            avatar: std::env::var("RELAY_AVATAR").ok().filter(|s| !s.is_empty()),
             claude_cmd: std::env::var("RELAY_CLAUDE_CMD").unwrap_or_else(|_| "claude".into()),
             hook_port: std::env::var("RELAY_HOOK_PORT")
                 .ok()
@@ -106,6 +115,8 @@ struct Session {
 #[derive(Default, Serialize, Deserialize)]
 struct PersistState {
     control_room: Option<OwnedRoomId>,
+    #[serde(default)]
+    space: Option<OwnedRoomId>,
     sessions: HashMap<String, Session>,
     counter: u32,
 }
@@ -119,6 +130,11 @@ struct App {
     claude_cmd: String,
     cap: usize,
     state_file: String,
+    /// mxc of the uploaded avatar (set once at startup), applied to the bot, the
+    /// Claude space, and every relay room. None when no avatar is configured.
+    avatar: Mutex<Option<OwnedMxcUri>>,
+    /// The "Claude" space grouping the control + session rooms (persisted).
+    space: Mutex<Option<OwnedRoomId>>,
     control_room: Mutex<Option<OwnedRoomId>>,
     /// tmux session name -> session.
     sessions: Mutex<HashMap<String, Session>>,
@@ -144,6 +160,7 @@ impl App {
     async fn snapshot(&self) -> PersistState {
         PersistState {
             control_room: self.control_room.lock().await.clone(),
+            space: self.space.lock().await.clone(),
             sessions: self.sessions.lock().await.clone(),
             counter: *self.counter.lock().await,
         }
@@ -166,6 +183,7 @@ async fn load_state(app: &Arc<App>) {
     match serde_json::from_slice::<PersistState>(&bytes) {
         Ok(state) => {
             *app.control_room.lock().await = state.control_room;
+            *app.space.lock().await = state.space;
             *app.sessions.lock().await = state.sessions;
             *app.counter.lock().await = state.counter;
             tracing::info!("loaded persisted state");
@@ -334,6 +352,8 @@ async fn main() -> Result<()> {
         claude_cmd: config.claude_cmd.clone(),
         cap: config.cap,
         state_file: format!("{}/state.json", config.state_dir),
+        avatar: Mutex::new(None),
+        space: Mutex::new(None),
         control_room: Mutex::new(None),
         sessions: Mutex::new(HashMap::new()),
         counter: Mutex::new(0),
@@ -349,6 +369,46 @@ async fn main() -> Result<()> {
 
     // Restore prior control room + sessions across restarts.
     load_state(&app).await;
+
+    // Upload the configured avatar once and apply it to the bot's own profile (so
+    // @claude-relay shows the Claude icon). The mxc is reused for the space + every
+    // room below. Best-effort: a failure just leaves avatars unset.
+    if let Some(path) = &config.avatar {
+        match upload_avatar(&client, path).await {
+            Some(mxc) => {
+                let _ = client.account().set_avatar_url(Some(&*mxc)).await;
+                *app.avatar.lock().await = Some(mxc);
+                tracing::info!("Claude avatar uploaded + applied to the bot profile");
+            }
+            None => tracing::warn!("avatar upload failed; rooms/space will have no icon"),
+        }
+    }
+
+    // Stand up the "Claude" space grouping the relay's rooms, or reuse the persisted
+    // one. Same lock-then-match shape as the control room to avoid holding the guard.
+    let existing_space = app.space.lock().await.clone();
+    let space_id = match existing_space {
+        Some(id) => {
+            tracing::info!("reusing persisted Claude space");
+            Some(id)
+        }
+        None => match create_space(&app, "Claude").await {
+            Ok(space) => {
+                let id = space.room_id().to_owned();
+                *app.space.lock().await = Some(id.clone());
+                save_state(&app).await;
+                tracing::info!(room = %id, "Claude space created");
+                Some(id)
+            }
+            Err(e) => {
+                tracing::warn!(error = ?e, "creating Claude space failed; rooms won't be grouped");
+                None
+            }
+        },
+    };
+    if let Some(sid) = &space_id {
+        present_space(&app, sid).await;
+    }
 
     // Stand up the control room (named "claude"), or reuse the persisted one.
     // NB: bind the lock result to a `let` first — an `if let` whose scrutinee is the
@@ -542,7 +602,9 @@ async fn present_control_room(app: &Arc<App>, control: &OwnedRoomId) {
         if let Err(e) = room.set_name("claude".to_string()).await {
             tracing::warn!(error = ?e, "failed to set control room name");
         }
+        set_room_avatar(app, &room).await;
     }
+    add_to_space(app, control).await;
     if let Some(op) = &app.operator {
         if let Some(room) = op.get_room(control) {
             if let Err(e) = room.set_tag(TagName::Favorite, TagInfo::new()).await {
@@ -579,7 +641,91 @@ async fn create_room(app: &Arc<App>, name: &str) -> Result<Room> {
             }
         }
     }
+    // Brand every relay room with the Claude avatar and file it under the space.
+    set_room_avatar(app, &room).await;
+    add_to_space(app, &room.room_id().to_owned()).await;
     Ok(room)
+}
+
+/// Upload an image and return its mxc (matrix-sdk 0.18 has no high-level upload, so
+/// use the generic create-content request). None on any failure.
+async fn upload_avatar(client: &Client, path: &str) -> Option<OwnedMxcUri> {
+    let bytes = tokio::fs::read(path).await.ok()?;
+    let mut req = create_content::v3::Request::new(bytes);
+    req.content_type = Some("image/png".to_owned());
+    req.filename = Some("claude.png".to_owned());
+    match client.send(req).await {
+        Ok(resp) => Some(resp.content_uri),
+        Err(e) => {
+            tracing::warn!(error = ?e, "media upload failed");
+            None
+        }
+    }
+}
+
+/// Apply the configured avatar (if any) to a room. Best-effort.
+async fn set_room_avatar(app: &Arc<App>, room: &Room) {
+    if let Some(mxc) = app.avatar.lock().await.clone() {
+        if let Err(e) = room.set_avatar_url(&mxc, None).await {
+            tracing::warn!(error = ?e, room = %room.room_id(), "failed to set room avatar");
+        }
+    }
+}
+
+/// Create the Claude space (an m.space room), inviting + auto-joining the operator.
+async fn create_space(app: &Arc<App>, name: &str) -> Result<Room> {
+    let mut creation = CreationContent::new();
+    creation.federate = false;
+    creation.room_type = Some(RoomType::Space);
+    let request = assign!(CreateRoomRequest::new(), {
+        name: Some(name.to_string()),
+        invite: vec![app.allowed.clone()],
+        creation_content: Some(Raw::new(&creation)?),
+    });
+    let room = app
+        .client
+        .create_room(request)
+        .await
+        .context("create_space")?;
+    if let Some(op) = &app.operator {
+        let _ = op.join_room_by_id(room.room_id()).await;
+    }
+    Ok(room)
+}
+
+/// Set the Claude space's name + avatar (via the bot) and favourite it (operator).
+async fn present_space(app: &Arc<App>, space: &OwnedRoomId) {
+    if let Some(room) = app.client.get_room(space) {
+        let _ = room.set_name("Claude".to_string()).await;
+        set_room_avatar(app, &room).await;
+    }
+    if let Some(op) = &app.operator {
+        if let Some(room) = op.get_room(space) {
+            let _ = room.set_tag(TagName::Favorite, TagInfo::new()).await;
+        }
+    }
+}
+
+/// File a room under the Claude space (m.space.child in the space + m.space.parent
+/// in the room). Best-effort; no-op when there's no space.
+async fn add_to_space(app: &Arc<App>, room_id: &OwnedRoomId) {
+    let Some(space_id) = app.space.lock().await.clone() else {
+        return;
+    };
+    if &space_id == room_id {
+        return;
+    }
+    let server = app.allowed.server_name().to_owned();
+    if let Some(space) = app.client.get_room(&space_id) {
+        let child = SpaceChildEventContent::new(vec![server.clone()]);
+        if let Err(e) = space.send_state_event_for_key(room_id, child).await {
+            tracing::warn!(error = ?e, "failed to add room as space child");
+        }
+    }
+    if let Some(room) = app.client.get_room(room_id) {
+        let parent = assign!(SpaceParentEventContent::new(vec![server]), { canonical: true });
+        let _ = room.send_state_event_for_key(&space_id, parent).await;
+    }
 }
 
 async fn reply_control(app: &Arc<App>, msg: &str) {

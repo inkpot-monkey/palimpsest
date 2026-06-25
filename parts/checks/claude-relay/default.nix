@@ -119,6 +119,22 @@ let
       curl -s "$URL/_matrix/client/v3/rooms/$2/state/m.room.create" \
         -H "authorization: Bearer $1" | jq -r '."m.federate"'
     }
+
+    mx_room_type() { # token room -> create-event type ("m.space" or empty)
+      curl -s "$URL/_matrix/client/v3/rooms/$2/state/m.room.create" \
+        -H "authorization: Bearer $1" | jq -r '.type // empty'
+    }
+
+    mx_avatar() { # token room -> m.room.avatar url (mxc or empty)
+      curl -s "$URL/_matrix/client/v3/rooms/$2/state/m.room.avatar" \
+        -H "authorization: Bearer $1" | jq -r '.url // empty'
+    }
+
+    mx_space_children() { # token space -> child room ids
+      curl -s "$URL/_matrix/client/v3/rooms/$2/state" \
+        -H "authorization: Bearer $1" \
+        | jq -r '.[] | select(.type=="m.space.child") | .state_key'
+    }
   '';
 
   # Stand-in for the real `claude` CLI: reads input lines from its tmux pane, writes
@@ -205,6 +221,11 @@ pkgs.testers.nixosTest {
         # operator (allowed) and joins it into every room the bot invites, so the
         # driver never calls mx_join to discover rooms.
         operatorPasswordFile = "/etc/claude-relay-operator-pw";
+        # Exercise the avatar + space wiring: the relay uploads this and applies it
+        # to the bot, the Claude space, and every relay room.
+        avatarFile = pkgs.runCommand "test-avatar.png" {
+          nativeBuildInputs = [ pkgs.imagemagick ];
+        } "magick -size 64x64 xc:'#D97757' $out";
       };
       # Don't race the relay's login — the driver (re)starts it after confirming
       # the account exists. Relay also self-heals via Restart=on-failure.
@@ -254,19 +275,20 @@ pkgs.testers.nixosTest {
     seen = set()
 
     # The relay's operator client auto-joins the operator (allowed) into each room
-    # the bot creates — so a "new room" surfaces as a freshly *joined* room, with
-    # NO mx_join from the driver. This is the operator-auto-join contract.
-    def wait_new_room(tok):
-        for _ in range(60):
-            fresh = [r for r in sh(f"mx_joined {tok}").split() if r not in seen]
-            if fresh:
-                seen.add(fresh[0])
-                return fresh[0]
+    # the bot creates — so rooms surface as freshly *joined* rooms, with NO mx_join
+    # from the driver. find_room polls joined rooms for the first unseen one matching
+    # a predicate (used to tell the space, the control room, and sessions apart).
+    def find_room(tok, pred, desc, timeout=60):
+        for _ in range(timeout):
+            for r in sh(f"mx_joined {tok}").split():
+                if r not in seen and pred(r):
+                    seen.add(r)
+                    return r
             machine.sleep(1)
-        raise Exception("timed out waiting for an auto-joined room")
+        raise Exception(f"timed out waiting for {desc}")
 
-    control = wait_new_room(allowed_tok)
-    print(f"control = {control} (auto-joined, no manual accept)")
+    def wait_new_room(tok):
+        return find_room(tok, lambda r: True, "auto-joined room")
 
     # The relay itself logs the operator auto-join — confirm the contract directly.
     machine.wait_until_succeeds(
@@ -274,17 +296,33 @@ pkgs.testers.nixosTest {
     )
     print("OK: operator auto-joined by the relay (no invite to accept)")
 
-    # The control room is presented as "claude" and favourited for the operator
-    # (easy-to-find UX). Name is set at creation by the bot; the favourite tag is
-    # set by the relay's operator client on the operator's own account data.
+    # At startup the relay creates a "Claude" Space and the control room, and
+    # auto-joins the operator into both. Find them by type/name (order-independent).
+    space = find_room(allowed_tok, lambda r: sh(f"mx_room_type {allowed_tok} {r}") == "m.space", "Claude space")
+    control = find_room(allowed_tok, lambda r: sh(f"mx_room_name {allowed_tok} {r}") == "claude", "control room")
+    print(f"space = {space}, control = {control}")
+
+    # The Space is named "Claude", favourited, and avatared.
+    assert sh(f"mx_room_name {allowed_tok} {space}") == "Claude", "space not named Claude"
     machine.wait_until_succeeds(
-        f"{H}; mx_room_name {allowed_tok} {control} | grep -qx claude", timeout=30
+        f"{H}; mx_tags {allowed_tok} @allowed:${serverName} {space} | grep -qx m.favourite", timeout=30
     )
     machine.wait_until_succeeds(
-        f"{H}; mx_tags {allowed_tok} @allowed:${serverName} {control} | grep -qx m.favourite",
-        timeout=30,
+        f"{H}; mx_avatar {allowed_tok} {space} | grep -q '^mxc://'", timeout=30
     )
-    print("OK: control room named 'claude' + favourited for operator")
+    print("OK: Claude space — named, favourited, avatared")
+
+    # The control room is named "claude", favourited, avatared, and filed under the Space.
+    machine.wait_until_succeeds(
+        f"{H}; mx_tags {allowed_tok} @allowed:${serverName} {control} | grep -qx m.favourite", timeout=30
+    )
+    machine.wait_until_succeeds(
+        f"{H}; mx_avatar {allowed_tok} {control} | grep -q '^mxc://'", timeout=30
+    )
+    machine.wait_until_succeeds(
+        f"{H}; mx_space_children {allowed_tok} {space} | grep -qF {control}", timeout=30
+    )
+    print("OK: control room named 'claude', favourited, avatared, filed under the Space")
 
     def send_control(text):
         sh(f"mx_send {allowed_tok} {control} {shlex.quote(text)}")
@@ -294,7 +332,14 @@ pkgs.testers.nixosTest {
     room1 = wait_new_room(allowed_tok)
     fed = sh(f"mx_federate {allowed_tok} {room1}")
     assert fed == "false", f"session room must be non-federated, got m.federate={fed}"
-    print("OK: new -> non-federated session room")
+    # Session rooms get the Claude avatar and are filed under the Space too.
+    machine.wait_until_succeeds(
+        f"{H}; mx_avatar {allowed_tok} {room1} | grep -q '^mxc://'", timeout=30
+    )
+    machine.wait_until_succeeds(
+        f"{H}; mx_space_children {allowed_tok} {space} | grep -qF {room1}", timeout=30
+    )
+    print("OK: new -> non-federated session room, avatared + filed under the Space")
 
     # Routing: a message in the session room reaches its session; reply comes back.
     sh(f"mx_send {allowed_tok} {room1} hello")

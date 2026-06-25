@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  pkgs,
   self,
   settings,
   ...
@@ -17,6 +18,27 @@ let
   cfg = config.custom.profiles.claude-relay;
   matrixServer = "matrix.${config.networking.domain}";
   matrixPort = settings.services.public.matrix.port;
+
+  # The Claude logo (Simple Icons, the standard pinnable brand-asset source),
+  # rasterised to the app-icon look: the white sunburst on the brand terracotta
+  # square. Applied by the relay to the bot, the Claude space, and every relay room.
+  claudeLogoSvg = pkgs.fetchurl {
+    url = "https://raw.githubusercontent.com/simple-icons/simple-icons/15.18.0/icons/claude.svg";
+    hash = "sha256-LW/aeesY3czKNbeZ7rPOzg36vCJSDOOxCr0lZo35+pM=";
+  };
+  claudeAvatar =
+    pkgs.runCommand "claude-avatar.png"
+      {
+        nativeBuildInputs = [
+          pkgs.resvg
+          pkgs.imagemagick
+        ];
+      }
+      ''
+        resvg --width 340 ${claudeLogoSvg} glyph.png
+        magick -size 512x512 xc:'#D97757' \( glyph.png -channel RGB -negate \) \
+          -gravity center -composite "$out"
+      '';
 in
 {
   imports = [ self.nixosModules.claude-relay ];
@@ -60,6 +82,8 @@ in
       # Auto-create @claude-relay via the homeserver's shared registration token
       # (the same secret tuwunel-register-admin uses).
       registrationTokenFile = config.sops.secrets.registration_token.path;
+      # The Claude logo on the bot, the Claude space, and every relay room.
+      avatarFile = claudeAvatar;
       # Auto-join the operator (@inkpotmonkey) into the bot's rooms — tuwunel has
       # no server-side force-join, so the relay accepts on the operator's behalf
       # using inkpotmonkey's existing admin password. allowedSender's localpart

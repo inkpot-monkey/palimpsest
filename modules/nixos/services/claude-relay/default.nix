@@ -99,6 +99,16 @@ in
       '';
     };
 
+    avatarFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = ''
+        Path to an image (PNG) the relay uploads once and applies as the avatar for
+        the bot profile, the "Claude" space, and every relay room (control +
+        sessions). Null (default) leaves all avatars unset.
+      '';
+    };
+
     claudeCommand = lib.mkOption {
       type = lib.types.str;
       default = "claude";
@@ -220,6 +230,7 @@ in
         RELAY_HOMESERVER = cfg.homeserver;
         RELAY_USER = cfg.user;
         RELAY_ALLOWED_SENDER = cfg.allowedSender;
+        RELAY_AVATAR = lib.optionalString (cfg.avatarFile != null) (toString cfg.avatarFile);
         RELAY_CLAUDE_CMD = cfg.claudeCommand;
         RELAY_HOOK_PORT = toString cfg.hookPort;
         RELAY_MAX_SESSIONS = toString cfg.maxSessions;
