@@ -18,38 +18,6 @@ let
   hookshotWebhookPort = settings.services.public.hookshot.port;
   notifierStateDir = "/var/lib/aionui-notifier";
 
-  # Periodically fast-forward inkpotmonkey's ~/code checkouts so the agent — and
-  # the human opening the AionUi web UI — work against current upstream. This is
-  # the pragmatic stand-in for a literal "on every web-UI open" hook: kelpy's
-  # proxy is Caddy, which has no per-request exec/mirror, so a short-interval
-  # timer (below) polls instead of a bespoke proxy shim.
-  #
-  # ff-only is non-destructive by construction: it advances a branch ONLY when it
-  # is purely behind its upstream, and silently no-ops (|| true) on a dirty tree,
-  # a detached HEAD, or a branch carrying local-only commits — so it never
-  # clobbers the agent's in-progress work. Runs as the aionui user so it reuses
-  # that user's git credential helper (the group-readable github_token) for
-  # private-repo fetches over HTTPS.
-  gitSyncScript = pkgs.writeShellScript "aionui-git-sync" ''
-    set -u
-    export PATH=${
-      lib.makeBinPath [
-        pkgs.git
-        pkgs.openssh
-        pkgs.coreutils
-      ]
-    }:$PATH
-    codeDir="$HOME/code"
-    [ -d "$codeDir" ] || exit 0
-    for repo in "$codeDir"/*/; do
-      [ -e "$repo/.git" ] || continue
-      git -C "$repo" fetch --quiet --all --prune 2>/dev/null || continue
-      # Skip branches with no upstream (detached HEAD, never-pushed local branch).
-      git -C "$repo" rev-parse --abbrev-ref --symbolic-full-name '@{u}' >/dev/null 2>&1 || continue
-      git -C "$repo" merge --ff-only --quiet '@{u}' 2>/dev/null || true
-    done
-  '';
-
   # Declaratively register the aionui alerts room + a hookshot generic-webhook
   # connection, so the notifier needs no manual `webhook` bot command. We act as
   # the hookshot appservice bot (as_token): ensure the room exists, then write
@@ -174,34 +142,6 @@ in
       content = "GH_TOKEN=${config.sops.placeholder.github_token}\n";
       owner = config.services.aionui.user;
       inherit (config.services.aionui) group;
-    };
-
-    # Keep ~/code checkouts fast-forwarded for the agent (see gitSyncScript). A
-    # 2-minute timer stands in for "on every web-UI open" (Caddy has no
-    # per-request hook). The oneshot runs as the aionui user/group so it inherits
-    # that user's home (git config + credential helper) and can read the
-    # github_token (group-readable) for private-repo fetches.
-    systemd.services.aionui-git-sync = {
-      description = "Fast-forward inkpotmonkey's ~/code git checkouts for AionUi";
-      after = [ "network-online.target" ];
-      wants = [ "network-online.target" ];
-      serviceConfig = {
-        Type = "oneshot";
-        User = config.services.aionui.user;
-        Group = config.services.aionui.group;
-        Environment = "HOME=${config.users.users.${config.services.aionui.user}.home}";
-        ExecStart = gitSyncScript;
-      };
-    };
-
-    systemd.timers.aionui-git-sync = {
-      description = "Periodically fast-forward ~/code checkouts for AionUi";
-      wantedBy = [ "timers.target" ];
-      timerConfig = {
-        OnBootSec = "2min";
-        OnUnitActiveSec = "2min";
-        Persistent = true;
-      };
     };
 
     # Matrix notifier (opt-in). Fully declarative via hookshot: the provisioning
