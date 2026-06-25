@@ -377,6 +377,7 @@ in
     systemd.services."matrix-dm-hookshot" = mkDmService {
       bot = "hookshot";
       afterUnit = "matrix-hookshot.service";
+      name = "Hookshot admin";
       topic = "Hookshot admin room — `!hookshot help` for commands; `github login` then `github notifications toggle` to bridge your GitHub notifications here.";
     };
 

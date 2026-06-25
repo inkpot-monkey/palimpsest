@@ -36,6 +36,7 @@
   bot,
   afterUnit,
   encrypted ? false,
+  name ? "",
   topic ? "",
   welcomeCommand ? "",
 }:
@@ -47,9 +48,10 @@ let
   adminLocalpart = config.custom.profiles.matrix.adminLocalpart;
 
   # Extra createRoom fields built in Nix and merged by jq via --argjson, so no
-  # bash-quoting of the topic/encryption JSON is needed.
+  # bash-quoting of the name/topic/encryption JSON is needed.
   createExtra = builtins.toJSON (
-    (if topic != "" then { inherit topic; } else { })
+    (if name != "" then { inherit name; } else { })
+    // (if topic != "" then { inherit topic; } else { })
     // (
       if encrypted then
         {
@@ -163,6 +165,17 @@ let
       -H 'content-type: application/json' -d '{"order":0.1}' >/dev/null \
       && echo "dm-provision[$bot]: marked favourite" \
       || echo "dm-provision[$bot]: favourite failed (non-fatal)" >&2
+    ${pkgs.lib.optionalString (name != "") ''
+
+      # Keep the room name current on EXISTING rooms too (plain state, like topic),
+      # so a name change lands on deploy not only at creation.
+      ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
+        "$url/_matrix/client/v3/rooms/$ridenc/state/m.room.name" \
+        -H 'content-type: application/json' \
+        -d "$(${pkgs.jq}/bin/jq -nc --arg n ${pkgs.lib.escapeShellArg name} '{name:$n}')" >/dev/null \
+        && echo "dm-provision[$bot]: name ensured" \
+        || echo "dm-provision[$bot]: name update failed (non-fatal)" >&2
+    ''}
     ${pkgs.lib.optionalString (topic != "") ''
 
       # Keep the topic current on EXISTING rooms too (not just at creation) — it's

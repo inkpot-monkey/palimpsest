@@ -304,7 +304,7 @@ pkgs.testers.nixosTest {
     # At startup the relay creates a "Claude" Space and the control room, and
     # auto-joins the operator into both. Find them by type/name (order-independent).
     space = find_room(allowed_tok, lambda r: sh(f"mx_room_type {allowed_tok} {r}") == "m.space", "Claude space")
-    control = find_room(allowed_tok, lambda r: sh(f"mx_room_name {allowed_tok} {r}") == "claude", "control room")
+    control = find_room(allowed_tok, lambda r: sh(f"mx_room_name {allowed_tok} {r}") == "Claude admin", "control room")
     print(f"space = {space}, control = {control}")
 
     # The Space is named "Claude", favourited, and avatared.
@@ -317,7 +317,7 @@ pkgs.testers.nixosTest {
     )
     print("OK: Claude space — named, favourited, avatared")
 
-    # The control room is named "claude", favourited, avatared, and filed under the Space.
+    # The control room is named "Claude admin", favourited, avatared, and filed under the Space.
     machine.wait_until_succeeds(
         f"{H}; mx_tags {allowed_tok} @allowed:${serverName} {control} | grep -qx m.favourite", timeout=30
     )
@@ -331,7 +331,7 @@ pkgs.testers.nixosTest {
     machine.wait_until_succeeds(
         f"{H}; mx_topic {allowed_tok} {control} | grep -qiF 'admin room'", timeout=30
     )
-    print("OK: control room named 'claude', favourited, avatared, filed under the Space, admin topic")
+    print("OK: control room named 'Claude admin', favourited, avatared, filed under the Space, admin topic")
 
     def send_control(text):
         sh(f"mx_send {allowed_tok} {control} {shlex.quote(text)}")

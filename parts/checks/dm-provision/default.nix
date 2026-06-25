@@ -85,6 +85,16 @@ let
       curl -s "$URL/_matrix/client/v3/rooms/$2/state/m.room.encryption" \
         -H "authorization: Bearer $1" | jq -r '.algorithm // empty'
     }
+
+    mx_room_name() { # token room -> name
+      curl -s "$URL/_matrix/client/v3/rooms/$2/state/m.room.name" \
+        -H "authorization: Bearer $1" | jq -r '.name // empty'
+    }
+
+    mx_topic() { # token room -> topic
+      curl -s "$URL/_matrix/client/v3/rooms/$2/state/m.room.topic" \
+        -H "authorization: Bearer $1" | jq -r '.topic // empty'
+    }
   '';
 in
 pkgs.testers.nixosTest {
@@ -179,6 +189,7 @@ pkgs.testers.nixosTest {
           afterUnit = "tuwunel.service";
           encrypted = true;
           welcomeCommand = "help-e";
+          name = "Testbot admin";
           topic = "encrypted admin room";
         };
       };
@@ -235,7 +246,9 @@ pkgs.testers.nixosTest {
     machine.sleep(5)
     assert "help-e" not in sh(f"mx_texts {admin_tok} {room_e}"), "welcome leaked into encrypted room!"
     assert "m.favourite" in sh(f"mx_tags {admin_tok} ${admin} {room_e}"), "room_e not favourited"
-    print("OK: encrypted DM — joined, encrypted, welcome skipped, favourited")
+    assert sh(f"mx_room_name {admin_tok} {room_e}") == "Testbot admin", "room_e name not set"
+    assert sh(f"mx_topic {admin_tok} {room_e}") == "encrypted admin room", "room_e topic not set"
+    print("OK: encrypted DM — joined, encrypted, welcome skipped, favourited, named + topic'd")
 
     # Idempotency: re-run creates no second room (persisted marker)...
     machine.succeed("systemctl restart matrix-dm-testbot-u.service")

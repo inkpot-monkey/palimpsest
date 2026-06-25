@@ -411,7 +411,7 @@ async fn main() -> Result<()> {
         present_space(&app, sid).await;
     }
 
-    // Stand up the control room (named "claude"), or reuse the persisted one.
+    // Stand up the control room (named "Claude admin"), or reuse the persisted one.
     // NB: bind the lock result to a `let` first — an `if let` whose scrutinee is the
     // guard would hold the control_room mutex across the whole block, deadlocking the
     // re-lock in the else branch.
@@ -420,7 +420,7 @@ async fn main() -> Result<()> {
         tracing::info!("reusing persisted control room");
         id
     } else {
-        let control = create_room(&app, "claude")
+        let control = create_room(&app, "Claude admin")
             .await
             .context("creating control room")?;
         let id = control.room_id().to_owned();
@@ -594,13 +594,13 @@ async fn kill_session(app: &Arc<App>, name: &str) {
     }
 }
 
-/// Make the control room easy to find: name it "claude" (via the bot, which owns the
+/// Make the control room easy to find: name it "Claude admin" (via the bot, which owns the
 /// room and so has the power level) and mark it a favourite for the operator (a personal
 /// tag the operator client sets on its own account data). Best-effort + idempotent —
 /// also renames a pre-existing "claude control" room and re-favourites on every start.
 async fn present_control_room(app: &Arc<App>, control: &OwnedRoomId) {
     if let Some(room) = app.client.get_room(control) {
-        if let Err(e) = room.set_name("claude".to_string()).await {
+        if let Err(e) = room.set_name("Claude admin".to_string()).await {
             tracing::warn!(error = ?e, "failed to set control room name");
         }
         let topic = "Claude admin room — drive sessions here: `new <cwd>` to start, \
@@ -616,7 +616,7 @@ async fn present_control_room(app: &Arc<App>, control: &OwnedRoomId) {
             if let Err(e) = room.set_tag(TagName::Favorite, TagInfo::new()).await {
                 tracing::warn!(error = ?e, "failed to favourite control room for operator");
             } else {
-                tracing::info!("control room named 'claude' + favourited for operator");
+                tracing::info!("control room named 'Claude admin' + favourited for operator");
             }
         }
     }
