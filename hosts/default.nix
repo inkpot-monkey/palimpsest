@@ -164,6 +164,11 @@ in
           # (WhisperX, its former tenant, moved to stargazer).
           custom.rk1.nvme.enable = true;
           custom.rk1.nvme.relocateNixStore = true;
+
+          # Off-host uptime watcher (Gatus): rk1b is always-on and not kelpy, so it
+          # can observe kelpy failing. Probes the fleet + alerts to #infra-alerts.
+          # See ADR-0026 / modules/nixos/profiles/monitoring/watcher.nix.
+          custom.profiles.monitoring-watcher.enable = true;
         }
       ];
     };

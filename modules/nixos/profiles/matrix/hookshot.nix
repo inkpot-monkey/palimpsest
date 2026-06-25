@@ -299,6 +299,20 @@ in
             services:
               - service: "*"
                 level: admin
+        ${lib.optionalString
+          (
+            config.custom.profiles.matrix.infraAlerts.enable
+            && config.custom.profiles.matrix.infraAlerts.roomId != ""
+          )
+          ''
+            connections:
+              - connectionType: uk.half-shot.matrix-hookshot.generic.hook
+                stateKey: ${config.sops.placeholder.infra_alerts_hook_id}
+                roomId: "${config.custom.profiles.matrix.infraAlerts.roomId}"
+                state:
+                  name: infra-alerts
+          ''
+        }
       '';
     };
 
