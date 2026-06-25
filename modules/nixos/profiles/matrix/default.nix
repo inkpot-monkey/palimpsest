@@ -328,6 +328,7 @@ in
     ./mautrix-whatsapp.nix
     ./jmap-bridge.nix
     ./hookshot.nix
+    ./infra-alerts.nix
   ];
 
   options.custom.profiles.matrix = {
