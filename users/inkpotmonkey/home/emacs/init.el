@@ -1088,10 +1088,52 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 ;; prompt — pick-or-type, always in the current `default-directory'.  recall
 ;; still surveils every launch; `C-x C-r' (recall-rerun) remains the
 ;; rerun-in-original-context tool.
+;;
+;; Marginalia annotates each candidate with where it last ran, its exit
+;; status, and when — read straight out of `recall-items', since recall
+;; already records every async launch.  This needs a completion category on
+;; the table (plain `completing-read' over a list has none, so marginalia has
+;; nothing to hang an annotator on).
 (use-package emacs
 		:bind (([remap async-shell-command] . my/async-shell-command-from-history)
 					 ("C-c &" . my/async-shell-command-rerun-last))
 		:config
+		(defun my/async-shell-command--collection (string predicate action)
+			"Completion table over `shell-command-history'.
+Reports the `my/async-shell-command' category (so marginalia can annotate
+each command) and keeps history/recency order instead of sorting."
+			(if (eq action 'metadata)
+					'(metadata (category . my/async-shell-command)
+										 (display-sort-function . identity)
+										 (cycle-sort-function . identity))
+				(complete-with-action action shell-command-history string predicate)))
+
+		(defun my/async-shell-command-annotate (command)
+			"Marginalia annotation for COMMAND, sourced from `recall-items'.
+Shows the directory it last ran in, its exit status, and how long ago.
+Returns nil when recall has no record of COMMAND (e.g. a brand-new
+command, or one only ever run as a synchronous `shell-command')."
+			(when (and (fboundp 'recall--item-command) (boundp 'recall-items))
+				(when-let ((item (seq-find (lambda (it)
+																		 (string-equal (recall--item-command it) command))
+																	 recall-items)))
+					(let ((code  (recall--item-exit-code item))
+								(dir   (recall--item-directory item))
+								(start (recall--item-start-time item)))
+						(marginalia--fields
+						 ((cond ((null code) "")
+										((eql code 0) (propertize "ok" 'face 'marginalia-on))
+										(t (propertize (format "exit %s" code) 'face 'marginalia-off)))
+							:width 8)
+						 ((if dir (abbreviate-file-name (directory-file-name dir)) "")
+							:truncate -0.4 :face 'marginalia-file-name)
+						 ((if start (recall--format-time start) "")
+							:truncate 0.25 :face 'marginalia-date))))))
+
+		(with-eval-after-load 'marginalia
+			(add-to-list 'marginalia-annotators
+									 '(my/async-shell-command my/async-shell-command-annotate builtin none)))
+
 		(defun my/async-shell-command-from-history (command &optional output-buffer error-buffer)
 			"Like `async-shell-command' but completes from `shell-command-history'.
 COMMAND is read with `shell-command-history' as candidates (pick an old
@@ -1100,7 +1142,7 @@ through unchanged, mirroring `async-shell-command' (prefix arg inserts
 output at point)."
 			(interactive
 			 (list (completing-read "Async shell command: "
-															shell-command-history
+															#'my/async-shell-command--collection
 															nil nil nil 'shell-command-history)
 						 current-prefix-arg
 						 shell-command-default-error-buffer))
