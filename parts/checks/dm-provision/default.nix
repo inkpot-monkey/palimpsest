@@ -70,6 +70,17 @@ let
         -H "authorization: Bearer $1"
     }
 
+    mx_tags() { # token localpart room -> tag keys
+      curl -s "$URL/_matrix/client/v3/user/@$2:${serverName}/rooms/$3/tags" \
+        -H "authorization: Bearer $1" | jq -r '.tags // {} | keys[]'
+    }
+
+    mx_untag() { # token localpart room tag -> delete a room tag
+      curl -s -o /dev/null -X DELETE \
+        "$URL/_matrix/client/v3/user/@$2:${serverName}/rooms/$3/tags/$4" \
+        -H "authorization: Bearer $1"
+    }
+
     mx_encryption() { # token room -> algorithm or empty
       curl -s "$URL/_matrix/client/v3/rooms/$2/state/m.room.encryption" \
         -H "authorization: Bearer $1" | jq -r '.algorithm // empty'
@@ -153,6 +164,11 @@ pkgs.testers.nixosTest {
         };
 
         # Unencrypted DM with a welcome, and an encrypted DM (welcome must be skipped).
+        # The shared m.direct serialization lock the matrix profile normally
+        # provides (matrix/default.nix); needed here so the two provisioners don't
+        # race the m.direct read-modify-write.
+        systemd.tmpfiles.rules = [ "f /run/matrix-dm-mdirect.lock 0666 root root -" ];
+
         systemd.services."matrix-dm-testbot-u" = dmService {
           bot = "testbot-u";
           afterUnit = "tuwunel.service";
@@ -210,19 +226,29 @@ pkgs.testers.nixosTest {
     machine.wait_until_succeeds(
         f"{H}; mx_texts {admin_tok} {room_u} | grep -F 'help-u'", timeout=30
     )
-    print("OK: unencrypted DM — joined, m.direct, welcome sent")
+    assert "m.favourite" in sh(f"mx_tags {admin_tok} ${admin} {room_u}"), "room_u not favourited"
+    print("OK: unencrypted DM — joined, m.direct, welcome sent, favourited")
 
     # Encrypted: bot joined, encryption on, welcome SKIPPED.
     assert "@testbot-e:${serverName}" in sh(f"mx_joined {admin_tok} {room_e}"), "bot not joined (e)"
     assert sh(f"mx_encryption {admin_tok} {room_e}") == "m.megolm.v1.aes-sha2", "room_e not encrypted"
     machine.sleep(5)
     assert "help-e" not in sh(f"mx_texts {admin_tok} {room_e}"), "welcome leaked into encrypted room!"
-    print("OK: encrypted DM — joined, encrypted, welcome skipped")
+    assert "m.favourite" in sh(f"mx_tags {admin_tok} ${admin} {room_e}"), "room_e not favourited"
+    print("OK: encrypted DM — joined, encrypted, welcome skipped, favourited")
 
-    # Idempotency: re-run is a no-op (persisted marker).
+    # Idempotency: re-run creates no second room (persisted marker)...
     machine.succeed("systemctl restart matrix-dm-testbot-u.service")
     machine.wait_until_succeeds("systemctl is-active matrix-dm-testbot-u.service", timeout=30)
     machine.succeed("journalctl -u matrix-dm-testbot-u.service | grep -q 'already created'")
-    print("OK: idempotent re-run is a no-op")
+    # ...but the favourite is re-asserted even when the DM already exists: drop the
+    # tag, restart, confirm it returns (the gap that only-on-creation favouriting had).
+    sh(f"mx_untag {admin_tok} ${admin} {room_u} m.favourite")
+    assert "m.favourite" not in sh(f"mx_tags {admin_tok} ${admin} {room_u}"), "untag failed"
+    machine.succeed("systemctl restart matrix-dm-testbot-u.service")
+    machine.wait_until_succeeds(
+        f"{H}; mx_tags {admin_tok} ${admin} {room_u} | grep -qx m.favourite", timeout=30
+    )
+    print("OK: idempotent re-run; favourite re-applied on an existing DM")
   '';
 }

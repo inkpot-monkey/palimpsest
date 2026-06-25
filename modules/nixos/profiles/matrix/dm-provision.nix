@@ -76,12 +76,10 @@ let
     bot="@${bot}:${domain}"
     marker="$STATE_DIRECTORY/dm-created"
 
-    # Persisted marker = this DM already exists; skip (and skip the admin login).
-    if [ -s "$marker" ]; then
-      echo "dm-provision[$bot]: already created -> $(cat "$marker")"
-      exit 0
-    fi
-
+    # Log in up front — needed whether we create the DM or just re-assert its
+    # favourite tag below (so an already-provisioned DM still gets favourited on a
+    # later deploy, not only on first creation). createRoom is still gated on the
+    # marker, so this stays idempotent — no second room.
     for _ in $(seq 1 30); do
       ${pkgs.curl}/bin/curl -sf "$url/_matrix/client/versions" >/dev/null && break
       sleep 2
@@ -95,61 +93,76 @@ let
       | ${pkgs.jq}/bin/jq -r '.access_token // empty')"
     [ -n "$at" ] || { echo "dm-provision[$bot]: admin login failed" >&2; exit 1; }
     auth=(-H "Authorization: Bearer $at")
-
-    # Create the DM and invite the bot — the bridge bot auto-joins the invite.
-    # createExtra carries the topic and (for require-encryption bridges) turns on
-    # e2ee so the bot doesn't drop the user's commands as unencrypted.
-    rid="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" -X POST "$url/_matrix/client/v3/createRoom" \
-      -H 'content-type: application/json' \
-      -d "$(${pkgs.jq}/bin/jq -nc --arg b "$bot" --argjson extra '${createExtra}' \
-        '{is_direct:true,invite:[$b],preset:"trusted_private_chat"} + $extra')" \
-      | ${pkgs.jq}/bin/jq -r '.room_id // empty')"
-    [ -n "$rid" ] || { echo "dm-provision[$bot]: createRoom failed" >&2; exit 1; }
-    printf '%s' "$rid" > "$marker"
-    echo "dm-provision[$bot]: created DM -> $rid"
-    ridenc="$(${pkgs.jq}/bin/jq -rn --arg r "$rid" '$r|@uri')"
-
-    # Best-effort m.direct tag so clients file the room under People. tuwunel's
-    # account-data handling is unreliable, so this never fails the unit.
     meenc="$(${pkgs.jq}/bin/jq -rn --arg m "$me" '$m|@uri')"
-    direct="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" \
-      "$url/_matrix/client/v3/user/$meenc/account_data/m.direct" \
-      | ${pkgs.jq}/bin/jq -c 'if (type=="object" and (has("errcode")|not)) then . else {} end' \
-        2>/dev/null || echo '{}')"
-    direct="$(printf '%s' "$direct" | ${pkgs.jq}/bin/jq -c --arg b "$bot" --arg r "$rid" \
-      '.[$b] = ((.[$b] // []) + [$r])')"
-    ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
-      "$url/_matrix/client/v3/user/$meenc/account_data/m.direct" \
-      -H 'content-type: application/json' -d "$direct" >/dev/null \
-      && echo "dm-provision[$bot]: m.direct updated" \
-      || echo "dm-provision[$bot]: m.direct update failed (non-fatal)" >&2
 
-    # Favourite the DM so it's easy to find in the client. The m.favourite tag is
-    # personal account data, so it works regardless of power level. Best-effort.
+    if [ -s "$marker" ]; then
+      rid="$(cat "$marker")"
+      echo "dm-provision[$bot]: already created -> $rid"
+    else
+      # Create the DM and invite the bot — the bridge bot auto-joins the invite.
+      # createExtra carries the topic and (for require-encryption bridges) turns on
+      # e2ee so the bot doesn't drop the user's commands as unencrypted.
+      rid="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" -X POST "$url/_matrix/client/v3/createRoom" \
+        -H 'content-type: application/json' \
+        -d "$(${pkgs.jq}/bin/jq -nc --arg b "$bot" --argjson extra '${createExtra}' \
+          '{is_direct:true,invite:[$b],preset:"trusted_private_chat"} + $extra')" \
+        | ${pkgs.jq}/bin/jq -r '.room_id // empty')"
+      [ -n "$rid" ] || { echo "dm-provision[$bot]: createRoom failed" >&2; exit 1; }
+      printf '%s' "$rid" > "$marker"
+      echo "dm-provision[$bot]: created DM -> $rid"
+      ridenc="$(${pkgs.jq}/bin/jq -rn --arg r "$rid" '$r|@uri')"
+
+      # Best-effort m.direct tag so clients file the room under People. tuwunel's
+      # account-data handling is unreliable, so this never fails the unit.
+      #
+      # m.direct is a SINGLE object keyed by bot, shared across every DM
+      # provisioner, so concurrent read-modify-write races (one bot reads stale,
+      # then clobbers another's entry). Serialize the RMW under a shared advisory
+      # lock so co-booting provisioners take turns. The lock fd is opened READ-ONLY
+      # (flock needs only an open fd, not a writable one) since these DynamicUser
+      # units see /run read-only. Best-effort: proceed unlocked if it's missing.
+      exec 9</run/matrix-dm-mdirect.lock 2>/dev/null && ${pkgs.util-linux}/bin/flock 9 || true
+      direct="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" \
+        "$url/_matrix/client/v3/user/$meenc/account_data/m.direct" \
+        | ${pkgs.jq}/bin/jq -c 'if (type=="object" and (has("errcode")|not)) then . else {} end' \
+          2>/dev/null || echo '{}')"
+      direct="$(printf '%s' "$direct" | ${pkgs.jq}/bin/jq -c --arg b "$bot" --arg r "$rid" \
+        '.[$b] = ((.[$b] // []) + [$r])')"
+      ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
+        "$url/_matrix/client/v3/user/$meenc/account_data/m.direct" \
+        -H 'content-type: application/json' -d "$direct" >/dev/null \
+        && echo "dm-provision[$bot]: m.direct updated" \
+        || echo "dm-provision[$bot]: m.direct update failed (non-fatal)" >&2
+      exec 9>&- 2>/dev/null || true
+      ${pkgs.lib.optionalString sendWelcome ''
+
+        # Welcome: wait for the bot to join, then post its own help command so the
+        # room opens with usage instructions (unencrypted rooms only).
+        for _ in $(seq 1 20); do
+          in_room="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" \
+            "$url/_matrix/client/v3/rooms/$ridenc/joined_members" \
+            | ${pkgs.jq}/bin/jq -r --arg b "$bot" '.joined | has($b)' 2>/dev/null || echo false)"
+          [ "$in_room" = "true" ] && break
+          sleep 2
+        done
+        txn="welcome-$(${pkgs.coreutils}/bin/date +%s)"
+        ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
+          "$url/_matrix/client/v3/rooms/$ridenc/send/m.room.message/$txn" \
+          -H 'content-type: application/json' \
+          -d "$(${pkgs.jq}/bin/jq -nc --arg c '${welcomeCommand}' '{msgtype:"m.text",body:$c}')" >/dev/null \
+          && echo "dm-provision[$bot]: sent welcome command '${welcomeCommand}'" \
+          || echo "dm-provision[$bot]: welcome send failed (non-fatal)" >&2
+      ''}
+    fi
+
+    # Favourite the DM so it's easy to find — re-asserted every run (idempotent;
+    # personal account data, so it works regardless of power level). Best-effort.
+    ridenc="$(${pkgs.jq}/bin/jq -rn --arg r "$rid" '$r|@uri')"
     ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
       "$url/_matrix/client/v3/user/$meenc/rooms/$ridenc/tags/m.favourite" \
       -H 'content-type: application/json' -d '{"order":0.1}' >/dev/null \
       && echo "dm-provision[$bot]: marked favourite" \
       || echo "dm-provision[$bot]: favourite failed (non-fatal)" >&2
-    ${pkgs.lib.optionalString sendWelcome ''
-
-      # Welcome: wait for the bot to join, then post its own help command so the
-      # room opens with usage instructions (unencrypted rooms only).
-      for _ in $(seq 1 20); do
-        in_room="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" \
-          "$url/_matrix/client/v3/rooms/$ridenc/joined_members" \
-          | ${pkgs.jq}/bin/jq -r --arg b "$bot" '.joined | has($b)' 2>/dev/null || echo false)"
-        [ "$in_room" = "true" ] && break
-        sleep 2
-      done
-      txn="welcome-$(${pkgs.coreutils}/bin/date +%s)"
-      ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
-        "$url/_matrix/client/v3/rooms/$ridenc/send/m.room.message/$txn" \
-        -H 'content-type: application/json' \
-        -d "$(${pkgs.jq}/bin/jq -nc --arg c '${welcomeCommand}' '{msgtype:"m.text",body:$c}')" >/dev/null \
-        && echo "dm-provision[$bot]: sent welcome command '${welcomeCommand}'" \
-        || echo "dm-provision[$bot]: welcome send failed (non-fatal)" >&2
-    ''}
   '';
 in
 {

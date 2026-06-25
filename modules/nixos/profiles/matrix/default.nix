@@ -430,6 +430,9 @@ in
     systemd.tmpfiles.rules = [
       "z /var/lib/private 0700 root root -"
       "z /persistent/var/lib/private 0700 root root -"
+      # Shared advisory lock so the per-bridge DM provisioners serialize their
+      # read-modify-write of the single @admin m.direct account data (dm-provision.nix).
+      "f /run/matrix-dm-mdirect.lock 0666 root root -"
     ];
 
     # Persist the homeserver state across impermanence reboots. Without this,
