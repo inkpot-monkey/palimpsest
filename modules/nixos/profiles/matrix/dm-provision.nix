@@ -163,6 +163,17 @@ let
       -H 'content-type: application/json' -d '{"order":0.1}' >/dev/null \
       && echo "dm-provision[$bot]: marked favourite" \
       || echo "dm-provision[$bot]: favourite failed (non-fatal)" >&2
+    ${pkgs.lib.optionalString (topic != "") ''
+
+      # Keep the topic current on EXISTING rooms too (not just at creation) — it's
+      # plain room state (not encrypted), so a changed/added topic lands on deploy.
+      ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
+        "$url/_matrix/client/v3/rooms/$ridenc/state/m.room.topic" \
+        -H 'content-type: application/json' \
+        -d "$(${pkgs.jq}/bin/jq -nc --arg t ${pkgs.lib.escapeShellArg topic} '{topic:$t}')" >/dev/null \
+        && echo "dm-provision[$bot]: topic ensured" \
+        || echo "dm-provision[$bot]: topic update failed (non-fatal)" >&2
+    ''}
   '';
 in
 {
