@@ -161,7 +161,10 @@ let
   resetNotes = map (e: e.postResetNote) (lib.filter (e: e.postResetNote != null) cfg.resetState);
   # For selective reset (`matrix-reset <bridge>`): one "service:::space-joined-paths"
   # token per resetState entry, so the script can stop/wipe/restart just the matches.
-  resetEntryStrings = map (e: "${e.service}:::${lib.concatStringsSep " " e.paths}") cfg.resetState;
+  resetEntryStrings = map (
+    e:
+    "${e.service}:::${lib.concatStringsSep " " e.paths}:::${lib.concatStringsSep " " e.roomMemberPrefixes}"
+  ) cfg.resetState;
 
   matrixReset = pkgs.writeShellApplication {
     name = "matrix-reset";
@@ -169,6 +172,8 @@ let
       pkgs.systemd
       pkgs.coreutils
       pkgs.findutils
+      pkgs.curl
+      pkgs.jq
     ];
     text = ''
       if [ "''${1:-}" = "-h" ] || [ "''${1:-}" = "--help" ]; then
@@ -196,14 +201,19 @@ let
         entries=(${lib.escapeShellArgs resetEntryStrings})
         svcs=()
         wipes=()
+        prefixes=()
         for entry in "''${entries[@]}"; do
           svc="''${entry%%:::*}"
-          epaths="''${entry#*:::}"
+          rest="''${entry#*:::}"
+          epaths="''${rest%%:::*}"
+          eprefixes="''${rest#*:::}"
           case "$svc" in
             *"$pat"*)
               svcs+=("$svc")
               read -ra ep <<< "$epaths"
               wipes+=("''${ep[@]}")
+              read -ra epre <<< "$eprefixes"
+              prefixes+=("''${epre[@]}")
               ;;
           esac
         done
@@ -223,8 +233,47 @@ let
         # restart (not start): re-runs the RemainAfterExit oneshots too; After=
         # ordering (bridge before its DM) is honoured by systemd.
         systemctl restart "''${svcs[@]}" || true
+
+        # Remove old test rooms: as the admin, leave+forget every room containing a
+        # member that matches one of the bridge's ghost prefixes — so they vanish
+        # from the client. (tuwunel has no room-delete API, so the server-side shell
+        # lingers until a full reset, but it's gone from your view.)
+        if [ "''${#prefixes[@]}" -gt 0 ]; then
+          url="http://${address}:${toString matrixPort}"
+          pass="$(cat ${config.sops.secrets.matrix_admin_password.path} 2>/dev/null || true)"
+          at=""
+          [ -n "$pass" ] && at="$(curl -s -X POST "$url/_matrix/client/v3/login" \
+            -H 'content-type: application/json' \
+            -d "$(jq -nc --arg u "${cfg.adminLocalpart}" --arg p "$pass" \
+              '{type:"m.login.password",identifier:{type:"m.id.user",user:$u},password:$p}')" \
+            | jq -r '.access_token // empty')"
+          if [ -z "$at" ]; then
+            echo "matrix-reset: admin login failed; skipping old-room cleanup" >&2
+          else
+            echo "matrix-reset: removing old rooms (members matching: ''${prefixes[*]})..."
+            removed=0
+            mapfile -t rooms < <(curl -s "$url/_matrix/client/v3/joined_rooms" \
+              -H "authorization: Bearer $at" | jq -r '.joined_rooms[]?')
+            for room in "''${rooms[@]}"; do
+              renc="$(jq -rn --arg r "$room" '$r|@uri')"
+              members="$(curl -s "$url/_matrix/client/v3/rooms/$renc/joined_members" \
+                -H "authorization: Bearer $at" | jq -r '.joined // {} | keys[]')"
+              for pre in "''${prefixes[@]}"; do
+                if printf '%s\n' "$members" | grep -qF "$pre"; then
+                  curl -sf -o /dev/null -X POST "$url/_matrix/client/v3/rooms/$renc/leave" \
+                    -H "authorization: Bearer $at" -H 'content-type: application/json' -d '{}' || true
+                  curl -sf -o /dev/null -X POST "$url/_matrix/client/v3/rooms/$renc/forget" \
+                    -H "authorization: Bearer $at" -H 'content-type: application/json' -d '{}' || true
+                  removed=$((removed + 1))
+                  break
+                fi
+              done
+            done
+            echo "matrix-reset: left+forgot $removed old room(s)."
+          fi
+        fi
+
         echo "matrix-reset: done — '$pat' wiped + restarted."
-        echo "  (Rooms it created on the homeserver persist; run a full 'matrix-reset' for a clean slate.)"
         exit 0
       fi
 
@@ -351,6 +400,18 @@ in
                 One-line reminder of state the wipe destroys that only a human can
                 restore (e.g. "re-pair WhatsApp: open the @whatsapp DM and run
                 login"). Printed at the end of a `matrix-reset` run.
+              '';
+            };
+            roomMemberPrefixes = lib.mkOption {
+              type = lib.types.listOf lib.types.str;
+              default = [ ];
+              example = [ "@_jmap_" ];
+              description = ''
+                MXID prefixes identifying this bridge's ghost/bot users. On a
+                SELECTIVE reset (`matrix-reset <bridge>`), the admin leaves+forgets
+                every room containing such a member, so old test rooms disappear
+                from the client. (A full reset wipes the homeserver outright, so it
+                needs none of this.)
               '';
             };
           };

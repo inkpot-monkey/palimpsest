@@ -112,6 +112,9 @@ in
       {
         service = "jmap-bridge.service";
         paths = [ "/var/lib/private/jmap-bridge" ];
+        # `matrix-reset jmap` also leaves+forgets the email rooms (ghosts + the
+        # @_jmap_bot are all @_jmap_*), clearing old test rooms from the client.
+        roomMemberPrefixes = [ "@_jmap_" ];
       }
     ];
 
