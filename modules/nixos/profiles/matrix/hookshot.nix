@@ -33,14 +33,28 @@ let
   # central matrix-dm-provision so each bridge owns its auto-join wiring).
   mkDmService = import ./dm-provision.nix { inherit pkgs config; };
 
-  # The upstream hookshot logo, pinned to our deployed version, so the bot gets a
-  # recognisable display name + avatar instead of a bare @hookshot MXID. Hookshot
-  # accepts a file path for bot.avatar and uploads it idempotently on each start
-  # (BotUsersManager.ensureProfile), so this also self-heals after a matrix-reset.
-  hookshotLogo = pkgs.fetchurl {
-    url = "https://raw.githubusercontent.com/matrix-org/matrix-hookshot/${config.services.matrix-hookshot.package.version}/logo.png";
-    hash = "sha256-tbyMe0p6ech3l21n9MX+o1C2zftUm9m6z3x/i1kTBNo=";
+  # Bot avatar. The upstream logo.png is only 64x69, so as a Matrix avatar it
+  # pixelates and gets cropped (looks amateur). Element can't render an SVG avatar,
+  # so we rasterise the upstream logo.svg at high resolution and centre it (with
+  # padding) on a 512x512 white square — crisp and properly proportioned. Hookshot
+  # uploads this file path idempotently on each start (BotUsersManager.ensureProfile),
+  # re-uploading when the bytes change, so it self-heals after a matrix-reset.
+  hookshotLogoSvg = pkgs.fetchurl {
+    url = "https://raw.githubusercontent.com/matrix-org/matrix-hookshot/${config.services.matrix-hookshot.package.version}/logo.svg";
+    hash = "sha256-ElWb31h0n7O3dmP3hhN3IZPhmAaUG+i6gfa3Htg6z2I=";
   };
+  hookshotAvatar =
+    pkgs.runCommand "hookshot-avatar.png"
+      {
+        nativeBuildInputs = [
+          pkgs.resvg
+          pkgs.imagemagick
+        ];
+      }
+      ''
+        resvg --width 400 ${hookshotLogoSvg} logo.png
+        magick -size 512x512 xc:white logo.png -gravity center -composite "$out"
+      '';
 
   # Work around a conduwuit/tuwunel gap: the homeserver doesn't stamp `is_direct`
   # onto DM invite m.room.member events, so hookshot never recognises the @hookshot
@@ -171,7 +185,7 @@ in
           bindAddress: 127.0.0.1
         bot:
           displayname: Hookshot
-          avatar: ${hookshotLogo}
+          avatar: ${hookshotAvatar}
         passFile: ${stateDir}/passkey.pem
         logging:
           level: info
