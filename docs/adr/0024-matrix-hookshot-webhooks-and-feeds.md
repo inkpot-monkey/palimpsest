@@ -1,5 +1,7 @@
 # matrix-hookshot is the front door for GitHub, generic webhooks, and feeds — and the aionui notifier becomes a webhook shim
 
+> **Update (2026-06-25):** AionUi and its notifier were removed (see [ADR-0025](0025-claude-relay-matrix-interface.md)), so the `aionui-hookshot-provision` oneshot + `#aionui-alerts` connection described below are gone. The hookshot core — GitHub notifications/repo-events, generic webhooks, feeds — is unchanged and remains.
+
 The fleet needed GitHub notifications in Matrix. Rather than build another bespoke poller, the matrix profile now runs [matrix-hookshot](https://matrix-org.github.io/matrix-hookshot/) (`services.matrix-hookshot`, nixpkgs 7.3.3) on kelpy as a fourth appservice alongside whatsapp and the jmap bridge. It bridges four things at once: GitHub personal notifications (the bell-icon feed, per-user OAuth), GitHub repo events (issues/PRs/CI via a GitHub App webhook), generic inbound webhooks (any service that can POST), and RSS/Atom feeds. Connections are created at runtime by talking to the `@hookshot` bot in a room — no per-connection Nix config.
 
 It slots into the existing declarative-appservice pattern unchanged ([ADR-0006](0006-tuwunel-matrix-homeserver.md)): a sops-rendered `hookshot-registration.yaml` is contributed to `custom.profiles.matrix.appservices`, and tuwunel loads it from `appservice_dir` like every other bridge.

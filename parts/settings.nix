@@ -73,10 +73,6 @@ let
         edge = "kelpy";
         port = 8001;
       };
-      aionui = {
-        edge = "kelpy";
-        port = 25808;
-      };
       # Home Assistant. It RUNS on rk1b, but is fronted by kelpy's Caddy (TLS via
       # Cloudflare DNS-01 + the internal_only tailnet guard). `edge` is the edge
       # (kelpy: where DNS points and Caddy runs); `origin` is the upstream Caddy

@@ -46,14 +46,8 @@
     paperless.enable = true;
     litellm.enable = true;
     openclaw.enable = true;
-    aionui = {
-      enable = true;
-      notifications.enable = true;
-    };
-    # The Claude relay (ADR-0025) runs beside AionUi for now; reuses inkpotmonkey's
-    # ~/.claude login. Deploy + real-claude smoke + AionUi retirement are slices
-    # 06/07 (operator steps): create the @claude-relay account and add
-    # claude_relay_bot_password to the matrix secrets, then `just deploy kelpy`.
+    # The Claude relay (ADR-0025) is the Matrix interface to persistent `claude`
+    # sessions — it replaced AionUi (now removed). Reuses inkpotmonkey's ~/.claude.
     claude-relay.enable = true;
     blocky.enable = true;
     media = {
@@ -61,8 +55,9 @@
     };
   };
 
-  # kelpy runs the AionUi code-executing agent (aionui.enable above) — mark it
-  # exposed so the contract refuses any secret-bearing user-feature grant (ADR-0015).
+  # kelpy runs the Claude relay's code-executing `claude` sessions (claude-relay
+  # above) — mark it exposed so the contract refuses any secret-bearing user-feature
+  # grant (ADR-0015).
   custom.host.exposed = true;
   # NOTE: signing is intentionally NOT granted here. It is now a home-sops feature
   # (ADR-0018, slice 13) decryptable only by the user's own key, which a headless
@@ -197,7 +192,8 @@
   };
 
   # Persist the agent's home state across impermanence reboots: Claude Code
-  # subscription credentials/config and the project checkouts AionUi works in.
+  # subscription credentials/config and the project checkouts the relay's sessions
+  # work in.
   environment.persistence."/persistent".users.inkpotmonkey.directories = [
     ".claude"
     "code"

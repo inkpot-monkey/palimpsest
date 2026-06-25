@@ -778,8 +778,8 @@ async fn provision_hook(config: &Config) -> Result<()> {
     }
 
     // Merge our hooks into any existing settings.json (the run-as user's ~/.claude
-    // may be shared with another claude consumer, e.g. AionUi) — set only the Stop
-    // and Notification hooks, preserving everything else.
+    // may be shared with another claude consumer) — set only the Stop and
+    // Notification hooks, preserving everything else.
     let settings_path = format!("{dir}/settings.json");
     let mut settings: Value = tokio::fs::read(&settings_path)
         .await

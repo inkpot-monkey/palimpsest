@@ -3,7 +3,6 @@
 # If meta.mainProgram is set, also: nix run .#<name>
 
 { pkgs }: {
-  aionui = pkgs.callPackage ./aionui { };
   stump = pkgs.callPackage ./stump { };
   vocabsieve = pkgs.libsForQt5.callPackage ./vocabsieve.nix { };
   finance-tools = pkgs.callPackage ./finance-tools { };

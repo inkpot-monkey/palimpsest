@@ -19,7 +19,7 @@ A toggleable feature bundle enabled through the `custom.*` namespace, composing 
 _Avoid_: role, preset.
 
 **Service module**:
-A bespoke long-running program packaged and wired by this repo under `modules/nixos/services/` (e.g. the bridge, the AionUi notifier). Distinct from a profile, which only toggles and configures.
+A bespoke long-running program packaged and wired by this repo under `modules/nixos/services/` (e.g. the jmap bridge, the Claude relay). Distinct from a profile, which only toggles and configures.
 _Avoid_: daemon, app.
 
 **`custom.*`**:
@@ -120,12 +120,11 @@ Logging the bridge in *as the real user* (not a ghost) so the user's own Matrix 
 ### Claude-in-Matrix
 
 **Claude relay**:
-The bespoke service that runs persistent `claude` CLI sessions on a host (in `tmux`) and exposes them *through Matrix* as the primary interface — posting each turn into Matrix and injecting Matrix messages back into the session. It is **not** an appservice bridge in the jmap sense; "the bridge" stays reserved for jmap. The relay supersedes the AionUi frontend and the AionUi→Matrix notifier.
-_Avoid_: bridge (reserved for jmap), gateway, AionUi (the thing it replaces).
+The bespoke service that runs persistent `claude` CLI sessions on a host (in `tmux`) and exposes them *through Matrix* as the primary interface — posting each turn into Matrix and injecting Matrix messages back into the session. It is **not** an appservice bridge in the jmap sense; "the bridge" stays reserved for jmap. (It replaced the former AionUi WebUI + notifier, now removed.)
+_Avoid_: bridge (reserved for jmap), gateway.
 
 **Control room**:
 The single persistent Matrix room where the operator drives the relay — starting (`new <cwd>`), listing, and killing sessions. One per host, not per session.
-_Avoid_: alerts room (that was the AionUi notifier's single one-way room).
 
 **Session room**:
 The dedicated Matrix room the relay creates for one `claude` session — a 1:1 chat with that agent. Operator messages there are injected into *that* session; the session's turns and permission/choice **polls** are posted there. Room-per-session mirrors the jmap bridge's room-per-thread idiom (see **Contact room / Thread room**).

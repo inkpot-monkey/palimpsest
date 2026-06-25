@@ -7,12 +7,11 @@
   ...
 }:
 
-# Profile wiring for the Claude relay (ADR-0025). The service module
-# (modules/nixos/services/claude-relay) carries the daemon + options; this
+# Profile wiring for the Claude relay (ADR-0025) — the Matrix interface to
+# persistent `claude` sessions that replaced AionUi (now removed). The service
+# module (modules/nixos/services/claude-relay) carries the daemon + options; this
 # profile wires it to the local homeserver and reuses inkpotmonkey's ~/.claude
-# login for the claude sessions (the same account AionUi uses). Enable only where
-# tuwunel runs (kelpy). Slice 06 (deploy beside AionUi + real-claude smoke) and
-# slice 07 (retire AionUi) remain operator steps.
+# login for the claude sessions. Enable only where tuwunel runs (kelpy).
 
 let
   cfg = config.custom.profiles.claude-relay;
@@ -69,8 +68,8 @@ in
 
     services.claude-relay = {
       enable = true;
-      # Run as inkpotmonkey to reuse its ~/.claude subscription login (the account
-      # AionUi already uses); the relay merges its hooks into that settings.json.
+      # Run as inkpotmonkey to reuse its ~/.claude subscription login; the relay
+      # merges its hooks into that settings.json.
       serviceUser = "inkpotmonkey";
       group = "users";
       createUser = false;

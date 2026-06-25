@@ -41,9 +41,9 @@ let
   '';
 
   # Idempotently register the admin Matrix account via the shared registration
-  # token (UIA token flow, the same one the aionui notifier self-registers with).
-  # Ordered before other account-creating services so `grant_admin_to_first_user`
-  # makes this the homeserver admin.
+  # token (UIA token flow). Other account-creating services (e.g. claude-relay-
+  # register) order themselves AFTER this so `grant_admin_to_first_user` makes this
+  # account the homeserver admin.
   registerAdmin = pkgs.writeShellScript "tuwunel-register-admin" ''
     set -eu
     url="http://${address}:${toString matrixPort}"
@@ -375,9 +375,6 @@ in
       after = [ "tuwunel.service" ];
       requires = [ "tuwunel.service" ];
       wantedBy = [ "multi-user.target" ];
-      # Register before other account-creating services so this account wins
-      # grant_admin_to_first_user.
-      before = [ "aionui-notifier.service" ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
