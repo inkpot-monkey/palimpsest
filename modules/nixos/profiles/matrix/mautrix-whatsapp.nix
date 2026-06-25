@@ -148,7 +148,7 @@ in
       bot = botUsername;
       afterUnit = "mautrix-whatsapp.service";
       encrypted = true;
-      topic = "WhatsApp bridge admin room — send `login` to pair your phone (QR/code), or `help` to list all commands.";
+      topic = "WhatsApp bridge admin room — `login` to pair your phone (QR/code); `login-matrix <your access token>` to double-puppet your own account; `help` for all commands.";
     };
 
     # Contribute to `matrix-reset`: the bridge service + its DM provisioner, and
@@ -157,7 +157,7 @@ in
       {
         service = "mautrix-whatsapp.service";
         paths = [ "/var/lib/mautrix-whatsapp" ];
-        postResetNote = "re-pair WhatsApp: open the @${botUsername} DM and send 'login' (the QR-paired session was wiped)";
+        postResetNote = "re-pair WhatsApp in the @${botUsername} DM: send 'login' (QR/code), then 'login-matrix <your Element access token>' to restore double-puppeting (both wiped with the account)";
       }
       {
         service = "matrix-dm-${botUsername}.service";
