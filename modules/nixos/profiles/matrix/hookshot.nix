@@ -41,6 +41,62 @@ let
     url = "https://raw.githubusercontent.com/matrix-org/matrix-hookshot/${config.services.matrix-hookshot.package.version}/logo.png";
     hash = "sha256-tbyMe0p6ech3l21n9MX+o1C2zftUm9m6z3x/i1kTBNo=";
   };
+
+  # Work around a conduwuit/tuwunel gap: the homeserver doesn't stamp `is_direct`
+  # onto DM invite m.room.member events, so hookshot never recognises the @hookshot
+  # DM as an *admin room* — the only place `github login` / `github notifications
+  # toggle` (personal-notification feed) etc. exist. Hookshot designates an admin
+  # room by the bot's room account-data `uk.half-shot.matrix-hookshot.github.room`
+  # carrying an admin_user (normally written from the is_direct invite, Bridge.ts).
+  # We write it ourselves by masquerading as the bot with the appservice token,
+  # then restart hookshot so it loads the room as an admin room on startup
+  # (setUpAdminRoom). Idempotent: only writes + restarts when not already marked.
+  adminRoomType = "uk.half-shot.matrix-hookshot.github.room";
+  dmMarker = "/var/lib/private/matrix-dm-hookshot/dm-created";
+  markAdminRoom = pkgs.writeShellScript "matrix-hookshot-adminroom" ''
+    set -eu
+    url="${homeserverUrl}"
+    bot="@hookshot:${domain}"
+    me="@${adminLocalpart}:${domain}"
+    as_token="$(cat "$CREDENTIALS_DIRECTORY/as_token")"
+
+    [ -s "${dmMarker}" ] || { echo "hookshot-adminroom: no DM marker yet, nothing to do"; exit 0; }
+    rid="$(cat "${dmMarker}")"
+    botenc="$(${pkgs.jq}/bin/jq -rn --arg b "$bot" '$b|@uri')"
+    ridenc="$(${pkgs.jq}/bin/jq -rn --arg r "$rid" '$r|@uri')"
+    auth=(-H "Authorization: Bearer $as_token")
+    # Masquerade as the appservice bot for the account-data + membership reads.
+    q="user_id=$botenc"
+
+    for _ in $(seq 1 30); do
+      ${pkgs.curl}/bin/curl -sf "$url/_matrix/client/versions" >/dev/null && break
+      sleep 2
+    done
+
+    # The bot's room account-data only sticks once it has joined the DM.
+    for _ in $(seq 1 30); do
+      joined="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" \
+        "$url/_matrix/client/v3/rooms/$ridenc/joined_members?$q" \
+        | ${pkgs.jq}/bin/jq -r --arg b "$bot" '.joined // {} | has($b)' 2>/dev/null || echo false)"
+      [ "$joined" = "true" ] && break
+      sleep 2
+    done
+
+    cur="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" \
+      "$url/_matrix/client/v3/user/$botenc/rooms/$ridenc/account_data/${adminRoomType}?$q" \
+      | ${pkgs.jq}/bin/jq -r '.admin_user // empty' 2>/dev/null || echo "")"
+    if [ "$cur" = "$me" ]; then
+      echo "hookshot-adminroom: $rid already marked as admin room for $me"
+      exit 0
+    fi
+
+    ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
+      "$url/_matrix/client/v3/user/$botenc/rooms/$ridenc/account_data/${adminRoomType}?$q" \
+      -H 'content-type: application/json' \
+      -d "$(${pkgs.jq}/bin/jq -nc --arg u "$me" '{admin_user:$u}')"
+    echo "hookshot-adminroom: marked $rid as admin room for $me; restarting hookshot"
+    ${pkgs.systemd}/bin/systemctl restart matrix-hookshot.service
+  '';
 in
 {
   options.custom.profiles.matrix.hookshot = {
@@ -217,6 +273,29 @@ in
       afterUnit = "matrix-hookshot.service";
     };
 
+    # Mark that DM as a hookshot admin room (see markAdminRoom — works around the
+    # tuwunel is_direct gap), after the DM exists and the bot has joined. Runs as
+    # root so it can read the DM-provisioner's (DynamicUser) marker and restart
+    # hookshot to pick the room up.
+    systemd.services."matrix-hookshot-adminroom" = {
+      description = "Mark the @hookshot management DM as a hookshot admin room";
+      after = [
+        "matrix-hookshot.service"
+        "matrix-dm-hookshot.service"
+      ];
+      wants = [
+        "matrix-hookshot.service"
+        "matrix-dm-hookshot.service"
+      ];
+      wantedBy = [ "multi-user.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        LoadCredential = [ "as_token:${config.sops.secrets.hookshot_as_token.path}" ];
+        ExecStart = markAdminRoom;
+      };
+    };
+
     # Contribute to `matrix-reset`: the bridge service + its DM provisioner, and
     # the state dirs wiped for a from-scratch start (OAuth/passkey, and the marker).
     custom.profiles.matrix.resetState = [
@@ -229,6 +308,13 @@ in
         service = "matrix-dm-hookshot.service";
         isDm = true;
         paths = [ "/var/lib/private/matrix-dm-hookshot" ];
+      }
+      {
+        # Re-mark the (freshly re-provisioned) DM as an admin room after a wipe;
+        # isDm so it runs in the post-bridge phase, ordered after matrix-dm-hookshot
+        # by its After=. Restarts hookshot itself when it (re)writes the marker.
+        service = "matrix-hookshot-adminroom.service";
+        isDm = true;
       }
     ];
 
