@@ -1160,11 +1160,16 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
  shell-command+
  :bind (([remap shell-command] . shell-command+)))
 
-;; History-aware async-shell-command: completes from `shell-command-history'
-;; and marginalia-annotates each candidate with recall's record (dir/exit/when).
-;; Logic lives in the local `async-shell-history' package; this is just wiring.
+;; History-aware async-shell-command: completes from `shell-command-history',
+;; marginalia-annotates each candidate (pinned name / recall dir/exit/when), and
+;; can pin a command to a named, persisted output buffer (`C-.' n via embark, or
+;; `async-shell-history-run-named').  Logic lives in the local package; this is
+;; just wiring.  Pinned names persist under no-littering like recall's history.
 (use-package
  async-shell-history
+ :custom
+ (async-shell-history-names-file
+  (concat no-littering-var-directory "async-shell-history/names.el"))
  :bind
  (([remap async-shell-command] . async-shell-history-run)
   ("C-c &" . async-shell-history-rerun-last)))
