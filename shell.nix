@@ -35,6 +35,12 @@
       sops
       ssh-to-age
 
+      # Python (e.g. pkgs/finance-tools): basedpyright is eglot's LSP
+      # (types/completion/nav); ruff drives in-editor lint via flymake-ruff
+      # (same rules as the treefmt commit gate) and `ruff check` on the CLI.
+      basedpyright
+      ruff
+
       # Rust (e.g. pkgs/annas-opds: cargo test / clippy / rustfmt)
       cargo
       rustc

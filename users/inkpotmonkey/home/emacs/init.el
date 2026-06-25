@@ -1361,6 +1361,32 @@ so stdin still works — only rerun once the command has exited."
  :hook (typescript-ts-mode . eglot-ensure))
 
 (use-package
+ python-ts-mode
+ :ensure nil
+ :mode ("\\.py[iw]?\\'" . python-ts-mode)
+ :init (push '(python-mode . python-ts-mode) major-mode-remap-alist)
+ ;; eglot's built-in python `eglot-alternatives' picks the first server on
+ ;; PATH; with basedpyright installed (and no pylsp/pyls) that is
+ ;; basedpyright-langserver, so no explicit server entry is needed.
+ :hook (python-ts-mode . eglot-ensure)
+ :config (add-to-list 'project-vc-extra-root-markers "pyproject.toml"))
+
+(use-package
+ flymake-ruff
+ ;; eglot can only drive ONE server per buffer, so basedpyright is the LSP and
+ ;; ruff runs as an extra Flymake backend (its diagnostics use the same rules
+ ;; as the treefmt commit gate). eglot resets `flymake-diagnostic-functions'
+ ;; when it takes over a buffer, so re-add ruff from `eglot-managed-mode-hook'
+ ;; too — the plain `python-ts-mode' hook covers the no-eglot case.
+ :hook (python-ts-mode . flymake-ruff-load)
+ :config
+ (add-hook
+  'eglot-managed-mode-hook
+  (lambda ()
+    (when (derived-mode-p 'python-base-mode)
+      (flymake-ruff-load)))))
+
+(use-package
  html-ts-mode
  :ensure nil
  :mode (("\\.webc\\'" . html-ts-mode) ("\\.html?\\'" . html-ts-mode))
