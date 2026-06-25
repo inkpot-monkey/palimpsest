@@ -109,6 +109,11 @@ let
         -H "authorization: Bearer $1" | jq -r '.name // empty'
     }
 
+    mx_topic() { # token room -> topic
+      curl -s "$URL/_matrix/client/v3/rooms/$2/state/m.room.topic" \
+        -H "authorization: Bearer $1" | jq -r '.topic // empty'
+    }
+
     mx_tags() { # token user room -> tag keys
       u=$(jq -rn --arg x "$2" '$x|@uri')
       curl -s "$URL/_matrix/client/v3/user/$u/rooms/$3/tags" \
@@ -322,7 +327,11 @@ pkgs.testers.nixosTest {
     machine.wait_until_succeeds(
         f"{H}; mx_space_children {allowed_tok} {space} | grep -qF {control}", timeout=30
     )
-    print("OK: control room named 'claude', favourited, avatared, filed under the Space")
+    # ...and its topic marks it as the admin room.
+    machine.wait_until_succeeds(
+        f"{H}; mx_topic {allowed_tok} {control} | grep -qiF 'admin room'", timeout=30
+    )
+    print("OK: control room named 'claude', favourited, avatared, filed under the Space, admin topic")
 
     def send_control(text):
         sh(f"mx_send {allowed_tok} {control} {shlex.quote(text)}")

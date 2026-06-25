@@ -22,6 +22,7 @@ use matrix_sdk::{
             room::{
                 member::StrippedRoomMemberEvent,
                 message::{MessageType, OriginalSyncRoomMessageEvent, RoomMessageEventContent},
+                topic::RoomTopicEventContent,
             },
             space::{child::SpaceChildEventContent, parent::SpaceParentEventContent},
             tag::{TagInfo, TagName},
@@ -602,6 +603,11 @@ async fn present_control_room(app: &Arc<App>, control: &OwnedRoomId) {
         if let Err(e) = room.set_name("claude".to_string()).await {
             tracing::warn!(error = ?e, "failed to set control room name");
         }
+        let topic = "Claude admin room — drive sessions here: `new <cwd>` to start, \
+                     `list`, `kill <name>`. Session rooms appear under the Claude space.";
+        let _ = room
+            .send_state_event(RoomTopicEventContent::new(topic.to_string()))
+            .await;
         set_room_avatar(app, &room).await;
     }
     add_to_space(app, control).await;
