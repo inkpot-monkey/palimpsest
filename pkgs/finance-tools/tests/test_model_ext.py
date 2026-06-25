@@ -1,6 +1,5 @@
 import unittest
 from unittest.mock import MagicMock, patch
-import json
 from finance_extensions.model_ext import ModelExtension
 
 
@@ -24,7 +23,7 @@ class TestModelExtension(unittest.TestCase):
             # Note: The @extension_endpoint decorator might wrap the function.
             # In Fava, it registers the route but usually returns the function itself (or a wrapper).
             # We call it directly.
-            response = self.ext.explain()
+            self.ext.explain()
 
             # Response is a tuple (json, code) or just json. Flask jsonify returns a Response object.
             # Since we mock flask.jsonify, we need to inspect what we return.
@@ -51,7 +50,7 @@ class TestModelExtension(unittest.TestCase):
 
             # We need to run this in a context where jsonify works, or we mock jsonify
             with patch("finance_extensions.model_ext.jsonify") as mock_json:
-                response = self.ext.explain()
+                self.ext.explain()
                 mock_json.assert_called_with(
                     {"success": False, "error": "AI request timed out"}
                 )

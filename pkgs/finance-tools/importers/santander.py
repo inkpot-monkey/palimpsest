@@ -26,7 +26,7 @@ class SantanderImporter(Importer):
                     and "amount" in header.lower()
                     and "balance" in header.lower()
                 )
-        except:
+        except Exception:
             return False
 
     def extract(self, filepath, existing_entries=None):

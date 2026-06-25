@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from beancount.core import data, amount, number
 from hooks.smart_tagger import SmartLLMHook
 import datetime

@@ -28,7 +28,7 @@ class RevolutImporter(Importer):
                     "started date" in header.lower()
                     or "completed date" in header.lower()
                 )
-        except:
+        except Exception:
             return False
 
     def extract(self, filepath, existing_entries=None):

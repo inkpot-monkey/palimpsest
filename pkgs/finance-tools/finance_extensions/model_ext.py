@@ -1,9 +1,7 @@
 from fava.ext import FavaExtensionBase, extension_endpoint
 from flask import jsonify, request
 import subprocess
-import os
 import json
-from pathlib import Path
 from utils.config import get_config_dir, get_model_name, load_ai_config
 import logging
 
@@ -12,14 +10,6 @@ log = logging.getLogger(__name__)
 
 class ModelExtension(FavaExtensionBase):
     report_title = "Auto tagging"
-
-    @extension_endpoint(methods=["GET"])
-    def status(self):
-        print("DEBUG: status endpoint called", flush=True)
-        # ... (unchanged code for status)
-        # We need to preserve status implementation but I am using replace_file_content which requires context matching
-        # Easier to just modify the class definition and add the method separately or use a larger chunk.
-        # Let's target the class definition first.
 
     def __init__(self, ledger, config=None):
         log.debug("ModelExtension.__init__ called")

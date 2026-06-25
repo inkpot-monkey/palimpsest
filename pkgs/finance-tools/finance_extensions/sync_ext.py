@@ -1,5 +1,4 @@
 from fava.ext import FavaExtensionBase, extension_endpoint
-from flask import jsonify
 import subprocess
 import os
 import shutil

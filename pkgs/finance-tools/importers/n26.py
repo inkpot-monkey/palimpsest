@@ -24,7 +24,7 @@ class N26Importer(Importer):
                     and '"payee"' in header.lower()
                     and '"amount (eur)"' in header.lower()
                 )
-        except:
+        except Exception:
             return False
 
     def extract(self, filepath, existing_entries=None):

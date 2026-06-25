@@ -1,7 +1,7 @@
 import unittest
 import os
 import sys
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from beancount.core import data, amount, number
 import datetime
 

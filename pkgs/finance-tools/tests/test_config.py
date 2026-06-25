@@ -1,12 +1,11 @@
 import unittest
-from unittest.mock import patch, mock_open
+from unittest.mock import patch
 import os
 from pathlib import Path
 from utils.config import (
     get_config_dir,
     get_model_name,
     get_expense_patterns,
-    load_ai_config,
 )
 
 

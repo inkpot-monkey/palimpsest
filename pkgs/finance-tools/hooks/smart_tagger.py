@@ -1,10 +1,8 @@
-import os
 from litellm import completion
-from beangulp import Importer
 from beancount.core import data
 
 import sys
-from typing import List, Dict, Any, Optional
+from typing import Dict, Optional
 from utils.config import load_ai_config, get_model_name, get_expense_patterns
 
 
@@ -122,13 +120,11 @@ class SmartLLMHook:
                             "account": cached["account"],
                             "payee": cached["payee"],
                         }
-                        is_cached = True
                     else:
                         # 2. Ask AI
                         print(f"DEBUG: Asking AI for {description}...", file=sys.stderr)
                         predicted = self.predict(entry)
                         print(f"DEBUG: AI Prediction: {predicted}", file=sys.stderr)
-                        is_cached = False
 
                     if predicted:
                         # Update entry
