@@ -42,7 +42,12 @@
       whatsapp.enable = true;
       jmap-bridge.enable = true;
       hookshot.enable = true;
-      infraAlerts.enable = true;
+      infraAlerts = {
+        enable = true;
+        # Pinned from the matrix-infra-alerts-room oneshot's first run (a static
+        # hookshot connection needs the server-assigned roomId at build time).
+        roomId = "!oHttFPAVTE9qwcYCjp:matrix.palebluebytes.space";
+      };
     };
     paperless.enable = true;
     litellm.enable = true;
