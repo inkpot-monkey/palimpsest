@@ -37,19 +37,26 @@ let
 
   homeserverUrl = "http://${builtins.head config.services.matrix-tuwunel.settings.global.address}:${toString (builtins.head config.services.matrix-tuwunel.settings.global.port)}";
 
-  # Create/reuse the #infra-alerts room as the admin (password-login — the proven
-  # path; the appservice masquerade can't createRoom on tuwunel), invite @hookshot,
-  # persist + log the roomId for pinning, and publish the loopback webhook URL the
-  # on-host unit-state check reads.
+  # Ensure the #infra-alerts room exists and @hookshot has JOINED it (a static
+  # hookshot connection only activates for a room the bot is IN), then restart
+  # hookshot once so it loads the connection. Runs as root to allow the restart
+  # (mirrors matrix-hookshot-adminroom). Rooms are created via admin password-login
+  # (the appservice masquerade can't createRoom on tuwunel); the bot is invited as
+  # admin and joins via the appservice token.
+  #
+  # roomId is the source of truth once pinned — on the bootstrap run (roomId="") we
+  # create the room and log its id for pinning; thereafter we only ensure membership.
   roomScript = pkgs.writeShellScript "matrix-infra-alerts-room" ''
     set -eu
     url="${homeserverUrl}"
     bot="@hookshot:${domain}"
-    marker="$STATE_DIRECTORY/room-id"
+    pinned="${cfg.roomId}"
     pass="$(cat "$CREDENTIALS_DIRECTORY/admin_password")"
+    astoken="$(cat "$CREDENTIALS_DIRECTORY/as_token")"
     hookid="$(cat "$CREDENTIALS_DIRECTORY/hook_id")"
     curl() { ${pkgs.curl}/bin/curl -s "$@"; }
     jq() { ${pkgs.jq}/bin/jq "$@"; }
+    uid="$(jq -rn --arg u "$bot" '$u|@uri')"
 
     for _ in $(seq 1 30); do
       curl -f "$url/_matrix/client/versions" >/dev/null && break
@@ -63,8 +70,8 @@ let
     [ -n "$at" ] || { echo "infra-alerts: admin login failed" >&2; exit 1; }
     auth=(-H "Authorization: Bearer $at")
 
-    if [ -s "$marker" ]; then
-      rid="$(cat "$marker")"
+    if [ -n "$pinned" ]; then
+      rid="$pinned"
     else
       rid="$(curl "''${auth[@]}" -X POST "$url/_matrix/client/v3/createRoom" \
         -H 'content-type: application/json' \
@@ -72,17 +79,34 @@ let
           '{name:"Infra Alerts",topic:"Fleet uptime alerts (ADR-0026)",preset:"private_chat",invite:[$b]}')" \
         | jq -r '.room_id // empty')"
       [ -n "$rid" ] || { echo "infra-alerts: createRoom failed" >&2; exit 1; }
-      printf '%s' "$rid" > "$marker"
-      echo "infra-alerts: created room $rid"
+      echo "infra-alerts: created room $rid — pin into infraAlerts.roomId and redeploy"
+    fi
+    ridenc="$(jq -rn --arg r "$rid" '$r|@uri')"
+
+    # Ensure @hookshot is a joined member: invite (admin, idempotent) then join
+    # (appservice token). Restart hookshot once, when it newly joins, so it loads
+    # the static connection (tracked by a persisted marker keyed on the room id).
+    ismember="$(curl "''${auth[@]}" "$url/_matrix/client/v3/rooms/$ridenc/joined_members" \
+      | jq -r --arg b "$bot" '(.joined // {}) | has($b)')"
+    if [ "$ismember" != "true" ]; then
+      curl "''${auth[@]}" -X POST "$url/_matrix/client/v3/rooms/$ridenc/invite" \
+        -H 'content-type: application/json' -d "$(jq -nc --arg b "$bot" '{user_id:$b}')" >/dev/null || true
+      curl -H "Authorization: Bearer $astoken" \
+        -X POST "$url/_matrix/client/v3/rooms/$ridenc/join?user_id=$uid" >/dev/null || true
+      echo "infra-alerts: @hookshot invited + joined $rid"
+      act="$STATE_DIRECTORY/restarted-for"
+      if [ "$(cat "$act" 2>/dev/null || true)" != "$rid" ]; then
+        ${pkgs.systemd}/bin/systemctl restart matrix-hookshot.service
+        printf '%s' "$rid" > "$act"
+        echo "infra-alerts: restarted hookshot to load the connection"
+      fi
     fi
 
     # Publish the loopback webhook URL for the on-host (kelpy) unit-state check.
     printf '%s' "http://127.0.0.1:${toString webhookPort}/webhook/$hookid" \
       > "$STATE_DIRECTORY/webhook_url"
-    chmod 640 "$STATE_DIRECTORY/webhook_url"
-
-    echo "infra-alerts: room id = $rid"
-    echo "infra-alerts: pin it into custom.profiles.matrix.infraAlerts.roomId, then redeploy."
+    chmod 644 "$STATE_DIRECTORY/webhook_url"
+    echo "infra-alerts: ready in $rid"
   '';
 in
 {
@@ -136,28 +160,35 @@ in
       owner = user;
     };
 
+    # Runs as root (no User=) so it can restart hookshot, mirroring
+    # matrix-hookshot-adminroom. after+wants (not before/requires): it restarts
+    # hookshot, so it must be ordered after it, not before.
     systemd.services.matrix-infra-alerts-room = {
-      description = "Create the #infra-alerts room for hookshot uptime alerts";
+      description = "Ensure #infra-alerts exists + @hookshot joined; load the webhook";
       after = [
+        "matrix-hookshot.service"
         "tuwunel.service"
         "tuwunel-register-admin.service"
       ];
-      requires = [ "tuwunel.service" ];
+      wants = [ "matrix-hookshot.service" ];
       wantedBy = [ "multi-user.target" ];
-      before = [ "matrix-hookshot.service" ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        User = user;
-        Group = user;
         StateDirectory = "matrix-infra-alerts";
-        StateDirectoryMode = "0750";
+        StateDirectoryMode = "0755";
         LoadCredential = [
           "admin_password:${config.sops.secrets.matrix_admin_password.path}"
+          "as_token:${config.sops.secrets.hookshot_as_token.path}"
           "hook_id:${config.sops.secrets.infra_alerts_hook_id.path}"
         ];
         ExecStart = roomScript;
       };
+    };
+
+    # Persist the restart-once marker so we don't restart hookshot every boot.
+    environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
+      directories = [ "/var/lib/matrix-infra-alerts" ];
     };
   };
 }
