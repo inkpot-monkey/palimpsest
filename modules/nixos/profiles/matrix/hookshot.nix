@@ -56,6 +56,87 @@ let
         magick -size 512x512 xc:white logo.png -gravity center -composite "$out"
       '';
 
+  # Create a "Hookshot" Matrix Space grouping the @hookshot rooms, as @inkpotmonkey
+  # (so the operator is the creator + already joined — no invite to accept). Sets
+  # the space avatar to the hookshot logo, files the @hookshot management DM under
+  # it, and favourites it. Idempotent: the space id is persisted; on a matrix-reset
+  # the marker is wiped and it's recreated. All plain C-S API (no e2ee needed —
+  # space membership is state, not message content).
+  hookshotSpace = pkgs.writeShellScript "matrix-hookshot-space" ''
+    set -eu
+    url="${homeserverUrl}"
+    me="@${adminLocalpart}:${domain}"
+    bot="@hookshot:${domain}"
+    marker="$STATE_DIRECTORY/space-created"
+    meenc="$(${pkgs.jq}/bin/jq -rn --arg m "$me" '$m|@uri')"
+
+    for _ in $(seq 1 30); do
+      ${pkgs.curl}/bin/curl -sf "$url/_matrix/client/versions" >/dev/null && break
+      sleep 2
+    done
+
+    pass="$(cat "$CREDENTIALS_DIRECTORY/admin_password")"
+    at="$(${pkgs.curl}/bin/curl -s -X POST "$url/_matrix/client/v3/login" \
+      -H 'content-type: application/json' \
+      -d "$(${pkgs.jq}/bin/jq -nc --arg u "${adminLocalpart}" --arg p "$pass" \
+        '{type:"m.login.password",identifier:{type:"m.id.user",user:$u},password:$p}')" \
+      | ${pkgs.jq}/bin/jq -r '.access_token // empty')"
+    [ -n "$at" ] || { echo "hookshot-space: admin login failed" >&2; exit 1; }
+    auth=(-H "Authorization: Bearer $at")
+
+    # Create or reuse the Space.
+    if [ -s "$marker" ]; then
+      space="$(cat "$marker")"
+    else
+      space="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" -X POST "$url/_matrix/client/v3/createRoom" \
+        -H 'content-type: application/json' \
+        -d '{"name":"Hookshot","topic":"GitHub / webhooks / feeds — hookshot rooms","preset":"private_chat","creation_content":{"type":"m.space"}}' \
+        | ${pkgs.jq}/bin/jq -r '.room_id // empty')"
+      [ -n "$space" ] || { echo "hookshot-space: createRoom failed" >&2; exit 1; }
+      printf '%s' "$space" > "$marker"
+      echo "hookshot-space: created Space -> $space"
+    fi
+    spaceenc="$(${pkgs.jq}/bin/jq -rn --arg r "$space" '$r|@uri')"
+
+    # Avatar: upload + set, only when unset (uploads aren't content-addressed).
+    curav="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" \
+      "$url/_matrix/client/v3/rooms/$spaceenc/state/m.room.avatar" \
+      | ${pkgs.jq}/bin/jq -r '.url // empty' 2>/dev/null || echo "")"
+    if [ -z "$curav" ]; then
+      mxc="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" -X POST \
+        "$url/_matrix/media/v3/upload?filename=hookshot.png" \
+        -H 'content-type: image/png' --data-binary "@${hookshotAvatar}" \
+        | ${pkgs.jq}/bin/jq -r '.content_uri // empty')"
+      [ -n "$mxc" ] && ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
+        "$url/_matrix/client/v3/rooms/$spaceenc/state/m.room.avatar" \
+        -H 'content-type: application/json' -d "$(${pkgs.jq}/bin/jq -nc --arg u "$mxc" '{url:$u}')" >/dev/null \
+        && echo "hookshot-space: avatar set" || echo "hookshot-space: avatar set failed (non-fatal)" >&2
+    fi
+
+    # Favourite the Space (personal account data; idempotent).
+    ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
+      "$url/_matrix/client/v3/user/$meenc/rooms/$spaceenc/tags/m.favourite" \
+      -H 'content-type: application/json' -d '{"order":0.05}' >/dev/null || true
+
+    # File the @hookshot management DM under the Space (child + parent), found via
+    # m.direct so we don't read another service's private state dir.
+    dm="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" \
+      "$url/_matrix/client/v3/user/$meenc/account_data/m.direct" \
+      | ${pkgs.jq}/bin/jq -r --arg b "$bot" '.[$b][0] // empty' 2>/dev/null || echo "")"
+    if [ -n "$dm" ]; then
+      dmenc="$(${pkgs.jq}/bin/jq -rn --arg r "$dm" '$r|@uri')"
+      via="$(${pkgs.jq}/bin/jq -nc --arg d "${domain}" '{via:[$d]}')"
+      ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
+        "$url/_matrix/client/v3/rooms/$spaceenc/state/m.space.child/$dmenc" \
+        -H 'content-type: application/json' -d "$via" >/dev/null || true
+      ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
+        "$url/_matrix/client/v3/rooms/$dmenc/state/m.space.parent/$spaceenc" \
+        -H 'content-type: application/json' \
+        -d "$(${pkgs.jq}/bin/jq -nc --arg d "${domain}" '{via:[$d],canonical:true}')" >/dev/null || true
+      echo "hookshot-space: filed @hookshot DM under the Space"
+    fi
+  '';
+
   # Work around a conduwuit/tuwunel gap: the homeserver doesn't stamp `is_direct`
   # onto DM invite m.room.member events, so hookshot never recognises the @hookshot
   # DM as an *admin room* — the only place `github login` / `github notifications
@@ -325,6 +406,28 @@ in
       };
     };
 
+    # Create a "Hookshot" Space grouping the @hookshot rooms (see hookshotSpace).
+    # Runs as @inkpotmonkey (admin token), after the DM exists so m.direct resolves.
+    systemd.services."matrix-hookshot-space" = {
+      description = "Create the Hookshot Matrix Space and file the @hookshot DM under it";
+      after = [
+        "tuwunel.service"
+        "tuwunel-register-admin.service"
+        "matrix-dm-hookshot.service"
+      ];
+      requires = [ "tuwunel.service" ];
+      wantedBy = [ "multi-user.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        DynamicUser = true;
+        StateDirectory = "matrix-hookshot-space";
+        StateDirectoryMode = "0700";
+        LoadCredential = [ "admin_password:${config.sops.secrets.matrix_admin_password.path}" ];
+        ExecStart = hookshotSpace;
+      };
+    };
+
     # Contribute to `matrix-reset`: the bridge service + its DM provisioner, and
     # the state dirs wiped for a from-scratch start (OAuth/passkey, and the marker).
     custom.profiles.matrix.resetState = [
@@ -346,6 +449,13 @@ in
         isDm = true;
         paths = [ "/var/lib/matrix-hookshot-adminroom" ];
       }
+      {
+        # Recreate the Hookshot Space after a wipe (its room id, like the DM, is
+        # gone with the homeserver). isDm so it runs after matrix-dm-hookshot.
+        service = "matrix-hookshot-space.service";
+        isDm = true;
+        paths = [ "/var/lib/private/matrix-hookshot-space" ];
+      }
     ];
 
     # --- Persistence ---
@@ -364,6 +474,9 @@ in
         # The admin-room "activated" marker — same lifetime as the DM marker so a
         # matrix-reset (new DM id) re-triggers the one-time hookshot restart.
         "/var/lib/matrix-hookshot-adminroom"
+        # The Hookshot Space id marker — persisted so the Space isn't recreated
+        # every boot; wiped with the homeserver on matrix-reset.
+        "/var/lib/private/matrix-hookshot-space"
       ];
     };
   };
