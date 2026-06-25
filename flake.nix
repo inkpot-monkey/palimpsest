@@ -57,6 +57,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    treefmt-nix = {
+      url = "github:numtide/treefmt-nix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     llm-agents = {
       url = "github:numtide/llm-agents.nix";
     };
@@ -121,8 +126,10 @@
     flake-parts.lib.mkFlake { inherit inputs; } {
       imports = [
         inputs.git-hooks.flakeModule
+        inputs.treefmt-nix.flakeModule
         ./parts/settings.nix
         ./parts/shells.nix
+        ./parts/treefmt.nix
         ./parts/git-hooks.nix
         ./parts/apps
         ./parts/checks
@@ -147,7 +154,6 @@
         }:
         {
           _module.args.pkgs = self.lib.mkPkgs system;
-          formatter = pkgs.nixfmt;
           packages = import ./pkgs {
             inherit pkgs;
           };

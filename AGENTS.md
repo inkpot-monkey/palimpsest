@@ -3,7 +3,9 @@
 ## Build / lint / test commands
 
 - **Check:** `nix flake check -L`
-- **Format:** `nix fmt` (uses nixfmt, enabled in git hooks)
+- **Format:** `nix fmt` (treefmt; runs nixfmt/deadnix/statix, ruff-format,
+  rustfmt, shfmt, taplo, prettier, mdformat, elisp-autofmt — enforced via
+  pre-commit hook). Config in `parts/treefmt.nix`.
 - **Lint (statix):** `statix check .`
 - **Lint (deadnix):** `deadnix .`
 - **Nix packages:** `nix build .#<name>`
@@ -12,7 +14,8 @@
 
 ## Code style
 
-- **Formatting:** nixfmt (mandatory, enforced via pre-commit hook)
+- **Formatting:** treefmt drives per-language formatters (`nix fmt`),
+  mandatory and enforced via the pre-commit hook; nixfmt for Nix
 - **Linting:** statix (disable `repeated_keys`), deadnix
 - **Structure:** flake-parts modules, each in its own file under parts/, users/, hosts/, modules/
 - **Naming:** kebab-case for Nix files and attribute names
@@ -26,8 +29,7 @@ Non-obvious traps that have bitten before — check these before deploying or
 touching secrets:
 
 - **`secrets/` is a separate repo** (pinned as a flake input). Editing a secret
-  is not enough: commit + push it in the secrets repo, then `nix flake update
-  secrets` here, *before* deploy — otherwise sops activation fails on the target.
+  is not enough: commit + push it in the secrets repo, then `nix flake update secrets` here, *before* deploy — otherwise sops activation fails on the target.
 - **sops is all-or-nothing per host.** A host needs its age key on *every* sops
   file, or `sops-install-secrets` installs none (e.g. no wifi on a Pi). When
   adding/rotating a host key, re-key all files together.
