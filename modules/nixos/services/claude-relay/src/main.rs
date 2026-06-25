@@ -20,6 +20,7 @@ use matrix_sdk::{
                 member::StrippedRoomMemberEvent,
                 message::{MessageType, OriginalSyncRoomMessageEvent, RoomMessageEventContent},
             },
+            tag::{TagInfo, TagName},
         },
         serde::Raw,
         OwnedRoomId, OwnedUserId, UserId,
@@ -349,17 +350,25 @@ async fn main() -> Result<()> {
     // Restore prior control room + sessions across restarts.
     load_state(&app).await;
 
-    // Stand up the control room, or reuse the persisted one.
-    if app.control_room.lock().await.is_none() {
-        let control = create_room(&app, "claude control")
+    // Stand up the control room (named "claude"), or reuse the persisted one.
+    // NB: bind the lock result to a `let` first — an `if let` whose scrutinee is the
+    // guard would hold the control_room mutex across the whole block, deadlocking the
+    // re-lock in the else branch.
+    let existing_control = app.control_room.lock().await.clone();
+    let control_id = if let Some(id) = existing_control {
+        tracing::info!("reusing persisted control room");
+        id
+    } else {
+        let control = create_room(&app, "claude")
             .await
             .context("creating control room")?;
-        *app.control_room.lock().await = Some(control.room_id().to_owned());
+        let id = control.room_id().to_owned();
+        *app.control_room.lock().await = Some(id.clone());
         save_state(&app).await;
-        tracing::info!(room = %control.room_id(), "control room created");
-    } else {
-        tracing::info!("reusing persisted control room");
-    }
+        tracing::info!(room = %id, "control room created");
+        id
+    };
+    present_control_room(&app, &control_id).await;
 
     client.add_event_handler(
         |ev: StrippedRoomMemberEvent, room: Room, client: Client| async move {
@@ -521,6 +530,27 @@ async fn kill_session(app: &Arc<App>, name: &str) {
             reply_control(app, &format!("killed {name}")).await;
         }
         None => reply_control(app, &format!("no such session: {name}")).await,
+    }
+}
+
+/// Make the control room easy to find: name it "claude" (via the bot, which owns the
+/// room and so has the power level) and mark it a favourite for the operator (a personal
+/// tag the operator client sets on its own account data). Best-effort + idempotent —
+/// also renames a pre-existing "claude control" room and re-favourites on every start.
+async fn present_control_room(app: &Arc<App>, control: &OwnedRoomId) {
+    if let Some(room) = app.client.get_room(control) {
+        if let Err(e) = room.set_name("claude".to_string()).await {
+            tracing::warn!(error = ?e, "failed to set control room name");
+        }
+    }
+    if let Some(op) = &app.operator {
+        if let Some(room) = op.get_room(control) {
+            if let Err(e) = room.set_tag(TagName::Favorite, TagInfo::new()).await {
+                tracing::warn!(error = ?e, "failed to favourite control room for operator");
+            } else {
+                tracing::info!("control room named 'claude' + favourited for operator");
+            }
+        }
     }
 }
 

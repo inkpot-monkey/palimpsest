@@ -114,6 +114,24 @@ let
             echo "WARN: avatar upload returned no content_uri" >&2
           fi
         fi
+
+        # Favourite the homeserver admin room so it's easy to find. m.favourite is
+        # personal account data (works regardless of power level). Best-effort.
+        meenc="$(${pkgs.jq}/bin/jq -rn --arg m "@${cfg.adminLocalpart}:${domain}" '$m|@uri')"
+        aliasenc="$(${pkgs.jq}/bin/jq -rn --arg a "#admins:${domain}" '$a|@uri')"
+        adminroom="$(${pkgs.curl}/bin/curl -s \
+          "$url/_matrix/client/v3/directory/room/$aliasenc" \
+          -H "authorization: Bearer $at" | ${pkgs.jq}/bin/jq -r '.room_id // empty')"
+        if [ -n "$adminroom" ]; then
+          roomenc="$(${pkgs.jq}/bin/jq -rn --arg r "$adminroom" '$r|@uri')"
+          ${pkgs.curl}/bin/curl -sf -o /dev/null -X PUT \
+            "$url/_matrix/client/v3/user/$meenc/rooms/$roomenc/tags/m.favourite" \
+            -H "authorization: Bearer $at" -H 'content-type: application/json' -d '{"order":0.1}' \
+            && echo "admin room favourited ($adminroom)" \
+            || echo "WARN: failed to favourite admin room" >&2
+        else
+          echo "WARN: could not resolve #admins room to favourite" >&2
+        fi
       else
         echo "WARN: could not log in to set admin display name" >&2
       fi

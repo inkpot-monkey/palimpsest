@@ -123,6 +123,14 @@ let
       -H 'content-type: application/json' -d "$direct" >/dev/null \
       && echo "dm-provision[$bot]: m.direct updated" \
       || echo "dm-provision[$bot]: m.direct update failed (non-fatal)" >&2
+
+    # Favourite the DM so it's easy to find in the client. The m.favourite tag is
+    # personal account data, so it works regardless of power level. Best-effort.
+    ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
+      "$url/_matrix/client/v3/user/$meenc/rooms/$ridenc/tags/m.favourite" \
+      -H 'content-type: application/json' -d '{"order":0.1}' >/dev/null \
+      && echo "dm-provision[$bot]: marked favourite" \
+      || echo "dm-provision[$bot]: favourite failed (non-fatal)" >&2
     ${pkgs.lib.optionalString sendWelcome ''
 
       # Welcome: wait for the bot to join, then post its own help command so the

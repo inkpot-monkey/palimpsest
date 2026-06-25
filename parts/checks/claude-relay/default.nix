@@ -104,6 +104,17 @@ let
         | jq -r '.joined_rooms[]?'
     }
 
+    mx_room_name() { # token room -> name
+      curl -s "$URL/_matrix/client/v3/rooms/$2/state/m.room.name" \
+        -H "authorization: Bearer $1" | jq -r '.name // empty'
+    }
+
+    mx_tags() { # token user room -> tag keys
+      u=$(jq -rn --arg x "$2" '$x|@uri')
+      curl -s "$URL/_matrix/client/v3/user/$u/rooms/$3/tags" \
+        -H "authorization: Bearer $1" | jq -r '.tags // {} | keys[]'
+    }
+
     mx_federate() { # token room -> m.federate of the create event ("true"/"false")
       curl -s "$URL/_matrix/client/v3/rooms/$2/state/m.room.create" \
         -H "authorization: Bearer $1" | jq -r '."m.federate"'
@@ -262,6 +273,18 @@ pkgs.testers.nixosTest {
         "journalctl -u claude-relay.service | grep -q 'operator auto-joined'", timeout=60
     )
     print("OK: operator auto-joined by the relay (no invite to accept)")
+
+    # The control room is presented as "claude" and favourited for the operator
+    # (easy-to-find UX). Name is set at creation by the bot; the favourite tag is
+    # set by the relay's operator client on the operator's own account data.
+    machine.wait_until_succeeds(
+        f"{H}; mx_room_name {allowed_tok} {control} | grep -qx claude", timeout=30
+    )
+    machine.wait_until_succeeds(
+        f"{H}; mx_tags {allowed_tok} @allowed:${serverName} {control} | grep -qx m.favourite",
+        timeout=30,
+    )
+    print("OK: control room named 'claude' + favourited for operator")
 
     def send_control(text):
         sh(f"mx_send {allowed_tok} {control} {shlex.quote(text)}")
