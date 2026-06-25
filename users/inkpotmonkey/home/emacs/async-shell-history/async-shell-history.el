@@ -30,6 +30,12 @@
 ;; completion category is `async-shell-history'); register them when embark
 ;; loads.
 ;;
+;; You need not decide the name up front: every buffer this package launches is
+;; tagged with the command that produced it, and a `rename-buffer' on a tagged
+;; buffer pins the command to the new name (via global `:after' advice that is
+;; inert on every other buffer).  So renaming `*Async Shell Command*' to
+;; `*backup*' after the fact makes future runs reopen `*backup*' too.
+;;
 ;; Commands:
 ;;   `async-shell-history-run'          drop-in for `async-shell-command'
 ;;   `async-shell-history-run-named'    run in a remembered, named buffer
@@ -75,6 +81,11 @@ A plain `read'/`prin1' alist of (COMMAND . BUFFER-NAME) strings."
 (defvar async-shell-history--names-loaded nil
   "Non-nil once `async-shell-history-names-file' has been read this session.")
 
+(defvar-local async-shell-history--command nil
+  "The shell command that produced this async-shell output buffer.
+Set when the buffer is launched through this package, so renaming the
+buffer can pin COMMAND to the new name.")
+
 (defun async-shell-history--load-names ()
   "Load saved command→buffer-name associations from disk, once."
   (unless async-shell-history--names-loaded
@@ -113,6 +124,46 @@ A plain `read'/`prin1' alist of (COMMAND . BUFFER-NAME) strings."
                      #'equal)
           name))
   (async-shell-history--save-names))
+
+(defun async-shell-history--run
+    (command &optional output-buffer error-buffer)
+  "Run COMMAND via `async-shell-command', tagging its output buffer.
+OUTPUT-BUFFER and ERROR-BUFFER are as in `async-shell-command'.  When the
+output goes to a dedicated buffer (OUTPUT-BUFFER nil, a buffer, or a
+buffer name) that buffer is tagged with COMMAND via the buffer-local
+`async-shell-history--command', so a later `rename-buffer' can pin the
+command to its new name.  A prefix-style insert-at-point launch (any
+other OUTPUT-BUFFER) is run untouched."
+  (if (not
+       (or (null output-buffer)
+           (stringp output-buffer)
+           (bufferp output-buffer)))
+      (async-shell-command command output-buffer error-buffer)
+    (let* ((before (process-list))
+           (result
+            (async-shell-command command output-buffer error-buffer))
+           (proc
+            (seq-find
+             (lambda (p) (not (memq p before))) (process-list))))
+      (when-let ((buffer (and proc (process-buffer proc))))
+        (with-current-buffer buffer
+          (setq-local async-shell-history--command command)))
+      result)))
+
+(defun async-shell-history--remember-on-rename (&rest _)
+  "Pin this buffer's command to its new name after `rename-buffer'.
+A no-op unless the current buffer is a tagged async-shell output buffer
+\(see `async-shell-history--command'), so it is safe as global advice."
+  (when async-shell-history--command
+    (async-shell-history--set-name
+     async-shell-history--command (buffer-name))))
+
+;; Save-on-rename: renaming a tagged async buffer pins its command to the new
+;; name, the same as `async-shell-history-run-named'.  The advice is global but
+;; inert on any buffer this package did not launch.
+(advice-add
+ 'rename-buffer
+ :after #'async-shell-history--remember-on-rename)
 
 (defun async-shell-history--collection (string predicate action)
   "Completion table over `shell-command-history'.
@@ -212,10 +263,11 @@ ERROR-BUFFER are passed through unchanged, mirroring `async-shell-command'
                 (async-shell-history--read-command)
                 current-prefix-arg
                 shell-command-default-error-buffer))
-  (async-shell-command command
-                       (or output-buffer
-                           (async-shell-history--buffer-for command))
-                       error-buffer))
+  (async-shell-history--run command
+                            (or output-buffer
+                                (async-shell-history--buffer-for
+                                 command))
+                            error-buffer))
 
 ;;;###autoload
 (defun async-shell-history-run-named (command &optional name)
@@ -239,8 +291,8 @@ buffer.  Also available as the `n' Embark action on a candidate."
                         nil nil saved)))
                  (list command name)))
   (async-shell-history--set-name command name)
-  (async-shell-command command
-                       (and (not (string-empty-p name)) name)))
+  (async-shell-history--run command
+                            (and (not (string-empty-p name)) name)))
 
 ;;;###autoload
 (defun async-shell-history-forget-name (command)
@@ -260,9 +312,9 @@ original directory use `recall-rerun' (\\[recall-rerun])."
   (if-let ((command (car shell-command-history)))
       (progn
         (message "Rerunning: %s" command)
-        (async-shell-command command
-                             (async-shell-history--buffer-for
-                              command)))
+        (async-shell-history--run command
+                                  (async-shell-history--buffer-for
+                                   command)))
     (user-error "No shell command history yet")))
 
 ;;;###autoload
