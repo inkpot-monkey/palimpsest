@@ -180,30 +180,40 @@
   # Desktop notifications (freedesktop D-Bus) when a backgrounded process buffer
   # blocks on input — password prompts (via comint) and a needs-input heuristic.
   # Activating the notification raises Emacs at the waiting buffer.
-  proc-notify = epkgs.melpaBuild {
-    pname = "proc-notify";
-    version = "0.1";
-    src = ./proc-notify;
-    # alert is the notification router/delivery layer. consult is a soft,
-    # lazily-required dependency (the pull-side `proc-notify-consult' command);
-    # listed so both are on the load-path.
-    packageRequires = [
-      epkgs.alert
-      epkgs.consult
-    ];
-    # Run the ERT suite at build time. `proc-notify-test.el' is auto-excluded
-    # from the installed package by MELPA's default `:files' recipe (it matches
-    # `*-test.el'), so we load it from $src; deps are already on EMACSLOADPATH
-    # from packageRequires. A failing assertion fails the build.
-    doCheck = true;
-    checkPhase = ''
-      runHook preCheck
-      emacs --batch -L "$src" -l ert \
-        -l "$src/proc-notify-test.el" \
-        -f ert-run-tests-batch-and-exit
-      runHook postCheck
-    '';
-  };
+  proc-notify =
+    let
+      # An Emacs whose load-path carries proc-notify's deps (and their full
+      # transitive closure) for the ERT checkPhase below.  melpaBuild exposes
+      # deps only to its own internal byte-compile, not to a bare `emacs', so the
+      # test runner needs its own wrapper rather than relying on EMACSLOADPATH.
+      testEmacs = epkgs.emacsWithPackages (e: [
+        e.alert
+        e.consult
+      ]);
+    in
+    epkgs.melpaBuild {
+      pname = "proc-notify";
+      version = "0.1";
+      src = ./proc-notify;
+      # alert is the notification router/delivery layer. consult is a soft,
+      # lazily-required dependency (the pull-side `proc-notify-consult' command);
+      # listed so both are on the load-path.
+      packageRequires = [
+        epkgs.alert
+        epkgs.consult
+      ];
+      # Run the ERT suite at build time. `proc-notify-test.el' is auto-excluded
+      # from the installed package by MELPA's default `:files' recipe (it matches
+      # `*-test.el'), so we load it from $src. A failing assertion fails the build.
+      doCheck = true;
+      checkPhase = ''
+        runHook preCheck
+        ${testEmacs}/bin/emacs --batch -L "$src" -l ert \
+          -l "$src/proc-notify-test.el" \
+          -f ert-run-tests-batch-and-exit
+        runHook postCheck
+      '';
+    };
 
   ement-glue = epkgs.melpaBuild {
     pname = "ement-glue";
