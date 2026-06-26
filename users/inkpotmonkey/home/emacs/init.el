@@ -1186,6 +1186,18 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 
 (use-package compile-ansi :config (compile-ansi-setup))
 
+;; Desktop notifications (raise Emacs at the waiting buffer) when a backgrounded
+;; process needs input: comint password prompts / needs-input, and claude-code's
+;; own bell-driven notification.  `C-c n' is the pull-side list of waiting
+;; buffers; the same set is folded into `consult-buffer' (narrow with `!').
+(use-package
+ proc-notify
+ :bind ("C-c n" . proc-notify-consult)
+ :config (proc-notify-setup)
+ (with-eval-after-load 'consult
+   (add-to-list 'consult-buffer-sources 'proc-notify-consult-source
+                'append)))
+
 
 (use-package
  ement
