@@ -55,3 +55,21 @@ Default vocabulary (needs-triage, needs-info, ready-for-agent, ready-for-human, 
 ### Domain docs
 
 Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+### Searching the user's past commands & their output (recall)
+
+The user's Emacs persistently logs **every async shell command they run and its
+full stdout/stderr** (the `recall` package + the local `chelys-galactica`
+package). You can — and should — search these when debugging something the user
+ran interactively, instead of re-running it:
+
+- **Output logs:** `~/.config/emacs/var/recall/*.log` — one timestamped file per
+  run, containing the command output and (on the first line) the command itself.
+- **Metadata index:** `~/.config/emacs/var/recall/history` (command, cwd, exit
+  code, start/end time per run).
+- **Retention:** four weeks (`recall-prune-after`), then logs are pruned.
+
+So to see what a command printed, its exit status, or which directory it ran in,
+`grep`/read those files (e.g. `grep -rl 'just deploy kelpy' ~/.config/emacs/var/recall/`).
+From Emacs the user browses the same data per-command via
+`chelys-galactica-view-outputs` (Embark `o`).
