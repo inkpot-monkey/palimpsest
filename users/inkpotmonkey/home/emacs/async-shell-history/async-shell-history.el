@@ -199,6 +199,20 @@ A no-op unless the current buffer is a tagged async-shell output buffer
  'rename-buffer
  :after #'async-shell-history--remember-on-rename)
 
+(defun async-shell-history--dedupe (commands)
+  "Return COMMANDS with duplicates removed, keeping the first occurrence.
+`shell-command-history' is most-recent-first, so the kept entry is the
+most recent invocation — and its marginalia annotation (read from the
+most-recent matching `recall' record) describes that run.  Commands that
+differ only in surrounding whitespace are treated as one."
+  (let ((seen (make-hash-table :test 'equal))
+        (result nil))
+    (dolist (command commands (nreverse result))
+      (let ((key (async-shell-history--normalize-command command)))
+        (unless (gethash key seen)
+          (puthash key t seen)
+          (push command result))))))
+
 (defun async-shell-history--truncate-candidate (command width)
   "Return COMMAND, display-ellipsized when wider than WIDTH columns.
 Only the on-screen DISPLAY is shortened — the string's text is unchanged,
@@ -218,13 +232,14 @@ Candidates wider than the frame are display-truncated and annotations are
 right-aligned for the duration of this prompt, so a long command no longer
 pushes its marginalia annotation off the right edge.  Reports the
 `async-shell-history' category (so marginalia can annotate each command)
-and keeps history order instead of sorting."
+and keeps history order instead of sorting.  Duplicate history entries
+are collapsed to their most recent occurrence."
   (let* ((width (max 20 (- (frame-width) 60)))
          (cands
           (mapcar
            (lambda (c)
              (async-shell-history--truncate-candidate c width))
-           shell-command-history))
+           (async-shell-history--dedupe shell-command-history)))
          (table
           (lambda (string predicate action)
             (if (eq action 'metadata)
