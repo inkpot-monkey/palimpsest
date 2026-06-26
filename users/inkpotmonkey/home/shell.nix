@@ -13,8 +13,10 @@
     programs.bash = {
       enable = true;
       historyControl = [ "erasedups" ];
-      # Keep a deep, persistent history. home-manager already points HISTFILE at
-      # ~/.bash_history and sets `shopt -s histappend'.
+      # Out of the home root: keep history under XDG_STATE_HOME instead of
+      # ~/.bash_history. `shopt -s histappend' is still set by home-manager; the
+      # directory is created in the activation block below (bash won't mkdir it).
+      historyFile = "${config.xdg.stateHome}/bash/history";
       historySize = 50000;
       historyFileSize = 500000;
       enableVteIntegration = true;
@@ -34,6 +36,12 @@
         NOM = "0";
       };
     };
+
+    # bash does not create HISTFILE's parent directory; ensure it exists so the
+    # per-prompt `history -a' can write to the relocated history file.
+    home.activation.bashHistoryDir = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+      run mkdir -p "${config.xdg.stateHome}/bash"
+    '';
 
     programs.starship.enable = true;
 

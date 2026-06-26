@@ -1173,6 +1173,9 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
  :custom
  (chelys-galactica-names-file
   (concat no-littering-var-directory "chelys-galactica/names.el"))
+ ;; bash history relocated out of the home root (see home/shell.nix).
+ (chelys-galactica-extra-history-files
+  '("~/.local/state/bash/history"))
  :bind
  (([remap async-shell-command] . chelys-galactica-run)
   ("C-c &" . chelys-galactica-rerun-last)))
