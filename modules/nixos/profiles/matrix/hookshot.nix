@@ -135,6 +135,26 @@ let
         -d "$(${pkgs.jq}/bin/jq -nc --arg d "${domain}" '{via:[$d],canonical:true}')" >/dev/null || true
       echo "hookshot-space: filed @hookshot DM under the Space"
     fi
+    ${lib.optionalString
+      (
+        config.custom.profiles.matrix.infraAlerts.enable
+        && config.custom.profiles.matrix.infraAlerts.roomId != ""
+      )
+      ''
+        # File #infra-alerts under the Space (child + parent). Its roomId is pinned
+        # in config and the admin created the room, so it can set m.space.parent there.
+        infra="${config.custom.profiles.matrix.infraAlerts.roomId}"
+        infraenc="$(${pkgs.jq}/bin/jq -rn --arg r "$infra" '$r|@uri')"
+        ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
+          "$url/_matrix/client/v3/rooms/$spaceenc/state/m.space.child/$infraenc" \
+          -H 'content-type: application/json' -d "$(${pkgs.jq}/bin/jq -nc --arg d "${domain}" '{via:[$d]}')" >/dev/null || true
+        ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
+          "$url/_matrix/client/v3/rooms/$infraenc/state/m.space.parent/$spaceenc" \
+          -H 'content-type: application/json' \
+          -d "$(${pkgs.jq}/bin/jq -nc --arg d "${domain}" '{via:[$d],canonical:true}')" >/dev/null || true
+        echo "hookshot-space: filed #infra-alerts under the Space"
+      ''
+    }
   '';
 
   # Work around a conduwuit/tuwunel gap: the homeserver doesn't stamp `is_direct`
@@ -430,7 +450,10 @@ in
         "tuwunel.service"
         "tuwunel-register-admin.service"
         "matrix-dm-hookshot.service"
-      ];
+      ]
+      # Order after the #infra-alerts room exists + admin is joined, so the
+      # m.space.parent state event below can be set in it.
+      ++ lib.optional config.custom.profiles.matrix.infraAlerts.enable "matrix-infra-alerts-room.service";
       requires = [ "tuwunel.service" ];
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
