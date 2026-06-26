@@ -47,6 +47,16 @@
       socketActivation.enable = true; # Wait for client connection
     };
 
+    # Make every "Emacs" launch attach to the socket-activated daemon via
+    # emacsclient instead of spawning a second standalone GUI — KDE Plasma's
+    # session restore relaunches this entry at login. Patch only the Exec line
+    # of the package's own emacs.desktop (keeping its icon, MIME types, etc.)
+    # and shadow it in ~/.local/share/applications. The empty `-a ""' starts the
+    # daemon if the socket isn't up.
+    xdg.dataFile."applications/emacs.desktop".text =
+      builtins.replaceStrings [ "Exec=emacs %F" ] [ ''Exec=emacsclient -c -a "" %F'' ]
+        (builtins.readFile "${pkgs.emacs-pgtk}/share/applications/emacs.desktop");
+
     # Emacs configuration
     xdg.configFile = {
       # init.el ships verbatim — it carries safe fallbacks for every site fact
