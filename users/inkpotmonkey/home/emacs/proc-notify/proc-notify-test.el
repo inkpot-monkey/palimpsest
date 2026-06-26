@@ -208,6 +208,15 @@
     (insert "all done\n")
     (should-not (proc-notify--prompt-line))))
 
+(ert-deftest proc-notify-test-timeout-ms ()
+  "`timeout-ms' converts seconds to milliseconds, nil passes through."
+  (let ((proc-notify-timeout-seconds 10))
+    (should (= 10000 (proc-notify--timeout-ms))))
+  (let ((proc-notify-timeout-seconds 0))
+    (should (= 0 (proc-notify--timeout-ms))))
+  (let ((proc-notify-timeout-seconds nil))
+    (should-not (proc-notify--timeout-ms))))
+
 (ert-deftest proc-notify-test-claude-label ()
   "`claude-label' names the session by its working-directory."
   (with-temp-buffer

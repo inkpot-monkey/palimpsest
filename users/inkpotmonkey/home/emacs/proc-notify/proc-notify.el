@@ -113,6 +113,14 @@ XDG data dirs for the installed Emacs icon and sends that path.  Set to an
 absolute path to override, or to a theme name if your daemon resolves those."
   :type '(choice (const :tag "Auto-detect Emacs icon" nil) string))
 
+(defcustom proc-notify-timeout-seconds 10
+  "Seconds after which a notification auto-dismisses, or nil for daemon default.
+Sent to the server as the notification's expire timeout.  Some servers ignore
+it for `critical' urgency — KDE keeps password prompts up until you act, which
+is usually what you want, while normal-urgency pings (needs-input, claude-code)
+still clear.  Set to 0 to ask the server never to expire the notification."
+  :type '(choice (const :tag "Daemon default" nil) number))
+
 (defcustom proc-notify-prompt-regexp
   (rx
    (or (seq (any "?:") (* " ") eos)
@@ -398,13 +406,19 @@ paths, not theme names) and memoises it."
                              ":"
                              t))))))
 
+(defun proc-notify--timeout-ms ()
+  "Server expire-timeout in milliseconds from `proc-notify-timeout-seconds'.
+Returns nil when no timeout is configured (leave the server's default)."
+  (when proc-notify-timeout-seconds
+    (round (* 1000 proc-notify-timeout-seconds))))
+
 (defun proc-notify--notify (buffer title body &optional urgency)
   "Raise (or replace) a desktop notification for BUFFER.
 TITLE and BODY are the notification text; URGENCY is a `notifications-notify'
 urgency symbol.  The Emacs icon (`proc-notify--app-icon') is attached as both
-app-icon and image so it brands the popup.  Activating it runs
-`proc-notify--raise' on BUFFER.  A missing D-Bus session bus is swallowed so
-headless/tty sessions stay quiet."
+app-icon and image so it brands the popup, and `proc-notify-timeout-seconds'
+sets when it auto-dismisses.  Activating it runs `proc-notify--raise' on BUFFER.
+A missing D-Bus session bus is swallowed so headless/tty sessions stay quiet."
   (condition-case nil
       (let ((icon (proc-notify--app-icon))
             (id nil))
@@ -420,8 +434,12 @@ headless/tty sessions stay quiet."
           :actions '("default" "Open")
           :on-action
           (lambda (&rest _) (proc-notify--raise buffer))
-          (when icon
-            (list :app-icon icon :image-path icon))))
+          (append
+           (when icon
+             (list :app-icon icon :image-path icon))
+           (let ((ms (proc-notify--timeout-ms)))
+             (when ms
+               (list :timeout ms))))))
         (when (buffer-live-p buffer)
           (with-current-buffer buffer
             (setq proc-notify--id id))
