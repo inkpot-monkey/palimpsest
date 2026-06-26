@@ -2,7 +2,7 @@
 
 ;; Author: inkpotmonkey
 ;; Keywords: convenience, processes
-;; Package-Requires: ((emacs "29.1") (marginalia "1.0"))
+;; Package-Requires: ((emacs "29.1") (marginalia "1.0") (consult "1.0"))
 
 ;;; Commentary:
 
@@ -24,6 +24,13 @@
 ;; Long commands no longer lose their annotation: candidates wider than the
 ;; frame are display-truncated (the full command is still matched and run), and
 ;; annotations are right-aligned for this prompt so they stay on screen.
+;;
+;; The prompt is a `consult--read', so (taking after atuin's filter modes) the
+;; narrowing keys `d'/`p'/`s' restrict candidates to commands `recall' recorded
+;; in the current directory, anywhere under the current project/VC root, or
+;; whose most recent run succeeded.  Candidates are frecency-ranked by default
+;; (recall frequency × recency; see `async-shell-history-sort-by'), and the
+;; annotation also shows the most recent run's duration.
 ;;
 ;; Duplicate candidates are kept out of the history rather than filtered at the
 ;; prompt: chosen commands are added through `add-to-history' (the minibuffer's
@@ -64,6 +71,9 @@
 ;; struct accessors only get declare-function stubs below.
 (eval-when-compile
   (require 'marginalia))
+;; consult drives the prompt at runtime (narrowing + `consult--read'); it is a
+;; hard dependency, so require it rather than soft-guard.
+(require 'consult)
 ;; `marginalia--fields' expands into a `marginalia--truncate' call; it is always
 ;; loaded when this annotator runs (marginalia is driving the completion), but
 ;; the compiler can't know that from the eval-when-compile require alone.
@@ -74,6 +84,9 @@
 (declare-function recall--item-start-time "recall")
 (declare-function recall--item-end-time "recall")
 (declare-function recall--format-time "recall")
+(declare-function project-current "project")
+(declare-function project-root "project")
+(declare-function vc-root-dir "vc-hooks")
 (defvar recall-items)
 (defvar embark-keymap-alist)
 (defvar embark-general-map)
@@ -335,37 +348,93 @@ so it still matches `shell-command-history' and is run verbatim."
       (put-text-property cut (length copy) 'display "…" copy)
       copy)))
 
+(defvar async-shell-history--read-directory nil
+  "`default-directory' captured at the start of a read, for `d' narrowing.")
+
+(defvar async-shell-history--read-project-root nil
+  "Project/VC root captured at the start of a read, for `p' narrowing.")
+
+(defvar async-shell-history--narrow-keys
+  '((?d . "directory") (?p . "project") (?s . "succeeded"))
+  "Narrowing keys offered at the async-shell-history prompt.
+`d' keeps commands run in the current directory, `p' those run anywhere
+under the current project/VC root, `s' those whose most recent run
+succeeded.  Atuin's filter modes, as consult narrowing.")
+
+(defun async-shell-history--project-root ()
+  "Return the current project or VC root directory, expanded, or nil."
+  (or (and (fboundp 'project-current)
+           (when-let* ((proj (project-current nil)))
+             (expand-file-name (project-root proj))))
+      (and (fboundp 'vc-root-dir)
+           (when-let* ((root (vc-root-dir)))
+             (expand-file-name root)))))
+
+(defun async-shell-history--narrow-predicate (command)
+  "Keep COMMAND under the active `consult--narrow' filter.
+`?d' keeps commands `recall' recorded in the read's directory, `?p' those
+anywhere under its project/VC root, `?s' those whose most recent run
+exited successfully.  Any other (or no) narrow key keeps everything."
+  (let ((items (async-shell-history--recall-items-for command)))
+    (pcase consult--narrow
+      (?d
+       (seq-some
+        (lambda (it)
+          (when-let* ((d (recall--item-directory it)))
+            (string-equal
+             (directory-file-name (expand-file-name d))
+             (directory-file-name
+              async-shell-history--read-directory))))
+        items))
+      (?p
+       (when-let* ((root async-shell-history--read-project-root))
+         (seq-some
+          (lambda (it)
+            (when-let* ((d (recall--item-directory it)))
+              (string-prefix-p
+               root (file-name-as-directory (expand-file-name d)))))
+          items)))
+      (?s
+       (when-let* ((it (car items)))
+         (eql (recall--item-exit-code it) 0)))
+      (_ t))))
+
 (defun async-shell-history--read-command ()
   "Read a shell command, completing from `shell-command-history'.
-Candidates wider than the frame are display-truncated and annotations are
-right-aligned for the duration of this prompt, so a long command no longer
-pushes its marginalia annotation off the right edge.  Reports the
-`async-shell-history' category (so marginalia can annotate each command)
-and keeps history order instead of sorting.  History insertion is routed
-through `add-to-history' (with the minibuffer's own add suppressed) so the
-normalizing advice and `history-delete-duplicates' apply to the choice."
+Candidates are frecency-ranked, display-truncated when wider than the
+frame, and annotated by marginalia (right-aligned for this prompt).  Built
+on `consult--read', so the `d'/`p'/`s' narrowing keys filter to the current
+directory, project, or successful commands — atuin's filter modes.  History
+insertion is routed through `add-to-history' (the minibuffer's own add
+suppressed) so the normalizing advice and `history-delete-duplicates' apply
+to the choice."
   (let* ((width (max 20 (- (frame-width) 60)))
          (async-shell-history--recall-index
           (async-shell-history--build-recall-index))
+         (async-shell-history--read-directory
+          (expand-file-name default-directory))
+         (async-shell-history--read-project-root
+          (async-shell-history--project-root))
          (cands
           (mapcar
            (lambda (c)
              (async-shell-history--truncate-candidate c width))
            (async-shell-history--rank shell-command-history)))
-         (table
-          (lambda (string predicate action)
-            (if (eq action 'metadata)
-                '(metadata
-                  (category . async-shell-history)
-                  (display-sort-function . identity)
-                  (cycle-sort-function . identity))
-              (complete-with-action action cands string predicate))))
          (marginalia-align 'right)
          (history-add-new-input nil)
          (command
           (substring-no-properties
-           (completing-read "Async shell command: " table
-                            nil nil nil 'shell-command-history))))
+           (consult--read
+            cands
+            :prompt "Async shell command: "
+            :category 'async-shell-history
+            :sort nil
+            :require-match nil
+            :history 'shell-command-history
+            :narrow
+            (list
+             :predicate #'async-shell-history--narrow-predicate
+             :keys async-shell-history--narrow-keys)))))
     (add-to-history 'shell-command-history command)
     command))
 

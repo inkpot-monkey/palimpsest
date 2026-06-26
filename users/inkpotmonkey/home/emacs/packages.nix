@@ -177,6 +177,22 @@
     packageRequires = [ epkgs.xterm-color ];
   };
 
+  # Desktop notifications (freedesktop D-Bus) when a backgrounded process buffer
+  # blocks on input — password prompts (via comint) and a needs-input heuristic.
+  # Activating the notification raises Emacs at the waiting buffer.
+  proc-notify = epkgs.melpaBuild {
+    pname = "proc-notify";
+    version = "0.1";
+    src = ./proc-notify;
+    # alert is the notification router/delivery layer. consult is a soft,
+    # lazily-required dependency (the pull-side `proc-notify-consult' command);
+    # listed so both are on the load-path.
+    packageRequires = [
+      epkgs.alert
+      epkgs.consult
+    ];
+  };
+
   ement-glue = epkgs.melpaBuild {
     pname = "ement-glue";
     version = "0.1";
@@ -199,12 +215,16 @@
 
   # History-aware async-shell-command: front-loads `shell-command-history' as
   # completion candidates and marginalia-annotates each with recall's record
-  # (dir/exit/when). recall is a soft dependency (guarded by `fboundp'), so it
-  # is not listed in packageRequires.
+  # (dir/exit/duration/when). Built on consult--read for atuin-style narrowing
+  # (directory/project/succeeded). recall is a soft dependency (guarded by
+  # `fboundp'), so it is not listed in packageRequires.
   async-shell-history = epkgs.melpaBuild {
     pname = "async-shell-history";
     version = "0.1";
     src = ./async-shell-history;
-    packageRequires = [ epkgs.marginalia ];
+    packageRequires = [
+      epkgs.marginalia
+      epkgs.consult
+    ];
   };
 }
