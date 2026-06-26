@@ -52,9 +52,10 @@
 ;; severity, mode, or focus state), while the style owns the clickable,
 ;; raise-the-buffer behaviour.  `proc-notify-setup' routes our own
 ;; (category `proc-notify') and ghostel (`ghostel-mode') alerts to that style and
-;; leaves every other package's alerts on alert's default.  OSC notifications can
-;; be chatty (Claude pings per turn); narrow them with `proc-notify-ignore-regexps'
-;; (simple) or `alert-add-rule' (richer).
+;; leaves every other package's alerts on alert's default.  Notifications can be
+;; chatty (claude-code pings once per turn); narrow them with
+;; `proc-notify-ignore-regexps' (simple) or `alert-add-rule' (richer), or tune
+;; their urgency with `proc-notify-claude-code-severity'.
 ;;
 ;; Notifications are suppressed while you are already watching the buffer (Emacs
 ;; frame focused and that buffer selected), coalesced per buffer via
@@ -149,6 +150,21 @@ The in-Emacs raise is always attempted first; this is the extra OS-level step."
   '(choice
     (const auto) (const pgtk) (const kdotool) (const kwin) function))
 
+(defcustom proc-notify-claude-code-severity 'normal
+  "`alert' severity for claude-code \"waiting for your response\" pings.
+claude-code notifies once per turn when Claude finishes and wants you.  `normal'
+(the default) maps to a normal-urgency toast that auto-expires; raise to `high'
+to make them critical — sticky on KDE — if you keep missing them.  Password
+prompts stay `high' regardless of this."
+  :type
+  '(choice
+    (const trivial)
+    (const low)
+    (const normal)
+    (const moderate)
+    (const high)
+    (const urgent)))
+
 (defvar-local proc-notify--id nil
   "Notification id last raised for this buffer, for `:replaces-id' coalescing.")
 
@@ -202,11 +218,27 @@ comint buffer currently parked at a prompt.")
   "Drop BUFFER from the awaiting-attention set (it has been dealt with)."
   (setq proc-notify--pending (delq buffer proc-notify--pending)))
 
+(defun proc-notify--acknowledge (buffer)
+  "Mark BUFFER dealt-with: drop it from pending and close its lingering toast.
+Closing the desktop notification by its stored id means acknowledging a buffer
+by any route — clicking the toast or simply visiting the buffer — also clears
+it from the notification centre, instead of leaving a stale popup behind."
+  (when (buffer-live-p buffer)
+    (when-let ((id (buffer-local-value 'proc-notify--id buffer)))
+      (condition-case nil
+          (notifications-close-notification id)
+        (error
+         nil))
+      (with-current-buffer buffer
+        (setq proc-notify--id nil))))
+  (proc-notify--forget buffer))
+
 (defun proc-notify--note-selection (&rest _)
-  "Acknowledge the selected window's buffer, clearing any pending flag.
-Installed on `window-selection-change-functions' so visiting a flagged
-buffer by any means drops it from `proc-notify--pending'."
-  (proc-notify--forget (window-buffer (selected-window))))
+  "Acknowledge the selected window's buffer: clear its flag and close its toast.
+Installed on `window-selection-change-functions' so visiting a flagged buffer by
+any means drops it from `proc-notify--pending' and dismisses any lingering
+desktop notification."
+  (proc-notify--acknowledge (window-buffer (selected-window))))
 
 ;; --- OS-level window activation (the Wayland-needs-the-compositor step) ------
 
@@ -299,7 +331,7 @@ FRAME is the in-Emacs frame already focused; passed to a custom function."
   "Foreground Emacs and pop to BUFFER with point at its process prompt.
 Under Wayland a process can't raise itself, so after the in-Emacs focus we ask
 the compositor to bring the window forward via `proc-notify-raise-method'."
-  (proc-notify--forget buffer)
+  (proc-notify--acknowledge buffer)
   (let ((frame (proc-notify--graphical-frame)))
     (when (frame-live-p frame)
       (select-frame frame)
@@ -448,16 +480,17 @@ TITLE/BODY are the text; SEVERITY an `alert' severity (default `normal')."
              proc-notify-idle-seconds nil #'proc-notify--idle-check
              buffer)))))
 
-;;; --- ghostel / terminal bridge ----------------------------------------------
+;;; --- ghostel terminal bridge ------------------------------------------------
 
-;; ghostel (the claude-code backend) is a libghostty PTY terminal, not comint,
-;; so none of the comint hooks above reach it.  Two paths cover it:
+;; ghostel is a libghostty PTY terminal, not comint, so none of the comint hooks
+;; above reach it.  Two ghostel paths below (claude-code is handled separately,
+;; further down, via its own bell-driven notification function — NOT these):
 ;;
-;;   * OSC 9/777 notifications (which Claude Code emits) need no glue here.
-;;     ghostel's own `ghostel-default-notify' already calls `alert', and
-;;     `proc-notify-setup' adds an `alert' rule routing `ghostel-mode' alerts to
-;;     the `proc-notify' style — so they become clickable, raise-the-buffer
-;;     popups like everything else, filtered by the same knobs.
+;;   * OSC 9/777 desktop notifications from a plain ghostel terminal (a shell, a
+;;     REPL) need no glue here: ghostel's own `ghostel-default-notify' already
+;;     calls `alert', and `proc-notify-setup' adds a rule routing `ghostel-mode'
+;;     alerts to the `proc-notify' style — so they become clickable,
+;;     raise-the-buffer popups like everything else, filtered by the same knobs.
 ;;
 ;;   * Password prompts are NOT notifications; ghostel reads them via
 ;;     `ghostel-password-prompt-functions'.  We add a source there that emits a
@@ -499,9 +532,11 @@ password-prompt path.  (claude-code has its own notification path — see
   "Deliver a claude-code notification (TITLE/MESSAGE) through proc-notify.
 For `claude-code-notification-function': the bell handler runs in the Claude
 terminal buffer, so `proc-notify--emit' on the current buffer raises the right
-buffer when the toast is activated.  Severity `high' (Claude is blocked on you).
-Keeps claude-code's own modeline pulse when available."
-  (proc-notify--emit (current-buffer) title message 'high)
+buffer when the toast is activated.  Urgency follows
+`proc-notify-claude-code-severity'.  Keeps claude-code's modeline pulse when
+available."
+  (proc-notify--emit (current-buffer) title message
+                     proc-notify-claude-code-severity)
   (when (fboundp 'claude-code--pulse-modeline)
     (claude-code--pulse-modeline)))
 
