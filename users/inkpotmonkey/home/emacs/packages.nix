@@ -241,10 +241,10 @@
   # (directory/project/succeeded), and the `view-outputs' action browses a
   # command's past runs/output logs via recall. The annotation path still
   # soft-guards recall (`fboundp'), but it is a listed dependency.
-  async-shell-history = epkgs.melpaBuild {
-    pname = "async-shell-history";
+  chelys-galactica = epkgs.melpaBuild {
+    pname = "chelys-galactica";
     version = "0.1";
-    src = ./async-shell-history;
+    src = ./chelys-galactica;
     packageRequires = [
       epkgs.marginalia
       epkgs.consult

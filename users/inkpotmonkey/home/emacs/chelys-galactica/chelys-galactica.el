@@ -1,4 +1,4 @@
-;;; async-shell-history.el --- History-aware async-shell-command -*- lexical-binding: t; -*-
+;;; chelys-galactica.el --- History-aware async-shell-command -*- lexical-binding: t; -*-
 
 ;; Author: inkpotmonkey
 ;; Keywords: convenience, processes
@@ -17,7 +17,7 @@
 ;; since recall already records every async launch.  This needs a completion
 ;; category on the table (a plain `completing-read' over a list has none, so
 ;; marginalia has nothing to hang an annotator on), which
-;; `async-shell-history--read-command' supplies.  The recall lookup is soft: with
+;; `chelys-galactica--read-command' supplies.  The recall lookup is soft: with
 ;; no recall record (or no recall at all) the candidate is simply shown without
 ;; that part of the annotation.
 ;;
@@ -29,7 +29,7 @@
 ;; narrowing keys `d'/`p'/`s' restrict candidates to commands `recall' recorded
 ;; in the current directory, anywhere under the current project/VC root, or
 ;; whose most recent run succeeded.  Candidates are frecency-ranked by default
-;; (recall frequency × recency; see `async-shell-history-sort-by'), and the
+;; (recall frequency × recency; see `chelys-galactica-sort-by'), and the
 ;; annotation also shows the most recent run's duration.
 ;;
 ;; Duplicate candidates are kept out of the history rather than filtered at the
@@ -38,17 +38,17 @@
 ;; so with `history-delete-duplicates' non-nil even whitespace-only variants of
 ;; a command collapse to a single, most-recent entry.
 ;;
-;; Named buffers: `async-shell-history-run-named' runs a command in a buffer of
+;; Named buffers: `chelys-galactica-run-named' runs a command in a buffer of
 ;; your choosing and *remembers* the choice — the command→name association is
-;; persisted to `async-shell-history-names-file', so every later
-;; `async-shell-history-run' of that command reopens its named buffer
+;; persisted to `chelys-galactica-names-file', so every later
+;; `chelys-galactica-run' of that command reopens its named buffer
 ;; automatically.  A bare name is wrapped in `*' (so `backup' becomes the
-;; conventional `*backup*').  `async-shell-history-forget-name' clears the
-;; association.  These, plus `async-shell-history-edit-command' (edit a command
-;; in a scratch buffer before running it) and `async-shell-history-view-outputs'
+;; conventional `*backup*').  `chelys-galactica-forget-name' clears the
+;; association.  These, plus `chelys-galactica-edit-command' (edit a command
+;; in a scratch buffer before running it) and `chelys-galactica-view-outputs'
 ;; (browse a command's past runs and their output logs via recall), are also
 ;; offered as Embark actions on a command candidate (the completion category is
-;; `async-shell-history'); register them when embark loads.
+;; `chelys-galactica'); register them when embark loads.
 ;;
 ;; You need not decide the name up front: every buffer this package launches is
 ;; tagged with the command that produced it, and a `rename-buffer' on a tagged
@@ -57,13 +57,13 @@
 ;; `*backup*' after the fact makes future runs reopen `*backup*' too.
 ;;
 ;; Commands:
-;;   `async-shell-history-run'          drop-in for `async-shell-command'
-;;   `async-shell-history-run-named'    run in a remembered, named buffer
-;;   `async-shell-history-edit-command' edit a command, then run it
-;;   `async-shell-history-view-outputs'  browse a command's past run logs
-;;   `async-shell-history-forget-name'  drop a command's saved buffer name
-;;   `async-shell-history-rerun-last'   rerun the most recent entry, no prompt
-;;   `async-shell-history-rerun-buffer' rerun an output buffer's own command
+;;   `chelys-galactica-run'          drop-in for `async-shell-command'
+;;   `chelys-galactica-run-named'    run in a remembered, named buffer
+;;   `chelys-galactica-edit-command' edit a command, then run it
+;;   `chelys-galactica-view-outputs'  browse a command's past run logs
+;;   `chelys-galactica-forget-name'  drop a command's saved buffer name
+;;   `chelys-galactica-rerun-last'   rerun the most recent entry, no prompt
+;;   `chelys-galactica-rerun-buffer' rerun an output buffer's own command
 
 ;;; Code:
 
@@ -94,18 +94,18 @@
 (defvar embark-keymap-alist)
 (defvar embark-general-map)
 
-(defgroup async-shell-history nil
+(defgroup chelys-galactica nil
   "History-aware `async-shell-command' with remembered buffer names."
   :group 'processes
-  :prefix "async-shell-history-")
+  :prefix "chelys-galactica-")
 
-(defcustom async-shell-history-names-file
-  (locate-user-emacs-file "async-shell-history-names.el")
+(defcustom chelys-galactica-names-file
+  (locate-user-emacs-file "chelys-galactica-names.el")
   "File persisting the command→buffer-name associations.
 A plain `read'/`prin1' alist of (COMMAND . BUFFER-NAME) strings."
   :type 'file)
 
-(defcustom async-shell-history-sort-by 'frecency
+(defcustom chelys-galactica-sort-by 'frecency
   "How completion candidates are ordered.
 `frecency' ranks by `recall'-recorded frequency and recency (most-used,
 recently-used commands first); `history' keeps raw `shell-command-history'
@@ -115,30 +115,30 @@ order (most recent first)."
     (const :tag "Frecency (frequency + recency)" frecency)
     (const :tag "History order" history)))
 
-(defvar async-shell-history-names nil
+(defvar chelys-galactica-names nil
   "Alist mapping command strings to their pinned async-buffer names.")
 
-(defvar async-shell-history--recall-index nil
+(defvar chelys-galactica--recall-index nil
   "Hash of normalized-command → list of `recall' items, newest first.
 Dynamically bound while reading a command so annotation, ranking and
 narrowing share a single pass over `recall-items'.")
 
-(defvar async-shell-history--names-loaded nil
-  "Non-nil once `async-shell-history-names-file' has been read this session.")
+(defvar chelys-galactica--names-loaded nil
+  "Non-nil once `chelys-galactica-names-file' has been read this session.")
 
-(defvar-local async-shell-history--command nil
+(defvar-local chelys-galactica--command nil
   "The shell command that produced this async-shell output buffer.
 Set when the buffer is launched through this package, so renaming the
 buffer can pin COMMAND to the new name.")
 
-(defun async-shell-history--normalize-command (command)
+(defun chelys-galactica--normalize-command (command)
   "Return COMMAND trimmed of surrounding whitespace.
 `shell-command-history' entries sometimes carry a trailing space while
 `recall' stores the trimmed form; normalizing both sides keeps name
 pins and recall annotations matching the same command."
   (and command (string-trim command)))
 
-(defun async-shell-history--wrap-name (name)
+(defun chelys-galactica--wrap-name (name)
   "Surround NAME with `*' unless it is empty or already wrapped.
 So naming a buffer `backup' pins it as the conventional `*backup*'."
   (if (or (null name)
@@ -147,63 +147,59 @@ So naming a buffer `backup' pins it as the conventional `*backup*'."
       name
     (concat "*" name "*")))
 
-(defun async-shell-history--load-names ()
+(defun chelys-galactica--load-names ()
   "Load saved command→buffer-name associations from disk, once.
 Keys are normalized on load so older trailing-space entries still match."
-  (unless async-shell-history--names-loaded
-    (when (file-readable-p async-shell-history-names-file)
+  (unless chelys-galactica--names-loaded
+    (when (file-readable-p chelys-galactica-names-file)
       (with-temp-buffer
-        (insert-file-contents async-shell-history-names-file)
-        (setq async-shell-history-names
+        (insert-file-contents chelys-galactica-names-file)
+        (setq chelys-galactica-names
               (mapcar
                (lambda (cell)
                  (cons
-                  (async-shell-history--normalize-command
+                  (chelys-galactica--normalize-command
                    (car cell))
                   (cdr cell)))
                (ignore-errors
                  (read (current-buffer)))))))
-    (setq async-shell-history--names-loaded t)))
+    (setq chelys-galactica--names-loaded t)))
 
-(defun async-shell-history--save-names ()
-  "Persist command→buffer-name associations to `async-shell-history-names-file'."
-  (make-directory (file-name-directory async-shell-history-names-file)
-                  t)
-  (with-temp-file async-shell-history-names-file
+(defun chelys-galactica--save-names ()
+  "Persist command→buffer-name associations to `chelys-galactica-names-file'."
+  (make-directory (file-name-directory chelys-galactica-names-file) t)
+  (with-temp-file chelys-galactica-names-file
     (let ((print-length nil)
           (print-level nil))
-      (prin1 async-shell-history-names (current-buffer))
+      (prin1 chelys-galactica-names (current-buffer))
       (insert "\n"))))
 
-(defun async-shell-history--buffer-for (command)
+(defun chelys-galactica--buffer-for (command)
   "Return the pinned buffer name for COMMAND, or nil."
-  (async-shell-history--load-names)
+  (chelys-galactica--load-names)
   (cdr
    (assoc
-    (async-shell-history--normalize-command command)
-    async-shell-history-names)))
+    (chelys-galactica--normalize-command command)
+    chelys-galactica-names)))
 
-(defun async-shell-history--set-name (command name)
+(defun chelys-galactica--set-name (command name)
   "Pin COMMAND to buffer NAME and persist it.  An empty NAME clears the pin."
-  (async-shell-history--load-names)
-  (let ((command (async-shell-history--normalize-command command)))
+  (chelys-galactica--load-names)
+  (let ((command (chelys-galactica--normalize-command command)))
     (if (or (null name) (string-empty-p name))
-        (setq async-shell-history-names
-              (assoc-delete-all command async-shell-history-names))
-      (setf (alist-get command async-shell-history-names
-                       nil
-                       nil
-                       #'equal)
+        (setq chelys-galactica-names
+              (assoc-delete-all command chelys-galactica-names))
+      (setf (alist-get command chelys-galactica-names nil nil #'equal)
             name)))
-  (async-shell-history--save-names))
+  (chelys-galactica--save-names))
 
-(defun async-shell-history--run
+(defun chelys-galactica--run
     (command &optional output-buffer error-buffer)
   "Run COMMAND via `async-shell-command', tagging its output buffer.
 OUTPUT-BUFFER and ERROR-BUFFER are as in `async-shell-command'.  When the
 output goes to a dedicated buffer (OUTPUT-BUFFER nil, a buffer, or a
 buffer name) that buffer is tagged with COMMAND via the buffer-local
-`async-shell-history--command', so a later `rename-buffer' can pin the
+`chelys-galactica--command', so a later `rename-buffer' can pin the
 command to its new name.  A prefix-style insert-at-point launch (any
 other OUTPUT-BUFFER) is run untouched."
   (if (not
@@ -219,25 +215,25 @@ other OUTPUT-BUFFER) is run untouched."
              (lambda (p) (not (memq p before))) (process-list))))
       (when-let ((buffer (and proc (process-buffer proc))))
         (with-current-buffer buffer
-          (setq-local async-shell-history--command command)))
+          (setq-local chelys-galactica--command command)))
       result)))
 
-(defun async-shell-history--remember-on-rename (&rest _)
+(defun chelys-galactica--remember-on-rename (&rest _)
   "Pin this buffer's command to its new name after `rename-buffer'.
 A no-op unless the current buffer is a tagged async-shell output buffer
-\(see `async-shell-history--command'), so it is safe as global advice."
-  (when async-shell-history--command
-    (async-shell-history--set-name
-     async-shell-history--command (buffer-name))))
+\(see `chelys-galactica--command'), so it is safe as global advice."
+  (when chelys-galactica--command
+    (chelys-galactica--set-name
+     chelys-galactica--command (buffer-name))))
 
 ;; Save-on-rename: renaming a tagged async buffer pins its command to the new
-;; name, the same as `async-shell-history-run-named'.  The advice is global but
+;; name, the same as `chelys-galactica-run-named'.  The advice is global but
 ;; inert on any buffer this package did not launch.
 (advice-add
  'rename-buffer
- :after #'async-shell-history--remember-on-rename)
+ :after #'chelys-galactica--remember-on-rename)
 
-(defun async-shell-history--normalize-history-element (args)
+(defun chelys-galactica--normalize-history-element (args)
   "Trim a `shell-command-history' element as it enters the history.
 `:filter-args' advice for `add-to-history': normalizing on insertion lets
 `history-delete-duplicates' collapse whitespace-only variants (e.g. a
@@ -248,21 +244,21 @@ trailing space) of the same command into one entry.  ARGS is the full
       (cons
        (car args)
        (cons
-        (async-shell-history--normalize-command (cadr args))
+        (chelys-galactica--normalize-command (cadr args))
         (cddr args)))
     args))
 
 (advice-add
  'add-to-history
- :filter-args #'async-shell-history--normalize-history-element)
+ :filter-args #'chelys-galactica--normalize-history-element)
 
-(defun async-shell-history--build-recall-index ()
+(defun chelys-galactica--build-recall-index ()
   "Index `recall-items' by normalized command, preserving newest-first order."
   (let ((index (make-hash-table :test 'equal)))
     (when (and (fboundp 'recall--item-command) (boundp 'recall-items))
       (dolist (it recall-items)
         (let ((k
-               (async-shell-history--normalize-command
+               (chelys-galactica--normalize-command
                 (recall--item-command it))))
           (puthash k (cons it (gethash k index)) index)))
       ;; recall-items is newest-first and `cons' reverses, so each bucket is
@@ -270,29 +266,29 @@ trailing space) of the same command into one entry.  ARGS is the full
       (maphash (lambda (k v) (puthash k (nreverse v) index)) index))
     index))
 
-(defun async-shell-history--recall-items-for (command)
+(defun chelys-galactica--recall-items-for (command)
   "Return `recall' items for COMMAND, newest first.
-Uses `async-shell-history--recall-index' when bound, else scans directly."
-  (let ((key (async-shell-history--normalize-command command)))
-    (if async-shell-history--recall-index
-        (gethash key async-shell-history--recall-index)
+Uses `chelys-galactica--recall-index' when bound, else scans directly."
+  (let ((key (chelys-galactica--normalize-command command)))
+    (if chelys-galactica--recall-index
+        (gethash key chelys-galactica--recall-index)
       (and (fboundp 'recall--item-command)
            (boundp 'recall-items)
            (seq-filter
             (lambda (it)
               (equal
-               (async-shell-history--normalize-command
+               (chelys-galactica--normalize-command
                 (recall--item-command it))
                key))
             recall-items)))))
 
-(defun async-shell-history--frecency (command)
+(defun chelys-galactica--frecency (command)
   "Return a frecency score for COMMAND from its `recall' runs.
 Each run contributes a recency-weighted point, so a command used often
 and recently scores highest.  Zero when `recall' has no record."
   (let ((now (float-time))
         (score 0.0))
-    (dolist (it (async-shell-history--recall-items-for command) score)
+    (dolist (it (chelys-galactica--recall-items-for command) score)
       (let ((age
              (- now (time-to-seconds (recall--item-start-time it)))))
         (setq score
@@ -307,21 +303,21 @@ and recently scores highest.  Zero when `recall' has no record."
                   (t
                    0.5))))))))
 
-(defun async-shell-history--rank (commands)
-  "Order COMMANDS per `async-shell-history-sort-by'.
+(defun chelys-galactica--rank (commands)
+  "Order COMMANDS per `chelys-galactica-sort-by'.
 For `frecency', sort by descending frecency score; ties keep their
 original (history) order, since Emacs list `sort' is stable."
-  (if (eq async-shell-history-sort-by 'history)
+  (if (eq chelys-galactica-sort-by 'history)
       commands
     (mapcar
      #'cdr
      (sort (mapcar
             (lambda (c)
-              (cons (async-shell-history--frecency c) c))
+              (cons (chelys-galactica--frecency c) c))
             commands)
            (lambda (a b) (> (car a) (car b)))))))
 
-(defun async-shell-history--format-duration (item)
+(defun chelys-galactica--format-duration (item)
   "Return ITEM's run duration as a short human string, or nil if unfinished."
   (when-let* ((start (recall--item-start-time item))
               (end (recall--item-end-time item)))
@@ -338,7 +334,7 @@ original (history) order, since Emacs list `sort' is stable."
                 (floor secs 3600)
                 (mod (floor (/ secs 60)) 60)))))))
 
-(defun async-shell-history--truncate-candidate (command width)
+(defun chelys-galactica--truncate-candidate (command width)
   "Return COMMAND, display-ellipsized when wider than WIDTH columns.
 Only the on-screen DISPLAY is shortened — the string's text is unchanged,
 so it still matches `shell-command-history' and is run verbatim."
@@ -351,20 +347,20 @@ so it still matches `shell-command-history' and is run verbatim."
       (put-text-property cut (length copy) 'display "…" copy)
       copy)))
 
-(defvar async-shell-history--read-directory nil
+(defvar chelys-galactica--read-directory nil
   "`default-directory' captured at the start of a read, for `d' narrowing.")
 
-(defvar async-shell-history--read-project-root nil
+(defvar chelys-galactica--read-project-root nil
   "Project/VC root captured at the start of a read, for `p' narrowing.")
 
-(defvar async-shell-history--narrow-keys
+(defvar chelys-galactica--narrow-keys
   '((?d . "directory") (?p . "project") (?s . "succeeded"))
-  "Narrowing keys offered at the async-shell-history prompt.
+  "Narrowing keys offered at the chelys-galactica prompt.
 `d' keeps commands run in the current directory, `p' those run anywhere
 under the current project/VC root, `s' those whose most recent run
 succeeded.  Atuin's filter modes, as consult narrowing.")
 
-(defun async-shell-history--project-root ()
+(defun chelys-galactica--project-root ()
   "Return the current project or VC root directory, expanded, or nil."
   (or (and (fboundp 'project-current)
            (when-let* ((proj (project-current nil)))
@@ -373,12 +369,12 @@ succeeded.  Atuin's filter modes, as consult narrowing.")
            (when-let* ((root (vc-root-dir)))
              (expand-file-name root)))))
 
-(defun async-shell-history--narrow-predicate (command)
+(defun chelys-galactica--narrow-predicate (command)
   "Keep COMMAND under the active `consult--narrow' filter.
 `?d' keeps commands `recall' recorded in the read's directory, `?p' those
 anywhere under its project/VC root, `?s' those whose most recent run
 exited successfully.  Any other (or no) narrow key keeps everything."
-  (let ((items (async-shell-history--recall-items-for command)))
+  (let ((items (chelys-galactica--recall-items-for command)))
     (pcase consult--narrow
       (?d
        (seq-some
@@ -386,11 +382,10 @@ exited successfully.  Any other (or no) narrow key keeps everything."
           (when-let* ((d (recall--item-directory it)))
             (string-equal
              (directory-file-name (expand-file-name d))
-             (directory-file-name
-              async-shell-history--read-directory))))
+             (directory-file-name chelys-galactica--read-directory))))
         items))
       (?p
-       (when-let* ((root async-shell-history--read-project-root))
+       (when-let* ((root chelys-galactica--read-project-root))
          (seq-some
           (lambda (it)
             (when-let* ((d (recall--item-directory it)))
@@ -402,7 +397,7 @@ exited successfully.  Any other (or no) narrow key keeps everything."
          (eql (recall--item-exit-code it) 0)))
       (_ t))))
 
-(defun async-shell-history--read-command ()
+(defun chelys-galactica--read-command ()
   "Read a shell command, completing from `shell-command-history'.
 Candidates are frecency-ranked, display-truncated when wider than the
 frame, and annotated by marginalia (right-aligned for this prompt).  Built
@@ -412,17 +407,16 @@ insertion is routed through `add-to-history' (the minibuffer's own add
 suppressed) so the normalizing advice and `history-delete-duplicates' apply
 to the choice."
   (let* ((width (max 20 (- (frame-width) 60)))
-         (async-shell-history--recall-index
-          (async-shell-history--build-recall-index))
-         (async-shell-history--read-directory
+         (chelys-galactica--recall-index
+          (chelys-galactica--build-recall-index))
+         (chelys-galactica--read-directory
           (expand-file-name default-directory))
-         (async-shell-history--read-project-root
-          (async-shell-history--project-root))
+         (chelys-galactica--read-project-root
+          (chelys-galactica--project-root))
          (cands
           (mapcar
-           (lambda (c)
-             (async-shell-history--truncate-candidate c width))
-           (async-shell-history--rank shell-command-history)))
+           (lambda (c) (chelys-galactica--truncate-candidate c width))
+           (chelys-galactica--rank shell-command-history)))
          (marginalia-align 'right)
          (history-add-new-input nil)
          (command
@@ -430,28 +424,28 @@ to the choice."
            (consult--read
             cands
             :prompt "Async shell command: "
-            :category 'async-shell-history
+            :category 'chelys-galactica
             :sort nil
             :require-match nil
             :history 'shell-command-history
             :narrow
             (list
-             :predicate #'async-shell-history--narrow-predicate
-             :keys async-shell-history--narrow-keys)))))
+             :predicate #'chelys-galactica--narrow-predicate
+             :keys chelys-galactica--narrow-keys)))))
     (add-to-history 'shell-command-history command)
     command))
 
-(defun async-shell-history--annotate (command)
+(defun chelys-galactica--annotate (command)
   "Marginalia annotation for COMMAND.
 Shows its pinned buffer name (if any) plus, when `recall' has a record,
 the exit status, how long the most recent run took, the directory it ran
 in, and how long ago.  Returns nil when there is nothing to show (a
 brand-new, unpinned command)."
-  (let* ((name (async-shell-history--buffer-for command))
-         (item (car (async-shell-history--recall-items-for command)))
+  (let* ((name (chelys-galactica--buffer-for command))
+         (item (car (chelys-galactica--recall-items-for command)))
          (code (and item (recall--item-exit-code item)))
          (duration
-          (and item (async-shell-history--format-duration item)))
+          (and item (chelys-galactica--format-duration item)))
          (dir (and item (recall--item-directory item)))
          (start (and item (recall--item-start-time item))))
     (when (or name item)
@@ -484,62 +478,60 @@ brand-new, unpinned command)."
 (with-eval-after-load 'marginalia
   (add-to-list
    'marginalia-annotators
-   '(async-shell-history async-shell-history--annotate builtin none)))
+   '(chelys-galactica chelys-galactica--annotate builtin none)))
 
 ;; Embark actions on a command candidate.  Kept here (not in init.el) because
-;; the only way to reach an `async-shell-history'-category prompt is to invoke
+;; the only way to reach an `chelys-galactica'-category prompt is to invoke
 ;; one of our commands, which loads this file — running this registration —
 ;; before `embark-act' can be pressed.
 (with-eval-after-load 'embark
-  (defvar-keymap async-shell-history-embark-map
-    :doc "Embark actions for `async-shell-history' command candidates."
+  (defvar-keymap chelys-galactica-embark-map
+    :doc "Embark actions for `chelys-galactica' command candidates."
     :parent
     embark-general-map
     "r"
-    #'async-shell-history-run
+    #'chelys-galactica-run
     "n"
-    #'async-shell-history-run-named
+    #'chelys-galactica-run-named
     "e"
-    #'async-shell-history-edit-command
+    #'chelys-galactica-edit-command
     "o"
-    #'async-shell-history-view-outputs
+    #'chelys-galactica-view-outputs
     "k"
-    #'async-shell-history-forget-name)
+    #'chelys-galactica-forget-name)
   (add-to-list
    'embark-keymap-alist
-   '(async-shell-history . async-shell-history-embark-map)))
+   '(chelys-galactica . chelys-galactica-embark-map)))
 
 ;;;###autoload
-(defun async-shell-history-run
+(defun chelys-galactica-run
     (command &optional output-buffer error-buffer)
   "Like `async-shell-command' but completes from `shell-command-history'.
 COMMAND is read with `shell-command-history' as candidates (pick an old
 command or type a new one).  If COMMAND has a pinned buffer name (see
-`async-shell-history-run-named') its output goes there.  OUTPUT-BUFFER and
+`chelys-galactica-run-named') its output goes there.  OUTPUT-BUFFER and
 ERROR-BUFFER are passed through unchanged, mirroring `async-shell-command'
 \(prefix arg inserts output at point)."
   (interactive (list
-                (async-shell-history--read-command)
+                (chelys-galactica--read-command)
                 current-prefix-arg
                 shell-command-default-error-buffer))
-  (async-shell-history--run command
-                            (or output-buffer
-                                (async-shell-history--buffer-for
-                                 command))
-                            error-buffer))
+  (chelys-galactica--run command
+                         (or output-buffer
+                             (chelys-galactica--buffer-for command))
+                         error-buffer))
 
 ;;;###autoload
-(defun async-shell-history-run-named (command &optional name)
+(defun chelys-galactica-run-named (command &optional name)
   "Run COMMAND asynchronously in a buffer named NAME and remember NAME.
 Interactively, read COMMAND (from history), then prompt for NAME,
 defaulting to any name already pinned to COMMAND.  The COMMAND→NAME
-association is persisted to `async-shell-history-names-file', so later
-`async-shell-history-run' calls reopen the named buffer automatically.
+association is persisted to `chelys-galactica-names-file', so later
+`chelys-galactica-run' calls reopen the named buffer automatically.
 An empty NAME clears any pinned association and runs in the default
 buffer.  Also available as the `n' Embark action on a candidate."
-  (interactive (let* ((command (async-shell-history--read-command))
-                      (saved
-                       (async-shell-history--buffer-for command))
+  (interactive (let* ((command (chelys-galactica--read-command))
+                      (saved (chelys-galactica--buffer-for command))
                       (name
                        (read-string
                         (if saved
@@ -549,23 +541,22 @@ buffer.  Also available as the `n' Embark action on a candidate."
                           (format "Buffer name for `%s': " command))
                         nil nil saved)))
                  (list command name)))
-  (let ((name (async-shell-history--wrap-name name)))
-    (async-shell-history--set-name command name)
-    (async-shell-history--run command
-                              (and (not (string-empty-p name))
-                                   name))))
+  (let ((name (chelys-galactica--wrap-name name)))
+    (chelys-galactica--set-name command name)
+    (chelys-galactica--run command
+                           (and (not (string-empty-p name)) name))))
 
 ;;;###autoload
-(defun async-shell-history-forget-name (command)
+(defun chelys-galactica-forget-name (command)
   "Drop the pinned buffer name for COMMAND, if any.
 Interactively, read COMMAND from history.  Also available as the `k'
 Embark action on a candidate."
-  (interactive (list (async-shell-history--read-command)))
-  (async-shell-history--set-name command nil)
+  (interactive (list (chelys-galactica--read-command)))
+  (chelys-galactica--set-name command nil)
   (message "Forgot saved buffer name for: %s" command))
 
 ;;;###autoload
-(defun async-shell-history-view-outputs (command)
+(defun chelys-galactica-view-outputs (command)
   "Browse every recorded run of COMMAND and its output, via `recall'.
 Pops a `recall-list' buffer scoped to the `recall' items for COMMAND — one
 row per past run, with its directory, exit code, duration and time — where
@@ -573,22 +564,22 @@ RET (`recall-do-find-log') opens that run's saved output log, and recall's
 other bindings rerun or delete it.
 
 Interactively reads COMMAND from history; also bound to `o' in the
-async-shell-history Embark map.  Runs whose `.log' was pruned (see
+chelys-galactica Embark map.  Runs whose `.log' was pruned (see
 `recall-prune-after') are still listed; opening one just shows an empty log.
 
 Note: `recall-list' scopes to the items it is passed — its own docstring
 says it \"display[s] all processes\", but `recall--list-refresh' rebuilds
 the table from `recall-list-items', which `recall-list' sets to ITEMS."
-  (interactive (list (async-shell-history--read-command)))
+  (interactive (list (chelys-galactica--read-command)))
   (unless (require 'recall nil t)
     (user-error "recall is not available"))
-  (let ((items (async-shell-history--recall-items-for command)))
+  (let ((items (chelys-galactica--recall-items-for command)))
     (unless items
       (user-error "No recorded runs for: %s" command))
     (recall-list items)))
 
 ;;;###autoload
-(defun async-shell-history-rerun-last ()
+(defun chelys-galactica-rerun-last ()
   "Rerun the most recent `shell-command-history' entry, no prompt.
 Runs in the current `default-directory'.  For rerun in a command's
 original directory use `recall-rerun' (\\[recall-rerun])."
@@ -596,13 +587,13 @@ original directory use `recall-rerun' (\\[recall-rerun])."
   (if-let ((command (car shell-command-history)))
       (progn
         (message "Rerunning: %s" command)
-        (async-shell-history--run command
-                                  (async-shell-history--buffer-for
-                                   command)))
+        (chelys-galactica--run command
+                               (chelys-galactica--buffer-for
+                                command)))
     (user-error "No shell command history yet")))
 
 ;;;###autoload
-(defun async-shell-history-rerun-buffer (n)
+(defun chelys-galactica-rerun-buffer (n)
   "Rerun this async-shell buffer's command, like compile's \\`g'.
 If a process is still live in the buffer, self-insert instead (N times)
 so stdin still works — only rerun once the command has exited.
@@ -620,25 +611,25 @@ process is live you may be sending it stdin, and `g' must self-insert."
 
 ;;; Edit-then-run
 
-(defvar async-shell-history--edit-buffer-name
+(defvar chelys-galactica--edit-buffer-name
   "*Async Shell Command Edit*"
   "Name of the scratch buffer used to edit a command before running it.")
 
-(defvar-keymap async-shell-history-edit-mode-map
+(defvar-keymap chelys-galactica-edit-mode-map
   :doc
   "Keymap while editing an async shell command before running it."
   "C-c C-c"
-  #'async-shell-history-edit-finish
+  #'chelys-galactica-edit-finish
   "C-c C-k"
-  #'async-shell-history-edit-abort)
+  #'chelys-galactica-edit-abort)
 
-(define-minor-mode async-shell-history-edit-mode
+(define-minor-mode chelys-galactica-edit-mode
   "Minor mode for editing an async shell command before running it.
-\\<async-shell-history-edit-mode-map>\\[async-shell-history-edit-finish] \
-runs the edited command; \\[async-shell-history-edit-abort] cancels."
+\\<chelys-galactica-edit-mode-map>\\[chelys-galactica-edit-finish] \
+runs the edited command; \\[chelys-galactica-edit-abort] cancels."
   :lighter " ShEdit")
 
-(defun async-shell-history-edit-finish ()
+(defun chelys-galactica-edit-finish ()
   "Run the command being edited in this buffer, then bury the buffer."
   (interactive)
   (let ((command (string-trim (buffer-string))))
@@ -646,36 +637,36 @@ runs the edited command; \\[async-shell-history-edit-abort] cancels."
       (user-error "Empty command"))
     (quit-window t (selected-window))
     (add-to-history 'shell-command-history command)
-    (async-shell-history-run command)))
+    (chelys-galactica-run command)))
 
-(defun async-shell-history-edit-abort ()
+(defun chelys-galactica-edit-abort ()
   "Abandon the command being edited and bury the buffer."
   (interactive)
   (quit-window t (selected-window)))
 
 ;;;###autoload
-(defun async-shell-history-edit-command (command)
+(defun chelys-galactica-edit-command (command)
   "Edit COMMAND in a dedicated buffer, then run it on \\`C-c C-c'.
 Pops a `sh-mode' scratch buffer pre-filled with COMMAND (read from
 `shell-command-history' interactively) so it can be tweaked — multi-line
 and with shell highlighting — before launching.  \\`C-c C-c' runs the
-edited command through `async-shell-history-run' (so a pinned buffer name
+edited command through `chelys-galactica-run' (so a pinned buffer name
 still applies) and records it in history; \\`C-c C-k' cancels.  Also
 available as the `e' Embark action on a candidate."
-  (interactive (list (async-shell-history--read-command)))
+  (interactive (list (chelys-galactica--read-command)))
   (let ((buffer
-         (get-buffer-create async-shell-history--edit-buffer-name)))
+         (get-buffer-create chelys-galactica--edit-buffer-name)))
     (with-current-buffer buffer
       (erase-buffer)
       (insert command)
       (when (fboundp 'sh-mode)
         (sh-mode))
-      (async-shell-history-edit-mode)
+      (chelys-galactica-edit-mode)
       (setq-local
        header-line-format
        (substitute-command-keys
-        "Edit, then \\<async-shell-history-edit-mode-map>\\[async-shell-history-edit-finish] to run, \\[async-shell-history-edit-abort] to cancel")))
+        "Edit, then \\<chelys-galactica-edit-mode-map>\\[chelys-galactica-edit-finish] to run, \\[chelys-galactica-edit-abort] to cancel")))
     (pop-to-buffer buffer)))
 
-(provide 'async-shell-history)
-;;; async-shell-history.el ends here
+(provide 'chelys-galactica)
+;;; chelys-galactica.el ends here

@@ -957,7 +957,7 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
   (concat no-littering-var-directory "recall/history"))
  (recall-directory (concat no-littering-var-directory "recall/"))
  ;; Keep command output logs for four weeks (default is two). Browsable per
- ;; command via `async-shell-history-view-outputs'.
+ ;; command via `chelys-galactica-view-outputs'.
  (recall-prune-after (* 60 60 24 7 4))
  ;; Consult completion based interface
  (recall-completing-read-fn #'recall-consult-completing-read)
@@ -1166,16 +1166,16 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 ;; History-aware async-shell-command: completes from `shell-command-history',
 ;; marginalia-annotates each candidate (pinned name / recall dir/exit/when), and
 ;; can pin a command to a named, persisted output buffer (`C-.' n via embark, or
-;; `async-shell-history-run-named').  Logic lives in the local package; this is
+;; `chelys-galactica-run-named').  Logic lives in the local package; this is
 ;; just wiring.  Pinned names persist under no-littering like recall's history.
 (use-package
- async-shell-history
+ chelys-galactica
  :custom
- (async-shell-history-names-file
-  (concat no-littering-var-directory "async-shell-history/names.el"))
+ (chelys-galactica-names-file
+  (concat no-littering-var-directory "chelys-galactica/names.el"))
  :bind
- (([remap async-shell-command] . async-shell-history-run)
-  ("C-c &" . async-shell-history-rerun-last)))
+ (([remap async-shell-command] . chelys-galactica-run)
+  ("C-c &" . chelys-galactica-rerun-last)))
 
 ;; In an async-shell output buffer, `g' reruns that buffer's own command in
 ;; place (once the process has exited; otherwise it self-inserts so stdin still
@@ -1184,8 +1184,7 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
  shell
  :ensure nil
  :bind
- (:map
-  shell-command-mode-map ("g" . async-shell-history-rerun-buffer)))
+ (:map shell-command-mode-map ("g" . chelys-galactica-rerun-buffer)))
 
 (use-package compile-ansi :config (compile-ansi-setup))
 
