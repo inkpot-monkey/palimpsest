@@ -10,68 +10,6 @@
 
 let
   cfg = config.custom.rk1.llm;
-
-  # Speculative decoding: pull a small draft model alongside the target.
-  # The draft MUST share the target's tokenizer/vocab or llama.cpp rejects it.
-  draftFlags = lib.optionals (cfg.draftModel != null) [
-    "-hfd"
-    cfg.draftModel
-    # llama.cpp renamed --draft-max → --spec-draft-n-max (the old flag now hard-errors).
-    "--spec-draft-n-max"
-    "16"
-  ];
-
-  # Self-speculative decoding via the model's own Multi-Token-Prediction head.
-  # No separate draft model — `model` must be an MTP-enabled GGUF (…-MTP-GGUF).
-  mtpFlags = lib.optionals cfg.mtp [
-    "--spec-type"
-    "draft-mtp"
-  ];
-
-  # N-gram speculative decoding: drafts tokens from context n-grams (no model, no RAM) and
-  # verifies a batch in one weight-read, so it beats the bandwidth wall when output reuses
-  # context. Benchmarked on the coder MoE: +27% on code-echo/edit, +3.5% on novel gen, lossless
-  # (verify guarantees identical output). map-k beat ngram-simple (0.93 vs 0.75 acceptance).
-  ngramFlags = lib.optionals cfg.ngram [
-    "--spec-type"
-    "ngram-map-k"
-    "--spec-draft-n-max"
-    "16"
-  ];
-
-  # Flash-attention + quantized KV go together (q8_0 KV requires -fa on). On the RK3588 CPU
-  # backend the extra dequant work can cost decode tok/s, so this is a measured per-node knob.
-  faFlags =
-    if cfg.flashAttention then
-      [
-        "-fa"
-        "on"
-        "--cache-type-k"
-        "q8_0"
-        "--cache-type-v"
-        "q8_0"
-      ]
-    else
-      [
-        "-fa"
-        "off"
-      ];
-
-  # CPU placement (RK3588: cores 0-3 = A55 little, 4-7 = A76 big). Decode is bandwidth-bound and
-  # the A55s only bottleneck it, so pin decode strictly to the A76 cores. Prefill (prompt
-  # processing) is compute-bound and parallelizes, so let it use ALL cores — the A55s add ~11%
-  # there with no decode regression (measured). Uses llama.cpp's per-phase strict affinity
-  # instead of a blanket systemd CPUAffinity so the two phases can target different cores.
-  cpuFlags = lib.optionals cfg.pinBigCores [
-    "-Cr"
-    "4-7"
-    "--cpu-strict"
-    "1"
-    "-Crb"
-    "0-7"
-    "--cpu-strict-batch"
-    "1"
-  ];
 in
 {
   options.custom.rk1.llm = {
@@ -173,26 +111,39 @@ in
     services.llama-cpp = {
       enable = true;
       # Bind on all interfaces; the firewall below scopes access to tailscale only.
-      host = "0.0.0.0";
-      inherit (cfg) port;
-      extraFlags = [
-        "-hf"
-        cfg.model
-        "-t"
-        (toString cfg.threads)
-        "-tb"
-        (toString cfg.threadsBatch)
-        "-c"
-        (toString cfg.ctxSize)
-        "-np"
-        "1"
-      ]
-      ++ faFlags
-      ++ cpuFlags
-      ++ lib.optional cfg.mlock "--mlock"
-      ++ draftFlags
-      ++ mtpFlags
-      ++ ngramFlags;
+      settings = {
+        host = "0.0.0.0";
+        inherit (cfg) port;
+        hf-repo = cfg.model;
+        t = cfg.threads;
+        threads-batch = cfg.threadsBatch;
+        ctx-size = cfg.ctxSize;
+        parallel = 1;
+        inherit (cfg) mlock; # true → --mlock flag; false → omitted (explicitBool=false)
+        flash-attn = if cfg.flashAttention then "on" else "off";
+      }
+      // lib.optionalAttrs cfg.flashAttention {
+        cache-type-k = "q8_0";
+        cache-type-v = "q8_0";
+      }
+      // lib.optionalAttrs cfg.pinBigCores {
+        cpu-range = "4-7"; # -Cr: A76 big cores for decode
+        cpu-strict = 1;
+        cpu-range-batch = "0-7"; # -Crb: all cores for prefill
+        cpu-strict-batch = 1;
+      }
+      // lib.optionalAttrs (cfg.draftModel != null) {
+        hf-repo-draft = cfg.draftModel;
+        spec-draft-n-max = 16;
+      }
+      // lib.optionalAttrs cfg.mtp {
+        spec-type = "draft-mtp";
+        spec-draft-n-max = 16;
+      }
+      // lib.optionalAttrs cfg.ngram {
+        spec-type = "ngram-map-k";
+        spec-draft-n-max = 16;
+      };
     };
 
     # `--mlock` needs a high memlock rlimit or it silently fails (systemd default is 8 MB) and the
