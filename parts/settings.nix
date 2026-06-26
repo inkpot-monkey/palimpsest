@@ -65,10 +65,13 @@ let
         edge = "kelpy";
         port = 8080;
       };
-      affine = {
-        edge = "kelpy";
-        port = 3010;
-      };
+      # affine is disabled for now (custom.profiles.affine.enable = false, so no
+      # backend) — keep it out of the registry so Caddy doesn't front a dead vhost
+      # and the uptime watcher doesn't probe/alert on it. Re-add when re-enabled.
+      # affine = {
+      #   edge = "kelpy";
+      #   port = 3010;
+      # };
       openclaw = {
         edge = "kelpy";
         port = 8001;
