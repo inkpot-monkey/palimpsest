@@ -118,6 +118,14 @@ order (most recent first)."
     (const :tag "Frecency (frequency + recency)" frecency)
     (const :tag "History order" history)))
 
+(defcustom chelys-galactica-command-max-width 72
+  "Maximum display width of a command at the prompt, in columns.
+Longer commands are display-ellipsized (the full command is still matched
+and run).  Caps the command column so a single long command can't push the
+right-aligned marginalia annotation across the frame; the effective width
+is further limited to leave room for the annotation on narrow frames."
+  :type 'natnum)
+
 (defcustom chelys-galactica-extra-history-files '("~/.bash_history")
   "Extra shell history files merged into the completion candidates.
 Each is read one command per line; lines beginning with `#' (bash
@@ -456,7 +464,10 @@ directory, project, or successful commands — atuin's filter modes.  History
 insertion is routed through `add-to-history' (the minibuffer's own add
 suppressed) so the normalizing advice and `history-delete-duplicates' apply
 to the choice."
-  (let* ((width (max 20 (- (frame-width) 60)))
+  (let* ((width
+          (max 20
+               (min chelys-galactica-command-max-width
+                    (- (frame-width) 50))))
          (chelys-galactica--recall-index
           (chelys-galactica--build-recall-index))
          (chelys-galactica--read-directory
