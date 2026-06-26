@@ -191,6 +191,18 @@
       epkgs.alert
       epkgs.consult
     ];
+    # Run the ERT suite at build time. `proc-notify-test.el' is auto-excluded
+    # from the installed package by MELPA's default `:files' recipe (it matches
+    # `*-test.el'), so we load it from $src; deps are already on EMACSLOADPATH
+    # from packageRequires. A failing assertion fails the build.
+    doCheck = true;
+    checkPhase = ''
+      runHook preCheck
+      emacs --batch -L "$src" -l ert \
+        -l "$src/proc-notify-test.el" \
+        -f ert-run-tests-batch-and-exit
+      runHook postCheck
+    '';
   };
 
   ement-glue = epkgs.melpaBuild {
@@ -216,8 +228,9 @@
   # History-aware async-shell-command: front-loads `shell-command-history' as
   # completion candidates and marginalia-annotates each with recall's record
   # (dir/exit/duration/when). Built on consult--read for atuin-style narrowing
-  # (directory/project/succeeded). recall is a soft dependency (guarded by
-  # `fboundp'), so it is not listed in packageRequires.
+  # (directory/project/succeeded), and the `view-outputs' action browses a
+  # command's past runs/output logs via recall. The annotation path still
+  # soft-guards recall (`fboundp'), but it is a listed dependency.
   async-shell-history = epkgs.melpaBuild {
     pname = "async-shell-history";
     version = "0.1";
@@ -225,6 +238,7 @@
     packageRequires = [
       epkgs.marginalia
       epkgs.consult
+      epkgs.recall
     ];
   };
 }

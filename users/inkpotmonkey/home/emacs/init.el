@@ -956,6 +956,9 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
  (recall-save-file
   (concat no-littering-var-directory "recall/history"))
  (recall-directory (concat no-littering-var-directory "recall/"))
+ ;; Keep command output logs for four weeks (default is two). Browsable per
+ ;; command via `async-shell-history-view-outputs'.
+ (recall-prune-after (* 60 60 24 7 4))
  ;; Consult completion based interface
  (recall-completing-read-fn #'recall-consult-completing-read)
  :init

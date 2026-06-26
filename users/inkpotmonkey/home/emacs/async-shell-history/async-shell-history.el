@@ -2,7 +2,7 @@
 
 ;; Author: inkpotmonkey
 ;; Keywords: convenience, processes
-;; Package-Requires: ((emacs "29.1") (marginalia "1.0") (consult "1.0"))
+;; Package-Requires: ((emacs "29.1") (marginalia "1.0") (consult "1.0") (recall "0.1"))
 
 ;;; Commentary:
 
@@ -45,9 +45,10 @@
 ;; automatically.  A bare name is wrapped in `*' (so `backup' becomes the
 ;; conventional `*backup*').  `async-shell-history-forget-name' clears the
 ;; association.  These, plus `async-shell-history-edit-command' (edit a command
-;; in a scratch buffer before running it), are also offered as Embark actions on
-;; a command candidate (the completion category is `async-shell-history');
-;; register them when embark loads.
+;; in a scratch buffer before running it) and `async-shell-history-view-outputs'
+;; (browse a command's past runs and their output logs via recall), are also
+;; offered as Embark actions on a command candidate (the completion category is
+;; `async-shell-history'); register them when embark loads.
 ;;
 ;; You need not decide the name up front: every buffer this package launches is
 ;; tagged with the command that produced it, and a `rename-buffer' on a tagged
@@ -59,6 +60,7 @@
 ;;   `async-shell-history-run'          drop-in for `async-shell-command'
 ;;   `async-shell-history-run-named'    run in a remembered, named buffer
 ;;   `async-shell-history-edit-command' edit a command, then run it
+;;   `async-shell-history-view-outputs'  browse a command's past run logs
 ;;   `async-shell-history-forget-name'  drop a command's saved buffer name
 ;;   `async-shell-history-rerun-last'   rerun the most recent entry, no prompt
 ;;   `async-shell-history-rerun-buffer' rerun an output buffer's own command
@@ -84,6 +86,7 @@
 (declare-function recall--item-start-time "recall")
 (declare-function recall--item-end-time "recall")
 (declare-function recall--format-time "recall")
+(declare-function recall-list "recall")
 (declare-function project-current "project")
 (declare-function project-root "project")
 (declare-function vc-root-dir "vc-hooks")
@@ -498,6 +501,8 @@ brand-new, unpinned command)."
     #'async-shell-history-run-named
     "e"
     #'async-shell-history-edit-command
+    "o"
+    #'async-shell-history-view-outputs
     "k"
     #'async-shell-history-forget-name)
   (add-to-list
@@ -558,6 +563,29 @@ Embark action on a candidate."
   (interactive (list (async-shell-history--read-command)))
   (async-shell-history--set-name command nil)
   (message "Forgot saved buffer name for: %s" command))
+
+;;;###autoload
+(defun async-shell-history-view-outputs (command)
+  "Browse every recorded run of COMMAND and its output, via `recall'.
+Pops a `recall-list' buffer scoped to the `recall' items for COMMAND — one
+row per past run, with its directory, exit code, duration and time — where
+RET (`recall-do-find-log') opens that run's saved output log, and recall's
+other bindings rerun or delete it.
+
+Interactively reads COMMAND from history; also bound to `o' in the
+async-shell-history Embark map.  Runs whose `.log' was pruned (see
+`recall-prune-after') are still listed; opening one just shows an empty log.
+
+Note: `recall-list' scopes to the items it is passed — its own docstring
+says it \"display[s] all processes\", but `recall--list-refresh' rebuilds
+the table from `recall-list-items', which `recall-list' sets to ITEMS."
+  (interactive (list (async-shell-history--read-command)))
+  (unless (require 'recall nil t)
+    (user-error "recall is not available"))
+  (let ((items (async-shell-history--recall-items-for command)))
+    (unless items
+      (user-error "No recorded runs for: %s" command))
+    (recall-list items)))
 
 ;;;###autoload
 (defun async-shell-history-rerun-last ()
