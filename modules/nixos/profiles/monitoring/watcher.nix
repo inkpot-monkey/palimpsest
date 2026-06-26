@@ -30,7 +30,14 @@
 let
   cfg = config.custom.profiles.monitoring-watcher;
   matrixSecrets = self.lib.getSecretFile "matrix";
+  pushRelaySecrets = self.lib.getSecretFile "push-relay";
   domain = settings.primaryDomain;
+
+  # Out-of-band channel (ADR-0027): a second, ntfy-shaped alerter pointed at the
+  # self-hosted web-push relay, attached to ONLY the delivery-path endpoints so the
+  # phone buzzes when the Matrix path itself is down. Disabled until the relay is
+  # live + the publish token is keyed for rk1b (push-relay issue 04).
+  oob = cfg.outOfBand;
 
   # Hosts that run the Caddy edge profile (proxy.nix). Services on a Caddy edge are
   # probed via HTTPS through Caddy; services on any other edge fall back to a raw
@@ -48,6 +55,13 @@ let
   # Monitor-by-default: a service is watched unless it opts out (ADR-0026 slice 04).
   monitored = svc: svc.monitor.enable or true;
 
+  # The hookshot webhook (in-band) rides every endpoint; the out-of-band ntfy/web-push
+  # alerter rides only the configured delivery-path endpoints, and only when enabled.
+  alertsFor =
+    name:
+    [ { type = "custom"; } ]
+    ++ lib.optional (oob.enable && lib.elem name oob.endpoints) { type = "ntfy"; };
+
   mkEndpoint =
     name: svc:
     if viaCaddy svc then
@@ -63,7 +77,7 @@ let
           "[CONNECTED] == true"
           "[STATUS] < 500"
         ];
-        alerts = [ { type = "custom"; } ];
+        alerts = alertsFor name;
       }
     else
       {
@@ -72,7 +86,7 @@ let
         url = "tcp://${tsIp (listenerHost svc)}:${toString svc.port}";
         interval = "30s";
         conditions = [ "[CONNECTED] == true" ];
-        alerts = [ { type = "custom"; } ];
+        alerts = alertsFor name;
       };
 
   allServices = lib.filterAttrs (_: monitored) (
@@ -105,18 +119,56 @@ in
       registered services and alerts to #infra-alerts via the hookshot webhook
       (ADR-0026). Enable on an always-on host that is NOT the one it watches.
     '';
+
+    outOfBand = {
+      enable = lib.mkEnableOption ''
+        the out-of-band web-push alerter (ADR-0027): a second, ntfy-shaped Gatus
+        alerter pointed at the self-hosted push relay, attached to only the
+        delivery-path `endpoints` so the phone is notified when the Matrix path
+        itself is down. Enable once the relay is live and `push_relay_publish_token`
+        is keyed for this host (push-relay issue 04).
+      '';
+      relayUrl = lib.mkOption {
+        type = lib.types.str;
+        default = "https://push.${domain}";
+        description = "Base URL of the ntfy-compatible push relay.";
+      };
+      topic = lib.mkOption {
+        type = lib.types.str;
+        default = "";
+        example = "venerable-apple-pirate";
+        description = "The ntfy topic = the memorable subscribe phrase.";
+      };
+      endpoints = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [
+          "matrix"
+          "hookshot"
+        ];
+        description = ''
+          Service names whose failure fires an out-of-band push — the Matrix
+          delivery path (so the phone buzzes exactly when in-band can't deliver).
+        '';
+      };
+    };
   };
 
   config = lib.mkIf cfg.enable {
     # The shared webhook id (also used by kelpy's provisioner + unit-state check).
     # rk1b is a recipient of profiles/matrix.yaml (re-keyed), so it decrypts here.
-    sops.secrets.infra_alerts_hook_id.sopsFile = matrixSecrets;
+    # The out-of-band publish token is added only when that channel is enabled.
+    sops.secrets = {
+      infra_alerts_hook_id.sopsFile = matrixSecrets;
+    }
+    // lib.optionalAttrs oob.enable {
+      push_relay_publish_token.sopsFile = pushRelaySecrets;
+    };
 
-    # Build the full webhook URL (capability) into an env file Gatus reads at
-    # runtime — keeps the secret hookId out of the world-readable Nix store.
-    # Gatus expands ${INFRA_ALERTS_WEBHOOK_URL} in its config when it loads.
+    # Build the secret capabilities into an env file Gatus reads at runtime — keeps
+    # them out of the world-readable Nix store. Gatus expands ${VAR} when it loads.
     sops.templates."gatus-env".content =
-      "INFRA_ALERTS_WEBHOOK_URL=https://hookshot.${domain}/webhook/${config.sops.placeholder.infra_alerts_hook_id}";
+      "INFRA_ALERTS_WEBHOOK_URL=https://hookshot.${domain}/webhook/${config.sops.placeholder.infra_alerts_hook_id}\n"
+      + lib.optionalString oob.enable "NTFY_PUBLISH_TOKEN=${config.sops.placeholder.push_relay_publish_token}\n";
 
     # Pin the Caddy-fronted names to their edge's tailscale IP (tailnet path).
     networking.hosts = hostsByIp;
@@ -126,16 +178,32 @@ in
       settings = {
         web.port = webPort;
         storage.type = "memory";
-        alerting.custom = {
-          url = "\${INFRA_ALERTS_WEBHOOK_URL}";
-          method = "POST";
-          body = ''{"text": "🚨 [ENDPOINT_GROUP]/[ENDPOINT_NAME] [ALERT_TRIGGERED_OR_RESOLVED] [ALERT_DESCRIPTION] [RESULT_ERRORS]"}'';
-          # ADR-0026 semantics: 3 consecutive fails (~90s) before alerting,
-          # recovery notice on return, no periodic re-alerts.
-          default-alert = {
-            failure-threshold = 3;
-            success-threshold = 2;
-            send-on-resolved = true;
+        alerting = {
+          custom = {
+            url = "\${INFRA_ALERTS_WEBHOOK_URL}";
+            method = "POST";
+            body = ''{"text": "🚨 [ENDPOINT_GROUP]/[ENDPOINT_NAME] [ALERT_TRIGGERED_OR_RESOLVED] [ALERT_DESCRIPTION] [RESULT_ERRORS]"}'';
+            # ADR-0026 semantics: 3 consecutive fails (~90s) before alerting,
+            # recovery notice on return, no periodic re-alerts.
+            default-alert = {
+              failure-threshold = 3;
+              success-threshold = 2;
+              send-on-resolved = true;
+            };
+          };
+        }
+        // lib.optionalAttrs oob.enable {
+          # Out-of-band: ntfy alerter → the web-push relay (ADR-0027). Same quiet
+          # semantics; attached to the delivery-path endpoints only (see alertsFor).
+          ntfy = {
+            url = oob.relayUrl;
+            inherit (oob) topic;
+            token = "\${NTFY_PUBLISH_TOKEN}";
+            default-alert = {
+              failure-threshold = 3;
+              success-threshold = 2;
+              send-on-resolved = true;
+            };
           };
         };
         inherit endpoints;
