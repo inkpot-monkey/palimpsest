@@ -23,6 +23,14 @@ let
   inherit (inputs.nixpkgs) lib;
   primaryDomain = "palebluebytes.space";
 
+  # The service registry. Each entry: `edge` (host where DNS points + Caddy runs),
+  # `port`, optional `origin` (host actually running it when off-edge), optional
+  # `proxy = false` (bypass Caddy). Optional `monitor` controls the ADR-0026 uptime
+  # watcher (monitor-by-default): `monitor.enable` (default true) and, when you set
+  # it false, a required `monitor.reason`. Opting out here exempts a SERVED service
+  # from probing/alerting; it does not stop Caddy fronting it (to fully retire a
+  # service, remove its entry). The slice-04 flake-check guard enforces both the
+  # reason-when-disabled rule and that every monitored service has a buildable probe.
   services = {
     public = {
       matrix = {
@@ -177,5 +185,12 @@ in
     };
 
     services = checkPorts;
+
+    # Hosts that run the Caddy edge profile (proxy.nix). The ADR-0026 uptime
+    # watcher probes a service's HTTPS vhost through Caddy when its edge is listed
+    # here, else falls back to a raw TCP probe to the listener; the slice-04 guard
+    # uses the same notion to decide whether a monitored service is probeable.
+    # Extend when a second host runs the edge.
+    caddyEdges = [ "kelpy" ];
   };
 }

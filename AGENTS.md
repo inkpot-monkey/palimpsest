@@ -41,6 +41,11 @@ touching secrets:
   here; change behaviour in the upstream repo, then `nix flake update <input>`.
 - **Raspberry Pi kernel pin:** `nixos-raspberrypi` must pin a rev whose *default*
   kernel is stable; unstable/next kernels hang in initrd and aren't cached.
+- **Services are monitored by default (ADR-0026).** Every `settings.services` entry
+  is uptime-probed automatically. To exempt a *served* service, set
+  `monitor = { enable = false; reason = "…"; }` on its entry (not delete it — that
+  also drops its Caddy vhost). The `uptime_monitoring` flake check enforces the
+  reason and that every monitored service has a buildable probe.
 
 ## Agent skills
 

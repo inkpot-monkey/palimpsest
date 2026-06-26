@@ -32,10 +32,10 @@ let
   matrixSecrets = self.lib.getSecretFile "matrix";
   domain = settings.primaryDomain;
 
-  # Hosts that run the Caddy edge profile (proxy.nix). Their services are probed
-  # via HTTPS through Caddy; services on any other edge fall back to a raw TCP
-  # probe. Only kelpy runs the edge today — extend this when a second edge appears.
-  caddyEdges = [ "kelpy" ];
+  # Hosts that run the Caddy edge profile (proxy.nix). Services on a Caddy edge are
+  # probed via HTTPS through Caddy; services on any other edge fall back to a raw
+  # TCP probe. Shared with the slice-04 guard (single source of truth in settings).
+  inherit (settings) caddyEdges;
 
   # The host that LISTENS on a service (origin when off-edge, else edge) vs the
   # EDGE host (where Caddy + DNS live) — mirrors settings.nix's listenerHost.
@@ -44,6 +44,9 @@ let
   tsIp = host: settings.nodes.${host}.tailscale.ip4;
 
   viaCaddy = svc: lib.elem (edgeHost svc) caddyEdges;
+
+  # Monitor-by-default: a service is watched unless it opts out (ADR-0026 slice 04).
+  monitored = svc: svc.monitor.enable or true;
 
   mkEndpoint =
     name: svc:
@@ -72,7 +75,9 @@ let
         alerts = [ { type = "custom"; } ];
       };
 
-  allServices = settings.services.public // settings.services.private;
+  allServices = lib.filterAttrs (_: monitored) (
+    settings.services.public // settings.services.private
+  );
   endpoints = lib.mapAttrsToList mkEndpoint allServices;
 
   # Caddy-fronted service names must resolve to their EDGE's tailscale IP on this

@@ -7,6 +7,11 @@
         affine = import ./affine {
           inherit pkgs inputs self;
         };
+        # ADR-0026 slice 04: monitor-by-default guard over settings.services — opt-outs
+        # need a reason, and every monitored service must resolve to a buildable probe.
+        uptime_monitoring = import ./uptime-monitoring {
+          inherit pkgs self;
+        };
         networking = import ./networking {
           inherit pkgs inputs self;
         };
