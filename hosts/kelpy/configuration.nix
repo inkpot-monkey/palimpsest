@@ -33,6 +33,32 @@
     monitoring-server.enable = true;
     monitoring-client.enable = true;
     monitoring-dmarc.enable = false;
+    # On-host white-box layer for ADR-0026: alerts to #infra-alerts (via the
+    # hookshot loopback webhook) when a long-running daemon stops being active —
+    # complements the off-host Gatus reachability probe on rk1b. The unit list is
+    # CURATED (these names are kelpy-specific); add/remove as services change.
+    # affine is intentionally omitted (it currently has no unit on kelpy).
+    monitoring-unit-state = {
+      enable = true;
+      units = [
+        "caddy.service" # the edge — everything web-facing depends on it
+        "blocky.service" # fleet DNS
+        "stalwart.service" # mail
+        "tuwunel.service" # matrix homeserver
+        "matrix-hookshot.service" # the alert delivery path itself
+        "litellm.service"
+        "openclaw-gateway.service"
+        "jellyfin.service"
+        "podman-qbittorrent-app.service" # torrent
+        "grafana.service"
+        "victoriametrics.service"
+        "victorialogs.service"
+        "vector.service"
+        "paperless-scheduler.service"
+        "paperless-task-queue.service"
+        "paperless-consumer.service"
+      ];
+    };
     mail = {
       enable = true;
       inherit (settings.mail) domain extraDomains;

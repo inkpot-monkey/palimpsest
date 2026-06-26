@@ -49,6 +49,7 @@
     monitoring-exporters = ./monitoring/exporters.nix;
     monitoring-dmarc = ./monitoring/dmarc.nix;
     monitoring-watcher = ./monitoring/watcher.nix;
+    monitoring-unit-state = ./monitoring/unit-state.nix;
     media = ./media;
 
     # --- Hardware Specific (Pi) ---
