@@ -31,6 +31,8 @@
     };
   };
 
+  hardware.deviceTree.enable = true;
+
   # The local LLM server is enabled per-node in hosts/default.nix: rk1a serves the general
   # MoE; rk1b is voice-only (Home Assistant) and leaves the LLM off to free RAM/disk.
 

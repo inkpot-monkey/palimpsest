@@ -31,7 +31,14 @@
 
     nixos-hardware.url = "github:nixos/nixos-hardware";
 
-    nixos-turing-rk1.url = "github:GiyoMoon/nixos-turing-rk1";
+    nixos-turing-rk1 = {
+      url = "github:GiyoMoon/nixos-turing-rk1";
+      # Without follows, the module injects its own pinned nixpkgs (25.11) as `pkgs`, causing a
+      # mismatch: unstable's device-tree.nix and top-level.nix read kernel.buildDTBs / kernel.target
+      # from passthru, but the stable kernel doesn't expose those.  Both attributes exist in
+      # unstable, so aligning the nixpkgs fixes the mismatch and keeps ubootTuringRK1 from unstable.
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
 
     emacs-overlay.url = "github:nix-community/emacs-overlay";
 
