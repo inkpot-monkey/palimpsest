@@ -25,6 +25,12 @@
 ;; frame are display-truncated (the full command is still matched and run), and
 ;; annotations are right-aligned for this prompt so they stay on screen.
 ;;
+;; Duplicate candidates are kept out of the history rather than filtered at the
+;; prompt: chosen commands are added through `add-to-history' (the minibuffer's
+;; own add is suppressed) and a `:filter-args' advice trims the element first,
+;; so with `history-delete-duplicates' non-nil even whitespace-only variants of
+;; a command collapse to a single, most-recent entry.
+;;
 ;; Named buffers: `async-shell-history-run-named' runs a command in a buffer of
 ;; your choosing and *remembers* the choice — the command→name association is
 ;; persisted to `async-shell-history-names-file', so every later
@@ -199,19 +205,24 @@ A no-op unless the current buffer is a tagged async-shell output buffer
  'rename-buffer
  :after #'async-shell-history--remember-on-rename)
 
-(defun async-shell-history--dedupe (commands)
-  "Return COMMANDS with duplicates removed, keeping the first occurrence.
-`shell-command-history' is most-recent-first, so the kept entry is the
-most recent invocation — and its marginalia annotation (read from the
-most-recent matching `recall' record) describes that run.  Commands that
-differ only in surrounding whitespace are treated as one."
-  (let ((seen (make-hash-table :test 'equal))
-        (result nil))
-    (dolist (command commands (nreverse result))
-      (let ((key (async-shell-history--normalize-command command)))
-        (unless (gethash key seen)
-          (puthash key t seen)
-          (push command result))))))
+(defun async-shell-history--normalize-history-element (args)
+  "Trim a `shell-command-history' element as it enters the history.
+`:filter-args' advice for `add-to-history': normalizing on insertion lets
+`history-delete-duplicates' collapse whitespace-only variants (e.g. a
+trailing space) of the same command into one entry.  ARGS is the full
+`add-to-history' argument list; only the element bound for
+`shell-command-history' is rewritten."
+  (if (eq (car args) 'shell-command-history)
+      (cons
+       (car args)
+       (cons
+        (async-shell-history--normalize-command (cadr args))
+        (cddr args)))
+    args))
+
+(advice-add
+ 'add-to-history
+ :filter-args #'async-shell-history--normalize-history-element)
 
 (defun async-shell-history--truncate-candidate (command width)
   "Return COMMAND, display-ellipsized when wider than WIDTH columns.
@@ -232,14 +243,15 @@ Candidates wider than the frame are display-truncated and annotations are
 right-aligned for the duration of this prompt, so a long command no longer
 pushes its marginalia annotation off the right edge.  Reports the
 `async-shell-history' category (so marginalia can annotate each command)
-and keeps history order instead of sorting.  Duplicate history entries
-are collapsed to their most recent occurrence."
+and keeps history order instead of sorting.  History insertion is routed
+through `add-to-history' (with the minibuffer's own add suppressed) so the
+normalizing advice and `history-delete-duplicates' apply to the choice."
   (let* ((width (max 20 (- (frame-width) 60)))
          (cands
           (mapcar
            (lambda (c)
              (async-shell-history--truncate-candidate c width))
-           (async-shell-history--dedupe shell-command-history)))
+           shell-command-history))
          (table
           (lambda (string predicate action)
             (if (eq action 'metadata)
@@ -248,10 +260,14 @@ are collapsed to their most recent occurrence."
                   (display-sort-function . identity)
                   (cycle-sort-function . identity))
               (complete-with-action action cands string predicate))))
-         (marginalia-align 'right))
-    (substring-no-properties
-     (completing-read "Async shell command: " table
-                      nil nil nil 'shell-command-history))))
+         (marginalia-align 'right)
+         (history-add-new-input nil)
+         (command
+          (substring-no-properties
+           (completing-read "Async shell command: " table
+                            nil nil nil 'shell-command-history))))
+    (add-to-history 'shell-command-history command)
+    command))
 
 (defun async-shell-history--annotate (command)
   "Marginalia annotation for COMMAND.

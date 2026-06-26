@@ -198,7 +198,7 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 (use-package
  savehist
  :ensure nil ; Built-in
- :custom (savehist-autosave-interval 60)
+ :custom (savehist-autosave-interval 60) (history-delete-duplicates t)
  :init (savehist-mode))
 
 (use-package
