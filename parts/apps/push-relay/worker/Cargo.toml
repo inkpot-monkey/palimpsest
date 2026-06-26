@@ -1,0 +1,28 @@
+[package]
+name = "push-relay-worker"
+version = "0.1.0"
+edition = "2021"
+description = "Cloudflare Worker shell for the out-of-band web-push relay (ADR-0027). The thin, swappable platform adapter around push-relay-core."
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+push-relay-core = { path = "../core" }
+worker = "0.4"
+js-sys = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+p256 = { version = "0.13", default-features = false, features = [
+  "ecdsa",
+  "ecdh",
+  "arithmetic",
+] }
+base64 = "0.22"
+# Web Crypto-backed randomness on the Workers runtime (ephemeral ECDH key + salt).
+getrandom = { version = "0.2", features = ["js"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+
+[profile.release]
+opt-level = "s"
+lto = true

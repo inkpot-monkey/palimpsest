@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b0f14" />
+    <link rel="manifest" href="/manifest.json" />
+    <title>infra alerts</title>
+    <style>
+      body { font: 16px/1.5 system-ui, sans-serif; background: #0b0f14; color: #e6edf3; margin: 0; padding: 2rem; }
+      main { max-width: 28rem; margin: 0 auto; }
+      h1 { font-size: 1.2rem; }
+      input, button { font: inherit; padding: 0.6rem 0.8rem; border-radius: 0.5rem; border: 1px solid #30363d; background: #161b22; color: inherit; width: 100%; box-sizing: border-box; }
+      button { background: #1f6feb; border-color: #1f6feb; margin-top: 0.75rem; cursor: pointer; }
+      #status { margin-top: 1rem; padding: 0.75rem; border-radius: 0.5rem; background: #161b22; white-space: pre-wrap; }
+      label { display: block; margin-top: 1rem; color: #8b949e; font-size: 0.85rem; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>infra alerts — out-of-band</h1>
+      <p>Subscribe this device to receive fleet alerts when the Matrix path is down.</p>
+      <label for="topic">Subscribe phrase</label>
+      <input id="topic" placeholder="venerable-apple-pirate" autocomplete="off" autocapitalize="off" />
+      <button id="subscribe">Enable notifications on this device</button>
+      <div id="status">not subscribed</div>
+    </main>
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const status = (m) => ($("status").textContent = m);
+      const b64urlToBytes = (s) => {
+        const pad = "=".repeat((4 - (s.length % 4)) % 4);
+        const b = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/"));
+        return Uint8Array.from(b, (c) => c.charCodeAt(0));
+      };
+      const bytesToB64url = (buf) =>
+        btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+      $("topic").value = localStorage.getItem("topic") || "";
+
+      $("subscribe").addEventListener("click", async () => {
+        try {
+          const topic = $("topic").value.trim();
+          if (!topic) return status("enter the subscribe phrase first");
+          localStorage.setItem("topic", topic);
+
+          if (!("serviceWorker" in navigator) || !("PushManager" in window))
+            return status("this browser does not support web push");
+
+          status("registering service worker…");
+          const reg = await navigator.serviceWorker.register("/sw.js");
+          await navigator.serviceWorker.ready;
+
+          status("requesting notification permission…");
+          if ((await Notification.requestPermission()) !== "granted") return status("permission denied");
+
+          const vapidPublic = await (await fetch("/vapidPublicKey")).text();
+          const sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: b64urlToBytes(vapidPublic),
+          });
+
+          const json = sub.toJSON();
+          const res = await fetch("/sub", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              topic,
+              endpoint: sub.endpoint,
+              p256dh: json.keys.p256dh,
+              auth: json.keys.auth,
+            }),
+          });
+          status(res.ok ? "subscribed ✓ — add this page to your home screen" : "subscribe rejected: " + (await res.text()));
+        } catch (e) {
+          status("error: " + e.message);
+        }
+      });
+    </script>
+  </body>
+</html>
