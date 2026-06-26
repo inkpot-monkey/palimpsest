@@ -17,18 +17,24 @@
 ;; since recall already records every async launch.  This needs a completion
 ;; category on the table (a plain `completing-read' over a list has none, so
 ;; marginalia has nothing to hang an annotator on), which
-;; `async-shell-history--collection' supplies.  The recall lookup is soft: with
+;; `async-shell-history--read-command' supplies.  The recall lookup is soft: with
 ;; no recall record (or no recall at all) the candidate is simply shown without
 ;; that part of the annotation.
+;;
+;; Long commands no longer lose their annotation: candidates wider than the
+;; frame are display-truncated (the full command is still matched and run), and
+;; annotations are right-aligned for this prompt so they stay on screen.
 ;;
 ;; Named buffers: `async-shell-history-run-named' runs a command in a buffer of
 ;; your choosing and *remembers* the choice — the command→name association is
 ;; persisted to `async-shell-history-names-file', so every later
 ;; `async-shell-history-run' of that command reopens its named buffer
-;; automatically.  `async-shell-history-forget-name' clears the association.
-;; Both are also offered as Embark actions on a command candidate (the
-;; completion category is `async-shell-history'); register them when embark
-;; loads.
+;; automatically.  A bare name is wrapped in `*' (so `backup' becomes the
+;; conventional `*backup*').  `async-shell-history-forget-name' clears the
+;; association.  These, plus `async-shell-history-edit-command' (edit a command
+;; in a scratch buffer before running it), are also offered as Embark actions on
+;; a command candidate (the completion category is `async-shell-history');
+;; register them when embark loads.
 ;;
 ;; You need not decide the name up front: every buffer this package launches is
 ;; tagged with the command that produced it, and a `rename-buffer' on a tagged
@@ -39,6 +45,7 @@
 ;; Commands:
 ;;   `async-shell-history-run'          drop-in for `async-shell-command'
 ;;   `async-shell-history-run-named'    run in a remembered, named buffer
+;;   `async-shell-history-edit-command' edit a command, then run it
 ;;   `async-shell-history-forget-name'  drop a command's saved buffer name
 ;;   `async-shell-history-rerun-last'   rerun the most recent entry, no prompt
 ;;   `async-shell-history-rerun-buffer' rerun an output buffer's own command
@@ -86,15 +93,38 @@ A plain `read'/`prin1' alist of (COMMAND . BUFFER-NAME) strings."
 Set when the buffer is launched through this package, so renaming the
 buffer can pin COMMAND to the new name.")
 
+(defun async-shell-history--normalize-command (command)
+  "Return COMMAND trimmed of surrounding whitespace.
+`shell-command-history' entries sometimes carry a trailing space while
+`recall' stores the trimmed form; normalizing both sides keeps name
+pins and recall annotations matching the same command."
+  (and command (string-trim command)))
+
+(defun async-shell-history--wrap-name (name)
+  "Surround NAME with `*' unless it is empty or already wrapped.
+So naming a buffer `backup' pins it as the conventional `*backup*'."
+  (if (or (null name)
+          (string-empty-p name)
+          (and (string-prefix-p "*" name) (string-suffix-p "*" name)))
+      name
+    (concat "*" name "*")))
+
 (defun async-shell-history--load-names ()
-  "Load saved command→buffer-name associations from disk, once."
+  "Load saved command→buffer-name associations from disk, once.
+Keys are normalized on load so older trailing-space entries still match."
   (unless async-shell-history--names-loaded
     (when (file-readable-p async-shell-history-names-file)
       (with-temp-buffer
         (insert-file-contents async-shell-history-names-file)
         (setq async-shell-history-names
-              (ignore-errors
-                (read (current-buffer))))))
+              (mapcar
+               (lambda (cell)
+                 (cons
+                  (async-shell-history--normalize-command
+                   (car cell))
+                  (cdr cell)))
+               (ignore-errors
+                 (read (current-buffer)))))))
     (setq async-shell-history--names-loaded t)))
 
 (defun async-shell-history--save-names ()
@@ -110,19 +140,23 @@ buffer can pin COMMAND to the new name.")
 (defun async-shell-history--buffer-for (command)
   "Return the pinned buffer name for COMMAND, or nil."
   (async-shell-history--load-names)
-  (cdr (assoc command async-shell-history-names)))
+  (cdr
+   (assoc
+    (async-shell-history--normalize-command command)
+    async-shell-history-names)))
 
 (defun async-shell-history--set-name (command name)
   "Pin COMMAND to buffer NAME and persist it.  An empty NAME clears the pin."
   (async-shell-history--load-names)
-  (if (or (null name) (string-empty-p name))
-      (setq async-shell-history-names
-            (assoc-delete-all command async-shell-history-names))
-    (setf (alist-get command async-shell-history-names
-                     nil
-                     nil
-                     #'equal)
-          name))
+  (let ((command (async-shell-history--normalize-command command)))
+    (if (or (null name) (string-empty-p name))
+        (setq async-shell-history-names
+              (assoc-delete-all command async-shell-history-names))
+      (setf (alist-get command async-shell-history-names
+                       nil
+                       nil
+                       #'equal)
+            name)))
   (async-shell-history--save-names))
 
 (defun async-shell-history--run
@@ -165,24 +199,44 @@ A no-op unless the current buffer is a tagged async-shell output buffer
  'rename-buffer
  :after #'async-shell-history--remember-on-rename)
 
-(defun async-shell-history--collection (string predicate action)
-  "Completion table over `shell-command-history'.
-Reports the `async-shell-history' category (so marginalia can annotate
-each command) and keeps history/recency order instead of sorting.
-STRING, PREDICATE, and ACTION are the standard completion-table args."
-  (if (eq action 'metadata)
-      '(metadata
-        (category . async-shell-history)
-        (display-sort-function . identity)
-        (cycle-sort-function . identity))
-    (complete-with-action
-     action shell-command-history string predicate)))
+(defun async-shell-history--truncate-candidate (command width)
+  "Return COMMAND, display-ellipsized when wider than WIDTH columns.
+Only the on-screen DISPLAY is shortened — the string's text is unchanged,
+so it still matches `shell-command-history' and is run verbatim."
+  (if (<= (string-width command) width)
+      command
+    (let ((copy (copy-sequence command))
+          (cut
+           (length
+            (truncate-string-to-width command (max 1 (1- width))))))
+      (put-text-property cut (length copy) 'display "…" copy)
+      copy)))
 
 (defun async-shell-history--read-command ()
-  "Read a shell command, completing from `shell-command-history'."
-  (completing-read
-   "Async shell command: " #'async-shell-history--collection
-   nil nil nil 'shell-command-history))
+  "Read a shell command, completing from `shell-command-history'.
+Candidates wider than the frame are display-truncated and annotations are
+right-aligned for the duration of this prompt, so a long command no longer
+pushes its marginalia annotation off the right edge.  Reports the
+`async-shell-history' category (so marginalia can annotate each command)
+and keeps history order instead of sorting."
+  (let* ((width (max 20 (- (frame-width) 60)))
+         (cands
+          (mapcar
+           (lambda (c)
+             (async-shell-history--truncate-candidate c width))
+           shell-command-history))
+         (table
+          (lambda (string predicate action)
+            (if (eq action 'metadata)
+                '(metadata
+                  (category . async-shell-history)
+                  (display-sort-function . identity)
+                  (cycle-sort-function . identity))
+              (complete-with-action action cands string predicate))))
+         (marginalia-align 'right))
+    (substring-no-properties
+     (completing-read "Async shell command: " table
+                      nil nil nil 'shell-command-history))))
 
 (defun async-shell-history--annotate (command)
   "Marginalia annotation for COMMAND.
@@ -190,12 +244,16 @@ Shows its pinned buffer name (if any) plus, when `recall' has a record,
 the directory it last ran in, its exit status, and how long ago.  Returns
 nil when there is nothing to show (a brand-new, unpinned command)."
   (let* ((name (async-shell-history--buffer-for command))
+         (key (async-shell-history--normalize-command command))
          (item
           (and (fboundp 'recall--item-command)
                (boundp 'recall-items)
                (seq-find
                 (lambda (it)
-                  (string-equal (recall--item-command it) command))
+                  (string-equal
+                   (async-shell-history--normalize-command
+                    (recall--item-command it))
+                   key))
                 recall-items)))
          (code (and item (recall--item-exit-code item)))
          (dir (and item (recall--item-directory item)))
@@ -244,6 +302,8 @@ nil when there is nothing to show (a brand-new, unpinned command)."
     #'async-shell-history-run
     "n"
     #'async-shell-history-run-named
+    "e"
+    #'async-shell-history-edit-command
     "k"
     #'async-shell-history-forget-name)
   (add-to-list
@@ -290,9 +350,11 @@ buffer.  Also available as the `n' Embark action on a candidate."
                           (format "Buffer name for `%s': " command))
                         nil nil saved)))
                  (list command name)))
-  (async-shell-history--set-name command name)
-  (async-shell-history--run command
-                            (and (not (string-empty-p name)) name)))
+  (let ((name (async-shell-history--wrap-name name)))
+    (async-shell-history--set-name command name)
+    (async-shell-history--run command
+                              (and (not (string-empty-p name))
+                                   name))))
 
 ;;;###autoload
 (defun async-shell-history-forget-name (command)
@@ -333,6 +395,65 @@ process is live you may be sending it stdin, and `g' must self-insert."
   (if (process-live-p (get-buffer-process (current-buffer)))
       (self-insert-command n)
     (revert-buffer-quick)))
+
+;;; Edit-then-run
+
+(defvar async-shell-history--edit-buffer-name
+  "*Async Shell Command Edit*"
+  "Name of the scratch buffer used to edit a command before running it.")
+
+(defvar-keymap async-shell-history-edit-mode-map
+  :doc
+  "Keymap while editing an async shell command before running it."
+  "C-c C-c"
+  #'async-shell-history-edit-finish
+  "C-c C-k"
+  #'async-shell-history-edit-abort)
+
+(define-minor-mode async-shell-history-edit-mode
+  "Minor mode for editing an async shell command before running it.
+\\<async-shell-history-edit-mode-map>\\[async-shell-history-edit-finish] \
+runs the edited command; \\[async-shell-history-edit-abort] cancels."
+  :lighter " ShEdit")
+
+(defun async-shell-history-edit-finish ()
+  "Run the command being edited in this buffer, then bury the buffer."
+  (interactive)
+  (let ((command (string-trim (buffer-string))))
+    (when (string-empty-p command)
+      (user-error "Empty command"))
+    (quit-window t (selected-window))
+    (add-to-history 'shell-command-history command)
+    (async-shell-history-run command)))
+
+(defun async-shell-history-edit-abort ()
+  "Abandon the command being edited and bury the buffer."
+  (interactive)
+  (quit-window t (selected-window)))
+
+;;;###autoload
+(defun async-shell-history-edit-command (command)
+  "Edit COMMAND in a dedicated buffer, then run it on \\`C-c C-c'.
+Pops a `sh-mode' scratch buffer pre-filled with COMMAND (read from
+`shell-command-history' interactively) so it can be tweaked — multi-line
+and with shell highlighting — before launching.  \\`C-c C-c' runs the
+edited command through `async-shell-history-run' (so a pinned buffer name
+still applies) and records it in history; \\`C-c C-k' cancels.  Also
+available as the `e' Embark action on a candidate."
+  (interactive (list (async-shell-history--read-command)))
+  (let ((buffer
+         (get-buffer-create async-shell-history--edit-buffer-name)))
+    (with-current-buffer buffer
+      (erase-buffer)
+      (insert command)
+      (when (fboundp 'sh-mode)
+        (sh-mode))
+      (async-shell-history-edit-mode)
+      (setq-local
+       header-line-format
+       (substitute-command-keys
+        "Edit, then \\<async-shell-history-edit-mode-map>\\[async-shell-history-edit-finish] to run, \\[async-shell-history-edit-abort] to cancel")))
+    (pop-to-buffer buffer)))
 
 (provide 'async-shell-history)
 ;;; async-shell-history.el ends here
