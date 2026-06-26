@@ -186,6 +186,37 @@
           (should-not (memq watched (proc-notify--awaiting-buffers))))
       (kill-buffer watched))))
 
+;;; --- message construction ---------------------------------------------------
+
+(ert-deftest proc-notify-test-clean ()
+  "`clean' trims, collapses whitespace, caps length, and nils out blanks."
+  (should (equal "a b c" (proc-notify--clean "  a   b\nc  ")))
+  (should-not (proc-notify--clean "   "))
+  (should-not (proc-notify--clean nil))
+  (let ((capped (proc-notify--clean (make-string 500 ?x))))
+    (should (= 200 (length capped)))
+    (should (string-suffix-p "…" capped))))
+
+(ert-deftest proc-notify-test-prompt-line-text ()
+  "`prompt-line' returns the literal trailing prompt, or nil."
+  (with-temp-buffer
+    (insert "Overwrite existing file? [y/n]")
+    (should
+     (equal
+      "Overwrite existing file? [y/n]" (proc-notify--prompt-line))))
+  (with-temp-buffer
+    (insert "all done\n")
+    (should-not (proc-notify--prompt-line))))
+
+(ert-deftest proc-notify-test-claude-label ()
+  "`claude-label' names the session by its working-directory."
+  (with-temp-buffer
+    (setq-local default-directory "/home/x/code/nixos/")
+    (should
+     (equal
+      "Claude · nixos"
+      (proc-notify--claude-label (current-buffer))))))
+
 ;;; --- summary label ----------------------------------------------------------
 
 (ert-deftest proc-notify-test-summary-prefers-command ()

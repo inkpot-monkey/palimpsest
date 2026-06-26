@@ -105,6 +105,14 @@
   "Application name shown on the desktop notification."
   :type 'string)
 
+(defcustom proc-notify-app-icon nil
+  "Icon used to brand notifications, or nil to auto-detect the Emacs icon.
+Some notification daemons (KDE Plasma's, notably) resolve only absolute file
+paths here, not freedesktop theme names — so the default behaviour searches the
+XDG data dirs for the installed Emacs icon and sends that path.  Set to an
+absolute path to override, or to a theme name if your daemon resolves those."
+  :type '(choice (const :tag "Auto-detect Emacs icon" nil) string))
+
 (defcustom proc-notify-prompt-regexp
   (rx
    (or (seq (any "?:") (* " ") eos)
@@ -207,6 +215,30 @@ comint buffer currently parked at a prompt.")
              async-shell-history--command)
         (car-safe (bound-and-true-p compilation-arguments))
         (buffer-name buffer))))
+
+(defun proc-notify--clean (s)
+  "Tidy string S for a notification body: trim, collapse whitespace, cap length.
+Returns nil for a nil or blank S."
+  (when (stringp s)
+    (let ((trimmed
+           (string-trim
+            (replace-regexp-in-string "[ \t\n\r]+" " " s))))
+      (unless (string-empty-p trimmed)
+        (if (> (length trimmed) 200)
+            (concat (substring trimmed 0 199) "…")
+          trimmed)))))
+
+(defun proc-notify--claude-label (buffer)
+  "A short session label for a claude-code BUFFER, e.g. \"Claude · nixos\".
+Uses the buffer's project/working-directory name when available."
+  (with-current-buffer buffer
+    (let ((dir
+           (and (stringp default-directory)
+                (file-name-nondirectory
+                 (directory-file-name default-directory)))))
+      (if (and dir (not (string-empty-p dir)))
+          (format "Claude · %s" dir)
+        "Claude"))))
 
 (defun proc-notify--remember (buffer)
   "Record BUFFER as awaiting attention."
@@ -343,23 +375,53 @@ the compositor to bring the window forward via `proc-notify-raise-method'."
       (raise-frame frame)
       (proc-notify--os-activate frame))))
 
+(defvar proc-notify--app-icon-cache 'unset
+  "Memoised result of `proc-notify--app-icon' (`unset' before first lookup).")
+
+(defun proc-notify--app-icon ()
+  "Absolute path of the icon to brand notifications with, or nil.
+Honours `proc-notify-app-icon' when set; otherwise finds the installed Emacs
+icon under the XDG data dirs (a real path, since some daemons resolve only
+paths, not theme names) and memoises it."
+  (or proc-notify-app-icon
+      (if (not (eq proc-notify--app-icon-cache 'unset))
+          proc-notify--app-icon-cache
+        (setq proc-notify--app-icon-cache
+              (seq-some
+               (lambda (dir)
+                 (let ((f
+                        (expand-file-name
+                         "icons/hicolor/128x128/apps/emacs.png"
+                         dir)))
+                   (and (file-exists-p f) f)))
+               (split-string (or (getenv "XDG_DATA_DIRS") "")
+                             ":"
+                             t))))))
+
 (defun proc-notify--notify (buffer title body &optional urgency)
   "Raise (or replace) a desktop notification for BUFFER.
 TITLE and BODY are the notification text; URGENCY is a `notifications-notify'
-urgency symbol.  Activating it runs `proc-notify--raise' on BUFFER.  A missing
-D-Bus session bus is swallowed so headless/tty sessions stay quiet."
+urgency symbol.  The Emacs icon (`proc-notify--app-icon') is attached as both
+app-icon and image so it brands the popup.  Activating it runs
+`proc-notify--raise' on BUFFER.  A missing D-Bus session bus is swallowed so
+headless/tty sessions stay quiet."
   (condition-case nil
-      (let ((id
-             (notifications-notify
-              :app-name proc-notify-app-name
-              :title title
-              :body (format "%s" body)
-              :replaces-id
-              (buffer-local-value 'proc-notify--id buffer)
-              :urgency (or urgency 'normal)
-              :actions '("default" "Open")
-              :on-action
-              (lambda (&rest _) (proc-notify--raise buffer)))))
+      (let ((icon (proc-notify--app-icon))
+            (id nil))
+        (setq
+         id
+         (apply
+          #'notifications-notify
+          :app-name proc-notify-app-name
+          :title title
+          :body (format "%s" body)
+          :replaces-id (buffer-local-value 'proc-notify--id buffer)
+          :urgency (or urgency 'normal)
+          :actions '("default" "Open")
+          :on-action
+          (lambda (&rest _) (proc-notify--raise buffer))
+          (when icon
+            (list :app-icon icon :image-path icon))))
         (when (buffer-live-p buffer)
           (with-current-buffer buffer
             (setq proc-notify--id id))
@@ -435,12 +497,16 @@ TITLE/BODY are the text; SEVERITY an `alert' severity (default `normal')."
 
 ;;; --- Password prompts -------------------------------------------------------
 
-(defun proc-notify--password-advice (&rest _)
-  "Before `comint-send-invisible' blocks on a password, emit a notification."
+(defun proc-notify--password-advice (&optional prompt &rest _)
+  "Before `comint-send-invisible' blocks on a password, emit a notification.
+PROMPT is the prompt comint matched (e.g. \"[sudo] password for thomas:\"); it
+is shown as the body so the toast says exactly what is being asked."
   (let ((buffer (current-buffer)))
     (when (derived-mode-p 'comint-mode)
       (proc-notify--emit
-       buffer "Password required" (proc-notify--summary buffer)
+       buffer
+       (proc-notify--summary buffer)
+       (or (proc-notify--clean prompt) "Needs your password")
        'high))))
 
 ;;; --- Process needs input ----------------------------------------------------
@@ -449,25 +515,29 @@ TITLE/BODY are the text; SEVERITY an `alert' severity (default `normal')."
   "Emit a needs-input notification if BUFFER's process is parked at a prompt."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
-      (let ((proc (get-buffer-process buffer)))
-        (when (and proc
-                   (process-live-p proc)
-                   (proc-notify--looks-like-prompt-p))
-          (proc-notify--emit
-           buffer
-           "Process waiting for input"
-           (proc-notify--summary buffer)))))))
+      (let ((proc (get-buffer-process buffer))
+            (line (proc-notify--prompt-line)))
+        (when (and proc (process-live-p proc) line)
+          (proc-notify--emit buffer
+                             (proc-notify--summary buffer)
+                             (proc-notify--clean line)
+                             'normal))))))
+
+(defun proc-notify--prompt-line ()
+  "Return the trailing unterminated prompt-shaped line, or nil.
+The line itself is the human-meaningful question (e.g. \"Overwrite? [y/n]\")."
+  (save-excursion
+    (goto-char (point-max))
+    (let ((line
+           (buffer-substring-no-properties
+            (line-beginning-position) (point-max))))
+      (and
+       (not (bolp)) ; unterminated last line — a process awaiting input
+       (string-match-p proc-notify-prompt-regexp line) line))))
 
 (defun proc-notify--looks-like-prompt-p ()
   "Non-nil when the buffer ends in an unterminated, prompt-shaped line."
-  (save-excursion
-    (goto-char (point-max))
-    (and
-     (not (bolp)) ; unterminated last line — a process awaiting input
-     (string-match-p
-      proc-notify-prompt-regexp
-      (buffer-substring-no-properties
-       (line-beginning-position) (point-max))))))
+  (and (proc-notify--prompt-line) t))
 
 (defun proc-notify--arm-idle (&rest _)
   "Comint output-filter hook: (re)arm BUFFER's needs-input idle timer."
@@ -501,10 +571,11 @@ TITLE/BODY are the text; SEVERITY an `alert' severity (default `normal')."
 For `ghostel-password-prompt-functions': always returns nil so the normal
 `read-passwd' (or a later auth source) still handles entry.  ROW is the
 trimmed cursor-row text at detection."
-  (proc-notify--emit (current-buffer)
-                     "Password required"
-                     (or row (proc-notify--summary (current-buffer)))
-                     'high)
+  (proc-notify--emit
+   (current-buffer)
+   (proc-notify--summary (current-buffer))
+   (or (proc-notify--clean row) "Needs your password")
+   'high)
   nil)
 
 (defun proc-notify-ghostel-setup ()
@@ -532,10 +603,15 @@ password-prompt path.  (claude-code has its own notification path — see
   "Deliver a claude-code notification (TITLE/MESSAGE) through proc-notify.
 For `claude-code-notification-function': the bell handler runs in the Claude
 terminal buffer, so `proc-notify--emit' on the current buffer raises the right
-buffer when the toast is activated.  Urgency follows
-`proc-notify-claude-code-severity'.  Keeps claude-code's modeline pulse when
-available."
-  (proc-notify--emit (current-buffer) title message
+buffer when the toast is activated.  The title is a per-session label
+\(`proc-notify--claude-label', e.g. \"Claude · nixos\") so concurrent sessions are
+distinguishable; MESSAGE (claude-code's own text) is the body.  Urgency follows
+`proc-notify-claude-code-severity'.  TITLE is unused.  Keeps claude-code's
+modeline pulse when available."
+  (ignore title)
+  (proc-notify--emit (current-buffer)
+                     (proc-notify--claude-label (current-buffer))
+                     (proc-notify--clean message)
                      proc-notify-claude-code-severity)
   (when (fboundp 'claude-code--pulse-modeline)
     (claude-code--pulse-modeline)))
