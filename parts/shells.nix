@@ -13,6 +13,7 @@
             ${old.shellHook or ""}
             ${config.pre-commit.installationScript}
           '';
+          buildInputs = (old.buildInputs or [ ]) ++ [ config.treefmt.build.wrapper ];
         });
       };
     };
