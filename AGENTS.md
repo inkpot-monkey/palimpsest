@@ -73,3 +73,13 @@ So to see what a command printed, its exit status, or which directory it ran in,
 `grep`/read those files (e.g. `grep -rl 'just deploy kelpy' ~/.config/emacs/var/recall/`).
 From Emacs the user browses the same data per-command via
 `chelys-galactica-view-outputs` (Embark `o`).
+
+Interactive **bash** commands (ghostel terminals, ssh sessions, ttys) are
+captured separately: bash is configured (`users/inkpotmonkey/home/shell.nix`) to
+flush every command to `~/.bash_history` immediately, with `HISTTIMEFORMAT`
+timestamps (lines `#<epoch>` precede each command). Only the *command line* is
+recorded there, not its output — for output, use the recall logs above. Each
+NixOS host has its own `~/.bash_history`; for a command run on a server, read it
+there over ssh. (recall captures Emacs `async-shell-command` runs *with* output;
+`~/.bash_history` captures interactive bash *commands*. Together they're the full
+picture.)
