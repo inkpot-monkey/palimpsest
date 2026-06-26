@@ -1,0 +1,24 @@
+[package]
+name = "push-relay-core"
+version = "0.1.0"
+edition = "2021"
+description = "Portable, I/O-free Web Push (RFC 8291 aes128gcm + RFC 8292 VAPID) request builder — the host-agnostic core of the out-of-band alert relay (ADR-0027)."
+license = "MIT"
+
+# Pure crypto + request construction. No I/O, no clock, no RNG: randomness (the
+# ephemeral key + salt) and the current time are INPUTS, supplied by the host shell
+# (the Cloudflare Worker today; a Spin/WASI component tomorrow). That is what keeps
+# this crate portable and unit-testable against the RFC 8291 worked example.
+[dependencies]
+p256 = { version = "0.13", default-features = false, features = [
+  "ecdsa",
+  "ecdh",
+  "arithmetic",
+] }
+aes-gcm = { version = "0.10", default-features = false, features = [
+  "aes",
+  "alloc",
+] }
+hkdf = "0.12"
+sha2 = { version = "0.10", default-features = false }
+base64 = { version = "0.22", default-features = false, features = ["alloc"] }
