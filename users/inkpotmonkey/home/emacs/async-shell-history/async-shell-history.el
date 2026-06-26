@@ -72,6 +72,7 @@
 (declare-function recall--item-exit-code "recall")
 (declare-function recall--item-directory "recall")
 (declare-function recall--item-start-time "recall")
+(declare-function recall--item-end-time "recall")
 (declare-function recall--format-time "recall")
 (defvar recall-items)
 (defvar embark-keymap-alist)
@@ -88,8 +89,23 @@
 A plain `read'/`prin1' alist of (COMMAND . BUFFER-NAME) strings."
   :type 'file)
 
+(defcustom async-shell-history-sort-by 'frecency
+  "How completion candidates are ordered.
+`frecency' ranks by `recall'-recorded frequency and recency (most-used,
+recently-used commands first); `history' keeps raw `shell-command-history'
+order (most recent first)."
+  :type
+  '(choice
+    (const :tag "Frecency (frequency + recency)" frecency)
+    (const :tag "History order" history)))
+
 (defvar async-shell-history-names nil
   "Alist mapping command strings to their pinned async-buffer names.")
+
+(defvar async-shell-history--recall-index nil
+  "Hash of normalized-command → list of `recall' items, newest first.
+Dynamically bound while reading a command so annotation, ranking and
+narrowing share a single pass over `recall-items'.")
 
 (defvar async-shell-history--names-loaded nil
   "Non-nil once `async-shell-history-names-file' has been read this session.")
@@ -224,6 +240,88 @@ trailing space) of the same command into one entry.  ARGS is the full
  'add-to-history
  :filter-args #'async-shell-history--normalize-history-element)
 
+(defun async-shell-history--build-recall-index ()
+  "Index `recall-items' by normalized command, preserving newest-first order."
+  (let ((index (make-hash-table :test 'equal)))
+    (when (and (fboundp 'recall--item-command) (boundp 'recall-items))
+      (dolist (it recall-items)
+        (let ((k
+               (async-shell-history--normalize-command
+                (recall--item-command it))))
+          (puthash k (cons it (gethash k index)) index)))
+      ;; recall-items is newest-first and `cons' reverses, so each bucket is
+      ;; oldest-first; flip back so callers see the most recent run at the head.
+      (maphash (lambda (k v) (puthash k (nreverse v) index)) index))
+    index))
+
+(defun async-shell-history--recall-items-for (command)
+  "Return `recall' items for COMMAND, newest first.
+Uses `async-shell-history--recall-index' when bound, else scans directly."
+  (let ((key (async-shell-history--normalize-command command)))
+    (if async-shell-history--recall-index
+        (gethash key async-shell-history--recall-index)
+      (and (fboundp 'recall--item-command)
+           (boundp 'recall-items)
+           (seq-filter
+            (lambda (it)
+              (equal
+               (async-shell-history--normalize-command
+                (recall--item-command it))
+               key))
+            recall-items)))))
+
+(defun async-shell-history--frecency (command)
+  "Return a frecency score for COMMAND from its `recall' runs.
+Each run contributes a recency-weighted point, so a command used often
+and recently scores highest.  Zero when `recall' has no record."
+  (let ((now (float-time))
+        (score 0.0))
+    (dolist (it (async-shell-history--recall-items-for command) score)
+      (let ((age
+             (- now (time-to-seconds (recall--item-start-time it)))))
+        (setq score
+              (+ score
+                 (cond
+                  ((< age 3600)
+                   4.0)
+                  ((< age 86400)
+                   2.0)
+                  ((< age 604800)
+                   1.0)
+                  (t
+                   0.5))))))))
+
+(defun async-shell-history--rank (commands)
+  "Order COMMANDS per `async-shell-history-sort-by'.
+For `frecency', sort by descending frecency score; ties keep their
+original (history) order, since Emacs list `sort' is stable."
+  (if (eq async-shell-history-sort-by 'history)
+      commands
+    (mapcar
+     #'cdr
+     (sort (mapcar
+            (lambda (c)
+              (cons (async-shell-history--frecency c) c))
+            commands)
+           (lambda (a b) (> (car a) (car b)))))))
+
+(defun async-shell-history--format-duration (item)
+  "Return ITEM's run duration as a short human string, or nil if unfinished."
+  (when-let* ((start (recall--item-start-time item))
+              (end (recall--item-end-time item)))
+    (let ((secs (- (time-to-seconds end) (time-to-seconds start))))
+      (cond
+       ((< secs 1)
+        (format "%dms" (round (* secs 1000))))
+       ((< secs 60)
+        (format "%.1fs" secs))
+       ((< secs 3600)
+        (format "%dm%ds" (floor secs 60) (mod (round secs) 60)))
+       (t
+        (format "%dh%dm"
+                (floor secs 3600)
+                (mod (floor (/ secs 60)) 60)))))))
+
 (defun async-shell-history--truncate-candidate (command width)
   "Return COMMAND, display-ellipsized when wider than WIDTH columns.
 Only the on-screen DISPLAY is shortened — the string's text is unchanged,
@@ -247,11 +345,13 @@ and keeps history order instead of sorting.  History insertion is routed
 through `add-to-history' (with the minibuffer's own add suppressed) so the
 normalizing advice and `history-delete-duplicates' apply to the choice."
   (let* ((width (max 20 (- (frame-width) 60)))
+         (async-shell-history--recall-index
+          (async-shell-history--build-recall-index))
          (cands
           (mapcar
            (lambda (c)
              (async-shell-history--truncate-candidate c width))
-           shell-command-history))
+           (async-shell-history--rank shell-command-history)))
          (table
           (lambda (string predicate action)
             (if (eq action 'metadata)
@@ -272,21 +372,14 @@ normalizing advice and `history-delete-duplicates' apply to the choice."
 (defun async-shell-history--annotate (command)
   "Marginalia annotation for COMMAND.
 Shows its pinned buffer name (if any) plus, when `recall' has a record,
-the directory it last ran in, its exit status, and how long ago.  Returns
-nil when there is nothing to show (a brand-new, unpinned command)."
+the exit status, how long the most recent run took, the directory it ran
+in, and how long ago.  Returns nil when there is nothing to show (a
+brand-new, unpinned command)."
   (let* ((name (async-shell-history--buffer-for command))
-         (key (async-shell-history--normalize-command command))
-         (item
-          (and (fboundp 'recall--item-command)
-               (boundp 'recall-items)
-               (seq-find
-                (lambda (it)
-                  (string-equal
-                   (async-shell-history--normalize-command
-                    (recall--item-command it))
-                   key))
-                recall-items)))
+         (item (car (async-shell-history--recall-items-for command)))
          (code (and item (recall--item-exit-code item)))
+         (duration
+          (and item (async-shell-history--format-duration item)))
          (dir (and item (recall--item-directory item)))
          (start (and item (recall--item-start-time item))))
     (when (or name item)
@@ -304,6 +397,7 @@ nil when there is nothing to show (a brand-new, unpinned command)."
          (t
           (propertize (format "exit %s" code) 'face 'marginalia-off)))
         :width 8)
+       ((or duration "") :width 7 :face 'marginalia-number)
        ((if dir
             (abbreviate-file-name (directory-file-name dir))
           "")
