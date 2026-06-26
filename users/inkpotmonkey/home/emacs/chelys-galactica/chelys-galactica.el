@@ -10,7 +10,10 @@
 ;; candidates so the async-shell-command prompt shows past commands immediately
 ;; instead of an empty prompt — pick-or-type, always in the current
 ;; `default-directory'.  `recall' still surveils every launch; its
-;; `recall-rerun' remains the rerun-in-original-context tool.
+;; `recall-rerun' remains the rerun-in-original-context tool.  Commands from
+;; external shells are merged in too: `chelys-galactica-extra-history-files'
+;; (default ~/.bash_history) are read as additional candidates, deduplicated
+;; against the Emacs history.
 ;;
 ;; Marginalia annotates each candidate with its pinned buffer name (if any),
 ;; where it last ran, its exit status, and when — read out of `recall-items',
@@ -114,6 +117,15 @@ order (most recent first)."
   '(choice
     (const :tag "Frecency (frequency + recency)" frecency)
     (const :tag "History order" history)))
+
+(defcustom chelys-galactica-extra-history-files '("~/.bash_history")
+  "Extra shell history files merged into the completion candidates.
+Each is read one command per line; lines beginning with `#' (bash
+`HISTTIMEFORMAT' timestamps) and blank lines are skipped.  Commands found
+only here carry no `recall' metadata, so they show without annotation and,
+under frecency sorting, rank below recall-tracked commands.  Set to nil to
+complete from `shell-command-history' alone."
+  :type '(repeat file))
 
 (defvar chelys-galactica-names nil
   "Alist mapping command strings to their pinned async-buffer names.")
@@ -317,6 +329,44 @@ original (history) order, since Emacs list `sort' is stable."
             commands)
            (lambda (a b) (> (car a) (car b)))))))
 
+(defun chelys-galactica--extra-history-commands ()
+  "Commands read from `chelys-galactica-extra-history-files', newest first.
+Skips blank lines and `#'-prefixed lines (bash `HISTTIMEFORMAT' stamps).
+Missing/unreadable files are silently ignored."
+  (let (commands)
+    (dolist (file chelys-galactica-extra-history-files)
+      (let ((path (expand-file-name file)))
+        (when (file-readable-p path)
+          (with-temp-buffer
+            (insert-file-contents path)
+            (goto-char (point-min))
+            (while (not (eobp))
+              (let ((line
+                     (buffer-substring-no-properties
+                      (line-beginning-position) (line-end-position))))
+                ;; File is oldest-first; pushing yields newest-first.
+                (unless (or (string-empty-p line)
+                            (eq (aref line 0) ?#))
+                  (push (string-trim line) commands)))
+              (forward-line 1))))))
+    commands))
+
+(defun chelys-galactica--candidate-commands ()
+  "Return the completion command list, deduplicated (normalized, first wins).
+`shell-command-history' (recall-tracked, listed first so it wins ties) plus
+the commands from `chelys-galactica-extra-history-files'."
+  (let ((seen (make-hash-table :test 'equal))
+        (result nil))
+    (dolist (command
+             (append
+              shell-command-history
+              (chelys-galactica--extra-history-commands)))
+      (let ((key (chelys-galactica--normalize-command command)))
+        (unless (or (string-empty-p key) (gethash key seen))
+          (puthash key t seen)
+          (push command result))))
+    (nreverse result)))
+
 (defun chelys-galactica--format-duration (item)
   "Return ITEM's run duration as a short human string, or nil if unfinished."
   (when-let* ((start (recall--item-start-time item))
@@ -416,7 +466,8 @@ to the choice."
          (cands
           (mapcar
            (lambda (c) (chelys-galactica--truncate-candidate c width))
-           (chelys-galactica--rank shell-command-history)))
+           (chelys-galactica--rank
+            (chelys-galactica--candidate-commands))))
          (marginalia-align 'right)
          (history-add-new-input nil)
          (command
