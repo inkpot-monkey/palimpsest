@@ -170,5 +170,9 @@ The dedicated Matrix room (inside the **Hookshot Space**) where uptime alerts la
 _Avoid_: alerts channel.
 
 **Out-of-band channel**:
-A notification path that shares none of `kelpy`'s failure domain, used for the alerts the Matrix path can't carry (because Matrix runs on `kelpy`). Currently one realized kind — an **off-site push** (ntfy from `rk1b`) reporting "a service / `kelpy` is down" while the site is still online. Its named-but-unbuilt counterpart is an external **dead-man's switch** that would report a *full-site blackout* by alerting on the *silence* of an expected periodic ping — the only mechanism needing nothing at home alive. The deliberate counterpart to the rejected idea of a highly-available Matrix.
+A notification path that shares none of `kelpy`'s failure domain, used for the alerts the Matrix path can't carry (because Matrix runs on `kelpy`). Its one realized kind is an **off-site push** delivered through the **Push relay** — `rk1b`'s **watcher** notifies it when the Matrix delivery path itself is down, reporting "`kelpy` / the Matrix path is down" while the site is still online. Its named-but-unbuilt counterpart is an external **dead-man's switch** that would report a *full-site blackout* by alerting on the *silence* of an expected periodic ping — the only mechanism needing nothing at home alive. The deliberate counterpart to the rejected idea of a highly-available Matrix.
 _Avoid_: fallback channel (too vague), secondary Matrix.
+
+**Push relay**:
+The self-hosted, ntfy-compatible **web-push** service that realizes the **Out-of-band channel** — hosted off-site (a Cloudflare Worker today) so it survives `kelpy` being down, it accepts a publish from the **watcher** and delivers a browser push notification to the operator's installed phone PWA. Deliberately *ntfy-shaped* so the **watcher** drives it through Gatus's stock `ntfy` alerter and any ntfy client can target it. Chosen over the public ntfy.sh (paid) and a self-hosted ntfy on home hardware (wrong failure domain).
+_Avoid_: ntfy (the relay is ntfy-*compatible*, not ntfy), push server.
