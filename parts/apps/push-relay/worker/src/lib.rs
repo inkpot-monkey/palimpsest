@@ -219,7 +219,7 @@ async fn send_one(
     let pr = push_relay_core::build_push_request(&sub, payload, &vapid, &eph, TTL_SECONDS)
         .map_err(|e| err(&e.to_string()))?;
 
-    let mut headers = Headers::new();
+    let headers = Headers::new();
     for (k, v) in &pr.headers {
         headers.set(k, v)?;
     }

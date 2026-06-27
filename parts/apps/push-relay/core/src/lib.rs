@@ -103,7 +103,7 @@ pub fn encrypt(sub: &Subscription, payload: &[u8], eph: &Ephemeral) -> Result<Ve
     key_info.extend_from_slice(ua_public.to_encoded_point(false).as_bytes());
     key_info.extend_from_slice(as_public);
     let mut ikm = [0u8; 32];
-    Hkdf::<Sha256>::new(Some(sub.auth), ecdh_secret.as_slice())
+    Hkdf::<Sha256>::new(Some(sub.auth), ecdh_secret.as_ref())
         .expand(&key_info, &mut ikm)
         .map_err(|_| Error::Encrypt)?;
 
@@ -120,8 +120,14 @@ pub fn encrypt(sub: &Subscription, payload: &[u8], eph: &Ephemeral) -> Result<Ve
     let mut plain = Vec::with_capacity(payload.len() + 1);
     plain.extend_from_slice(payload);
     plain.push(0x02);
-    let ciphertext = Aes128Gcm::new(aes_gcm::Key::<Aes128Gcm>::from_slice(&cek))
-        .encrypt(Nonce::from_slice(&nonce), plain.as_slice())
+    // aes-gcm 0.10 uses generic-array 0.14 in its public API; Nonce::from_slice is
+    // the only way to get &Nonce<Aes128Gcm> from &[u8] until aes-gcm moves to ≥0.11.
+    // KeyInit::new_from_slice avoids the deprecated Key::from_slice path.
+    #[allow(deprecated)]
+    let nonce_ref = Nonce::from_slice(&nonce);
+    let ciphertext = Aes128Gcm::new_from_slice(&cek)
+        .expect("cek is always 16 bytes")
+        .encrypt(nonce_ref, plain.as_slice())
         .map_err(|_| Error::Encrypt)?;
 
     // RFC 8188 §2.1 content-coding header: salt(16) || rs(4 BE) || idlen(1) || keyid(as_public).
