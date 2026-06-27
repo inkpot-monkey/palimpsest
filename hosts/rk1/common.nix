@@ -50,6 +50,16 @@
       "mode=755"
     ];
   };
+
+  # The turing-rk1 hardware module uses lib.mkForce (priority 50) on boot.kernelParams to
+  # add `root=UUID=...` and `rootfstype=ext4`. With a tmpfs root those are wrong AND they
+  # cause systemd-fstab-generator in the initrd to generate a second sysroot.mount unit
+  # alongside the one derived from fileSystems."/" above — "Duplicate entry in initrd-fstab".
+  # lib.mkOverride 49 (priority 49) beats mkForce (50) so we can strip those params here.
+  boot.kernelParams = lib.mkOverride 49 [
+    "console=ttyS0,115200"
+    "loglevel=7"
+  ];
   fileSystems."/persistent" = {
     device = "/dev/disk/by-label/NIXOS_SD";
     fsType = "ext4";
