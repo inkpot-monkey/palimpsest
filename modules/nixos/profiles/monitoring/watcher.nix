@@ -167,7 +167,7 @@ in
       };
       push_relay_topic = {
         sopsFile = pushRelaySecrets;
-        key = "topic";
+        key = "publish_topic";
       };
     };
 
