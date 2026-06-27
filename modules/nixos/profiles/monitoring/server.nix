@@ -150,6 +150,12 @@ in
         };
       }
 
+      # Grafana state (dashboard selections, plugin data, session DB). VM/VL data is on
+      # /var/cache (NVMe) via BindPaths so it survives impermanence without this entry.
+      (lib.mkIf config.custom.profiles.impermanence.enable {
+        environment.persistence."/persistent".directories = [ "/var/lib/grafana" ];
+      })
+
       # When the host has /var/cache on NVMe (rk1b): redirect VL and VM data dirs
       # onto the NVMe so constant metric/log write IO doesn't touch the eMMC.
       # Uses BindPaths to mount /var/cache/{vl,vm} over the DynamicUser StateDirectory

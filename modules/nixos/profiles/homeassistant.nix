@@ -92,6 +92,10 @@ in
       voice = "en_US-lessac-medium";
     };
 
+    environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
+      directories = [ "/var/lib/hass" ];
+    };
+
     # Expose Home Assistant only on the tailnet, never the public LAN. The phone reaches it
     # over tailscale.
     networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ haPort ];

@@ -1,6 +1,12 @@
 # Shared configuration for both Turing Pi RK1 (RK3588, 32 GB) nodes.
 # Per-node differences (hostname + model) are set in hosts/default.nix.
-{ inputs, self, ... }:
+{
+  config,
+  inputs,
+  lib,
+  self,
+  ...
+}:
 {
   imports = [
     # Hardware: boot, u-boot, mainline kernel, device tree, root fileSystem.
@@ -23,12 +29,41 @@
 
   custom.profiles = {
     base.enable = true;
+    impermanence.enable = true;
     ssh.enable = true;
     sudo.enable = true;
     tailscale = {
       enable = true;
       tags = [ "tag:server" ];
     };
+  };
+
+  # tmpfs root — the eMMC (NIXOS_SD) becomes /persistent. The turing-rk1 hardware module
+  # sets / to NIXOS_SD by default; override that here so the eMMC holds only declared
+  # persistent state. NVMe partitions (nixstore, rk1cache) are unaffected.
+  fileSystems."/" = lib.mkForce {
+    device = "none";
+    fsType = "tmpfs";
+    options = [
+      "defaults"
+      "size=2G"
+      "mode=755"
+    ];
+  };
+  fileSystems."/persistent" = {
+    device = "/dev/disk/by-label/NIXOS_SD";
+    fsType = "ext4";
+    neededForBoot = true;
+  };
+  # When /nix is NOT on a separate NVMe nixstore partition (i.e. rk1a), bind it
+  # from the persistent eMMC so the Nix store is reachable from the tmpfs root.
+  # On rk1b, nvme.nix sets fileSystems."/nix" to the NVMe nixstore and this is skipped.
+  fileSystems."/nix" = lib.mkIf (!config.custom.rk1.nvme.relocateNixStore) {
+    device = "/persistent/nix";
+    fsType = "none";
+    options = [ "bind" ];
+    depends = [ "/persistent" ];
+    neededForBoot = true;
   };
 
   hardware.deviceTree.enable = true;
