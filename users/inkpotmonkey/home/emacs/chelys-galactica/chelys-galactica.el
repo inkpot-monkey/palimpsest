@@ -130,8 +130,9 @@ is further limited to leave room for the annotation on narrow frames."
 
 (defcustom chelys-galactica-extra-history-files '("~/.bash_history")
   "Extra shell history files merged into the completion candidates.
-Each is read one command per line; lines beginning with `#' (bash
-`HISTTIMEFORMAT' timestamps) and blank lines are skipped.  Commands found
+Each is read one command per line; blank lines and `#'-prefixed comments are
+skipped, but bash `HISTTIMEFORMAT' stamps (`#<epoch>') are parsed and used to
+place the command that follows them in the `recency' sort.  Commands found
 only here carry no `recall' metadata, so they show without annotation and,
 under frecency sorting, rank below recall-tracked commands.  Set to nil to
 complete from `shell-command-history' alone."
@@ -144,6 +145,13 @@ complete from `shell-command-history' alone."
   "Hash of normalized-command → list of `recall' items, newest first.
 Dynamically bound while reading a command so annotation, ranking and
 narrowing share a single pass over `recall-items'.")
+
+(defvar chelys-galactica--extra-history-times nil
+  "Hash of normalized-command → newest epoch seconds from extra history files.
+Populated from bash `HISTTIMEFORMAT' (`#<epoch>') stamps by
+`chelys-galactica--extra-history-commands' while reading a command, so the
+`recency' sort can place recall-untracked shell commands by their real
+last-run time rather than sinking them all to the bottom.")
 
 (defvar chelys-galactica--names-loaded nil
   "Non-nil once `chelys-galactica-names-file' has been read this session.")
@@ -325,15 +333,29 @@ and recently scores highest.  Zero when `recall' has no record."
                   (t
                    0.5))))))))
 
+(defun chelys-galactica--extra-history-time (command)
+  "Return COMMAND's newest extra-history (bash `HISTTIMEFORMAT') epoch, or nil.
+Read from `chelys-galactica--extra-history-times', populated by
+`chelys-galactica--extra-history-commands' during a read."
+  (and (hash-table-p chelys-galactica--extra-history-times)
+       (gethash
+        (chelys-galactica--normalize-command command)
+        chelys-galactica--extra-history-times)))
+
 (defun chelys-galactica--recency (command)
-  "Return the time of COMMAND's most recent `recall' run as a float.
-The recall index is newest-first, so the head item is the latest run.
-Zero when `recall' has no record, sinking untracked commands below tracked
-ones (where they keep their newest-first history order)."
+  "Return the time of COMMAND's most recent run as a float.
+Prefers the latest `recall' run (the recall index is newest-first, so the
+head item is the latest); falls back to the newest bash `HISTTIMEFORMAT'
+stamp for recall-untracked commands so they sort by their real run time too.
+Zero when neither source has a time, sinking such commands to the bottom
+\(where they keep their newest-first history order)."
   (let ((it (car (chelys-galactica--recall-items-for command))))
-    (if it
-        (time-to-seconds (recall--item-start-time it))
-      0.0)))
+    (cond
+     (it
+      (time-to-seconds (recall--item-start-time it)))
+     ((chelys-galactica--extra-history-time command))
+     (t
+      0.0))))
 
 (defun chelys-galactica--sort-by (score-fn commands)
   "Order COMMANDS by SCORE-FN descending.
@@ -358,11 +380,17 @@ Ties keep their original (history) order, since Emacs list `sort' is stable."
 
 (defun chelys-galactica--extra-history-commands ()
   "Commands read from `chelys-galactica-extra-history-files', newest first.
-Skips blank lines and `#'-prefixed lines (bash `HISTTIMEFORMAT' stamps).
+Bash `HISTTIMEFORMAT' stamps (`#<epoch>' lines) are not candidates, but each
+applies to the command that follows it: when `chelys-galactica--extra-history-times'
+is bound, every command is recorded there under its preceding stamp (newest
+kept), so the `recency' sort can place recall-untracked commands by their real
+run time.  Blank lines and other `#'-prefixed lines (comments) are skipped.
 Missing/unreadable files are silently ignored."
-  (let (commands)
+  (let ((commands nil)
+        (times chelys-galactica--extra-history-times))
     (dolist (file chelys-galactica-extra-history-files)
-      (let ((path (expand-file-name file)))
+      (let ((path (expand-file-name file))
+            (ts nil)) ; stamps don't carry across files
         (when (file-readable-p path)
           (with-temp-buffer
             (insert-file-contents path)
@@ -371,11 +399,24 @@ Missing/unreadable files are silently ignored."
               (let ((line
                      (buffer-substring-no-properties
                       (line-beginning-position) (line-end-position))))
-                ;; File is oldest-first; pushing yields newest-first.
-                (unless (or (string-empty-p line)
-                            (eq (aref line 0) ?#))
-                  (push (string-trim line) commands)))
-              (forward-line 1))))))
+                (cond
+                 ((string-empty-p line)) ; skip blanks
+                 ((string-match-p "\\`#[0-9]+\\'" line)
+                  (setq ts (string-to-number (substring line 1))))
+                 ((eq (aref line 0) ?#)) ; skip non-stamp comments
+                 (t
+                  ;; File is oldest-first; pushing yields newest-first.
+                  (let ((cmd (string-trim line)))
+                    (push cmd commands)
+                    (when (and ts (hash-table-p times))
+                      (let ((key
+                             (chelys-galactica--normalize-command
+                              cmd)))
+                        (puthash
+                         key
+                         (max ts (or (gethash key times) 0))
+                         times))))))
+                (forward-line 1)))))))
     commands))
 
 (defun chelys-galactica--candidate-commands ()
@@ -489,6 +530,8 @@ to the choice."
                     (- (frame-width) 50))))
          (chelys-galactica--recall-index
           (chelys-galactica--build-recall-index))
+         (chelys-galactica--extra-history-times
+          (make-hash-table :test 'equal))
          (chelys-galactica--read-directory
           (expand-file-name default-directory))
          (chelys-galactica--read-project-root
