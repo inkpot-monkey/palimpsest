@@ -3,6 +3,13 @@
 // history that survives reloads/closes, (b) shows an OS notification (works with
 // the app closed), and (c) pings any open window so its list updates live.
 
+// Take over as soon as a new version is deployed (no need to fully close the app
+// for the updated push handler to apply).
+self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (event) =>
+  event.waitUntil(self.clients.claim()),
+);
+
 // --- minimal IndexedDB helper (shared shape with index.html) -----------------
 const DB_NAME = "infra-alerts";
 const STORE = "alerts";
