@@ -126,6 +126,7 @@ in
         (grant "inkpotmonkey" { workstation.enable = true; })
         {
           networking.hostName = "rk1a";
+          custom.profiles.monitoring-client.enable = true;
           custom.rk1.llm.enable = true;
           # Fast MoE daily driver (3B active → ~10-15 tok/s on CPU).
           # TEMP: Q3_K_S (15.4G) to fit the 29G eMMC; restore UD-Q4_K_XL (22.4G) once the NVMe is in.
@@ -165,6 +166,16 @@ in
           # 77G rk1cache — inverted since the store only needs ~10G and data needs the room).
           custom.rk1.nvme.enable = true;
           custom.rk1.nvme.relocateNixStore = true;
+
+          # Off-host uptime watcher (Gatus): rk1b is always-on and not kelpy, so it
+          # can observe kelpy failing. Probes the fleet + alerts to #infra-alerts.
+          # See ADR-0026 / modules/nixos/profiles/monitoring/watcher.nix.
+          # Monitoring server (moved from kelpy — kelpy's shared-disk write IO was
+          # flagged as resource abuse; NVMe on rk1b absorbs it cleanly). VL/VM data
+          # dirs redirect to /var/cache (NVMe) via BindPaths. See ADR-0028.
+          custom.profiles.monitoring-server.enable = true;
+          custom.profiles.monitoring-client.enable = true;
+          custom.profiles.backup.monitoringTelemetry.enable = true;
 
           # Off-host uptime watcher (Gatus): rk1b is always-on and not kelpy, so it
           # can observe kelpy failing. Probes the fleet + alerts to #infra-alerts.

@@ -64,6 +64,7 @@ let
       monitoring = {
         edge = "kelpy";
         port = 3001;
+        origin = "rk1b";
       };
       paperless = {
         edge = "kelpy";

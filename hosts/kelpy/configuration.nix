@@ -30,7 +30,7 @@
     # holds a stale exclusive lock from stargazer, failing every activation.
     # Re-enable once the lock is cleared and the host is reachable.
     backup.enable = false;
-    monitoring-server.enable = true;
+    monitoring-server.enable = false; # moved to rk1b (ADR-0028)
     monitoring-client.enable = true;
     monitoring-dmarc.enable = false;
     # On-host white-box layer for ADR-0026: alerts to #infra-alerts (via the
@@ -50,10 +50,7 @@
         "openclaw-gateway.service"
         "jellyfin.service"
         "podman-qbittorrent-app.service" # torrent
-        "grafana.service"
-        "victoriametrics.service"
-        "victorialogs.service"
-        "vector.service"
+        "vector.service" # monitoring-client still runs here; server moved to rk1b
         "paperless-scheduler.service"
         "paperless-task-queue.service"
         "paperless-consumer.service"
