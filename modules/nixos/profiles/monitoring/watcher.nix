@@ -192,6 +192,11 @@ in
           custom = {
             url = "\${INFRA_ALERTS_WEBHOOK_URL}";
             method = "POST";
+            # Gatus's custom provider sends no Content-Type by default; hookshot's
+            # generic webhook only extracts the `text` field from a JSON body when
+            # the request says it's JSON — without this header the alert lands as an
+            # empty "Received webhook data: {}" in #infra-alerts.
+            headers."Content-Type" = "application/json";
             body = ''{"text": "🚨 [ENDPOINT_GROUP]/[ENDPOINT_NAME] [ALERT_TRIGGERED_OR_RESOLVED] [ALERT_DESCRIPTION] [RESULT_ERRORS]"}'';
             # ADR-0026 semantics: 3 consecutive fails (~90s) before alerting,
             # recovery notice on return, no periodic re-alerts.
