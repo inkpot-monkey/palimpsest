@@ -76,6 +76,13 @@
     neededForBoot = true;
   };
 
+  # /boot lives on the eMMC root partition (NIXOS_SD), not a separate FAT partition.
+  # With tmpfs root, the bootloader install writes to the tmpfs /boot and the update
+  # is lost on reboot unless /boot is bind-mounted from /persistent. u-boot reads the
+  # extlinux.conf directly from the eMMC block device, so the bind-mount is what makes
+  # updates durably visible to the bootloader.
+  environment.persistence."/persistent".directories = [ "/boot" ];
+
   hardware.deviceTree.enable = true;
 
   # The local LLM server is enabled per-node in hosts/default.nix: rk1a serves the general

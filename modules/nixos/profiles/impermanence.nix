@@ -26,6 +26,12 @@ in
           directory = "/var/lib/private";
           mode = "0700";
         }
+        {
+          # DynamicUser service cache (mirrors /var/lib/private for the cache tier).
+          # Without this, services like llama-cpp lose their model cache on every boot.
+          directory = "/var/cache/private";
+          mode = "0700";
+        }
         "/etc/nixos"
         "/var/log"
         "/var/lib/nixos"

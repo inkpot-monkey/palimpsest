@@ -165,13 +165,6 @@ in
       }
     ];
 
-    # Persist the HuggingFace model cache across impermanence reboots.
-    # /var/cache/llama-cpp holds the downloaded GGUF blobs (up to ~20G); without this
-    # the service would need to re-download the full model on every boot.
-    environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
-      directories = [ "/var/cache/llama-cpp" ];
-    };
-
     # Expose the port only on the tailnet, not the public LAN.
     networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ cfg.port ];
   };
