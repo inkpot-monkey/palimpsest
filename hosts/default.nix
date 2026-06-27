@@ -184,6 +184,17 @@ in
           # Out-of-band web-push alerter (ADR-0027): fires the phone when the Matrix
           # delivery path itself is down. topic + publish_token from monitoring.yaml.
           custom.profiles.monitoring-watcher.outOfBand.enable = true;
+
+          # White-box unit-state alerts for the services that moved here from kelpy.
+          custom.profiles.monitoring-unit-state = {
+            enable = true;
+            units = [
+              "grafana.service"
+              "victoriametrics.service"
+              "victorialogs.service"
+              "vector.service"
+            ];
+          };
         }
       ];
     };
