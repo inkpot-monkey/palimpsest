@@ -169,6 +169,9 @@ in
           # can observe kelpy failing. Probes the fleet + alerts to #infra-alerts.
           # See ADR-0026 / modules/nixos/profiles/monitoring/watcher.nix.
           custom.profiles.monitoring-watcher.enable = true;
+          # Out-of-band web-push alerter (ADR-0027): fires the phone when the Matrix
+          # delivery path itself is down. topic + publish_token from monitoring.yaml.
+          custom.profiles.monitoring-watcher.outOfBand.enable = true;
         }
       ];
     };
