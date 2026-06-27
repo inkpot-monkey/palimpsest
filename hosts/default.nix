@@ -144,7 +144,7 @@ in
         ./rk1/common.nix
         self.users.inkpotmonkey.manifest
         (grant "inkpotmonkey" { workstation.enable = true; })
-        {
+        ({ config, ... }: {
           networking.hostName = "rk1b";
           # rk1b is the voice node, NOT an LLM server. The qwen-coder MoE was removed to free
           # ~22G RAM + 13G eMMC for Home Assistant. custom.rk1.llm is therefore left disabled
@@ -186,8 +186,11 @@ in
           custom.profiles.monitoring-watcher.outOfBand.enable = true;
 
           # White-box unit-state alerts for the services that moved here from kelpy.
+          # webhookUrlFile comes from the watcher's sops template (rk1b doesn't run
+          # matrix.infraAlerts, which is kelpy-only).
           custom.profiles.monitoring-unit-state = {
             enable = true;
+            webhookUrlFile = config.custom.profiles.monitoring-watcher.webhookUrlFile;
             units = [
               "grafana.service"
               "victoriametrics.service"
@@ -195,7 +198,7 @@ in
               "vector.service"
             ];
           };
-        }
+        })
       ];
     };
   };

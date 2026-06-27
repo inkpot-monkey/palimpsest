@@ -117,6 +117,17 @@ let
 in
 {
   options.custom.profiles.monitoring-watcher = {
+    webhookUrlFile = lib.mkOption {
+      type = lib.types.path;
+      readOnly = true;
+      description = ''
+        Path to the file containing the hookshot webhook URL, written by the
+        gatus-webhook-url sops template. Pass this to
+        custom.profiles.monitoring-unit-state.webhookUrlFile on hosts that run
+        the watcher but not the matrix.infraAlerts provisioner.
+      '';
+    };
+
     enable = lib.mkEnableOption ''
       the off-host uptime watcher (Gatus). Reachability-probes the fleet's
       registered services and alerts to #infra-alerts via the hookshot webhook
@@ -183,6 +194,13 @@ in
         key = "publish_topic";
       };
     };
+
+    # Write the webhook URL to a standalone file so other profiles on this host
+    # (e.g. monitoring-unit-state) can read it without depending on matrix.infraAlerts.
+    sops.templates."gatus-webhook-url".content =
+      "https://hookshot.${domain}/webhook/${config.sops.placeholder.infra_alerts_hook_id}";
+
+    custom.profiles.monitoring-watcher.webhookUrlFile = config.sops.templates."gatus-webhook-url".path;
 
     # Build the secret capabilities into an env file Gatus reads at runtime — keeps
     # them out of the world-readable Nix store. Gatus expands ${VAR} when it loads.

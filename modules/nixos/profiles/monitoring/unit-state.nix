@@ -128,8 +128,12 @@ in
   config = lib.mkIf cfg.enable {
     assertions = [
       {
-        assertion = config.custom.profiles.matrix.infraAlerts.enable;
-        message = "custom.profiles.monitoring-unit-state requires custom.profiles.matrix.infraAlerts.enable (it supplies the webhook url file).";
+        # Allow an explicit webhookUrlFile override (e.g. from monitoring-watcher on rk1b)
+        # without requiring the full matrix.infraAlerts provisioner.
+        assertion =
+          cfg.webhookUrlFile != config.custom.profiles.matrix.infraAlerts.webhookUrlFile
+          || config.custom.profiles.matrix.infraAlerts.enable;
+        message = "custom.profiles.monitoring-unit-state requires either custom.profiles.matrix.infraAlerts.enable or an explicit webhookUrlFile override.";
       }
       {
         assertion = cfg.units != [ ];
