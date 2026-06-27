@@ -7,7 +7,14 @@ compatibility_date = "2024-09-23"
 [build]
 command = "cd worker && worker-build --release"
 
-# Subscription storage
+# Dead-man's switch (ADR-0027 / issue 06): runs the `scheduled` handler every
+# 5 min to check rk1b's heartbeat and alert the phone on silence (a full-site
+# blackout the out-of-band push itself can't catch). 5 min ≈ 3 ticks before the
+# 15-min stale threshold; also keeps KV writes under the free-plan 1000/day cap.
+[triggers]
+crons = ["*/5 * * * *"]
+
+# Subscription storage (also holds heartbeat:<host> + deadman:<host> state keys).
 [[kv_namespaces]]
 binding = "SUBS"
 

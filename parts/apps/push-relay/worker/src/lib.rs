@@ -12,6 +12,8 @@
 //!   POST /sub              → register a subscription under a topic (subscribe = knowing the topic)
 //!   POST /<topic> or POST / → ntfy-style publish (Bearer publish-token; topic in
 //!                            the path or the JSON body) → web-push every subscriber
+//!   POST /heartbeat        → dead-man's beat from rk1b (Bearer publish-token)
+//!   (cron) scheduled       → alert the phone if rk1b's heartbeat goes silent
 //!
 //! Bindings (wrangler.toml): KV namespace `SUBS`; secrets `VAPID_PRIVATE`,
 //! `PUBLISH_TOKEN`, `SUBSCRIBE_TOPIC` (the one canonical phrase /sub validates
@@ -61,9 +63,110 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
             serve_owned(env.var("VAPID_PUBLIC")?.to_string(), "text/plain")
         }
         (Method::Post, "/sub") => subscribe(&mut req, &env).await,
+        (Method::Post, "/heartbeat") => heartbeat(&mut req, &env).await,
         (Method::Post, p) => publish(&mut req, &env, p.trim_start_matches('/')).await,
         _ => Response::error("not found", 404),
     }
+}
+
+// --- dead-man's switch (ADR-0027 / push-relay issue 06) ---------------------
+// The one failure the out-of-band push can't catch is a full-site blackout: it
+// takes out rk1b too, so nothing at home is left to *send* an alert. So invert
+// the logic — rk1b beats to `/heartbeat` on a schedule, and a Cloudflare Cron
+// Trigger (the `scheduled` handler) alerts the phone on the *silence*. The whole
+// decision lives off-site; the only home component is the beat, whose absence is
+// the signal.
+
+/// rk1b is the always-on watcher and the meaningful liveness sentinel.
+const DEADMAN_HOST: &str = "rk1b";
+/// Alert once no beat has arrived for this long (≈ 3 missed 5-min beats).
+const DEADMAN_STALE_MS: u64 = 15 * 60 * 1000;
+
+fn heartbeat_key(host: &str) -> String {
+    format!("heartbeat:{host}")
+}
+fn deadman_state_key(host: &str) -> String {
+    format!("deadman:{host}")
+}
+
+/// Record a liveness beat (Bearer publish-token). rk1b only beats while its Gatus
+/// watcher is active, so silence means "monitoring stopped", not just "box up".
+async fn heartbeat(req: &mut Request, env: &Env) -> Result<Response> {
+    let token = env.secret("PUBLISH_TOKEN")?.to_string();
+    if !authorized(req, &token) {
+        return Response::error("unauthorized", 401);
+    }
+    let raw = req.text().await.unwrap_or_default();
+    let host = serde_json::from_str::<serde_json::Value>(&raw)
+        .ok()
+        .as_ref()
+        .and_then(|v| v.get("host"))
+        .and_then(|x| x.as_str())
+        .unwrap_or(DEADMAN_HOST)
+        .to_string();
+    let kv = env.kv("SUBS")?;
+    let now = Date::now().as_millis();
+    kv.put(&heartbeat_key(&host), now.to_string())?
+        .execute()
+        .await?;
+    Response::ok("beat")
+}
+
+#[event(scheduled)]
+async fn scheduled(_event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
+    if let Err(e) = run_deadman(&env).await {
+        console_log!("deadman: error: {e:?}");
+    }
+}
+
+/// Cron-driven silence detector: alert once on staleness, recover once on return,
+/// no re-alerts in between (quiet semantics mirror the rest of ADR-0026).
+async fn run_deadman(env: &Env) -> Result<()> {
+    let kv = env.kv("SUBS")?;
+    // No beat ever recorded (fresh deploy / OOB disabled) → nothing to judge yet.
+    let last_seen = match kv.get(&heartbeat_key(DEADMAN_HOST)).text().await? {
+        Some(s) => s.parse::<u64>().unwrap_or(0),
+        None => return Ok(()),
+    };
+    let now = Date::now().as_millis();
+    let silent_ms = now.saturating_sub(last_seen);
+    let stale = silent_ms > DEADMAN_STALE_MS;
+    let alerted = kv
+        .get(&deadman_state_key(DEADMAN_HOST))
+        .text()
+        .await?
+        .as_deref()
+        == Some("alerted");
+
+    if stale && !alerted {
+        let topic = env.secret("SUBSCRIBE_TOPIC")?.to_string();
+        let mins = silent_ms / 60_000;
+        deliver(
+            env,
+            &topic,
+            "⚠️ rk1b is silent",
+            &format!(
+                "No heartbeat from {DEADMAN_HOST} for {mins} min — the site may be down (power/ISP). The normal alert paths can't reach you."
+            ),
+        )
+        .await?;
+        kv.put(&deadman_state_key(DEADMAN_HOST), "alerted")?
+            .execute()
+            .await?;
+    } else if !stale && alerted {
+        let topic = env.secret("SUBSCRIBE_TOPIC")?.to_string();
+        deliver(
+            env,
+            &topic,
+            "✅ rk1b heartbeat resumed",
+            &format!("{DEADMAN_HOST} is beating again — the site is back."),
+        )
+        .await?;
+        kv.put(&deadman_state_key(DEADMAN_HOST), "ok")?
+            .execute()
+            .await?;
+    }
+    Ok(())
 }
 
 fn serve(body: &str, content_type: &str) -> Result<Response> {
@@ -151,6 +254,14 @@ async fn publish(req: &mut Request, env: &Env, path_topic: &str) -> Result<Respo
         ),
         None => ("infra alert".to_string(), raw.clone()),
     };
+    let sent = deliver(env, &topic, &title, &message).await?;
+    Response::ok(format!("delivered to {sent}"))
+}
+
+/// Encrypt + sign `title`/`message` and fan out to every subscriber under `topic`,
+/// pruning any 404/410 (gone) subscriptions. Returns how many were delivered.
+/// Shared by the HTTP publish path and the dead-man's scheduled handler.
+async fn deliver(env: &Env, topic: &str, title: &str, message: &str) -> Result<u32> {
     let payload = json!({ "title": title, "body": message }).to_string();
 
     let signing_key = vapid_signing_key(env)?;
@@ -158,10 +269,10 @@ async fn publish(req: &mut Request, env: &Env, path_topic: &str) -> Result<Respo
     let subject = env.var("VAPID_SUBJECT")?.to_string();
 
     let kv = env.kv("SUBS")?;
-    let key = subs_key(&topic);
+    let key = subs_key(topic);
     let list = load_subs(&kv, &key).await;
     if list.is_empty() {
-        return Response::error("no subscribers for topic", 404);
+        return Ok(0);
     }
 
     let mut alive: Vec<StoredSub> = Vec::with_capacity(list.len());
@@ -187,7 +298,7 @@ async fn publish(req: &mut Request, env: &Env, path_topic: &str) -> Result<Respo
         }
     }
     save_subs(&kv, &key, &alive).await?;
-    Response::ok(format!("delivered to {sent}"))
+    Ok(sent)
 }
 
 fn authorized(req: &Request, token: &str) -> bool {

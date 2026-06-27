@@ -22,6 +22,7 @@
 {
   config,
   lib,
+  pkgs,
   self,
   settings,
   ...
@@ -149,6 +150,18 @@ in
           delivery path (so the phone buzzes exactly when in-band can't deliver).
         '';
       };
+      heartbeatSec = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 300;
+        description = ''
+          How often (seconds) to beat to the relay's dead-man's switch (ADR-0027,
+          push-relay issue 06). The relay's Cloudflare Cron Trigger alerts the
+          phone if no beat arrives within its stale threshold (~15 min ≈ 3 missed
+          5-min beats) — the one failure (a full-site blackout) the out-of-band
+          push itself can't catch. Kept at 5 min: a 1-min beat would breach the
+          relay's free-plan KV write cap (1000/day).
+        '';
+      };
     };
   };
 
@@ -243,5 +256,39 @@ in
 
     # Status page + API, tailnet-only.
     networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ webPort ];
+
+    # Dead-man's switch heartbeat (ADR-0027, push-relay issue 06). When the
+    # out-of-band channel is on, beat to the relay every `heartbeatSec` so its
+    # Cloudflare Cron Trigger can alert the phone on SILENCE — the one failure (a
+    # full-site blackout that kills this watcher too) the OOB push can't catch.
+    # The beat is CHAINED to gatus being active, so silence means "the watcher
+    # stopped watching", not merely "the host booted".
+    systemd.services.deadman-heartbeat = lib.mkIf oob.enable {
+      description = "Beat to the out-of-band relay's dead-man's switch (ADR-0027)";
+      after = [ "gatus.service" ];
+      serviceConfig.Type = "oneshot";
+      # Runs as root to read the root-owned publish-token sops secret.
+      script = ''
+        if ${pkgs.systemd}/bin/systemctl is-active --quiet gatus.service; then
+          ${pkgs.curl}/bin/curl -sS -m 10 -o /dev/null \
+            -X POST ${oob.relayUrl}/heartbeat \
+            -H "Authorization: Bearer $(cat ${config.sops.secrets.push_relay_publish_token.path})" \
+            -H 'content-type: application/json' \
+            --data '{"host":"${config.networking.hostName}"}' \
+            || echo "deadman-heartbeat: POST failed (relay unreachable?)" >&2
+        else
+          echo "deadman-heartbeat: gatus inactive — skipping beat" >&2
+        fi
+      '';
+    };
+    systemd.timers.deadman-heartbeat = lib.mkIf oob.enable {
+      description = "Periodic dead-man heartbeat to the relay (ADR-0027)";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnBootSec = "2min";
+        OnUnitActiveSec = "${toString oob.heartbeatSec}s";
+        AccuracySec = "30s";
+      };
+    };
   };
 }
