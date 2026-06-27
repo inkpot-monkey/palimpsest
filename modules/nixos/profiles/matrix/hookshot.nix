@@ -331,14 +331,6 @@ in
                 roomId: "${config.custom.profiles.matrix.infraAlerts.roomId}"
                 state:
                   name: infra-alerts
-                  # Re-emit the alert as m.text, not hookshot's default m.notice.
-                  # Matrix's built-in .m.rule.suppress_notices push rule silences
-                  # notifications for m.notice (it outranks any per-room setting), so
-                  # m.notice alerts render in the room but never buzz the phone. This
-                  # transform (allowJsTransformationFunctions is enabled above) makes
-                  # them m.text so they notify like a normal message.
-                  transformationFunction: |
-                    result = {version: "v2", plain: data.text || "infra alert", msgtype: "m.text"};
           ''
         }
       '';
