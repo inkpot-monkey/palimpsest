@@ -7,7 +7,10 @@
 
 let
   cfg = config.custom.profiles.monitoring-client;
-  receiver = settings.services.private.monitoring.edge;
+  # The host actually RUNNING the monitoring server — the origin when it lives
+  # off-edge (server on rk1b, Caddy/DNS edge on kelpy), else the edge it shares
+  # with Caddy. Mirrors settings.nix's `listenerHost` (svc.origin or svc.edge).
+  receiver = settings.services.private.monitoring.origin or settings.services.private.monitoring.edge;
 in
 {
   imports = [
