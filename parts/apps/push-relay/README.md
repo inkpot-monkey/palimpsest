@@ -25,8 +25,17 @@ cd core && cargo test     # RFC 8291 Appendix A vector + VAPID JWT round-trip
 1. Generate a VAPID keypair; put the private key + a publish token + a Cloudflare API
    token into the `secrets` repo (sops). The VAPID *public* key + the topic phrase are
    plain values.
-1. Create the Worker + a KV namespace + the `push.palebluebytes.space` custom domain.
-1. `just deploy-push-relay` (pushes secrets via `wrangler secret put`, then `wrangler deploy`).
+   - `publish_token` is the **write** capability rk1b presents (opaque, high-entropy —
+     `openssl rand -base64 32 | tr '+/' '-_' | tr -d '='`); the topic phrase is the
+     **read**/subscribe capability. Keep them distinct.
+   - `cloudflare_api_token` needs the **"Edit Cloudflare Workers"** token template
+     (Account → Workers Scripts + Workers KV; Zone `palebluebytes.space` → Workers
+     Routes + DNS, for the `push.` custom domain).
+1. Create the Worker + a KV namespace + the `push.palebluebytes.space` custom domain;
+   fill `wrangler.toml` (KV id + `VAPID_PUBLIC`).
+1. `just deploy-push-relay` (≡ `nix run .#push-relay-deploy`): hermetic — pins the wasm
+   toolchain + `wrangler`, reads sops, builds, `wrangler secret put`, then `wrangler deploy`.
+   Run it from the operator workstation (holds `&admin`), never a headless host.
 1. On the phone: open the PWA, Add to Home Screen, allow notifications, subscribe.
 1. `curl` the relay → confirm the phone buzzes. Then enable the `rk1b` `ntfy` alerter
    (issue 04) and force a `matrix`/`hookshot` probe failure to prove the out-of-band path.

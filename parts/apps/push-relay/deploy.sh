@@ -2,8 +2,13 @@
 # Deploy the out-of-band push relay (ADR-0027). Run from the operator workstation
 # (it decrypts sops with &admin) — NOT a headless host.
 #
+# PREFER the hermetic wrapper, which pins the whole toolchain and the sops file:
+#   nix run .#push-relay-deploy        (or: just deploy-push-relay)
+# This script is what that wrapper runs; invoke it directly only if you already
+# have the toolchain (rust+wasm32, worker-build, wasm-bindgen, wrangler) on PATH.
+#
 # Prereqs (one-time HITL bootstrap, push-relay issue 01):
-#   - rust + wasm32 target, `cargo install worker-build`, `wrangler` on PATH
+#   - the toolchain above (the nix wrapper supplies it)
 #   - secrets/profiles/push-relay.yaml in the secrets repo, holding:
 #       vapid_private        (base64url, 32-byte P-256 private key)
 #       publish_token        (opaque bearer token rk1b presents)
