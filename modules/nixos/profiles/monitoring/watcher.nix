@@ -197,7 +197,14 @@ in
             # the request says it's JSON — without this header the alert lands as an
             # empty "Received webhook data: {}" in #infra-alerts.
             headers."Content-Type" = "application/json";
-            body = ''{"text": "🚨 [ENDPOINT_GROUP]/[ENDPOINT_NAME] [ALERT_TRIGGERED_OR_RESOLVED] [ALERT_DESCRIPTION] [RESULT_ERRORS]"}'';
+            # The emoji must reflect state: map [ALERT_TRIGGERED_OR_RESOLVED] to a
+            # per-state string (placeholders below) so a RESOLVED alert shows ✅, not
+            # the 🚨 alarm icon. Mirrors the unit-state check's ✅-on-recovery style.
+            body = ''{"text": "[ALERT_TRIGGERED_OR_RESOLVED] [ENDPOINT_GROUP]/[ENDPOINT_NAME] [ALERT_DESCRIPTION] [RESULT_ERRORS]"}'';
+            placeholders = {
+              triggered = "🚨 TRIGGERED";
+              resolved = "✅ RESOLVED";
+            };
             # ADR-0026 semantics: 3 consecutive fails (~90s) before alerting,
             # recovery notice on return, no periodic re-alerts.
             default-alert = {
