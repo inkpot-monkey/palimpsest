@@ -145,6 +145,30 @@ _Avoid_: GPU node, inference server.
 **Gateway**:
 The `litellm` proxy on `kelpy` that presents the local LLM nodes (and remote fallbacks) under stable backend names (`qwen-general`, `qwen-coder`).
 
+### Storage & data classes
+
+> Fleet data splits into three classes by lifecycle, each with its own tool. The split exists because "retention", "backup", and "archival" name *different* mechanisms that were previously conflated.
+
+**Blob**:
+A large file that rarely mutates — a document, a media file, a photo, an ISO. Blobs live in **git-annex treated as a distributed filesystem**: the annex *is* the primary store, holding each blob as content under a tracked number of replicas spread across hosts and remotes, not a backup of a copy that lives elsewhere.
+_Avoid_: asset, attachment.
+
+**Telemetry**:
+Constantly-appended time-series — VictoriaMetrics samples and VictoriaLogs lines. Aged out by a **retention** window, but **not disposable**: it must survive loss of the host that collects it (if `rk1b` dies, recent telemetry should still be recoverable). So telemetry has both a retention window *and* a backup, unlike a pure scratch cache.
+_Avoid_: metrics (one of its two kinds), logs (the other), monitoring data.
+
+**Service state**:
+Small, mutating state that must survive disk loss — sops material, a service's `/var/lib` directory, an sqlite DB. Backed up by **restic** to off-site (rsync.net).
+_Avoid_: persistent data (too broad — telemetry persists too).
+
+**Retention** (telemetry-only):
+The auto-deletion window after which old samples/log-lines are dropped, sized so a class of telemetry *cannot* outgrow its disk partition. The word is reserved for this TSDB-native expiry — it is **not** backup (off-site copy) nor archival (git-annex replicas).
+_Avoid_: using "retention" for backup keep-policy or for how long blobs are kept.
+
+**Backup**:
+A point-in-time off-site copy made by **restic**, kept under a keep-daily/weekly/monthly policy, used to *restore* after data loss. Distinct from **archival** (git-annex replication of blobs) and from **retention** (in-place expiry).
+_Avoid_: archive, snapshot (reserve "snapshot" for a TSDB-consistent point-in-time the backup is taken *from*).
+
 ### Monitoring & alerting
 
 > The existing **monitoring stack** (VictoriaMetrics/VictoriaLogs/Grafana/Vector/node-exporter) is *collection-only* — it stores metrics and logs but raises no alerts. The terms below name the alerting tier layered on top of it.
