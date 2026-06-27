@@ -13,7 +13,8 @@
 //!   POST /<topic>          → ntfy-style publish (Bearer publish-token) → web-push every subscriber
 //!
 //! Bindings (wrangler.toml): KV namespace `SUBS`; secrets `VAPID_PRIVATE`,
-//! `PUBLISH_TOKEN`; vars `VAPID_PUBLIC`, `VAPID_SUBJECT`.
+//! `PUBLISH_TOKEN`, `SUBSCRIBE_TOPIC` (the one canonical phrase /sub validates
+//! against); vars `VAPID_PUBLIC`, `VAPID_SUBJECT`.
 //!
 //! NOTE: scaffold — verify at deploy (push-relay issues 01–03, 05). The core crate
 //! it calls is unit-tested; this shell's Workers-API glue is exercised on deploy.
@@ -78,15 +79,19 @@ fn subs_key(topic: &str) -> String {
     format!("subs:{topic}")
 }
 
-/// Register a device under a topic. Knowing the topic phrase IS the subscribe
-/// capability (ntfy's model); we only require it is non-trivial.
+/// Register a device under the topic. Knowing the topic phrase IS the subscribe
+/// capability (ntfy's model). This relay serves exactly ONE topic — the fleet's
+/// alert phrase — so we validate the phrase against the canonical `SUBSCRIBE_TOPIC`
+/// secret and reject a wrong one outright (otherwise a mistyped phrase silently
+/// subscribes the device to a topic nobody publishes to, and it never sees an alert).
 async fn subscribe(req: &mut Request, env: &Env) -> Result<Response> {
     let body: SubBody = match req.json().await {
         Ok(b) => b,
         Err(_) => return Response::error("bad subscription body", 400),
     };
-    if body.topic.len() < 8 {
-        return Response::error("topic too short", 400);
+    let canonical = env.secret("SUBSCRIBE_TOPIC")?.to_string();
+    if body.topic != canonical {
+        return Response::error("incorrect phrase", 403);
     }
     let kv = env.kv("SUBS")?;
     let key = subs_key(&body.topic);

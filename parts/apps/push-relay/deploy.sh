@@ -13,6 +13,7 @@
 #       vapid_private          (base64url, 32-byte P-256 private key)   → Worker secret
 #       vapid_public           (base64url, 65-byte P-256 public key)    → Worker var (served to PWA)
 #       publish_token          (opaque bearer token rk1b presents)      → Worker secret
+#       publish_topic          (the one subscribe phrase /sub accepts)  → Worker secret
 #       cloudflare_token       (deploy credential, "Edit Workers" scope)
 #       cloudflare_account_id  (so wrangler need not prompt for the account)
 #
@@ -38,6 +39,9 @@ echo "→ building the worker (cargo → wasm)…"
 echo "→ pushing secrets into the Worker…"
 sops_get vapid_private | wrangler secret put VAPID_PRIVATE
 sops_get publish_token | wrangler secret put PUBLISH_TOKEN
+# The one phrase /sub validates against — a wrong phrase is rejected, not silently
+# subscribed to a dead topic. Same phrase rk1b's gatus publishes to ($NTFY_TOPIC).
+sops_get publish_topic | wrangler secret put SUBSCRIBE_TOPIC
 
 # VAPID public key is not secret (the PWA fetches it) but lives in sops too, so inject
 # it as a deploy-time var rather than hand-editing wrangler.toml.

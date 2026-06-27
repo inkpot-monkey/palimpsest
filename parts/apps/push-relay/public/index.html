@@ -7,52 +7,175 @@
     <link rel="manifest" href="/manifest.json" />
     <title>infra alerts</title>
     <style>
-      body { font: 16px/1.5 system-ui, sans-serif; background: #0b0f14; color: #e6edf3; margin: 0; padding: 2rem; }
-      main { max-width: 28rem; margin: 0 auto; }
-      h1 { font-size: 1.2rem; }
-      input, button { font: inherit; padding: 0.6rem 0.8rem; border-radius: 0.5rem; border: 1px solid #30363d; background: #161b22; color: inherit; width: 100%; box-sizing: border-box; }
-      button { background: #1f6feb; border-color: #1f6feb; margin-top: 0.75rem; cursor: pointer; }
-      #status { margin-top: 1rem; padding: 0.75rem; border-radius: 0.5rem; background: #161b22; white-space: pre-wrap; }
-      label { display: block; margin-top: 1rem; color: #8b949e; font-size: 0.85rem; }
+      :root { --bg: #0b0f14; --panel: #161b22; --border: #30363d; --muted: #8b949e; --fg: #e6edf3; --accent: #1f6feb; --danger: #f85149; --ok: #3fb950; }
+      * { box-sizing: border-box; }
+      body { font: 16px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--fg); margin: 0; padding: 2rem 1.25rem; }
+      main { max-width: 30rem; margin: 0 auto; }
+      h1 { font-size: 1.2rem; margin: 0 0 1rem; }
+      p { color: var(--muted); }
+      input, button { font: inherit; padding: 0.6rem 0.8rem; border-radius: 0.5rem; border: 1px solid var(--border); background: var(--panel); color: inherit; width: 100%; }
+      button { background: var(--accent); border-color: var(--accent); margin-top: 0.75rem; cursor: pointer; }
+      button.secondary { background: transparent; border-color: var(--border); color: var(--muted); }
+      button:disabled { opacity: 0.6; cursor: default; }
+      label { display: block; margin-top: 1rem; color: var(--muted); font-size: 0.85rem; }
+      #status { margin-top: 1rem; padding: 0.75rem; border-radius: 0.5rem; background: var(--panel); white-space: pre-wrap; }
+      #status:empty { display: none; }
+      .hidden { display: none !important; }
+      .banner { display: flex; align-items: center; gap: 0.6rem; padding: 0.75rem 0.9rem; border-radius: 0.5rem; background: rgba(63,185,80,0.12); border: 1px solid rgba(63,185,80,0.4); color: var(--ok); }
+      .banner .dot { width: 0.6rem; height: 0.6rem; border-radius: 50%; background: var(--ok); flex: none; }
+      .alerts-head { display: flex; align-items: baseline; justify-content: space-between; margin: 1.5rem 0 0.5rem; }
+      .alerts-head h2 { font-size: 0.95rem; margin: 0; }
+      .alerts-head button { width: auto; margin: 0; padding: 0.3rem 0.6rem; font-size: 0.8rem; }
+      .empty { color: var(--muted); font-size: 0.9rem; padding: 1rem 0; }
+      .alert { background: var(--panel); border: 1px solid var(--border); border-left: 3px solid var(--danger); border-radius: 0.5rem; padding: 0.7rem 0.85rem; margin-top: 0.6rem; }
+      .alert .top { display: flex; align-items: baseline; justify-content: space-between; gap: 0.5rem; }
+      .alert .title { font-weight: 600; }
+      .alert .time { color: var(--muted); font-size: 0.75rem; flex: none; }
+      .alert .body { color: var(--fg); margin-top: 0.25rem; white-space: pre-wrap; word-break: break-word; }
+      .alert .dismiss { width: auto; margin: 0.6rem 0 0; padding: 0.25rem 0.6rem; font-size: 0.78rem; background: transparent; border-color: var(--border); color: var(--muted); }
     </style>
   </head>
   <body>
     <main>
       <h1>infra alerts — out-of-band</h1>
-      <p>Subscribe this device to receive fleet alerts when the Matrix path is down.</p>
-      <label for="topic">Subscribe phrase</label>
-      <input id="topic" placeholder="venerable-apple-pirate" autocomplete="off" autocapitalize="off" />
-      <button id="subscribe">Enable notifications on this device</button>
-      <div id="status">not subscribed</div>
+
+      <!-- View A: not subscribed -->
+      <section id="subscribeView">
+        <p>Subscribe this device to receive fleet alerts when the Matrix path is down.</p>
+        <label for="topic">Subscribe phrase</label>
+        <input id="topic" placeholder="enter the alert phrase" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" />
+        <button id="subscribe">Enable notifications on this device</button>
+        <div id="status"></div>
+      </section>
+
+      <!-- View B: subscribed -->
+      <section id="subscribedView" class="hidden">
+        <div class="banner"><span class="dot"></span><span>This device is subscribed to infra alerts.</span></div>
+        <div class="alerts-head">
+          <h2>Alerts</h2>
+          <button id="clearAll" class="secondary">Clear all</button>
+        </div>
+        <div id="alerts"></div>
+        <button id="unsubscribe" class="secondary">Unsubscribe this device</button>
+      </section>
     </main>
+
     <script>
       const $ = (id) => document.getElementById(id);
-      const status = (m) => ($("status").textContent = m);
+      const setStatus = (m) => ($("status").textContent = m);
+
       const b64urlToBytes = (s) => {
         const pad = "=".repeat((4 - (s.length % 4)) % 4);
         const b = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/"));
         return Uint8Array.from(b, (c) => c.charCodeAt(0));
       };
-      const bytesToB64url = (buf) =>
-        btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
-      $("topic").value = localStorage.getItem("topic") || "";
+      // --- IndexedDB (same store the service worker writes) --------------------
+      const DB_NAME = "infra-alerts";
+      const STORE = "alerts";
+      const openDB = () =>
+        new Promise((resolve, reject) => {
+          const r = indexedDB.open(DB_NAME, 1);
+          r.onupgradeneeded = () => r.result.createObjectStore(STORE, { keyPath: "id" });
+          r.onsuccess = () => resolve(r.result);
+          r.onerror = () => reject(r.error);
+        });
+      const idbDo = (mode, fn) =>
+        openDB().then(
+          (db) =>
+            new Promise((resolve, reject) => {
+              const tx = db.transaction(STORE, mode);
+              const req = fn(tx.objectStore(STORE));
+              tx.oncomplete = () => {
+                db.close();
+                resolve(req && req.result);
+              };
+              tx.onerror = () => reject(tx.error);
+            }),
+        );
+      const idbAll = () => idbDo("readonly", (s) => s.getAll());
+      const idbDel = (id) => idbDo("readwrite", (s) => s.delete(id));
+      const idbClear = () => idbDo("readwrite", (s) => s.clear());
 
-      $("subscribe").addEventListener("click", async () => {
+      // --- rendering ----------------------------------------------------------
+      const fmtTime = (ts) => {
+        const d = new Date(ts);
+        const today = new Date();
+        const sameDay = d.toDateString() === today.toDateString();
+        const t = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        return sameDay ? t : `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${t}`;
+      };
+
+      async function renderAlerts() {
+        const alerts = (await idbAll()).sort((a, b) => b.ts - a.ts);
+        const box = $("alerts");
+        box.textContent = "";
+        if (!alerts.length) {
+          const e = document.createElement("div");
+          e.className = "empty";
+          e.textContent = "No alerts. You're all caught up.";
+          box.appendChild(e);
+          return;
+        }
+        for (const a of alerts) {
+          const card = document.createElement("div");
+          card.className = "alert";
+
+          const top = document.createElement("div");
+          top.className = "top";
+          const title = document.createElement("span");
+          title.className = "title";
+          title.textContent = a.title || "infra alert";
+          const time = document.createElement("span");
+          time.className = "time";
+          time.textContent = fmtTime(a.ts);
+          top.append(title, time);
+
+          const body = document.createElement("div");
+          body.className = "body";
+          body.textContent = a.body || "";
+
+          const dismiss = document.createElement("button");
+          dismiss.className = "dismiss";
+          dismiss.textContent = "Dismiss";
+          dismiss.addEventListener("click", async () => {
+            await idbDel(a.id);
+            renderAlerts();
+          });
+
+          card.append(top);
+          if (a.body) card.append(body);
+          card.append(dismiss);
+          box.append(card);
+        }
+      }
+
+      // --- view switching -----------------------------------------------------
+      function showView(subscribed) {
+        $("subscribeView").classList.toggle("hidden", subscribed);
+        $("subscribedView").classList.toggle("hidden", !subscribed);
+        if (subscribed) renderAlerts();
+      }
+
+      // --- subscribe / unsubscribe -------------------------------------------
+      async function doSubscribe() {
         try {
           const topic = $("topic").value.trim();
-          if (!topic) return status("enter the subscribe phrase first");
-          localStorage.setItem("topic", topic);
+          if (!topic) return setStatus("enter the subscribe phrase first");
 
           if (!("serviceWorker" in navigator) || !("PushManager" in window))
-            return status("this browser does not support web push");
+            return setStatus("this browser does not support web push");
 
-          status("registering service worker…");
+          $("subscribe").disabled = true;
+          setStatus("registering service worker…");
           const reg = await navigator.serviceWorker.register("/sw.js");
           await navigator.serviceWorker.ready;
 
-          status("requesting notification permission…");
-          if ((await Notification.requestPermission()) !== "granted") return status("permission denied");
+          setStatus("requesting notification permission…");
+          if ((await Notification.requestPermission()) !== "granted") {
+            $("subscribe").disabled = false;
+            return setStatus("permission denied");
+          }
 
           const vapidPublic = await (await fetch("/vapidPublicKey")).text();
           const sub = await reg.pushManager.subscribe({
@@ -71,11 +194,68 @@
               auth: json.keys.auth,
             }),
           });
-          status(res.ok ? "subscribed ✓ — add this page to your home screen" : "subscribe rejected: " + (await res.text()));
+
+          if (res.ok) {
+            localStorage.setItem("topic", topic);
+            setStatus("");
+            showView(true);
+          } else {
+            // Wrong phrase (or rejected): drop the half-made browser subscription
+            // so a reload doesn't look subscribed, and let them try again.
+            await sub.unsubscribe().catch(() => {});
+            $("subscribe").disabled = false;
+            setStatus(res.status === 403 ? "incorrect phrase — check it and try again" : "subscribe rejected: " + (await res.text()));
+          }
         } catch (e) {
-          status("error: " + e.message);
+          $("subscribe").disabled = false;
+          setStatus("error: " + e.message);
         }
-      });
+      }
+
+      async function doUnsubscribe() {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg) {
+          const sub = await reg.pushManager.getSubscription();
+          if (sub) await sub.unsubscribe().catch(() => {});
+        }
+        localStorage.removeItem("topic");
+        $("subscribe").disabled = false;
+        $("topic").value = "";
+        showView(false);
+      }
+
+      // --- init ---------------------------------------------------------------
+      async function init() {
+        $("subscribe").addEventListener("click", doSubscribe);
+        $("unsubscribe").addEventListener("click", doUnsubscribe);
+        $("clearAll").addEventListener("click", async () => {
+          await idbClear();
+          renderAlerts();
+        });
+
+        // Live updates from the service worker while the app is open.
+        if ("serviceWorker" in navigator) {
+          navigator.serviceWorker.addEventListener("message", (e) => {
+            if (e.data && e.data.type === "alert") renderAlerts();
+          });
+        }
+        // Re-read on focus (alerts may have arrived while hidden/closed).
+        document.addEventListener("visibilitychange", () => {
+          if (!document.hidden && !$("subscribedView").classList.contains("hidden")) renderAlerts();
+        });
+
+        // Authoritative subscribed-state: an active push subscription AND a phrase
+        // we previously validated (persisted only on a successful /sub).
+        const topic = localStorage.getItem("topic") || "";
+        let subscribed = false;
+        if ("serviceWorker" in navigator) {
+          const reg = await navigator.serviceWorker.getRegistration();
+          if (reg) subscribed = !!(await reg.pushManager.getSubscription()) && !!topic;
+        }
+        showView(subscribed);
+      }
+
+      init();
     </script>
   </body>
 </html>
