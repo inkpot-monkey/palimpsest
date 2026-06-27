@@ -135,12 +135,9 @@ in
         default = "https://push.${domain}";
         description = "Base URL of the ntfy-compatible push relay.";
       };
-      topic = lib.mkOption {
-        type = lib.types.str;
-        default = "";
-        example = "venerable-apple-pirate";
-        description = "The ntfy topic = the memorable subscribe phrase.";
-      };
+      # topic is NOT a NixOS option — it is a sops secret (key `topic` in
+      # monitoring.yaml) injected as $NTFY_TOPIC into the gatus env file, so
+      # the phrase never appears in the Nix store or the repo.
       endpoints = lib.mkOption {
         type = lib.types.listOf lib.types.str;
         default = [
@@ -168,13 +165,20 @@ in
         sopsFile = pushRelaySecrets;
         key = "publish_token";
       };
+      push_relay_topic = {
+        sopsFile = pushRelaySecrets;
+        key = "topic";
+      };
     };
 
     # Build the secret capabilities into an env file Gatus reads at runtime — keeps
     # them out of the world-readable Nix store. Gatus expands ${VAR} when it loads.
     sops.templates."gatus-env".content =
       "INFRA_ALERTS_WEBHOOK_URL=https://hookshot.${domain}/webhook/${config.sops.placeholder.infra_alerts_hook_id}\n"
-      + lib.optionalString oob.enable "NTFY_PUBLISH_TOKEN=${config.sops.placeholder.push_relay_publish_token}\n";
+      + lib.optionalString oob.enable ''
+        NTFY_PUBLISH_TOKEN=${config.sops.placeholder.push_relay_publish_token}
+        NTFY_TOPIC=${config.sops.placeholder.push_relay_topic}
+      '';
 
     # Pin the Caddy-fronted names to their edge's tailscale IP (tailnet path).
     networking.hosts = hostsByIp;
@@ -203,7 +207,7 @@ in
           # semantics; attached to the delivery-path endpoints only (see alertsFor).
           ntfy = {
             url = oob.relayUrl;
-            inherit (oob) topic;
+            topic = "\${NTFY_TOPIC}";
             token = "\${NTFY_PUBLISH_TOKEN}";
             default-alert = {
               failure-threshold = 3;
