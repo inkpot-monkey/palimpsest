@@ -1,5 +1,4 @@
 # Cloudflare Worker config for the out-of-band push relay (ADR-0027).
-# Values marked <BOOTSTRAP> are filled during the HITL slice-01 setup.
 name = "push-relay"
 main = "worker/build/worker/shim.mjs"
 compatibility_date = "2024-09-23"
@@ -8,10 +7,9 @@ compatibility_date = "2024-09-23"
 [build]
 command = "cd worker && worker-build --release"
 
-# Subscription storage.
+# Subscription storage
 [[kv_namespaces]]
 binding = "SUBS"
-id = "<BOOTSTRAP: wrangler kv namespace create SUBS>"
 
 # Non-secret config. VAPID_PRIVATE + PUBLISH_TOKEN are set with `wrangler secret put`,
 # and VAPID_PUBLIC is injected as `--var` at deploy — all three come from sops

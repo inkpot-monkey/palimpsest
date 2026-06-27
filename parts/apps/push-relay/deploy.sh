@@ -15,7 +15,9 @@
 #       publish_token          (opaque bearer token rk1b presents)      → Worker secret
 #       cloudflare_token       (deploy credential, "Edit Workers" scope)
 #       cloudflare_account_id  (so wrangler need not prompt for the account)
-#   - wrangler.toml filled: the KV namespace id (from `wrangler kv namespace create SUBS`)
+#
+# The SUBS KV namespace needs no setup: wrangler auto-provisions it on first deploy
+# (see wrangler.toml) and reuses it thereafter.
 #
 # Generate a VAPID keypair once, e.g.:
 #   npx web-push generate-vapid-keys   # gives base64url public + private

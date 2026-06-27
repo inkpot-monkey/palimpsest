@@ -32,8 +32,9 @@ cd core && cargo test     # RFC 8291 Appendix A vector + VAPID JWT round-trip
    - `cloudflare_token` needs the **"Edit Cloudflare Workers"** token template
      (Account → Workers Scripts + Workers KV; Zone `palebluebytes.space` → Workers
      Routes + DNS, for the `push.` custom domain).
-1. Create the Worker + a KV namespace + the `push.palebluebytes.space` custom domain;
-   fill `wrangler.toml` with the KV id (VAPID public key + account id come from sops).
+1. Nothing to pre-create: the first `wrangler deploy` provisions the Worker, the SUBS
+   KV namespace (auto-provisioning, [Beta]), and the `push.palebluebytes.space` custom
+   domain. VAPID public key + account id come from sops; nothing per-deploy is committed.
 1. `just deploy-push-relay` (≡ `nix run .#push-relay-deploy`): hermetic — pins the wasm
    toolchain + `wrangler`, reads sops, builds, `wrangler secret put`, then `wrangler deploy`.
    Run it from the operator workstation (holds `&admin`), never a headless host.
