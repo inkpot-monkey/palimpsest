@@ -5,16 +5,20 @@
 
 ;;; Commentary:
 
-;; Make `compilation-mode' and `shell-mode' buffers render process output the way
-;; a terminal would.  Three behaviours, installed together by `compile-ansi-setup':
+;; Make `compilation-mode', `shell-mode' and `shell-command-mode' buffers render
+;; process output the way a terminal would.  Three behaviours, installed together
+;; by `compile-ansi-setup':
 ;;
 ;;   * ANSI SGR colour escapes are translated via xterm-color, and cursor-home /
 ;;     screen-clear sequences erase the buffer so TUI-style redraws don't pile up.
 ;;   * Carriage returns are collapsed, so progress bars (e.g. Nix builds) update a
 ;;     single line instead of spamming hundreds.
 ;;   * `compile' is flipped to comint mode for `sudo' commands so they can prompt
-;;     for a password, and `*Async Shell Command*' is routed through `shell-mode'
-;;     so async commands get the same filtering.
+;;     for a password, and the same comint filtering is attached to
+;;     `shell-command-mode' (the `*Async Shell Command*' major mode) so async
+;;     commands get it too — via its mode hook, NOT by switching the buffer to
+;;     `shell-mode', which would drop the `shell-command-mode-map' bindings and
+;;     the buffer-local `revert-buffer-function'.
 ;;
 ;; Call `compile-ansi-setup' once from your init; everything else is internal.
 
@@ -70,8 +74,10 @@ Keeps progress bars (e.g. Nix builds) to one updating line."
         (while (search-forward "\r" nil t)
           (delete-region (line-beginning-position) (point)))))))
 
-(defun compile-ansi--shell-mode-setup ()
-  "Buffer-local xterm-color + CR filtering for the current `shell-mode' buffer."
+(defun compile-ansi--comint-ansi-setup ()
+  "Buffer-local xterm-color + CR filtering for the current comint buffer.
+Used for both `shell-mode' (interactive shells) and `shell-command-mode'
+\(`*Async Shell Command*'), via their mode hooks."
   (setq-local xterm-color-preserve-properties t)
   (setq-local comint-inhibit-carriage-motion nil)
   (add-hook 'comint-preoutput-filter-functions 'xterm-color-filter
@@ -80,13 +86,6 @@ Keeps progress bars (e.g. Nix builds) to one updating line."
   (add-hook
    'comint-output-filter-functions #'compile-ansi--process-filter-cr
    nil t))
-
-(defun compile-ansi--async-shell-mode (&rest _)
-  "Switch the `*Async Shell Command*' buffer to `shell-mode' for filtering."
-  (when-let ((buf (get-buffer "*Async Shell Command*")))
-    (with-current-buffer buf
-      (unless (derived-mode-p 'shell-mode)
-        (shell-mode)))))
 
 ;;;###autoload
 (defun compile-ansi-setup ()
@@ -99,10 +98,14 @@ Keeps progress bars (e.g. Nix builds) to one updating line."
   (advice-add 'compile :around #'compile-ansi--compile-sudo)
   (add-hook
    'compilation-filter-hook #'compile-ansi--process-filter-cr)
-  (add-hook 'shell-mode-hook #'compile-ansi--shell-mode-setup)
-  (advice-add
-   'async-shell-command
-   :after #'compile-ansi--async-shell-mode))
+  ;; Attach the comint ANSI/CR filtering to both interactive shells and async
+  ;; shell-command output.  `shell-command-mode' derives from `comint-mode', so
+  ;; its hook gives `*Async Shell Command*' the same filtering while keeping it in
+  ;; `shell-command-mode' (so its keymap bindings and `revert-buffer-function'
+  ;; survive) — instead of switching the buffer to `shell-mode'.
+  (add-hook 'shell-mode-hook #'compile-ansi--comint-ansi-setup)
+  (add-hook
+   'shell-command-mode-hook #'compile-ansi--comint-ansi-setup))
 
 (provide 'compile-ansi)
 ;;; compile-ansi.el ends here
