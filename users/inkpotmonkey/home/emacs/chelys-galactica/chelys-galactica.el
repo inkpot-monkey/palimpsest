@@ -31,9 +31,9 @@
 ;; The prompt is a `consult--read', so (taking after atuin's filter modes) the
 ;; narrowing keys `d'/`p'/`s' restrict candidates to commands `recall' recorded
 ;; in the current directory, anywhere under the current project/VC root, or
-;; whose most recent run succeeded.  Candidates are frecency-ranked by default
-;; (recall frequency × recency; see `chelys-galactica-sort-by'), and the
-;; annotation also shows the most recent run's duration.
+;; whose most recent run succeeded.  Candidates are ordered newest-run-first by
+;; default (recency; see `chelys-galactica-sort-by' for frecency/history), and
+;; the annotation also shows the most recent run's duration.
 ;;
 ;; Duplicate candidates are kept out of the history rather than filtered at the
 ;; prompt: chosen commands are added through `add-to-history' (the minibuffer's
@@ -108,13 +108,15 @@
 A plain `read'/`prin1' alist of (COMMAND . BUFFER-NAME) strings."
   :type 'file)
 
-(defcustom chelys-galactica-sort-by 'frecency
+(defcustom chelys-galactica-sort-by 'recency
   "How completion candidates are ordered.
-`frecency' ranks by `recall'-recorded frequency and recency (most-used,
-recently-used commands first); `history' keeps raw `shell-command-history'
-order (most recent first)."
+`recency' ranks by each command's most-recent `recall'-recorded run time
+\(latest first); `frecency' ranks by `recall'-recorded frequency and recency
+\(most-used, recently-used commands first); `history' keeps raw
+`shell-command-history' order (most recent first)."
   :type
   '(choice
+    (const :tag "Recency (latest run first)" recency)
     (const :tag "Frecency (frequency + recency)" frecency)
     (const :tag "History order" history)))
 
@@ -323,19 +325,36 @@ and recently scores highest.  Zero when `recall' has no record."
                   (t
                    0.5))))))))
 
+(defun chelys-galactica--recency (command)
+  "Return the time of COMMAND's most recent `recall' run as a float.
+The recall index is newest-first, so the head item is the latest run.
+Zero when `recall' has no record, sinking untracked commands below tracked
+ones (where they keep their newest-first history order)."
+  (let ((it (car (chelys-galactica--recall-items-for command))))
+    (if it
+        (time-to-seconds (recall--item-start-time it))
+      0.0)))
+
+(defun chelys-galactica--sort-by (score-fn commands)
+  "Order COMMANDS by SCORE-FN descending.
+Ties keep their original (history) order, since Emacs list `sort' is stable."
+  (mapcar
+   #'cdr
+   (sort (mapcar (lambda (c) (cons (funcall score-fn c) c)) commands)
+         (lambda (a b) (> (car a) (car b))))))
+
 (defun chelys-galactica--rank (commands)
   "Order COMMANDS per `chelys-galactica-sort-by'.
-For `frecency', sort by descending frecency score; ties keep their
-original (history) order, since Emacs list `sort' is stable."
-  (if (eq chelys-galactica-sort-by 'history)
-      commands
-    (mapcar
-     #'cdr
-     (sort (mapcar
-            (lambda (c)
-              (cons (chelys-galactica--frecency c) c))
-            commands)
-           (lambda (a b) (> (car a) (car b)))))))
+For `recency', sort by most-recent run time (latest first); for `frecency',
+by descending frecency score; `history' keeps `shell-command-history' order.
+Ties keep their original (history) order, since Emacs list `sort' is stable."
+  (pcase chelys-galactica-sort-by
+    ('history commands)
+    ('recency
+     (chelys-galactica--sort-by #'chelys-galactica--recency commands))
+    (_
+     (chelys-galactica--sort-by
+      #'chelys-galactica--frecency commands))))
 
 (defun chelys-galactica--extra-history-commands ()
   "Commands read from `chelys-galactica-extra-history-files', newest first.
