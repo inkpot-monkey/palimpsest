@@ -157,11 +157,12 @@ in
           # ~8-10x faster than the A76s for large-v3, so an hour of audio takes ~15 min vs ~2h.)
           custom.profiles.homeassistant.enable = true;
 
-          # NVMe (Samsung PM981, 512G, fitted Jun 2026): /nix on the `nixstore` partition (400G)
+          # NVMe (Samsung PM981, 512G, fitted Jun 2026): /nix on the `nixstore` partition (128G)
           # so the store has room for build offload (this node is the fleet's aarch64 remote
           # builder — see modules/nixos/profiles/pi-builder.nix), keeping the 29G eMMC from
-          # overflowing. The `rk1cache` partition still mounts at /var/cache but is now spare
-          # (WhisperX, its former tenant, moved to stargazer).
+          # overflowing. The `rk1cache` partition (349G) mounts at /var/cache for telemetry,
+          # paperless, and other data services (repartitioned Jun 2026; was 400G nixstore +
+          # 77G rk1cache — inverted since the store only needs ~10G and data needs the room).
           custom.rk1.nvme.enable = true;
           custom.rk1.nvme.relocateNixStore = true;
 
