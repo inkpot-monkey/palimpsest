@@ -15,10 +15,12 @@ let
   # The workers-rs build pipeline: cargo → wasm32, then worker-build shells out to
   # wasm-bindgen + wasm-opt (binaryen) + esbuild (none propagated by worker-build, so
   # they are listed explicitly). gcc supplies cc/linker for host-side proc-macro builds.
+  # lld is the LLVM linker required by rustc when targeting wasm32-unknown-unknown.
   toolchain = [
     pkgs.rustc
     pkgs.cargo
     pkgs.gcc
+    pkgs.lld
     pkgs.worker-build
     pkgs.wasm-bindgen-cli
     pkgs.binaryen
