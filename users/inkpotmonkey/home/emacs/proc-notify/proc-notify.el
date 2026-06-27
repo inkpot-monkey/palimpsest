@@ -13,7 +13,7 @@
 ;; place you type is the real Emacs buffer (or its minibuffer password prompt),
 ;; so this stays "still Emacs buffers".
 ;;
-;; Two triggers, installed together by `proc-notify-setup':
+;; Three triggers, installed together by `proc-notify-setup':
 ;;
 ;;   * Password prompts.  Comint already detects these (see
 ;;     `comint-watch-for-password-prompt') and reads the password in the
@@ -28,6 +28,12 @@
 ;;     (`proc-notify-prompt-regexp' — ends in `?'/`:', or a `[y/n]' / `(yes/no)'
 ;;     style query), gets a notification.  Activating it jumps to the buffer
 ;;     with point at the prompt so you can type the answer.
+;;
+;;   * Command finished.  `async-shell-command' installs `shell-command-sentinel'
+;;     on its process; we advise it `:after' so a backgrounded command pops a
+;;     toast as it exits — normal urgency on a clean exit, critical on a non-zero
+;;     exit or signal (see `proc-notify-shell-command-*-severity').  Activating
+;;     it raises the output buffer.  Toggle with `proc-notify-shell-command-exit'.
 ;;
 ;; ghostel / claude-code terminals.  ghostel is a libghostty PTY terminal, not
 ;; comint, so the two triggers above never reach it.  Three paths cover it:
@@ -172,6 +178,41 @@ claude-code notifies once per turn when Claude finishes and wants you.  `normal'
 (the default) maps to a normal-urgency toast that auto-expires; raise to `high'
 to make them critical — sticky on KDE — if you keep missing them.  Password
 prompts stay `high' regardless of this."
+  :type
+  '(choice
+    (const trivial)
+    (const low)
+    (const normal)
+    (const moderate)
+    (const high)
+    (const urgent)))
+
+(defcustom proc-notify-shell-command-exit t
+  "Whether to notify when an `async-shell-command' finishes.
+When non-nil, a backgrounded async shell command (including those launched by
+chelys-galactica) pops a toast as it exits: a clean exit at
+`proc-notify-shell-command-success-severity', a non-zero exit or signal at
+`proc-notify-shell-command-failure-severity'.  Suppressed, like every
+proc-notify popup, while you are already watching the buffer."
+  :type 'boolean)
+
+(defcustom proc-notify-shell-command-success-severity 'normal
+  "`alert' severity for a clean (exit 0) `async-shell-command' completion.
+`normal' (the default) maps to a normal-urgency toast that auto-expires."
+  :type
+  '(choice
+    (const trivial)
+    (const low)
+    (const normal)
+    (const moderate)
+    (const high)
+    (const urgent)))
+
+(defcustom proc-notify-shell-command-failure-severity 'high
+  "`alert' severity for a failed (non-zero exit or signal) `async-shell-command'.
+`high' (the default) maps to a critical toast — sticky on KDE — so a build or
+deploy that died while backgrounded does not slip past you.  Lower it if failed
+commands are noisy and you would rather they auto-expire too."
   :type
   '(choice
     (const trivial)
@@ -568,6 +609,42 @@ The line itself is the human-meaningful question (e.g. \"Overwrite? [y/n]\")."
              proc-notify-idle-seconds nil #'proc-notify--idle-check
              buffer)))))
 
+;;; --- async-shell-command completion -----------------------------------------
+
+;; `async-shell-command' (the chelys-galactica front-end included) installs
+;; `shell-command-sentinel' on its process; it fires once on exit/signal with a
+;; human-readable SIGNAL ("finished", "exited abnormally with code 1", ...).  We
+;; advise it `:after' to turn that completion into a toast — success at
+;; `proc-notify-shell-command-success-severity', failure (non-zero exit or a
+;; signal) at `proc-notify-shell-command-failure-severity'.  Like every other
+;; trigger this routes through `proc-notify--emit', so it is suppressed while you
+;; are watching the buffer and tunable via the same ignore/filter knobs.
+
+(defun proc-notify--shell-command-exit-advice (process signal)
+  "Notify that an `async-shell-command' PROCESS has finished.
+For `:after' advice on `shell-command-sentinel'.  SIGNAL is the state-change
+description; it is shown verbatim as the body on failure so the toast says how
+it died (e.g. \"exited abnormally with code 1\")."
+  (when (and proc-notify-shell-command-exit
+             (memq (process-status process) '(exit signal)))
+    (let ((buffer (process-buffer process)))
+      (when (buffer-live-p buffer)
+        (let ((ok
+               (and (eq (process-status process) 'exit)
+                    (eq (process-exit-status process) 0))))
+          (proc-notify--emit
+           buffer (proc-notify--summary buffer)
+           (if ok
+               "Finished"
+             (let ((d (string-trim (or signal ""))))
+               (if (string-empty-p d)
+                   "Failed"
+                 (concat
+                  (upcase (substring d 0 1)) (substring d 1)))))
+           (if ok
+               proc-notify-shell-command-success-severity
+             proc-notify-shell-command-failure-severity)))))))
+
 ;;; --- ghostel terminal bridge ------------------------------------------------
 
 ;; ghostel is a libghostty PTY terminal, not comint, so none of the comint hooks
@@ -702,13 +779,15 @@ with `!').")
 
 ;;;###autoload
 (defun proc-notify-setup ()
-  "Install password-prompt and needs-input desktop notifications.
-Covers comint (shell, `async-shell-command', sudo `compile') directly.  Points
-claude-code's `claude-code-notification-function' at the clickable `proc-notify'
-style, and routes our own (`proc-notify' category) and plain-ghostel
-\(`ghostel-mode') `alert's to it too, plus the ghostel password-prompt path.
-The claude-code and ghostel wiring is deferred until those packages load.  Also
-tracks acknowledged buffers for the pull-side `proc-notify-consult'."
+  "Install password-prompt, needs-input and completion desktop notifications.
+Covers comint (shell, `async-shell-command', sudo `compile') directly, and
+notifies on `async-shell-command' completion via a `shell-command-sentinel'
+advice.  Points claude-code's `claude-code-notification-function' at the
+clickable `proc-notify' style, and routes our own (`proc-notify' category) and
+plain-ghostel (`ghostel-mode') `alert's to it too, plus the ghostel
+password-prompt path.  The claude-code and ghostel wiring is deferred until
+those packages load.  Also tracks acknowledged buffers for the pull-side
+`proc-notify-consult'."
   ;; Route only the alerts we care about to our style; everything else keeps
   ;; alert's own default, so this stays a good citizen for other packages.
   (alert-add-rule :category "proc-notify" :style 'proc-notify)
@@ -716,6 +795,9 @@ tracks acknowledged buffers for the pull-side `proc-notify-consult'."
   (advice-add
    'comint-send-invisible
    :before #'proc-notify--password-advice)
+  (advice-add
+   'shell-command-sentinel
+   :after #'proc-notify--shell-command-exit-advice)
   (add-hook 'comint-output-filter-functions #'proc-notify--arm-idle)
   (add-hook
    'window-selection-change-functions #'proc-notify--note-selection)

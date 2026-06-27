@@ -103,6 +103,71 @@
   (should (eq (proc-notify--severity->urgency 'moderate) 'normal))
   (should (eq (proc-notify--severity->urgency nil) 'normal)))
 
+;;; --- async-shell-command completion -----------------------------------------
+
+;; `proc-notify--shell-command-exit-advice' is `:after' advice on
+;; `shell-command-sentinel'; it reads the process via the `process-*' accessors
+;; and routes through `proc-notify--emit'.  We stub the accessors (so no real
+;; process is needed) and `proc-notify--emit' (so no D-Bus), then assert the body
+;; and severity it would emit.
+
+(defmacro proc-notify-test--with-exit
+    (status exit-code signal &rest body)
+  "Run BODY with a faked finished process and a captured `proc-notify--emit'.
+STATUS/EXIT-CODE are what the accessors report; SIGNAL is the sentinel string.
+Binds `captured' to the emit arglist (nil if nothing was emitted)."
+  (declare (indent 3))
+  `(let ((captured nil))
+     (cl-letf (((symbol-function 'process-status)
+                (lambda (_) ,status))
+               ((symbol-function 'process-exit-status)
+                (lambda (_) ,exit-code))
+               ((symbol-function 'process-buffer)
+                (lambda (_) (current-buffer)))
+               ((symbol-function 'proc-notify--emit)
+                (lambda (&rest args) (setq captured args))))
+       (proc-notify--shell-command-exit-advice 'fake-proc ,signal)
+       ,@body)))
+
+(ert-deftest proc-notify-test-shell-exit-success ()
+  "A clean (exit 0) completion emits \"Finished\" at the success severity."
+  (let ((proc-notify-shell-command-exit t)
+        (proc-notify-shell-command-success-severity 'normal))
+    (proc-notify-test--with-exit 'exit 0 "finished\n"
+      (should captured)
+      (should (equal (nth 2 captured) "Finished"))
+      (should (eq (nth 3 captured) 'normal)))))
+
+(ert-deftest proc-notify-test-shell-exit-failure ()
+  "A non-zero exit emits the (capitalised) signal at the failure severity."
+  (let ((proc-notify-shell-command-exit t)
+        (proc-notify-shell-command-failure-severity 'high))
+    (proc-notify-test--with-exit 'exit 1
+                                 "exited abnormally with code 1\n"
+      (should
+       (equal (nth 2 captured) "Exited abnormally with code 1"))
+      (should (eq (nth 3 captured) 'high)))))
+
+(ert-deftest proc-notify-test-shell-exit-signal ()
+  "Death by signal counts as failure (non-`exit' status)."
+  (let ((proc-notify-shell-command-exit t)
+        (proc-notify-shell-command-failure-severity 'high))
+    (proc-notify-test--with-exit 'signal 0 "killed\n"
+      (should (equal (nth 2 captured) "Killed"))
+      (should (eq (nth 3 captured) 'high)))))
+
+(ert-deftest proc-notify-test-shell-exit-ignores-running ()
+  "A non-terminal state change (still running) emits nothing."
+  (let ((proc-notify-shell-command-exit t))
+    (proc-notify-test--with-exit 'run 0 "run\n"
+      (should-not captured))))
+
+(ert-deftest proc-notify-test-shell-exit-disabled ()
+  "With `proc-notify-shell-command-exit' nil, a completion emits nothing."
+  (let ((proc-notify-shell-command-exit nil))
+    (proc-notify-test--with-exit 'exit 0 "finished\n"
+      (should-not captured))))
+
 ;;; --- pending-set bookkeeping ------------------------------------------------
 
 (ert-deftest proc-notify-test-remember-forget ()
