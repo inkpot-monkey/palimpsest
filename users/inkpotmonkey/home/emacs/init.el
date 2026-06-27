@@ -803,8 +803,10 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
  ;; `crux-other-window-or-switch-buffer' still works from a Claude buffer,
  ;; and M-s so `search-map' (M-s g = consult-ripgrep) reaches Emacs. C-x is
  ;; already here, so the C-x p prefix (C-x p f = project-find-file) works too.
+ ;; M-& so the global `async-shell-command' binding (remapped to
+ ;; `chelys-galactica-run') reaches Emacs instead of going to the TUI.
  (ghostel-keymap-exceptions
-  '("C-c" "C-x" "C-u" "C-h" "M-x" "M-:" "C-\\" "M-o" "M-s"))
+  '("C-c" "C-x" "C-u" "C-h" "M-x" "M-:" "C-\\" "M-o" "M-s" "M-&"))
  :config
  ;; --- claude-code.el <-> ghostel 0.31 API shim ----------------------------
  ;; stevemolitor/claude-code.el (<=0.4.5, == current upstream HEAD) targets
