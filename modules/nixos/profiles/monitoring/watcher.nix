@@ -201,9 +201,12 @@ in
             # per-state string (placeholders below) so a RESOLVED alert shows ✅, not
             # the 🚨 alarm icon. Mirrors the unit-state check's ✅-on-recovery style.
             body = ''{"text": "[ALERT_TRIGGERED_OR_RESOLVED] [ENDPOINT_GROUP]/[ENDPOINT_NAME] [ALERT_DESCRIPTION] [RESULT_ERRORS]"}'';
-            placeholders = {
-              triggered = "🚨 TRIGGERED";
-              resolved = "✅ RESOLVED";
+            # Gatus's placeholders map is map[placeholder]map[state]value — the
+            # outer key is the placeholder name, inner keys are TRIGGERED/RESOLVED
+            # (uppercase). A flat {triggered;resolved;} crashes gatus at config load.
+            placeholders.ALERT_TRIGGERED_OR_RESOLVED = {
+              TRIGGERED = "🚨 TRIGGERED";
+              RESOLVED = "✅ RESOLVED";
             };
             # ADR-0026 semantics: 3 consecutive fails (~90s) before alerting,
             # recovery notice on return, no periodic re-alerts.
