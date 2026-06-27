@@ -24,6 +24,13 @@ in
   config = lib.mkIf cfg.enable {
     custom.profiles.monitoring-exporters.enable = true;
 
+    # Pin the monitoring receiver's tailscale IP so Vector can resolve it on nodes
+    # without MagicDNS (e.g. rk1a). Without this, Vector throws "Name or service
+    # not known" and all log delivery fails.
+    networking.hosts = lib.optionalAttrs (
+      settings.nodes ? ${receiver} && settings.nodes.${receiver} ? tailscale
+    ) { "${settings.nodes.${receiver}.tailscale.ip4}" = [ receiver ]; };
+
     networking.firewall.interfaces."tailscale0".allowedTCPPorts = [
       config.services.prometheus.exporters.node.port
     ];

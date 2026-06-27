@@ -57,6 +57,19 @@ in
           };
         };
 
+        # Pin all node tailscale IPs so VictoriaMetrics can resolve the scrape target
+        # hostnames. rk1b has no MagicDNS (acceptDns = false) and no blocky — kelpy had
+        # blocky providing runtime resolution when the server lived there (ADR-0028).
+        # Nodes without a tailscale entry in settings.nodes (e.g. inactive placeholders)
+        # are skipped; their scrape targets will fail regardless.
+        networking.hosts = lib.foldlAttrs (
+          acc: _name: node:
+          let
+            ip = node.tailscale.ip4;
+          in
+          acc // { ${ip} = (acc.${ip} or [ ]) ++ [ node.hostName ]; }
+        ) { } (lib.filterAttrs (_: node: node ? tailscale) settings.nodes);
+
         # Open ports for monitoring
         networking.firewall.interfaces."tailscale0".allowedTCPPorts = [
           8428 # VictoriaMetrics
