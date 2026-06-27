@@ -208,7 +208,10 @@ in
           ntfy = {
             url = oob.relayUrl;
             topic = "\${NTFY_TOPIC}";
-            token = "\${NTFY_PUBLISH_TOKEN}";
+            # Gatus validates that the ntfy token looks like a real ntfy access
+            # token (a `tk_` prefix) before it will send, so present it that way.
+            # The relay accepts the bare token or this prefixed form (authorized()).
+            token = "tk_\${NTFY_PUBLISH_TOKEN}";
             default-alert = {
               failure-threshold = 3;
               success-threshold = 2;

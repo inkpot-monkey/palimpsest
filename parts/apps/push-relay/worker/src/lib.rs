@@ -10,7 +10,8 @@
 //!   GET  /sw.js,/manifest.json,/icon.svg
 //!   GET  /vapidPublicKey   → the VAPID public key (the PWA's applicationServerKey)
 //!   POST /sub              → register a subscription under a topic (subscribe = knowing the topic)
-//!   POST /<topic>          → ntfy-style publish (Bearer publish-token) → web-push every subscriber
+//!   POST /<topic> or POST / → ntfy-style publish (Bearer publish-token; topic in
+//!                            the path or the JSON body) → web-push every subscriber
 //!
 //! Bindings (wrangler.toml): KV namespace `SUBS`; secrets `VAPID_PRIVATE`,
 //! `PUBLISH_TOKEN`, `SUBSCRIBE_TOPIC` (the one canonical phrase /sub validates
@@ -109,15 +110,35 @@ async fn subscribe(req: &mut Request, env: &Env) -> Result<Response> {
 
 /// ntfy-style publish: Bearer publish-token, body = plain text or `{title,message}`.
 /// Encrypts to every subscriber under `<topic>` and fans out; prunes 404/410.
-async fn publish(req: &mut Request, env: &Env, topic: &str) -> Result<Response> {
+///
+/// `path_topic` is the topic from the URL path (`POST /<topic>`, the curl form).
+/// Real ntfy clients (e.g. Gatus) instead POST to the base URL with the topic in
+/// the JSON body, so when the path topic is empty we fall back to the body's
+/// `topic` field — making this a drop-in ntfy publish endpoint either way.
+async fn publish(req: &mut Request, env: &Env, path_topic: &str) -> Result<Response> {
     let token = env.secret("PUBLISH_TOKEN")?.to_string();
     if !authorized(req, &token) {
         return Response::error("unauthorized", 401);
     }
 
     let raw = req.text().await.unwrap_or_default();
-    let (title, message) = match serde_json::from_str::<serde_json::Value>(&raw) {
-        Ok(v) if v.is_object() => (
+    let parsed = serde_json::from_str::<serde_json::Value>(&raw).ok();
+    let obj = parsed.as_ref().filter(|v| v.is_object());
+
+    let topic = if !path_topic.is_empty() {
+        path_topic.to_string()
+    } else {
+        obj.and_then(|v| v.get("topic"))
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
+    if topic.is_empty() {
+        return Response::error("no topic (path or body)", 400);
+    }
+
+    let (title, message) = match obj {
+        Some(v) => (
             v.get("title")
                 .and_then(|x| x.as_str())
                 .unwrap_or("infra alert")
@@ -128,7 +149,7 @@ async fn publish(req: &mut Request, env: &Env, topic: &str) -> Result<Response> 
                 .unwrap_or("")
                 .to_string(),
         ),
-        _ => ("infra alert".to_string(), raw.clone()),
+        None => ("infra alert".to_string(), raw.clone()),
     };
     let payload = json!({ "title": title, "body": message }).to_string();
 
@@ -137,7 +158,7 @@ async fn publish(req: &mut Request, env: &Env, topic: &str) -> Result<Response> 
     let subject = env.var("VAPID_SUBJECT")?.to_string();
 
     let kv = env.kv("SUBS")?;
-    let key = subs_key(topic);
+    let key = subs_key(&topic);
     let list = load_subs(&kv, &key).await;
     if list.is_empty() {
         return Response::error("no subscribers for topic", 404);
@@ -170,11 +191,14 @@ async fn publish(req: &mut Request, env: &Env, topic: &str) -> Result<Response> 
 }
 
 fn authorized(req: &Request, token: &str) -> bool {
+    // Gatus's ntfy client requires its configured token to start with `tk_` (it
+    // validates the format, like a real ntfy access token), so it sends
+    // `Bearer tk_<token>`. curl/manual callers send the bare token. Accept either.
     req.headers()
         .get("authorization")
         .ok()
         .flatten()
-        .map(|h| h == format!("Bearer {token}"))
+        .map(|h| h == format!("Bearer {token}") || h == format!("Bearer tk_{token}"))
         .unwrap_or(false)
 }
 
