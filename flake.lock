@@ -977,11 +977,11 @@
     "secrets": {
       "flake": false,
       "locked": {
-        "lastModified": 1782481772,
-        "narHash": "sha256-8T0R3JUNZuutBZ4bjVD5PBZDKCTtxrD3KU4x2za9XBc=",
+        "lastModified": 1782541536,
+        "narHash": "sha256-Y+2pzpyiv18yNvEDhyPlRnXiGCCxbN/rv0TdG1UEClo=",
         "ref": "refs/heads/main",
-        "rev": "e3dcb368b3cb1131d5b3e4b732582f7777619889",
-        "revCount": 43,
+        "rev": "16b768e18a750ab96590c0901a686569375d0408",
+        "revCount": 44,
         "type": "git",
         "url": "ssh://git@github.com/inkpot-monkey/stash.git"
       },

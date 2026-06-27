@@ -22,17 +22,18 @@ cd core && cargo test     # RFC 8291 Appendix A vector + VAPID JWT round-trip
 
 ## Remaining HITL (slice 01 — the bootstrap)
 
-1. Generate a VAPID keypair; put the private key + a publish token + a Cloudflare API
-   token into the `secrets` repo (sops). The VAPID *public* key + the topic phrase are
-   plain values.
+1. Generate a VAPID keypair; put these keys into `secrets/profiles/monitoring.yaml`
+   (sops), alongside the grafana secrets:
+   `vapid_private`, `vapid_public`, `publish_token`, `cloudflare_token`,
+   `cloudflare_account_id`. The topic phrase stays a plain (non-secret) value.
    - `publish_token` is the **write** capability rk1b presents (opaque, high-entropy —
      `openssl rand -base64 32 | tr '+/' '-_' | tr -d '='`); the topic phrase is the
      **read**/subscribe capability. Keep them distinct.
-   - `cloudflare_api_token` needs the **"Edit Cloudflare Workers"** token template
+   - `cloudflare_token` needs the **"Edit Cloudflare Workers"** token template
      (Account → Workers Scripts + Workers KV; Zone `palebluebytes.space` → Workers
      Routes + DNS, for the `push.` custom domain).
 1. Create the Worker + a KV namespace + the `push.palebluebytes.space` custom domain;
-   fill `wrangler.toml` (KV id + `VAPID_PUBLIC`).
+   fill `wrangler.toml` with the KV id (VAPID public key + account id come from sops).
 1. `just deploy-push-relay` (≡ `nix run .#push-relay-deploy`): hermetic — pins the wasm
    toolchain + `wrangler`, reads sops, builds, `wrangler secret put`, then `wrangler deploy`.
    Run it from the operator workstation (holds `&admin`), never a headless host.

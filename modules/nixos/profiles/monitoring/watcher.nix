@@ -30,7 +30,9 @@
 let
   cfg = config.custom.profiles.monitoring-watcher;
   matrixSecrets = self.lib.getSecretFile "matrix";
-  pushRelaySecrets = self.lib.getSecretFile "push-relay";
+  # The out-of-band publish token lives in the monitoring profile (key `publish_token`),
+  # alongside the relay's VAPID + Cloudflare deploy secrets.
+  pushRelaySecrets = self.lib.getSecretFile "monitoring";
   domain = settings.primaryDomain;
 
   # Out-of-band channel (ADR-0027): a second, ntfy-shaped alerter pointed at the
@@ -156,12 +158,16 @@ in
   config = lib.mkIf cfg.enable {
     # The shared webhook id (also used by kelpy's provisioner + unit-state check).
     # rk1b is a recipient of profiles/matrix.yaml (re-keyed), so it decrypts here.
-    # The out-of-band publish token is added only when that channel is enabled.
+    # The out-of-band publish token is added only when that channel is enabled —
+    # enabling it requires monitoring.yaml to be re-keyed for this host too.
     sops.secrets = {
       infra_alerts_hook_id.sopsFile = matrixSecrets;
     }
     // lib.optionalAttrs oob.enable {
-      push_relay_publish_token.sopsFile = pushRelaySecrets;
+      push_relay_publish_token = {
+        sopsFile = pushRelaySecrets;
+        key = "publish_token";
+      };
     };
 
     # Build the secret capabilities into an env file Gatus reads at runtime — keeps

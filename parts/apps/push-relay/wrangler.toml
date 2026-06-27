@@ -13,10 +13,10 @@ command = "cd worker && worker-build --release"
 binding = "SUBS"
 id = "<BOOTSTRAP: wrangler kv namespace create SUBS>"
 
-# Non-secret config. Secrets (VAPID_PRIVATE, PUBLISH_TOKEN) are NOT here —
-# they are set with `wrangler secret put` by the deploy recipe (from sops).
+# Non-secret config. VAPID_PRIVATE + PUBLISH_TOKEN are set with `wrangler secret put`,
+# and VAPID_PUBLIC is injected as `--var` at deploy — all three come from sops
+# (monitoring.yaml), so nothing secret or per-deploy is committed here.
 [vars]
-VAPID_PUBLIC = "<BOOTSTRAP: base64url of the 65-byte VAPID public key>"
 VAPID_SUBJECT = "mailto:admin@palebluebytes.space"
 
 # Serve at push.<domain> as a worker-managed custom domain (dnscontrol IGNOREs it).

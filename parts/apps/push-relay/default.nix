@@ -28,7 +28,9 @@ let
     pkgs.cacert
   ];
 
-  pushRelaySecrets = self.lib.getSecretFile "push-relay";
+  # Deploy creds + keys live in the monitoring profile (vapid_private/vapid_public/
+  # publish_token/cloudflare_token/cloudflare_account_id), alongside the grafana secrets.
+  pushRelaySecrets = self.lib.getSecretFile "monitoring";
 
   deploy = pkgs.writeShellApplication {
     name = "push-relay-deploy";
@@ -43,8 +45,8 @@ let
       cp -r "${./.}/." "$SRC/"
       chmod -R u+w "$SRC"
 
-      # Point deploy.sh at the sops-managed secrets file (vapid_private, publish_token,
-      # cloudflare_api_token) instead of its relative-path default.
+      # Point deploy.sh at the sops-managed monitoring profile instead of its
+      # relative-path default (vapid_*, publish_token, cloudflare_token/account_id).
       export SECRETS_FILE="${pushRelaySecrets}"
 
       cd "$SRC"
