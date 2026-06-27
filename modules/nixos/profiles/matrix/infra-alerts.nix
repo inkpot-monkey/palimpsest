@@ -102,6 +102,21 @@ let
       fi
     fi
 
+    # Make alerts NOTIFY (not just appear). Hookshot posts as m.notice, which
+    # Matrix's default .m.rule.suppress_notices override rule silences — and that
+    # outranks any per-room "all messages" setting. A *user-defined* override rule
+    # outranks the server defaults, so add one that notifies-with-sound for this
+    # room. We act on the admin account, which is the operator's own Element
+    # account (adminLocalpart), so this sets the operator's push preference.
+    # Idempotent PUT; declarative equivalent of toggling it by hand in a client.
+    curl "''${auth[@]}" -X PUT \
+      "$url/_matrix/client/v3/pushrules/global/override/infra-alerts-notify" \
+      -H 'content-type: application/json' \
+      -d "$(jq -nc --arg r "$rid" \
+        '{conditions:[{kind:"event_match",key:"room_id",pattern:$r}],actions:["notify",{set_tweak:"sound",value:"default"}]}')" \
+      >/dev/null && echo "infra-alerts: notify push-rule ensured" \
+      || echo "infra-alerts: push-rule PUT failed (alerts will render but not notify)" >&2
+
     # Publish the loopback webhook URL for the on-host (kelpy) unit-state check.
     printf '%s' "http://127.0.0.1:${toString webhookPort}/webhook/$hookid" \
       > "$STATE_DIRECTORY/webhook_url"
