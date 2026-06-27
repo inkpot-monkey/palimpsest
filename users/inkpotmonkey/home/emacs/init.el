@@ -1197,6 +1197,11 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 ;; buffers; the same set is folded into `consult-buffer' (narrow with `!').
 (use-package
  proc-notify
+ ;; `:bind' alone defers loading until `C-c n', so `:config' (and its
+ ;; `proc-notify-setup', which installs the comint/claude-code/ghostel push
+ ;; hooks) never runs under the long-lived emacsclient daemon.  `:demand t'
+ ;; forces the package to load at startup so the notification hooks are wired.
+ :demand t
  :bind ("C-c n" . proc-notify-consult)
  :config (proc-notify-setup)
  (with-eval-after-load 'consult
