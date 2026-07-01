@@ -866,6 +866,17 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
   'display-buffer-alist
   '("\\`\\*claude:" (display-buffer-same-window))))
 
+;; project-agent.el — agent workspace management on top of project.el.
+;; Provides the C-c a transient menu (project-agent-menu) and the ?a entry in
+;; project-switch-commands.  The core is backend-agnostic; the claude-code
+;; backend lives in project-agent-claude-code.el and is wired up here.
+(use-package
+ project-agent
+ :bind ("C-c a" . project-agent-menu)
+ :config (require 'project-agent-claude-code)
+ (setq project-agent-backend
+       (project-agent-make-claude-code-backend)))
+
 ;; Package + feature are both `ai-code' (packages.nix; main library is
 ;; `ai-code.el', which `(provide 'ai-code)'). trivialBuild emits no autoloads,
 ;; so `:bind' autoloads `ai-code-menu' from the `ai-code' feature directly.
@@ -1011,6 +1022,12 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
  (markdown-mode . visual-fill-column-mode)
  (markdown-view-mode . visual-fill-column-mode))
 
+(defun inkpotmonkey--insert-docx-as-markdown (docx-path)
+  (insert
+   (shell-command-to-string
+    (format "pandoc -f docx -t markdown %s"
+            (shell-quote-argument docx-path)))))
+
 (define-derived-mode
  open-docx-as-markdown+
  markdown-view-mode
@@ -1020,16 +1037,47 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
    (when (and filename (file-exists-p filename))
      (let ((inhibit-read-only t))
        (erase-buffer)
-       (insert
-        (shell-command-to-string
-         (format "pandoc -f docx -t markdown %s"
-                 (shell-quote-argument filename))))
+       (inkpotmonkey--insert-docx-as-markdown filename)
        (set-buffer-modified-p nil)
        (read-only-mode 1)
        (goto-char (point-min))))))
 
+(define-derived-mode
+ open-doc-as-markdown+
+ markdown-view-mode
+ "DOC View"
+ "Major mode for viewing .doc files as markdown via LibreOffice→pandoc."
+ ;; pandoc cannot read legacy .doc; convert to docx in a temp dir first
+ (let ((filename (buffer-file-name)))
+   (when (and filename (file-exists-p filename))
+     (let* ((tmpdir (make-temp-file "emacs-doc-" t))
+            (docx-path
+             (expand-file-name (concat
+                                (file-name-base filename) ".docx")
+                               tmpdir)))
+       (unwind-protect
+           (progn
+             (call-process "libreoffice"
+                           nil
+                           nil
+                           nil
+                           "--headless"
+                           "--convert-to"
+                           "docx"
+                           "--outdir"
+                           tmpdir
+                           filename)
+             (let ((inhibit-read-only t))
+               (erase-buffer)
+               (inkpotmonkey--insert-docx-as-markdown docx-path)
+               (set-buffer-modified-p nil)
+               (read-only-mode 1)
+               (goto-char (point-min))))
+         (delete-directory tmpdir t))))))
+
 (add-to-list
  'auto-mode-alist '("\\.docx\\'" . open-docx-as-markdown+))
+(add-to-list 'auto-mode-alist '("\\.doc\\'" . open-doc-as-markdown+))
 
 
 (use-package
@@ -1106,12 +1154,6 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
    (interactive)
    (ghostel-project))
 
- (defun project-claude-code ()
-   "Open Claude Code in the current project root."
-   (interactive)
-   (let ((default-directory (project-root (project-current t))))
-     (claude-code)))
-
  (setq project-switch-commands
        '((project-find-file "Find file" ?f)
          (consult-ripgrep "Ripgrep" ?g)
@@ -1119,7 +1161,7 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
          (magit-project-status "Magit" ?m)
          (project-find-dir "Find directory" ?d)
          (project-run-ghostel+ "Ghostel" ?v)
-         (project-claude-code "Claude Code" ?c)
+         (project-agent-menu "Agent" ?a)
          (project-any-command "Other" ?o)))
 
  :bind
@@ -1127,7 +1169,7 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
   project-prefix-map
   ("m" . magit-project-status)
   ("v" . project-run-ghostel+)
-  ("c" . project-claude-code)))
+  ("a" . project-agent-menu)))
 
 (use-package apheleia :init (apheleia-global-mode))
 

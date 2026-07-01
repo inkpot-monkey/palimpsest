@@ -19,7 +19,10 @@
 #     - ai-code-interface  has its main library in `ai-code.el`, not
 #       `ai-code-interface.el`; package-build derives the main file from the
 #       package name and would not find it.
-{
+#
+# `rec` makes custom packages reference each other in `packageRequires` (e.g.
+# project-agent depends on the locally-defined claude-code, not an epkgs one).
+rec {
   auth-source-sops = epkgs.melpaBuild {
     pname = "auth-source-sops";
     version = "0.1-unstable-2024-01-01";
@@ -251,4 +254,39 @@
       epkgs.recall
     ];
   };
+
+  # Agent workspace management on top of project.el. Agent-agnostic via a
+  # cl-defgeneric backend protocol; the claude-code backend lives in
+  # project-agent-claude-code.el (loaded from init.el, after both packages are
+  # available) so the core has no hard claude-code dependency.
+  # Built-in skills ship as data under skills/ so project-agent-builtin-skills-dir
+  # resolves correctly at runtime (the defvar computes from load-file-name).
+  project-agent =
+    let
+      # testEmacs carries transient so the ERT suite can (require 'project-agent).
+      # multisession is built-in; HOME is a writable tmp so sqlite can initialise.
+      testEmacs = epkgs.emacsWithPackages (e: [ e.transient ]);
+    in
+    epkgs.melpaBuild {
+      pname = "project-agent";
+      version = "0.1";
+      src = ./project-agent;
+      # (:defaults …) globs *.el; "skills" ships the built-in skills directory.
+      # *-test.el is excluded by MELPA's default :files pattern — tests run at
+      # build time only, they do not appear in the installed package.
+      files = ''(:defaults "skills")'';
+      packageRequires = [
+        epkgs.transient
+        claude-code # project-agent-claude-code.el depends on it at load time
+      ];
+      doCheck = true;
+      checkPhase = ''
+        runHook preCheck
+        HOME=$(mktemp -d)
+        ${testEmacs}/bin/emacs --batch -L "$src" -l ert \
+          -l "$src/project-agent-test.el" \
+          -f ert-run-tests-batch-and-exit
+        runHook postCheck
+      '';
+    };
 }

@@ -72,6 +72,9 @@
           "*.bean"
           "*.kbd"
           "*.xml"
+          # project-agent skill files use YAML frontmatter that mdformat cannot
+          # parse — it converts the --- delimiters to thematic breaks.
+          "**/SKILL.md"
         ];
 
         programs = {
