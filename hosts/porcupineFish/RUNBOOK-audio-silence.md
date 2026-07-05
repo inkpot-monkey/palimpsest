@@ -1,7 +1,12 @@
 # Runbook & Post-mortem: porcupineFish audio goes silent ("puff, then nothing")
 
-**Status:** Known, recurring. Root cause is an SoC-level I²S/clock wedge, **not** a
-config or hardware fault. **Incident documented: 2026-06-22.**
+**Status:** ✅ **FIXED 2026-07-05 — switched to I²S master mode** (`params = { }` in
+`hifiberry.nix`, dropping `,slave`); deployed, rebooted, Spotify plays, PCM opens with no
+`-EINVAL`. The root cause was an SoC-level I²S/clock wedge that only occurred in **slave**
+mode (Pi synthesising the bit-clock) — **not** a config or hardware fault. See
+"Master-mode bring-up" below for the confirmed result. History below is the slave-mode
+incident (documented 2026-06-22) that led to the fix. Revert path if ever needed:
+`params = { slave = { enable = true; }; }`.
 
 ______________________________________________________________________
 
@@ -130,12 +135,25 @@ defect is in the SoC/kernel I²S clock handling.
    or available**. **Do not** bump to an unstable kernel anyway — see memory +
    `audio_blog.md` (6.12.87/6.18.x hang in initrd).
 
-## Master-mode bring-up — the real fix (TO ATTEMPT, needs the device)
+## Master-mode bring-up — the real fix (✅ DONE & CONFIRMED 2026-07-05)
 
 This is the root-cause fix (see "Leading structural suspect" above): get the DAC onto
-its own oscillators so the Pi stops synthesising a jitter/wedge-prone clock. It is **not
-yet validated** — capture results here when you run it. Confirmed groundwork (web research
-2026-06-23 + on-host inspection):
+its own oscillators so the Pi stops synthesising a jitter/wedge-prone clock.
+
+**Result (2026-07-05):** deployed `params = { }`, warm-rebooted into the new generation,
+and it **just worked** — no hands-on iteration needed. The PCM opens cleanly
+(`aplay --dump-hw-params` enumerates S16/S24/S32 @ `RATE [8000 352800]`), **no `-EINVAL`
+and no clock errors** in the kernel log (only the harmless `driver name too long`
+cosmetic warning), and Spotify plays. The earlier assumption that master mode would
+`-EINVAL` on this board was **wrong** — it negotiated fine. **Knob 1 was NOT needed** (the
+redundant `dtparam=i2s=on` is still present and harmless). **Stress-test passed:** ran the
+exact 48 k-open-then-44.1 k rate-switch that reliably re-wedged slave mode
+(`speaker-test -r48000` then `-r44100`, back to back) — both tones audible, no wedge,
+spotifyd resumed cleanly. The wedge is confirmed dead. One deploy gotcha: it
+recompiled the whole aarch64 kernel (~45 min, the cached-out `dev`+`modules` issue) — run
+`just cache-kernel porcupineFish` afterward to avoid a repeat.
+
+Confirmed groundwork (web research 2026-06-23 + on-host inspection) that predicted this:
 
 - **Master is the documented default** for the single `hifiberry-dacplusadcpro` overlay —
   you select it simply by **dropping `dtparam=slave`** (there is no separate `-pro`
