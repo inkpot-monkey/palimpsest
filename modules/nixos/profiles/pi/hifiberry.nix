@@ -26,10 +26,9 @@ in
             enable = true;
             value = "on";
           };
-          i2s = {
-            enable = true;
-            value = "on";
-          };
+          # NB: no `i2s = "on"` here — the hifiberry-dacplusadcpro overlay below
+          # enables I²S itself, so the base param is redundant (and is a known
+          # master-mode DAI-format conflict source). Leave it out.
         };
         dt-overlays = {
           # I²S MASTER mode (the overlay default): params empty so the HAT's
@@ -57,6 +56,11 @@ in
     # Standard NixOS hardware settings
     hardware.i2c.enable = true;
 
+    # Save/restore the DAC's hardware mixer state (e.g. the "Digital" level
+    # spotifyd drives) across reboots. This is a hardware-audio concern, so it
+    # lives with the card profile rather than the spotifyd profile.
+    hardware.alsa.enablePersistence = true;
+
     # Explicitly load necessary modules (Safeguard)
     boot.kernelModules = [
       "i2c-dev"
@@ -69,6 +73,12 @@ in
     # Disable onboard audio to avoid conflicts
     boot.blacklistedKernelModules = [ "snd_bcm2835" ];
 
-    environment.systemPackages = [ pkgs.i2c-tools ];
+    # Hardware audio tooling: i2c-tools (i2cdetect for the codecs) and alsa-utils
+    # (amixer/aplay/speaker-test). Debugging the card needs these regardless of
+    # whether spotifyd is running, so they belong with the hardware profile.
+    environment.systemPackages = [
+      pkgs.i2c-tools
+      pkgs.alsa-utils
+    ];
   };
 }
