@@ -41,8 +41,8 @@ build host="":
 cache-kernel host="porcupineFish":
   #!/usr/bin/env bash
   set -euo pipefail
-  paths=$(nix eval --no-eval-cache --raw --expr \
-    'let k = (builtins.getFlake (toString ./.)).nixosConfigurations.{{host}}.config.boot.kernelPackages.kernel; \
+  paths=$(nix eval --no-eval-cache --raw --impure --expr \
+    'let k = (builtins.getFlake (toString ./.)).nixosConfigurations.{{host}}.config.boot.kernelPackages.kernel;
      in builtins.concatStringsSep "\n" (map (o: k.${o}.outPath) k.outputs)')
   echo "kernel outputs for {{host}}:"; echo "$paths"
   # The deploy builds these on the rk1b aarch64 builder; pull any that aren't local yet.
