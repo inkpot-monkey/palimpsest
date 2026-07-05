@@ -32,20 +32,19 @@ in
           };
         };
         dt-overlays = {
-          # `slave` makes the card *open* here: in master mode the PCM512x refuses
-          # the PCM (-EINVAL at every rate), so slave (Pi drives the bit-clock) is
-          # what we currently rely on. BUT slave is the leading suspect for the
-          # intermittent silent-wedge (the Pi then synthesises the I²S clock with a
-          # jitter-prone fractional divider; this is a "Pro" board built for MASTER
-          # mode). Fixing the -EINVAL and moving to master is the real cure — see
+          # I²S MASTER mode (the overlay default): params empty so the HAT's
+          # onboard oscillators clock the bus. This is the "Pro" board's intended
+          # mode and the fix (confirmed 2026-07-05) for the intermittent
+          # silent-wedge — in slave mode the Pi synthesised the I²S clock with a
+          # jitter-prone fractional divider and the clock block would wedge (brief
+          # puff, then silence, recoverable only by a cold power-cycle). Contrary
+          # to an earlier assumption, master mode opens the PCM fine here (no
+          # -EINVAL). Reverting to `params = { slave = { enable = true; }; }`
+          # restores the known-good but wedge-prone slave mode — see
           # hosts/porcupineFish/RUNBOOK-audio-silence.md before changing this.
           hifiberry-dacplusadcpro = {
             enable = true;
-            params = {
-              slave = {
-                enable = true;
-              };
-            };
+            params = { };
           };
           disable-bt = {
             enable = true;
