@@ -5,6 +5,75 @@
   lib,
   ...
 }:
+let
+  vivaldiBase = pkgs.vivaldi.override {
+    proprietaryCodecs = true;
+    enableWidevine = true;
+  };
+
+  # Wraps Vivaldi with --remote-debugging-port=0 so Chromium writes the
+  # allocated port to ~/.config/vivaldi/DevToolsActivePort each launch.
+  # The .desktop Exec lines are patched to use the wrapper binary so that
+  # MIME launches and taskbar pins also get the flag.
+  vivaldiWithCdp = pkgs.symlinkJoin {
+    name = "vivaldi-cdp";
+    paths = [ vivaldiBase ];
+    nativeBuildInputs = [ pkgs.makeWrapper ];
+    postBuild = ''
+      wrapProgram "$out/bin/vivaldi" \
+        --add-flags "--remote-debugging-port=0"
+      desktop="$out/share/applications/vivaldi-stable.desktop"
+      cp --remove-destination "$(readlink -f "$desktop")" "$desktop"
+      substituteInPlace "$desktop" \
+        --replace-fail "${vivaldiBase}/bin/vivaldi" "$out/bin/vivaldi"
+    '';
+  };
+
+  # Samples renderer RSS and CDP tab list every 30 s; appends JSONL to
+  # ~/.local/share/vivaldi-memlog/YYYY-MM-DD.jsonl. Exits immediately when
+  # no Vivaldi renderer processes are alive. Rotates files older than 30 d.
+  vivaldiMemlog = pkgs.writeShellApplication {
+    name = "vivaldi-memlog";
+    runtimeInputs = [
+      pkgs.curl
+      pkgs.jq
+      pkgs.procps
+      pkgs.gawk
+    ];
+    text = ''
+      LOG_DIR="$HOME/.local/share/vivaldi-memlog"
+      mkdir -p "$LOG_DIR"
+
+      mapfile -t renderer_pids < <(pgrep -f 'vivaldi-bin --type=renderer' || true)
+      [[ ''${#renderer_pids[@]} -eq 0 ]] && exit 0
+
+      TIMESTAMP=$(date -Iseconds)
+      LOG_FILE="$LOG_DIR/$(date +%Y-%m-%d).jsonl"
+
+      renderers_json=$(
+        for pid in "''${renderer_pids[@]}"; do
+          rss=$(awk '/^VmRSS:/ {print $2}' "/proc/$pid/status" 2>/dev/null || true)
+          [[ -n "$rss" ]] && printf '{"pid":%s,"rss_kb":%s}\n' "$pid" "$rss"
+        done | jq -s '.'
+      )
+
+      tabs_json="null"
+      cdp_port_file="$HOME/.config/vivaldi/DevToolsActivePort"
+      if [[ -f "$cdp_port_file" ]]; then
+        cdp_port=$(head -1 "$cdp_port_file")
+        tabs_raw=$(curl -sf --max-time 2 "http://localhost:''${cdp_port}/json" 2>/dev/null || true)
+        if [[ -n "$tabs_raw" ]]; then
+          tabs_json=$(jq '[.[] | {id, type, title, url}]' <<< "$tabs_raw" 2>/dev/null || echo "null")
+        fi
+      fi
+
+      printf '{"ts":"%s","renderers":%s,"tabs":%s}\n' \
+        "$TIMESTAMP" "$renderers_json" "$tabs_json" >> "$LOG_FILE"
+
+      find "$LOG_DIR" -name '*.jsonl' -mtime +30 -delete 2>/dev/null || true
+    '';
+  };
+in
 {
   config = lib.mkIf config.custom.home.profiles.gui.enable {
     # ==========================================
@@ -89,12 +158,10 @@
       zoom-us
       beeper
 
-      # Main browser
-      (vivaldi.override {
-        proprietaryCodecs = true;
-        enableWidevine = true;
-      })
+      # Main browser — CDP-wrapped build enables per-renderer memory logging
+      vivaldiWithCdp
       vivaldi-ffmpeg-codecs
+      vivaldiMemlog
 
       qbittorrent-enhanced
       pritunl-client
@@ -139,5 +206,29 @@
       wl-clip-persist
       brightnessctl
     ];
+
+    # ==========================================
+    # Vivaldi renderer memory sampler
+    # ==========================================
+    systemd.user.services.vivaldi-memlog = {
+      Unit = {
+        Description = "Sample Vivaldi renderer memory and CDP tab list";
+        PartOf = [ "graphical-session.target" ];
+        After = [ "graphical-session.target" ];
+      };
+      Service = {
+        Type = "oneshot";
+        ExecStart = "${vivaldiMemlog}/bin/vivaldi-memlog";
+      };
+    };
+
+    systemd.user.timers.vivaldi-memlog = {
+      Unit.Description = "Periodically sample Vivaldi renderer memory";
+      Timer = {
+        OnActiveSec = "30s";
+        OnUnitActiveSec = "30s";
+      };
+      Install.WantedBy = [ "timers.target" ];
+    };
   };
 }
