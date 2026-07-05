@@ -96,6 +96,7 @@
     git
     libnotify
     glib
+    gnome-network-displays
   ];
 
   # Give sawtoothShark the power to build images for the aarch64 raspberry
