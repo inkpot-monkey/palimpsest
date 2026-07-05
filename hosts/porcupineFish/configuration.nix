@@ -33,11 +33,13 @@
     blocky.enable = true;
   };
 
-  # ZFS is a stray default (nothing here uses it) and an audio node has no need for it.
-  # More importantly it drags in zfs-kernel, which needs the kernel's `dev` output — that
-  # output isn't in nixos-raspberrypi's cache, so leaving zfs on would force a full
-  # from-source kernel compile on every build/deploy. Dropping it lets the (cached) kernel
-  # substitute instead.
+  # ZFS is a stray default and nothing on this audio node uses it — that alone is
+  # reason to drop it. It also drags in the zfs-kernel module, which builds against
+  # the kernel's `dev` output; that output is uncached upstream (nixos-raspberrypi
+  # caches only `out`). `just cache-kernel porcupineFish` now pushes `dev` to our own
+  # cache, so this no longer *forces* a full kernel recompile — but that relief is
+  # conditional (it lapses on every kernel-pin bump until cache-kernel is re-run) and
+  # the zfs module itself is still an uncached from-source build. So: keep it off.
   boot.supportedFilesystems.zfs = lib.mkForce false;
 
   services.restic.backups.daily.paths = [
@@ -51,10 +53,7 @@
 
   environment.systemPackages = with pkgs; [
     git
-    alsa-utils
   ];
-
-  hardware.alsa.enablePersistence = true;
 
   networking.hostName = "porcupineFish";
 
