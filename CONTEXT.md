@@ -173,6 +173,10 @@ _Avoid_: archive, snapshot (reserve "snapshot" for a TSDB-consistent point-in-ti
 
 > The existing **monitoring stack** (VictoriaMetrics/VictoriaLogs/Grafana/Vector/node-exporter) is *collection-only* — it stores metrics and logs but raises no alerts. The terms below name the alerting tier layered on top of it.
 
+**Peer target file**:
+The runtime-generated prometheus `file_sd` targets file (`/run/.../node-targets.json`) that lists each scrape target's **current** tailscale IP, written by running `tailscale ip -4 <node>` over the `settings.nodes` declaration and hot-reloaded by VictoriaMetrics. Membership comes from the **declaration**; resolution from **`tailscaled`'s local netmap** — deliberately *not* from DNS, because the tailnet's DNS is centralised on `kelpy`'s blocky (its global nameserver), and the monitoring host must stay independent of the host it watches. It is the node-IP counterpart to blocky's service-FQDN generator ([ADR-0011](docs/adr/0011-blocky-runtime-tailscale-dns.md)). The single client→receiver hop keeps a build-time `/etc/hosts` pin instead. See [ADR-0029](docs/adr/0029-monitoring-runtime-peer-resolution.md).
+_Avoid_: hosts file (the server uses `file_sd`, not `/etc/hosts`), DNS resolution (the whole point is to avoid the kelpy-hosted DNS plane).
+
 **Uptime watcher** (or **watcher**):
 The off-host process that probes the fleet's services over the network and alerts when one stops answering — Gatus on the always-on voice node `rk1b`, deliberately *not* on `kelpy`, so it can still observe `kelpy` itself failing. Distinct from the **monitoring stack**, which only collects.
 _Avoid_: monitor, uptime robot.
