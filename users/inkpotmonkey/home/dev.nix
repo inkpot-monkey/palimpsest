@@ -25,6 +25,7 @@
       sqlite
       imagemagick
       pandoc
+      libreoffice
       libtool
       openssl
 
