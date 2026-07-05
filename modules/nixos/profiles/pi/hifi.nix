@@ -15,15 +15,18 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # This profile drives `hw:sndrpihifiberry`, so it is meaningless without the
+    # HiFiBerry hardware profile (which declares the card, ALSA tooling and mixer
+    # persistence). Fail the build loudly rather than ship a silent misconfig.
+    assertions = [
+      {
+        assertion = config.custom.profiles.hifiberry.enable;
+        message = "custom.profiles.hifi requires custom.profiles.hifiberry (it drives hw:sndrpihifiberry).";
+      }
+    ];
+
     # --- AUDIO STACK (ALSA Direct) ---
     services.pulseaudio.enable = false;
-
-    hardware.alsa.enablePersistence = true;
-
-    # --- PACKAGES ---
-    environment.systemPackages = with pkgs; [
-      alsa-utils
-    ];
 
     # --- SECRETS ---
     sops.secrets."spotify/password" = {
@@ -66,7 +69,11 @@ in
           bitrate = 320;
           cache_path = "/var/cache/spotifyd";
           volume_normalisation = true;
-          normalisation_pregain = 0; # Increased from -10 to boost volume
+          # ReplayGain pregain. Keep a few dB of headroom below 0 so normalising
+          # quiet tracks upward doesn't clip loud masters. -3 is a compromise
+          # between loudness and headroom (was 0, which risked clipping; the
+          # original -10 was overly quiet).
+          normalisation_pregain = -3;
           device_type = "speaker";
           device_name = "porcupineFish";
           zeroconf_port = 5354; # Use fixed port for mDNS discovery (not 5353)
