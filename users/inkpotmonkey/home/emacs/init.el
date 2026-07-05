@@ -1022,6 +1022,13 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
  (markdown-mode . visual-fill-column-mode)
  (markdown-view-mode . visual-fill-column-mode))
 
+(use-package
+ pandoc-mode
+ :hook
+ (markdown-mode . pandoc-mode)
+ (org-mode . pandoc-mode)
+ :config (pandoc-load-default-settings))
+
 (defun inkpotmonkey--insert-docx-as-markdown (docx-path)
   (insert
    (shell-command-to-string
