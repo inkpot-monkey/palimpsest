@@ -139,6 +139,48 @@ defect is in the SoC/kernel I²S clock handling.
    or available**. **Do not** bump to an unstable kernel anyway — see memory +
    `audio_blog.md` (6.12.87/6.18.x hang in initrd).
 
+## Device lifecycle: spotifyd already releases the PCM on pause — and that _inverts_ the fix (moOde cross-check, 2026-07-06)
+
+Cross-checked the signal chain against the **moOde** audiophile player (same Pi +
+HiFiBerry + kernel `bcm2835-i2s` driver). moOde hits the **identical fault** —
+`bcm2835-i2s ...i2s: I2S SYNC error!`, [moode-player/moode#581](https://github.com/moode-player/moode/issues/581),
+closed-but-never-fixed, field workaround a cron `mpc play` / cold cycle. So there
+is **no config cure we're missing**; #581 corroborates this runbook's conclusion.
+
+moOde's MPD defaults to `close_on_pause "yes"` (release the ALSA device when
+idle). The hypothesis worth testing was: does holding the I²S device open across
+idle let the clock wedge fester, and would releasing it help?
+
+**Finding: porcupineFish already releases the device on pause, for free — and it
+does not help.** spotifyd (0.4.2) delegates the device to librespot, whose ALSA
+sink opens the PCM in `start()` and, in `stop()`, does `self.pcm.take()` +
+`drain()` — i.e. it **closes** the device on every pause/stop (confirmed
+empirically by [Spotifyd/spotifyd#1153](https://github.com/Spotifyd/spotifyd/issues/1153):
+unplugging the DAC while paused is safe, only hitting play crashes). spotifyd
+0.4.2 exposes no knob to change this.
+
+**This inverts the hypothesis.** Because the device is closed on pause, **every
+play re-opens the PCM and re-locks the I²S clock** — which is exactly the wedge
+trigger this runbook already fingers (audio-device open / clock reconfiguration).
+So the promising direction is the **opposite** of `close_on_pause`: keep the I²S
+clock running continuously so the next open never has to re-lock a cold clock.
+
+- **Candidate mitigation (NOT yet tried, device-testing-gated): a persistent,
+  fixed-rate PCM everything routes through** — practically a `dmix` (or a small
+  sound server) locked to one rate, so `fe203000.i2s` stays clocked 24/7 and
+  spotifyd's per-play open never reprograms the divider. This is a refinement of
+  Mitigation #2 (lock the rate → also lock the _clock_).
+- **The cost is real and deliberate:** it forfeits the current "ALSA-direct,
+  bit-perfect" stance (dmix mixes/converts). But the source is already lossy
+  320 kbps Ogg — bit-perfect is academic here — so trading purity for a
+  continuously-clocked bus is a defensible reliability call. A naïve second
+  keep-alive stream on the raw `hw:` device will **not** work: spotifyd opens
+  `hw:` exclusively, so the holder must be the shared `dmix`/server layer, not a
+  parallel opener.
+- **Honest limit:** this only addresses the _play-open_ trigger. The 2026-07-06
+  recurrence was on a **warm reboot** (no play involved), so a continuous-clock
+  scheme would not have prevented it. Partial mitigation, not a cure.
+
 ## Master-mode bring-up — a real improvement, NOT a cure (2026-07-05 / corrected 2026-07-06)
 
 The intent (see "Leading structural suspect" above): get the DAC onto its own oscillators

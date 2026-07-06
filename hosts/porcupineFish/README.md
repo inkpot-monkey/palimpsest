@@ -15,6 +15,30 @@ NixOS configuration for a Raspberry Pi 4 equipped with a HiFiBerry DAC2 ADC Pro,
 - **Audio Stack**: PipeWire + ALSA (HiFiBerry Overlay)
 - **Services**: `spotifyd` (Spotify Connect), `mopidy` (Local/Web).
 
+## Adding a second audio source — the arbitration rule (banked from moOde)
+
+Today this host has **one** thing that opens the DAC: `spotifyd`, which grabs
+`hw:sndrpihifiberry` **exclusively**. That single-source design is deliberate and is
+also its most wedge-resistant property (one native rate, no rate-switching — see the
+[RUNBOOK](./RUNBOOK-audio-silence.md)). **Before adding AirPlay (shairport-sync), a
+local library (MPD/Mopidy), Bluetooth, etc., read this** — two clients racing for the
+raw `hw:` device means the second gets `EBUSY` and silently fails.
+
+The [moOde](https://github.com/moode-player/moode) audiophile player solved exactly this
+and its pattern is the blueprint to copy:
+
+- **One shared, non-mixing ALSA device** (`type copy` → the hardware PCM, _not_ `dmix`):
+  access stays exclusive/bit-perfect, only one client holds the DAC at a time.
+- **Explicit arbitration, not luck:** each source's start hook flips an "active" flag and
+  **stops the others first** (moOde runs `mpc stop` before a renderer opens the device),
+  with a per-source "resume on disconnect" toggle. librespot/spotifyd support this via
+  `--onevent` / `on_song_change` hooks.
+
+So the port is: a shared ALSA `type copy` PCM + a tiny arbiter (systemd + event hooks)
+that pauses whoever holds the device when another source goes active. Don't reach for
+`dmix` for _mixing_ — the only reason to consider a persistent `dmix` here is the
+_clock-stability_ trade discussed in the RUNBOOK, which is a separate decision.
+
 ## Deployment
 
 Deploy updates directly from your laptop (Stargazer). This command builds the system locally and pushes it to the Pi.
