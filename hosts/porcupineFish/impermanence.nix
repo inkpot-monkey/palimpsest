@@ -1,26 +1,29 @@
 # Impermanence (ephemeral tmpfs root) for porcupineFish.
 #
-# ⚠️  STAGED, NOT YET DEPLOYED — BOOT-CRITICAL. porcupineFish would be the first
-# nixos-raspberrypi host in the fleet to run impermanence, so the boot chain below
-# is adapted from the proven rk1 pattern (hosts/rk1/common.nix) but is NOT yet
-# verified on this hardware. Deploy ONLY with console access (monitor+keyboard or
-# serial) and an SD reader on hand, using `just deployBoot porcupineFish` (a `boot`
-# generation) followed by ONE reboot — NOT `switch` (you cannot remount / to tmpfs
-# on the running system).
+# DEPLOYED & VERIFIED 2026-07-06 — porcupineFish is the fleet's first
+# nixos-raspberrypi impermanence host; the boot chain is adapted from the rk1 pattern
+# (hosts/rk1/common.nix). It booted cleanly both warm and from a cold power-on, with
+# all mounts correct and /var/lib/alsa/asound.state restored.
 #
-# DEPLOY CHECKLIST — verify each on the first tmpfs boot:
-#   1. root= kernelParam. The extlinux generator derives kernelParams from
-#      fileSystems."/". With a tmpfs root it must NOT emit a stale `root=/dev/...`.
-#      rk1's turing-rk1 module force-set one and had to strip it with
-#      `boot.kernelParams = lib.mkOverride 49 [ ... ]`. If nixos-raspberrypi does the
-#      same, add the equivalent override here. Inspect the generated
-#      /boot/extlinux/extlinux.conf before rebooting.
-#   2. /boot durability. extlinux.conf + the kernels (/boot/nixos/*) live on the
-#      now-tmpfs root, so /boot is persisted below — confirm the bootloader install
-#      lands on /persistent and survives a reboot.
-#   3. Fallback. NIXOS_SD is left untouched, so the previous ext4-root generation
-#      stays in the extlinux menu and still boots — that is the recovery path if the
-#      tmpfs generation fails. Selecting it needs console access.
+# STILL BOOT-CRITICAL if you change any of the fileSystems / persistence below: deploy
+# with `just deployBoot porcupineFish` (a `boot` generation) + ONE reboot — NOT `switch`
+# (you cannot remount / to tmpfs on the running system) — and ideally with console
+# access, since a bad boot needs the extlinux menu to recover.
+#
+# What was verified at bring-up (re-check these if you touch the boot config):
+#   1. root= kernelParam. nixos-raspberrypi does NOT emit a `root=` (unlike rk1's
+#      turing-rk1 module, which forced one and needed a mkOverride to strip it) — it
+#      derives the root from the initrd's neededForBoot mounts, so tmpfs root works with
+#      no override. Confirmed absent from the generated /boot/extlinux/extlinux.conf.
+#   2. /boot durability. extlinux.conf + the kernels (/boot/nixos/*) live on the root,
+#      so /boot is persisted below. /boot resolves to NIXOS_SD:/boot whether accessed
+#      directly or via the persist bind-mount, so bootloader installs stay durable.
+#   3. Fallback. NIXOS_SD is left untouched, so the previous ext4-root generations stay
+#      in the extlinux menu and still boot — the recovery path (needs console access).
+#
+# NOTE: impermanence does NOT affect audio. The I²S clock wedge that recurred during
+# bring-up is a separate SoC hardware issue (cold-cycle to clear) — see
+# RUNBOOK-audio-silence.md. Impermanence was exonerated.
 {
   lib,
   ...

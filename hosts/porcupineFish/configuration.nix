@@ -13,9 +13,9 @@
     self.nixosProfiles.bundle
     self.nixosProfiles.pi-bundle
 
-    # Impermanence (ephemeral tmpfs root). STAGED — boot-critical; see the file
-    # header before deploying. Remove this import to fall back to the plain
-    # ext4-root config.
+    # Impermanence (ephemeral tmpfs root). Deployed & verified 2026-07-06; still
+    # boot-critical if you change it — see the file header. Remove this import to
+    # fall back to the plain ext4-root config.
     ./impermanence.nix
   ];
 
