@@ -82,6 +82,31 @@ in
       };
     };
 
+    # --- REALTIME SCHEDULING & CPU GOVERNOR (XRUN insurance) ---
+    # The two levers the moOde audiophile player exposes that have a *real*
+    # mechanism against buffer under-runs on an ALSA→I²S path (everything moOde
+    # does beyond bit-perfect + clean clocking is unproven). NOTE: this is
+    # insurance against dropouts under CPU contention, NOT a fix for the SoC I²S
+    # clock wedge — that still needs a COLD power-cycle (see the host RUNBOOK).
+    # On a Pi 4 pushing a single 320 kbps stream the headroom is already large,
+    # so expect this to bite only under load (a deploy/nix GC running mid-play).
+
+    # Pin the governor so cores don't down-clock mid-stream and starve the audio
+    # thread. Trade-off: higher idle power/heat on this fanless box. mkDefault so
+    # a host enabling this profile can opt back to `ondemand`.
+    powerManagement.cpuFreqGovernor = lib.mkDefault "performance";
+
+    # Run spotifyd under SCHED_FIFO so its decode/output thread preempts normal
+    # work. systemd (PID 1) applies the policy before dropping privileges, so no
+    # CAP_SYS_NICE is needed and the module's DynamicUser sandbox stays intact
+    # (DynamicUser does not imply RestrictRealtime). Priority kept modest (5):
+    # above every SCHED_OTHER task, but low in the RT band so it can't starve the
+    # kernel's own RT threads (irq/timer softirqs).
+    systemd.services.spotifyd.serviceConfig = {
+      CPUSchedulingPolicy = "fifo";
+      CPUSchedulingPriority = 5;
+    };
+
     # --- DISCONNECT WATCHDOG ---
     # spotifyd silently loses its connection to Spotify's backend (websocket reset)
     # but the *process never exits*, so it lingers "active (running)" while vanishing
