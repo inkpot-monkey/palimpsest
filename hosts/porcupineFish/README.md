@@ -117,10 +117,17 @@ it appears on **tailscale**, not the monitor.
 
 ## Toolchain pin (why `nixos-raspberrypi` is pinned, and the forward path)
 
-`flake.nix` pins `nixos-raspberrypi` to **`6b30596`** (Feb 2026). **Do not bump it without
-re-validating a porcupineFish boot.** Newer revs (e.g. `06c6e351`, May 2026) switched the RPi
-vendor kernel from the **stable** branch (`linux_rpi-bcm2711-6.12.34-stable`) to **unstable/next**
-(`6.12.87-unstable`), which **hangs porcupineFish in the initrd before systemd ever starts**.
+`flake.nix` pins `nixos-raspberrypi` to **`40861a6`** (Mar 2026), whose **default** kernel is
+`linux_rpi-bcm2711-6.12.47-stable` — cached on `nixos-raspberrypi.cachix.org` and proven to boot.
+**Do not bump it without re-validating a porcupineFish boot at the device.** Both current upstream
+defaults are **unstable/next** snapshots that **hang porcupineFish in the initrd before systemd
+ever starts**: `main`/`v1.20260517.0` defaults to `6.12.87-unstable`, and `develop` to
+`6.18.34-unstable`. Only `stable_*`-tagged kernels have booted here.
+
+> **This pin also fixes the whole userspace to nixpkgs 25.11** (see "Why this host is pinned to
+> nixpkgs / home-manager 25.11" below) — `nixos-raspberrypi` hard-pins `nixpkgs = nixos-25.11`, so
+> every *program* on this host comes from 25.11, one release behind the rest of the fleet
+> (nixos-unstable / 26.11). The kernel and the userspace are the same decision.
 
 ### How to recognise this failure (it's deceptive)
 
@@ -133,13 +140,23 @@ vendor kernel from the **stable** branch (`linux_rpi-bcm2711-6.12.34-stable`) to
 
 ### Forward path (don't stay on Feb 2026 forever)
 
-The current `nixos-raspberrypi` still ships the good kernel alongside the broken default
-(`pkgs/linux-rpi/kernels.nix` lists `v6_12_34` … `v6_12_87`). So you can move to a *newer*
-`nixos-raspberrypi` (newer u-boot/firmware/fixes) and just `lib.mkForce`
-`boot.kernelPackages` back to the `v6_12_34` variant — `raspberry-pi-4.nix` only sets it with
-`lib.mkDefault`. Validate with one reflash (ideally once the rk1 native builders are available —
-see `modules/nixos/profiles/pi-builder.nix`), then report the initrd regression upstream to
-`nvmd/nixos-raspberrypi`.
+The vendor kernel tracks **LTS** (it moved 6.12→6.18 LTS upstream in mid-2026), so it lags
+mainline by ~2–3 release cycles by design — that's fine. The newest kernel this HAT can *safely*
+run today is **`6.18.33-stable`** (a real 6.12→6.18 LTS jump), added to the **`develop`** branch
+(upstream issue #191). Pure *mainline* is **not** an option: the HiFiBerry machine driver + the
+`hifiberry-dacplusadcpro` overlay are **vendor-only** (the PCM512x/PCM186x codec drivers are
+upstreamed; the glue that binds them to the Pi's I²S is not), so stay on the vendor kernel.
+
+To move: pin a *newer* `nixos-raspberrypi` (newer u-boot/firmware/fixes) and **`lib.mkForce`
+`boot.kernelPackages` to a `stable` bundle** — e.g. `linuxAndFirmware.v6_18_33.linuxPackages_rpi4`
+on `develop`, or `v6_12_47` — **never the branch default** (which is now an `unstable` snapshot).
+`raspberry-pi-4.nix` sets it with `lib.mkDefault`, so the force wins. A non-default kernel likely
+isn't cached, but the **rk1b native aarch64 builder** (now online) makes that a tolerable native
+build rather than a QEMU slog (`just cache-kernel porcupineFish` can also pre-seed it). **Validate
+with a physical reflash** and a known-good rollback image in hand: a bad kernel hangs in initrd — a
+silent brick with no console/network, and extlinux won't auto-fall-back — so this is an
+at-the-device change, **not** a remote `switch` + reboot. See `UPGRADE-audio-dsp.md`'s sibling
+reasoning; report any initrd regression upstream to `nvmd/nixos-raspberrypi`.
 
 ## Secrets (SOPS) — all-or-nothing
 
