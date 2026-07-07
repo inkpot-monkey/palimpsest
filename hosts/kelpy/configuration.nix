@@ -56,6 +56,11 @@
         "paperless-consumer.service"
       ];
     };
+    # Daily secret-expiry watcher (ADR-0031): reads the plaintext expiry registry
+    # (secrets/expiry.nix) and alerts #infra-alerts before a rotatable secret (e.g.
+    # the 90-day tailscale auth key) lapses. Reuses the infraAlerts webhook + the
+    # node-exporter textfile metric for a Grafana "days remaining" gauge.
+    monitoring-secret-expiry.enable = true;
     mail = {
       enable = true;
       inherit (settings.mail) domain extraDomains;
