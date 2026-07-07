@@ -132,6 +132,17 @@ in
       extraDomains = [ "palebluebytes.xyz" ];
     };
 
+    # The tailnet's fleet DNS resolvers: the hosts running blocky that are registered
+    # as tailscale global nameservers (ADR-0030). Single source of truth for the
+    # `tailscale-dns` app, which resolves each host's CURRENT tailscale IP and pushes
+    # the admin-console nameserver list — self-healing against the reflash IP-drift
+    # that silently killed the old porcupineFish secondary. Keep in sync with the
+    # `custom.profiles.blocky.enable` grants in hosts/default.nix.
+    dns.nameserverHosts = [
+      "kelpy"
+      "rk1b"
+    ];
+
     nodes.kelpy = {
       hostName = "kelpy";
       domain = "palebluebytes.space";

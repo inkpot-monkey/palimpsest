@@ -8,6 +8,7 @@
     {
       apps = {
         dns = import ./dns { inherit pkgs self inputs; };
+        tailscale-dns = import ./tailscale-dns { inherit pkgs self; };
         build-pi = import ./build-pi { inherit pkgs self; };
         push-relay-deploy = {
           type = "app";
