@@ -32,6 +32,9 @@ let
     mkdir -p $out
     ln -s ${dashboards.dmarc} $out/dmarc.json
     ln -s ${dashboards.node-exporter} $out/node-exporter.json
+    # In-tree dashboard (not fetched): the secret-expiry gauge (ADR-0031), fed by the
+    # secret_expiry_timestamp_seconds textfile metric.
+    ln -s ${./dashboards/secret-expiry.json} $out/secret-expiry.json
   '';
 
   # True when the host has an NVMe /var/cache mount (rk1b) — used to redirect
@@ -144,6 +147,11 @@ in
             {
               name = "Prometheus";
               type = "prometheus";
+              # Marked default so provisioned dashboards resolve their `datasource`
+              # template variable without a hard-coded uid. Do NOT add an explicit `uid`
+              # here: adding one to an already-provisioned datasource makes Grafana fail
+              # provisioning with "data source not found" and crash-loop.
+              isDefault = true;
               access = "proxy";
               url = "http://localhost:8428";
             }
