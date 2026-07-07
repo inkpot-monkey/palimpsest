@@ -78,11 +78,7 @@ in
         ./porcupineFish/configuration.nix
         self.users.inkpotmonkey.manifest
         (grant "inkpotmonkey" { workstation.enable = true; })
-        # Replace the stable blocky module with the unstable one to use modern options (e.g. denylists)
-        {
-          disabledModules = [ "services/networking/blocky.nix" ];
-          imports = [ "${inputs.nixpkgs}/nixos/modules/services/networking/blocky.nix" ];
-        }
+        # blocky removed here (ADR-0030) — the Pi-only module swap it needed went with it.
       ];
     };
 
@@ -176,6 +172,12 @@ in
           custom.profiles.monitoring-server.enable = true;
           custom.profiles.monitoring-client.enable = true;
           custom.profiles.backup.monitoringTelemetry.enable = true;
+
+          # Second fleet DNS resolver (ADR-0030): rk1b is the tailnet's other global
+          # nameserver alongside kelpy, replacing the drifted porcupineFish. No module
+          # swap needed — rk1b is built with mkSystem (main nixpkgs → blocky 0.30). Also
+          # makes rk1b self-resolve via its own blocky (nameservers = 127.0.0.1).
+          custom.profiles.blocky.enable = true;
 
           # Off-host uptime watcher (Gatus): rk1b is always-on and not kelpy, so it
           # can observe kelpy failing. Probes the fleet + alerts to #infra-alerts.

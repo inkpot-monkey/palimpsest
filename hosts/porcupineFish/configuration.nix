@@ -35,7 +35,9 @@
     monitoring-client.enable = true;
     monitoring-smartctl.enable = true;
     backup.enable = true;
-    blocky.enable = true;
+    # blocky removed (ADR-0030): this audio node's recovery is a cold power-cycle,
+    # so it's a liability in the fastest-wins global-nameserver list. Fleet DNS is
+    # now dual blocky on kelpy + rk1b.
   };
 
   # ZFS is a stray default and nothing on this audio node uses it — that alone is
