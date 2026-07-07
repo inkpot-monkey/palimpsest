@@ -169,13 +169,41 @@ _Avoid_: using "retention" for backup keep-policy or for how long blobs are kept
 A point-in-time off-site copy made by **restic**, kept under a keep-daily/weekly/monthly policy, used to *restore* after data loss. Distinct from **archival** (git-annex replication of blobs) and from **retention** (in-place expiry).
 _Avoid_: archive, snapshot (reserve "snapshot" for a TSDB-consistent point-in-time the backup is taken *from*).
 
+### Networking & DNS
+
+> The tailnet's DNS is **split-horizon with ad-blocking**, served by **blocky** ([ADR-0011](docs/adr/0011-blocky-runtime-tailscale-dns.md), [ADR-0030](docs/adr/0030-fleet-dns-dual-blocky.md)). The terms below fix how names resolve and who depends on the DNS plane.
+
+**Dual blocky**:
+The fleet's DNS redundancy: **blocky** runs on both `kelpy` and `rk1b`, and both are the tailnet's **global nameservers**. `rk1b` replaced `porcupineFish`, whose IP had drifted out of the admin console. Redundancy works because, with **Override local DNS** on, tailscale queries all global nameservers **in parallel and takes the fastest** — so one being down is invisible, not a failover delay. Both run identical config, so the winning answer is the same.
+_Avoid_: primary/secondary DNS (there is no failover order — it is parallel), failover.
+
+**Global nameserver**:
+A resolver IP set in the **tailscale admin console** that clients with `acceptDns = true` (and the unmanaged phone) send all queries to. The fleet's are `kelpy` and `rk1b`'s tailscale IPs. Entered as **IPs, not MagicDNS names**, so they drift on a full reflash and must be re-entered by hand — the drift that silently killed the old `porcupineFish` secondary. Distinct from a blocky **upstream** (where blocky itself forwards) and a **local blocky** (a host resolving via its own `127.0.0.1`).
+_Avoid_: DNS server (ambiguous).
+
+**Split-horizon**:
+Serving a different answer for `*.palebluebytes.space` inside the tailnet than the public internet does — blocky maps a service FQDN to a node's **tailscale** IP (private services) or **public** IP (public services), so `monitoring.palebluebytes.space` resolves to the tailnet address for tailnet clients. The reason a co-equal public resolver cannot be mixed into the nameserver list: it does not know these answers.
+_Avoid_: split DNS (tailscale's feature of that name is a different, per-domain mechanism we do not use here).
+
+**Fail-open** (rejected as a public nameserver):
+The idea of listing a public resolver (`1.1.1.1`) as an extra **global nameserver** so devices keep internet if every blocky is down. **Not done** ([ADR-0030](docs/adr/0030-fleet-dns-dual-blocky.md)): under parallel-query it wins most races against blocky's DoH, gutting **ad-block** and hijacking **split-horizon**. The two blockies are the availability story instead.
+_Avoid_: fallback resolver, upstream (blocky's real upstreams are a separate thing).
+
+**acceptDns posture**:
+Per-host choice of whether tailscale manages the host's resolver. **Clients** (phone, the roaming laptops) set `true` → they use the **global nameservers** and get **ad-block** + internal names. **Servers** set `false` → independent of the DNS plane (LAN DNS + build-time `/etc/hosts` pins), so a blocky/`kelpy` outage cannot break them; the two DNS hosts are `false` *and* run a **local blocky**. Laptops deliberately stay clients rather than running a local blocky, because a local DoH resolver breaks **captive portals** while roaming.
+_Avoid_: MagicDNS toggle (`acceptDns` is broader than MagicDNS).
+
+**Service FQDN**:
+The full `<service>.palebluebytes.space` name a service is reached by. Kept full (never bare `<service>`) because Caddy fronts services with public **Let's Encrypt** certs and a browser validates the cert against the typed name — no public CA issues for a bare single-label name, so shortening breaks HTTPS. Host **codenames** are already bare via **MagicDNS** (`ssh rk1b`); only *service* names are constrained.
+_Avoid_: short name, hostname (a service FQDN is not a host).
+
 ### Monitoring & alerting
 
 > The existing **monitoring stack** (VictoriaMetrics/VictoriaLogs/Grafana/Vector/node-exporter) is *collection-only* — it stores metrics and logs but raises no alerts. The terms below name the alerting tier layered on top of it.
 
-**Peer target file**:
-The runtime-generated prometheus `file_sd` targets file (`/run/.../node-targets.json`) that lists each scrape target's **current** tailscale IP, written by running `tailscale ip -4 <node>` over the `settings.nodes` declaration and hot-reloaded by VictoriaMetrics. Membership comes from the **declaration**; resolution from **`tailscaled`'s local netmap** — deliberately *not* from DNS, because the tailnet's DNS is centralised on `kelpy`'s blocky (its global nameserver), and the monitoring host must stay independent of the host it watches. It is the node-IP counterpart to blocky's service-FQDN generator ([ADR-0011](docs/adr/0011-blocky-runtime-tailscale-dns.md)). The single client→receiver hop keeps a build-time `/etc/hosts` pin instead. See [ADR-0029](docs/adr/0029-monitoring-runtime-peer-resolution.md).
-_Avoid_: hosts file (the server uses `file_sd`, not `/etc/hosts`), DNS resolution (the whole point is to avoid the kelpy-hosted DNS plane).
+**Peer IP pin**:
+The build-time `/etc/hosts` entry (via `networking.hosts`) that maps a node's **tailscale IP** — read from the `settings.nodes` declaration — to its hostname, so the **monitoring server** can resolve scrape targets and a **client**'s Vector can reach its receiver. Membership comes from the **declaration**; resolution is the pinned tailscale IP, consulted by glibc *before* any resolver — deliberately *not* DNS, because the tailnet's DNS is centralised on `kelpy`'s blocky and the monitoring host must stay independent of the host it watches. Build-time is safe because a tailscale IP drifts only on a full reflash, which forces the redeploy that regenerates the pin. See [ADR-0029](docs/adr/0029-monitoring-runtime-peer-resolution.md).
+_Avoid_: `file_sd` (considered and rejected — a runtime generator buys nothing here), DNS resolution (the whole point is to avoid the kelpy-hosted DNS plane).
 
 **Uptime watcher** (or **watcher**):
 The off-host process that probes the fleet's services over the network and alerts when one stops answering — Gatus on the always-on voice node `rk1b`, deliberately *not* on `kelpy`, so it can still observe `kelpy` itself failing. Distinct from the **monitoring stack**, which only collects.
