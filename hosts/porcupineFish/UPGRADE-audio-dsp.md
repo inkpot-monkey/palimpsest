@@ -65,7 +65,43 @@ and nothing adapts live. Re-measure only if the speakers/room change.
 Poor-man's positional adaptivity that _is_ FOSS: CamillaDSP supports runtime config
 switching (websocket API / camilladsp_zmq), so we could script "couch" vs "desk" filter
 profiles and switch on demand. Covers the realistic two-spots case without any proprietary
-system.
+system. See the automated variant below.
+
+## Tier 3 (further-future): automate the profile switch by tracking a phone
+
+Extends the manual runtime-switch above — instead of picking "couch"/"desk" by hand, detect
+which listening zone the phone is in and load the matching CamillaDSP profile automatically.
+All FOSS, and it slots onto existing fleet infra (rk1b already runs Home Assistant).
+
+**Mechanism:** phone presence → Home Assistant → CamillaDSP websocket (`SetConfigName` /
+reload). Stand up [ESPresense](https://espresense.com/) nodes (ESP32, a few € each) as HA
+room sensors; an HA automation calls the CamillaDSP websocket to load `couch.yml` vs
+`desk.yml` on a debounced zone change.
+
+**Granularity is the whole story — and it works out in our favour:**
+
+- Cheap indoor tracking (BLE / ESPresense) resolves **zone level (~1–3 m)**, NOT seat level.
+  Wi-Fi RSSI (5–15 m) is useless; only UWB anchors + a UWB phone (Pixel/Samsung) give seat
+  precision (~10–30 cm), and that's overkill with fragmented Android UWB APIs.
+- Zone-level is the _correct_ resolution, not a compromise: room correction is dominated by
+  **bass room modes** that shift over ~0.5 m, so correction IS position-sensitive — but the
+  couch (far-field) and desk (near-field) profiles differ by far more than the tracking
+  error, so zone-switching lands the right ballpark filter every time. And **you don't move
+  while listening** — the job is "I got up and moved to the couch, load that filter," which
+  zone presence answers exactly. Seat-follow ("optimize continuously as I walk around") is the
+  proprietary Trueplay/Dirac fantasy that a person in a chair doesn't need.
+
+**Wedge-safe:** a CamillaDSP filter reload swaps FIR coefficients WITHOUT reopening the ALSA
+device as long as rate/format are unchanged (always 44.1k here). So profile-switching does
+NOT hit the device-reconfigure event that triggers the I²S wedge — unlike the `alsa_cdsp`
+rate-change restart flagged above, this is on the safe side of that line.
+
+**Caveats:** whose phone wins with multiple people; phone-in-pocket-across-the-room ≠
+ears-at-the-seat (debounce: only switch after settled in a zone N seconds). Still gated behind
+the same prerequisites as any DSP work — wedge resolved AND a measurement in hand — plus a
+third: you must measure **each zone separately** (N profiles = N mic sweeps) and stand up
+ESPresense + an HA automation. A tier-3 extension that only lights up after room correction
+itself exists.
 
 ## What's already in place (the non-DSP wins we DID take)
 
