@@ -101,9 +101,11 @@ in
               imap: {
                 host: $imap_host,
                 port: $imap_port,
-                user: $imap_user,
-                password: $imap_password,
-                mailbox: $imap_mailbox
+                username: $imap_user,
+                password: $imap_password
+              },
+              folders: {
+                inbox: $imap_mailbox
               },
               poll_interval_seconds: $poll_interval,
               storage_path: "/var/lib/dmarc-metrics-exporter"
