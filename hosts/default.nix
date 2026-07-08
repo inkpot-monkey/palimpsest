@@ -173,6 +173,12 @@ in
           custom.profiles.monitoring-client.enable = true;
           custom.profiles.backup.monitoringTelemetry.enable = true;
 
+          # DMARC aggregate-report metrics (ADR-0031 dashboard 11333). Co-located
+          # with the monitoring server so it's scraped over loopback; polls the
+          # `dmarc` mailbox on kelpy's Stalwart via IMAP (imapHost default). Secret
+          # dmarc_imap_password lives in monitoring.yaml (rk1b-readable).
+          custom.profiles.monitoring-dmarc.enable = true;
+
           # Second fleet DNS resolver (ADR-0030): rk1b is the tailnet's other global
           # nameserver alongside kelpy, replacing the drifted porcupineFish. No module
           # swap needed — rk1b is built with mkSystem (main nixpkgs → blocky 0.30). Also
