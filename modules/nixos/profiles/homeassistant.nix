@@ -15,6 +15,7 @@
 {
   config,
   lib,
+  pkgs,
   settings,
   ...
 }:
@@ -27,6 +28,56 @@ let
   inherit (haService) edge;
   # Public-facing (tailnet-only) URL served by the edge host's Caddy.
   haUrl = "https://home.${settings.primaryDomain}";
+
+  # faster-whisper 1.2.x fetches the whisper tokenizer from HuggingFace at model load
+  # UNLESS `tokenizer.json` is present in the model directory — and huggingface-hub 1.10.2
+  # crash-loops that fetch ("Cannot send a request, as the client has been closed"), so the
+  # STT service never starts. The rhasspy `base-int8` repo that `model = "base-int8"` pulls
+  # ships only the ct2 essentials (model.bin/config.json/vocabulary.txt), no tokenizer.json.
+  # Assemble a self-contained model dir — rhasspy's int8 weights + the matching tokenizer.json
+  # from Systran's base repo — and point `model` at it. faster-whisper then loads the tokenizer
+  # from disk, never touches HuggingFace, and the model isn't re-downloaded to /tmp every boot.
+  hfFile =
+    {
+      repo,
+      file,
+      hash,
+    }:
+    pkgs.fetchurl {
+      url = "https://huggingface.co/${repo}/resolve/main/${file}";
+      inherit hash;
+    };
+  fasterWhisperBaseInt8 = pkgs.runCommandLocal "faster-whisper-base-int8-model" { } ''
+    mkdir -p "$out"
+    cp ${
+      hfFile {
+        repo = "rhasspy/faster-whisper-base-int8";
+        file = "model.bin";
+        hash = "sha256-rhP3TbTSPCdGhjiA6H8Vv3gL0u4Ki5x92We5NDoicIE=";
+      }
+    } "$out/model.bin"
+    cp ${
+      hfFile {
+        repo = "rhasspy/faster-whisper-base-int8";
+        file = "config.json";
+        hash = "sha256-yd7j1nXDHDdjwe48nnI1BQ6Hfa3ZACxbPGA2bj2B2io=";
+      }
+    } "$out/config.json"
+    cp ${
+      hfFile {
+        repo = "rhasspy/faster-whisper-base-int8";
+        file = "vocabulary.txt";
+        hash = "sha256-NM4/4cUEECez+NQpEicJk/mG28S7NM8n+VHjSh5FORM=";
+      }
+    } "$out/vocabulary.txt"
+    cp ${
+      hfFile {
+        repo = "Systran/faster-whisper-base";
+        file = "tokenizer.json";
+        hash = "sha256-+3tjGR6bsEUILHn9dCoxBqEsmVE6sw30oNR/pstv0Ks=";
+      }
+    } "$out/tokenizer.json"
+  '';
 in
 {
   options.custom.profiles.homeassistant = {
@@ -76,11 +127,12 @@ in
     };
 
     # STT: faster-whisper over Wyoming, loopback only. base-int8 balances accuracy/size on
-    # CPU; a RAM-constrained host can override `.model` to tiny-int8.
+    # CPU. `model` is a local, self-contained model dir (weights + tokenizer.json) rather than
+    # the "base-int8" name — see fasterWhisperBaseInt8 above for why (offline, no crash-loop).
     services.wyoming.faster-whisper.servers.en = {
       enable = true;
       uri = "tcp://127.0.0.1:10300";
-      model = "base-int8";
+      model = "${fasterWhisperBaseInt8}";
       language = "en";
       device = "cpu";
     };
