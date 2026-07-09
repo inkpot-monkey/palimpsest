@@ -51,7 +51,7 @@ touching secrets:
 
 ### Issue tracker
 
-Issues live as markdown files under `.scratch/<feature-slug>/`. See `docs/agents/issue-tracker.md`.
+Issues live as GitHub issues on `inkpot-monkey/palimpsest` (via the `gh` CLI); external PRs are not a triage surface. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
