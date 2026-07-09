@@ -21,7 +21,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${datasource}"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -71,7 +71,11 @@
           "expr": "sum(increase(dmarc_total[$__range]))",
           "interval": "",
           "legendFormat": "",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         }
       ],
       "title": "Total",
@@ -80,7 +84,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${datasource}"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -130,7 +134,11 @@
           "expr": "sum(increase(dmarc_compliant_total[$__range]))",
           "interval": "",
           "legendFormat": "",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         }
       ],
       "title": "# compliant",
@@ -139,7 +147,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${datasource}"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -193,7 +201,11 @@
           "expr": "sum(increase(dmarc_reject_total[$__range]))",
           "interval": "",
           "legendFormat": "",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         }
       ],
       "timeFrom": null,
@@ -203,7 +215,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${datasource}"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -257,7 +269,11 @@
           "expr": "sum(increase(dmarc_quarantine_total[$__range]))",
           "interval": "",
           "legendFormat": "",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         }
       ],
       "timeFrom": null,
@@ -267,7 +283,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${datasource}"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -320,7 +336,11 @@
           "expr": "sum(increase(dmarc_compliant_total[$__range]))/sum(increase(dmarc_total[$__range]))",
           "interval": "",
           "legendFormat": "",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         }
       ],
       "title": "% compliant",
@@ -329,7 +349,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${datasource}"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -382,7 +402,11 @@
           "expr": "sum(increase(dmarc_reject_total[$__range]))/sum(increase(dmarc_total[$__range]))",
           "interval": "",
           "legendFormat": "",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         }
       ],
       "timeFrom": null,
@@ -392,7 +416,7 @@
     {
       "datasource": {
         "type": "prometheus",
-        "uid": "${datasource}"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {
@@ -445,7 +469,11 @@
           "expr": "sum(increase(dmarc_quarantine_total[$__range]))/sum(increase(dmarc_total[$__range]))",
           "interval": "",
           "legendFormat": "",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         }
       ],
       "timeFrom": null,
@@ -459,7 +487,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "${datasource}"
+        "uid": "PBFA97CFB590B2093"
       },
       "description": "",
       "fieldConfig": {
@@ -507,7 +535,11 @@
           "expr": "sum(increase(dmarc_compliant_total[$__rate_interval])) by (reporter)",
           "interval": "",
           "legendFormat": "Compliant by {{reporter}}",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         },
         {
           "exemplar": true,
@@ -515,7 +547,11 @@
           "hide": false,
           "interval": "",
           "legendFormat": "Reject by {{reporter}}",
-          "refId": "B"
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         }
       ],
       "thresholds": [],
@@ -566,7 +602,7 @@
       "dashes": false,
       "datasource": {
         "type": "prometheus",
-        "uid": "${datasource}"
+        "uid": "PBFA97CFB590B2093"
       },
       "fieldConfig": {
         "defaults": {},
@@ -613,7 +649,11 @@
           "expr": "sum(increase(dmarc_compliant_total[$__rate_interval])) by (dkim_domain)",
           "interval": "",
           "legendFormat": "Compliant from {{dkim_domain}}",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         },
         {
           "exemplar": true,
@@ -621,7 +661,11 @@
           "hide": false,
           "interval": "",
           "legendFormat": "Rejected from {{dkim_domain}}",
-          "refId": "B"
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PBFA97CFB590B2093"
+          }
         }
       ],
       "thresholds": [],
@@ -670,21 +714,7 @@
   "style": "dark",
   "tags": [],
   "templating": {
-    "list": [
-      {
-        "name": "datasource",
-        "label": "Data source",
-        "type": "datasource",
-        "query": "prometheus",
-        "refresh": 1,
-        "hide": 0,
-        "current": {},
-        "options": [],
-        "regex": "",
-        "multi": false,
-        "includeAll": false
-      }
-    ]
+    "list": []
   },
   "time": {
     "from": "now-30d",
