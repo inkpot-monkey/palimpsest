@@ -173,11 +173,18 @@ in
           custom.profiles.monitoring-client.enable = true;
           custom.profiles.backup.monitoringTelemetry.enable = true;
 
-          # DMARC aggregate-report metrics (ADR-0024 dashboard 11333). Co-located
-          # with the monitoring server so it's scraped over loopback; polls the
-          # `dmarc` mailbox on kelpy's Stalwart via IMAP (imapHost default). Secret
-          # dmarc_imap_password lives in monitoring.yaml (rk1b-readable).
+          # DMARC aggregate-report metrics. Co-located with the monitoring server so
+          # it's scraped over loopback; polls the `dmarc` mailbox on kelpy's Stalwart
+          # via IMAP (imapHost default). Secret dmarc_imap_password lives in
+          # monitoring.yaml (rk1b-readable).
           custom.profiles.monitoring-dmarc.enable = true;
+          # White-box DMARC alert: query VM (local) and message #infra-alerts when mail
+          # fails DMARC (own mail rejected at p=reject, or spoofing). Webhook = the
+          # watcher's gatus-webhook-url template (rk1b doesn't run matrix.infraAlerts).
+          custom.profiles.monitoring-dmarc-alert = {
+            enable = true;
+            webhookUrlFile = config.custom.profiles.monitoring-watcher.webhookUrlFile;
+          };
 
           # Second fleet DNS resolver (ADR-0023): rk1b is the tailnet's other global
           # nameserver alongside kelpy, replacing the drifted porcupineFish. No module
