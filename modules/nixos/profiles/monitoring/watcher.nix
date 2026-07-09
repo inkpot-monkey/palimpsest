@@ -86,7 +86,8 @@ let
       {
         inherit name;
         group = listenerHost svc;
-        url = "tcp://${tsIp (listenerHost svc)}:${toString svc.port}";
+        # Probe the listener by MagicDNS name (resolved live), not a pinned IP.
+        url = "tcp://${listenerHost svc}.${settings.tailnet}:${toString svc.port}";
         interval = "30s";
         conditions = [ "[CONNECTED] == true" ];
         alerts = alertsFor name;

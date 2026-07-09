@@ -97,7 +97,7 @@ in
             model_name = "qwen-general";
             litellm_params = {
               model = "openai/qwen3.6-35b-a3b";
-              api_base = "http://${settings.nodes.rk1a.tailscale.ip4}:8080/v1";
+              api_base = "http://rk1a.${settings.tailnet}:8080/v1";
               api_key = "none";
               # Background-agent use: a cold agentic prefill (5-10K tok @ ~9.5 tok/s) can
               # exceed 10 min, so allow up to 30 min per request.

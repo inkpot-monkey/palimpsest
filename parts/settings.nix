@@ -125,6 +125,15 @@ in
     inherit primaryDomain;
     mailDomain = primaryDomain;
 
+    # The tailnet's MagicDNS suffix (tailscale-assigned, stable). Every fleet host is
+    # reachable at `<hostName>.${tailnet}`, resolved live by blocky's ts.net forward
+    # (ADR-0021/0023). Monitoring scrape targets, Gatus raw-TCP probes, and Caddy
+    # upstreams use these NAMES instead of pinned tailscale IPs — which silently rot
+    # when a host re-keys (the porcupineFish scrape breakage). Only consumers that
+    # structurally need an IP literal (HA trusted_proxies) and the deliberately-pinned
+    # Vector receiver (ADR-0022) still read nodes.*.tailscale.ip4.
+    tailnet = "tail8596c.ts.net";
+
     # Mail domains served by Stalwart — the single source of truth consumed by both the
     # kelpy mail profile and the `dns` app (which generates the per-domain mail records).
     mail = {
@@ -156,20 +165,16 @@ in
       };
     };
 
+    # These hosts are scrape targets by MagicDNS name (server.nix makeTargets) and Gatus
+    # probe targets by name — neither needs a pinned tailscale IP. Only kelpy (HA
+    # trusted_proxies + Caddy edge) and rk1b (Vector receiver, ADR-0022) keep a
+    # `tailscale` block, for the consumers that structurally need an IP literal.
     nodes.porcupineFish = {
       hostName = "porcupineFish";
-      tailscale = {
-        ip4 = getMeta "porcupineFish" [ "tailscale" "ip4" ] "100.64.0.2";
-        ip6 = getMeta "porcupineFish" [ "tailscale" "ip6" ] "fd7a:115c:a1e0::2";
-      };
     };
 
     nodes.stargazer = {
       hostName = "stargazer";
-      tailscale = {
-        ip4 = getMeta "stargazer" [ "tailscale" "ip4" ] "100.64.0.3";
-        ip6 = getMeta "stargazer" [ "tailscale" "ip6" ] "fd7a:115c:a1e0::3";
-      };
     };
 
     nodes.sawtoothShark = {
@@ -182,10 +187,6 @@ in
 
     nodes.rk1a = {
       hostName = "rk1a";
-      tailscale = {
-        ip4 = getMeta "rk1a" [ "tailscale" "ip4" ] "100.64.0.4";
-        ip6 = getMeta "rk1a" [ "tailscale" "ip6" ] "fd7a:115c:a1e0::4";
-      };
     };
 
     nodes.rk1b = {

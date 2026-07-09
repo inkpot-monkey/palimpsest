@@ -6,7 +6,8 @@
 # of a 3am false alert:
 #   1. a service opts out of monitoring (monitor.enable = false) without a reason, and
 #   2. a MONITORED service can't be given a buildable probe — its Caddy edge (HTTPS)
-#      or its listener (TCP) has no tailscale IP for the watcher to target.
+#      or its listener (TCP) points at a host that isn't a registered node, so its
+#      MagicDNS probe name (`<host>.<tailnet>`) would resolve to nothing.
 { pkgs, self, ... }:
 let
   inherit (pkgs) lib;
@@ -25,7 +26,10 @@ let
     let
       monitored = svc: svc.monitor.enable or true;
       listenerHost = svc: svc.origin or svc.edge;
-      hasIp = host: (nodes.${host} or { }) ? tailscale && (nodes.${host}.tailscale ? ip4);
+      # The watcher probes by MagicDNS name (`<host>.<tailnet>`), so a buildable probe
+      # just needs the target to be a registered node — the name is then real and
+      # resolvable. (It no longer needs a pinned tailscale IP.)
+      isNode = host: nodes ? ${host};
       # Which host the watcher would point the probe at: the edge for an HTTPS-via-Caddy
       # probe, else the listener for a raw TCP probe (mirrors watcher.nix).
       probeHost = svc: if lib.elem svc.edge caddyEdges then svc.edge else listenerHost svc;
@@ -37,8 +41,8 @@ let
           !(monitored svc) && (svc.monitor.reason or "") == ""
         ) "${name}: monitor.enable = false but no monitor.reason given")
         ++ (lib.optional (
-          monitored svc && !(hasIp (probeHost svc))
-        ) "${name}: monitored but ${probeHost svc} has no tailscale.ip4 (no buildable probe)")
+          monitored svc && !(isNode (probeHost svc))
+        ) "${name}: monitored but ${probeHost svc} is not a registered node (no buildable probe)")
       ) services
     );
 
@@ -56,7 +60,7 @@ let
       monitor.enable = false;
     };
     caddyEdges = [ "kelpy" ];
-    nodes.kelpy.tailscale.ip4 = "100.0.0.1";
+    nodes.kelpy = { };
   };
   badProbe = violations {
     services.bar = {
@@ -76,7 +80,7 @@ let
       };
     };
     caddyEdges = [ "kelpy" ];
-    nodes.kelpy.tailscale.ip4 = "100.0.0.1";
+    nodes.kelpy = { };
   };
 
   selfTestOk = (lib.length badOptOut == 1) && (lib.length badProbe == 1) && (goodOptOut == [ ]);
