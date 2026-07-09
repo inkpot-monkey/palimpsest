@@ -23,6 +23,8 @@
     bluetooth.enable = true;
     sops.enable = true;
     fonts.enable = true;
+    monitoring-client.enable = true; # node-exporter + Vector; scraped by MagicDNS name
+
     tailscale = {
       enable = true;
       acceptDns = true;

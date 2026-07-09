@@ -31,7 +31,7 @@
     bluetooth.enable = true;
     impermanence.enable = false;
     litellm.enable = false;
-    monitoring-client.enable = false;
+    monitoring-client.enable = true;
     # rk1b now has an NVMe-backed /nix/store, so it serves as the fleet's native aarch64
     # remote builder (sd-images build there instead of under local QEMU). rk1a is eMMC-only
     # and excluded via enabledNodes. See modules/nixos/profiles/pi-builder.nix + hosts/rk1/nvme.nix.

@@ -181,6 +181,10 @@ in
       hostName = "sawtoothShark";
     };
 
+    nodes.weedySeadragon = {
+      hostName = "weedySeadragon";
+    };
+
     nodes.potbelliedSeahorse = {
       hostName = "potbelliedSeahorse";
     };
