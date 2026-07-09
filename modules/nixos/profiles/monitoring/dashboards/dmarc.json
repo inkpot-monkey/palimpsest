@@ -65,7 +65,9 @@
           "datasource": {
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
-          }
+          },
+          "instant": true,
+          "range": false
         }
       ],
       "title": "Total",
@@ -128,7 +130,9 @@
           "datasource": {
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
-          }
+          },
+          "instant": true,
+          "range": false
         }
       ],
       "title": "# compliant",
@@ -195,7 +199,9 @@
           "datasource": {
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
-          }
+          },
+          "instant": true,
+          "range": false
         }
       ],
       "timeFrom": null,
@@ -263,7 +269,9 @@
           "datasource": {
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
-          }
+          },
+          "instant": true,
+          "range": false
         }
       ],
       "timeFrom": null,
@@ -330,7 +338,9 @@
           "datasource": {
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
-          }
+          },
+          "instant": true,
+          "range": false
         }
       ],
       "title": "% compliant",
@@ -396,7 +406,9 @@
           "datasource": {
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
-          }
+          },
+          "instant": true,
+          "range": false
         }
       ],
       "timeFrom": null,
@@ -463,7 +475,9 @@
           "datasource": {
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
-          }
+          },
+          "instant": true,
+          "range": false
         }
       ],
       "timeFrom": null,
