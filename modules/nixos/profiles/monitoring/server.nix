@@ -13,14 +13,12 @@ let
   # Dynamically get all defined nodes from settings.nix
   senderNodes = builtins.attrNames settings.nodes;
 
-  # Helper function to generate target strings for a specific port
-  makeTargets = port: map (ip: "${ip}:${toString port}") senderNodes;
+  # Scrape targets by MagicDNS name (`<host>.<tailnet>`), resolved live by blocky's
+  # ts.net forward — NOT pinned tailscale IPs, which rot when a host re-keys. DNS is
+  # case-insensitive, so the camelCase node names resolve fine.
+  makeTargets = port: map (name: "${name}.${settings.tailnet}:${toString port}") senderNodes;
 
   dashboards = {
-    dmarc = pkgs.fetchurl {
-      url = "https://grafana.com/api/dashboards/11333/revisions/1/download";
-      sha256 = "sha256-B0+jcw6L32KftbkyNyhswXar7EzGQuAyU5HH2rSiNts=";
-    };
     node-exporter = pkgs.fetchurl {
       url = "https://grafana.com/api/dashboards/1860/revisions/37/download";
       sha256 = "sha256-1DE1aaanRHHeCOMWDGdOS1wBXxOF84UXAjJzT5Ek6mM=";
@@ -30,15 +28,22 @@ let
   # Construct a directory in the Nix store containing only the strictly cryptographically hashed dashboards
   dashboardsDir = pkgs.runCommand "grafana-dashboards" { } ''
     mkdir -p $out
-    ln -s ${dashboards.dmarc} $out/dmarc.json
+    # In-tree, pinned to the dmarc-metrics-exporter v1.3.1 sample dashboard (panels use
+    # dmarc_total/dmarc_compliant_total/etc., datasource=null → resolves to the default
+    # VictoriaMetrics source). Replaces grafana.com dashboard 11333, which was a mistargeted
+    # SRCDS/game-server board with no dmarc_* panels.
+    ln -s ${./dashboards/dmarc.json} $out/dmarc.json
     ln -s ${dashboards.node-exporter} $out/node-exporter.json
-    # In-tree dashboard (not fetched): the secret-expiry gauge (ADR-0031), fed by the
-    # secret_expiry_timestamp_seconds textfile metric.
-    ln -s ${./dashboards/secret-expiry.json} $out/secret-expiry.json
+    # Fleet overview: host up/down, config-revision drift, per-host NixOS state, Gatus
+    # probes, and the secret-expiry list (fed by node-exporter + the nixos-metrics
+    # textfile collector + the gatus scrape job + the secret_expiry_timestamp_seconds
+    # textfile metric). The former standalone secret-expiry board folded into its
+    # "Secret expiry" panel (ADR-0031).
+    ln -s ${./dashboards/fleet-overview.json} $out/fleet-overview.json
   '';
 
   # True when the host has an NVMe /var/cache mount (rk1b) — used to redirect
-  # VL/VM data off the eMMC and onto the NVMe partition. See ADR-0028.
+  # VL/VM data off the eMMC and onto the NVMe partition. See ADR-0021.
   hasNvmeCache = config.fileSystems ? "/var/cache";
 in
 {
@@ -60,18 +65,10 @@ in
           };
         };
 
-        # Pin all node tailscale IPs so VictoriaMetrics can resolve the scrape target
-        # hostnames. rk1b has no MagicDNS (acceptDns = false) and no blocky — kelpy had
-        # blocky providing runtime resolution when the server lived there (ADR-0028).
-        # Nodes without a tailscale entry in settings.nodes (e.g. inactive placeholders)
-        # are skipped; their scrape targets will fail regardless.
-        networking.hosts = lib.foldlAttrs (
-          acc: _name: node:
-          let
-            ip = node.tailscale.ip4;
-          in
-          acc // { ${ip} = (acc.${ip} or [ ]) ++ [ node.hostName ]; }
-        ) { } (lib.filterAttrs (_: node: node ? tailscale) settings.nodes);
+        # No static host pins needed: scrape targets are MagicDNS names
+        # (`<host>.<tailnet>`, see makeTargets) resolved live by rk1b's own blocky,
+        # which forwards the ts.net zone to tailscale's resolver. A re-keyed host is
+        # picked up on the next scrape with no config change (ADR-0021/0023).
 
         # Open ports for monitoring
         networking.firewall.interfaces."tailscale0".allowedTCPPorts = [
@@ -124,6 +121,19 @@ in
                 job_name = "dmarc";
                 static_configs = [
                   { targets = [ "127.0.0.1:${toString config.services.dmarc-metrics-exporter.port}" ]; }
+                ];
+              }
+            ]
+            # Gatus emits Prometheus metrics on its own web port when the watcher
+            # profile is co-located here (rk1b). It binds loopback, so scrape it over
+            # 127.0.0.1 — no need to open it on the tailnet. Port mirrors the
+            # `webPort` in watcher.nix.
+            ++ lib.optionals (config.custom.profiles.monitoring-watcher.enable or false) [
+              {
+                job_name = "gatus";
+                metrics_path = "/metrics";
+                static_configs = [
+                  { targets = [ "127.0.0.1:${toString config.services.gatus.settings.web.port}" ]; }
                 ];
               }
             ];
@@ -181,7 +191,7 @@ in
       # onto the NVMe so constant metric/log write IO doesn't touch the eMMC.
       # Uses BindPaths to mount /var/cache/{vl,vm} over the DynamicUser StateDirectory
       # paths — /var/cache dirs are world-writable so any dynamic UID can write there.
-      # See ADR-0028 for the retention + disk-cap rationale.
+      # See ADR-0021 for the retention + disk-cap rationale.
       (lib.mkIf hasNvmeCache {
         systemd.tmpfiles.rules = [
           "d /var/cache/victorialogs 0777 root root -"
