@@ -536,18 +536,20 @@
       "targets": [
         {
           "exemplar": true,
-          "expr": "sum(increase(dmarc_compliant_total[$__rate_interval])) by (reporter)",
+          "expr": "sum(increase(dmarc_compliant_total[$__range])) by (reporter)",
           "interval": "",
           "legendFormat": "Compliant by {{reporter}}",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
-          }
+          },
+          "instant": true,
+          "range": false
         },
         {
           "exemplar": true,
-          "expr": "sum(increase(dmarc_reject_total[$__rate_interval])) by (reporter)",
+          "expr": "sum(increase(dmarc_reject_total[$__range])) by (reporter)",
           "hide": false,
           "interval": "",
           "legendFormat": "Reject by {{reporter}}",
@@ -555,7 +557,9 @@
           "datasource": {
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
-          }
+          },
+          "instant": true,
+          "range": false
         }
       ],
       "thresholds": [],
@@ -650,18 +654,20 @@
       "targets": [
         {
           "exemplar": true,
-          "expr": "sum(increase(dmarc_compliant_total[$__rate_interval])) by (dkim_domain)",
+          "expr": "sum(increase(dmarc_compliant_total[$__range])) by (dkim_domain)",
           "interval": "",
           "legendFormat": "Compliant from {{dkim_domain}}",
           "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
-          }
+          },
+          "instant": true,
+          "range": false
         },
         {
           "exemplar": true,
-          "expr": "sum(increase(dmarc_reject_total[$__rate_interval])) by (dkim_domain)",
+          "expr": "sum(increase(dmarc_reject_total[$__range])) by (dkim_domain)",
           "hide": false,
           "interval": "",
           "legendFormat": "Rejected from {{dkim_domain}}",
@@ -669,7 +675,9 @@
           "datasource": {
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
-          }
+          },
+          "instant": true,
+          "range": false
         }
       ],
       "thresholds": [],
