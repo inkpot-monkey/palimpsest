@@ -220,6 +220,12 @@ in
       settings = {
         web.port = webPort;
         storage.type = "memory";
+        # Expose Prometheus metrics on /metrics (same web port). VictoriaMetrics on
+        # this host scrapes it over loopback — see the gatus job in server.nix. This
+        # turns Gatus's memory-only probe results into queryable series
+        # (gatus_results_endpoint_success{name,group,...}) for the fleet board,
+        # independent of its webhook alerting path.
+        metrics = true;
         alerting = {
           custom = {
             url = "\${INFRA_ALERTS_WEBHOOK_URL}";

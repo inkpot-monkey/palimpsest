@@ -1,0 +1,651 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "schemaVersion": 39,
+  "tags": ["fleet", "nixos"],
+  "title": "Fleet Overview",
+  "uid": "fleet-overview",
+  "timezone": "browser",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Data source",
+        "type": "datasource",
+        "query": "prometheus",
+        "refresh": 1,
+        "hide": 0,
+        "current": {},
+        "options": [],
+        "regex": "",
+        "multi": false,
+        "includeAll": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Hosts up",
+      "description": "node-exporter targets currently scraping (job=node) out of the total configured.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "sum(up{job=\"node\"})",
+          "legendFormat": "up",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "count(up{job=\"node\"})",
+          "legendFormat": "total",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "value_and_name",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": { "mode": "fixed", "fixedColor": "text" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Config drift",
+      "description": "Number of DISTINCT flake revisions running across the fleet (from nixos_configuration_revision_info). 1 = every host built from the same rev; >1 = at least one host is behind and needs a rebuild.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "count(count by (revision) (nixos_configuration_revision_info))",
+          "legendFormat": "revisions",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "value",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "type": "value", "options": { "1": { "text": "in sync" } } }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 2 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Service probes up",
+      "description": "Gatus endpoints currently passing (gatus_results_endpoint_success == 1) out of all probed. Gatus runs on rk1b; if this panel is empty, the gatus scrape job hasn't landed yet.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "sum(gatus_results_endpoint_success)",
+          "legendFormat": "up",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "count(gatus_results_endpoint_success)",
+          "legendFormat": "total",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "value_and_name",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": { "mode": "fixed", "fixedColor": "text" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Host status",
+      "description": "Per-host node-exporter reachability (scraped by MagicDNS name). Green = scraping, red = target down / offline / name unresolved. Offline laptops and potbelliedSeahorse (not on Tailscale) read down — expected.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 4 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "label_replace(up{job=\"node\"}, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "legendFormat": "{{host}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "value_and_name",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "type": "value",
+              "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "type": "bargauge",
+      "title": "Disk usage %",
+      "description": "Root-and-data filesystem fill per host (fstype filter drops impermanence tmpfs roots, overlay/squashfs and the vfat ESP, leaving real ext4/xfs/btrfs/zfs mounts — e.g. /nix, /persist, rk1b's NVMe /var/cache). Green <80, yellow ≥80, red ≥90.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "label_replace(100 * (1 - node_filesystem_avail_bytes{fstype!~\"tmpfs|ramfs|overlay|squashfs|vfat\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|ramfs|overlay|squashfs|vfat\"}), \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "legendFormat": "{{host}} {{mountpoint}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "minVizHeight": 10,
+        "minVizWidth": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "decimals": 0,
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 80 },
+              { "color": "red", "value": 90 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "bargauge",
+      "title": "Memory used %",
+      "description": "Used memory as a share of total (1 - MemAvailable/MemTotal) per host. Green <80, yellow ≥80, red ≥90.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "label_replace(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes), \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "legendFormat": "{{host}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "minVizHeight": 10,
+        "minVizWidth": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "decimals": 0,
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 80 },
+              { "color": "red", "value": 90 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "CPU busy %",
+      "description": "Non-idle CPU per host, averaged across cores (1 - rate(idle)). Trend over the dashboard window.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 15 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "label_replace(100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))), \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "legendFormat": "{{host}}"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom", "calcs": [] }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "lineWidth": 1
+          },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Load per core",
+      "description": "1-minute load average normalised by core count (node_load1 / #cores), so 1.0 == fully saturated regardless of host size. The threshold line marks 1.0.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 15 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "label_replace(node_load1 / count by (instance) (node_cpu_seconds_total{mode=\"idle\"}), \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "legendFormat": "{{host}}"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom", "calcs": [] }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "decimals": 2,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 10,
+            "showPoints": "never",
+            "lineWidth": 1,
+            "thresholdsStyle": { "mode": "line" }
+          },
+          "color": { "mode": "palette-classic" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 2 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Per-host NixOS state",
+      "description": "One row per host. Uptime from node_boot_time_seconds; generations / store size / config age / rev from the daily nixos-metrics textfile collector. 'Config age' = how long ago the running config's flake was last modified; a host with a stale age or an odd-one-out Rev is the drift. Rev is the flake git revision baked in at build time.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 22 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "label_replace(up{job=\"node\"}, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "label_replace(time() - node_boot_time_seconds{job=\"node\"}, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "label_replace(nixos_generations_count, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "D",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "label_replace(nixos_store_size_bytes, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "E",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "label_replace(time() - nixos_configuration_last_modified_seconds, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "F",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "label_replace(nixos_configuration_revision_info, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": { "include": { "pattern": "^(host|revision|Value #.*)$" } }
+        },
+        {
+          "id": "joinByField",
+          "options": { "byField": "host", "mode": "outer" }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Value #F": true },
+            "renameByName": {
+              "host": "Host",
+              "Value #A": "Up",
+              "Value #B": "Uptime",
+              "Value #C": "Generations",
+              "Value #D": "Store size",
+              "Value #E": "Config age",
+              "revision": "Rev"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "left", "filterable": true } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Uptime" },
+            "properties": [{ "id": "unit", "value": "s" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Config age" },
+            "properties": [{ "id": "unit", "value": "s" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Store size" },
+            "properties": [{ "id": "unit", "value": "bytes" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Up" },
+            "properties": [
+              { "id": "unit", "value": "none" },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": { "text": "DOWN", "color": "red" },
+                      "1": { "text": "UP", "color": "green" }
+                    }
+                  }
+                ]
+              },
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Service probes (Gatus)",
+      "description": "Per-endpoint probe result from Gatus (gatus_results_endpoint_success). Green = passing, red = failing. Same signal that fires #infra-alerts, surfaced as history.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 31 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "gatus_results_endpoint_success",
+          "legendFormat": "{{name}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "value_and_name",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "type": "value",
+              "options": { "0": { "text": "FAIL" }, "1": { "text": "OK" } }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "table",
+      "title": "Secret expiry",
+      "description": "Rotatable secrets with a declared expiry (ADR-0031), soonest first. The 'Days left' cell scales green→red NON-linearly: it stays green until the key nears expiry, then ramps sharply through yellow (≤30) / orange (≤14) / red (≤7) / dark-red (≤3). Fed by the daily secret-expiry check on kelpy — empty until that check first runs.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 37 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "(secret_expiry_timestamp_seconds - time()) / 86400",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "max by (secret) (secret_expiry_timestamp_seconds) * 1000",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": { "include": { "pattern": "^(secret|note|Value #.*)$" } }
+        },
+        {
+          "id": "joinByField",
+          "options": { "byField": "secret", "mode": "outer" }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "renameByName": {
+              "secret": "Secret",
+              "note": "Note",
+              "Value #A": "Days left",
+              "Value #B": "Expires"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": "",
+            "sort": [{ "field": "Days left", "desc": false }]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "left", "filterable": false } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Days left" },
+            "properties": [
+              { "id": "unit", "value": "d" },
+              { "id": "decimals", "value": 0 },
+              {
+                "id": "custom.cellOptions",
+                "value": { "type": "color-background", "mode": "gradient" }
+              },
+              { "id": "color", "value": { "mode": "thresholds" } },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "dark-red", "value": null },
+                    { "color": "red", "value": 3 },
+                    { "color": "orange", "value": 7 },
+                    { "color": "yellow", "value": 14 },
+                    { "color": "green", "value": 30 }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Expires" },
+            "properties": [{ "id": "unit", "value": "dateTimeAsIso" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Note" },
+            "properties": [
+              { "id": "custom.width", "value": 64 },
+              {
+                "id": "custom.cellOptions",
+                "value": { "type": "auto", "wrapText": false }
+              },
+              { "id": "custom.inspect", "value": true }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

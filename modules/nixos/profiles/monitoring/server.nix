@@ -38,12 +38,12 @@ let
     # probes, and the secret-expiry list (fed by node-exporter + the nixos-metrics
     # textfile collector + the gatus scrape job + the secret_expiry_timestamp_seconds
     # textfile metric). The former standalone secret-expiry board folded into its
-    # "Secret expiry" panel (ADR-0024).
+    # "Secret expiry" panel (ADR-0031).
     ln -s ${./dashboards/fleet-overview.json} $out/fleet-overview.json
   '';
 
   # True when the host has an NVMe /var/cache mount (rk1b) — used to redirect
-  # VL/VM data off the eMMC and onto the NVMe partition. See contract ADR-0005.
+  # VL/VM data off the eMMC and onto the NVMe partition. See ADR-0021.
   hasNvmeCache = config.fileSystems ? "/var/cache";
 in
 {
@@ -68,7 +68,7 @@ in
         # No static host pins needed: scrape targets are MagicDNS names
         # (`<host>.<tailnet>`, see makeTargets) resolved live by rk1b's own blocky,
         # which forwards the ts.net zone to tailscale's resolver. A re-keyed host is
-        # picked up on the next scrape with no config change (contract ADR-0005/0023).
+        # picked up on the next scrape with no config change (ADR-0021/0023).
 
         # Open ports for monitoring
         networking.firewall.interfaces."tailscale0".allowedTCPPorts = [
@@ -191,7 +191,7 @@ in
       # onto the NVMe so constant metric/log write IO doesn't touch the eMMC.
       # Uses BindPaths to mount /var/cache/{vl,vm} over the DynamicUser StateDirectory
       # paths — /var/cache dirs are world-writable so any dynamic UID can write there.
-      # See contract ADR-0005 for the retention + disk-cap rationale.
+      # See ADR-0021 for the retention + disk-cap rationale.
       (lib.mkIf hasNvmeCache {
         systemd.tmpfiles.rules = [
           "d /var/cache/victorialogs 0777 root root -"
