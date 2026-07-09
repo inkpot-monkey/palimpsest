@@ -69,7 +69,8 @@
         }
       ],
       "title": "% DMARC compliant",
-      "type": "stat"
+      "type": "stat",
+      "description": "Share of reported messages that passed DMARC (SPF- or DKIM-aligned) in the selected range. Your headline health number — at p=reject, anything below 100% means some mail claiming to be from your domain was rejected."
     },
     {
       "datasource": {
@@ -136,7 +137,8 @@
         }
       ],
       "title": "# non-compliant",
-      "type": "stat"
+      "type": "stat",
+      "description": "Messages that FAILED DMARC in the range (total − compliant). At p=reject these were rejected by the receiver: either your own mail with broken SPF/DKIM alignment, or someone spoofing your domain. Turns red when > 0 and fires the #infra-alerts alert."
     },
     {
       "datasource": {
@@ -199,7 +201,8 @@
         }
       ],
       "title": "Total messages",
-      "type": "stat"
+      "type": "stat",
+      "description": "Total messages covered by every DMARC aggregate report received in the range. A quiet personal domain sees only a handful; large counts from unfamiliar reporters can indicate spoofing volume."
     },
     {
       "datasource": {
@@ -262,7 +265,8 @@
         }
       ],
       "title": "% SPF aligned",
-      "type": "stat"
+      "type": "stat",
+      "description": "Share where SPF passed AND the SPF domain aligned with the From header. SPF alignment commonly breaks on forwarded mail even when legitimate — DKIM usually carries those, so this is often lower than DKIM."
     },
     {
       "datasource": {
@@ -325,7 +329,8 @@
         }
       ],
       "title": "% DKIM aligned",
-      "type": "stat"
+      "type": "stat",
+      "description": "Share where a DKIM signature passed AND its domain aligned with the From header. DKIM alignment survives forwarding, so it's the more robust mechanism and usually your higher number."
     },
     {
       "datasource": {
@@ -388,7 +393,8 @@
         }
       ],
       "title": "% SPF pass",
-      "type": "stat"
+      "type": "stat",
+      "description": "Share where SPF passed for the envelope/return-path, regardless of From alignment. The gap between this and '% SPF aligned' is misalignment — a common and usually harmless cause of SPF-side DMARC failures."
     },
     {
       "datasource": {
@@ -451,7 +457,8 @@
         }
       ],
       "title": "% DKIM pass",
-      "type": "stat"
+      "type": "stat",
+      "description": "Share with at least one valid DKIM signature, regardless of alignment. A gap vs '% DKIM aligned' means signatures from a non-aligned domain (e.g. a mailing list re-signing your mail)."
     },
     {
       "datasource": {
@@ -514,7 +521,8 @@
         }
       ],
       "title": "# compliant",
-      "type": "stat"
+      "type": "stat",
+      "description": "Count of messages that passed DMARC in the range. DMARC passes if EITHER SPF or DKIM aligns, so this is ≥ each individual aligned count."
     },
     {
       "datasource": {
@@ -577,7 +585,8 @@
         }
       ],
       "title": "# quarantined",
-      "type": "stat"
+      "type": "stat",
+      "description": "Messages a receiver placed in spam/quarantine per the published policy. You publish p=reject, so this should stay 0; a non-zero value means a receiver applied a softer action than requested."
     },
     {
       "datasource": {
@@ -640,7 +649,8 @@
         }
       ],
       "title": "# rejected",
-      "type": "stat"
+      "type": "stat",
+      "description": "Messages a receiver REJECTED per your p=reject policy — they bounced. If it's your own mail, fix its SPF/DKIM alignment; if not, it's a spoofing attempt DMARC successfully blocked."
     },
     {
       "aliasColors": {},
@@ -651,7 +661,7 @@
         "type": "prometheus",
         "uid": "PBFA97CFB590B2093"
       },
-      "description": "",
+      "description": "DMARC-reported message volume split by your sending domain (from_domain) — lets you watch palebluebytes.space and .xyz separately.",
       "fieldConfig": {
         "defaults": {},
         "overrides": []
@@ -754,7 +764,7 @@
         "type": "prometheus",
         "uid": "PBFA97CFB590B2093"
       },
-      "description": "",
+      "description": "Failed-DMARC message count per sending domain. A spike on one domain tells you where a misconfiguration or a spoofing attempt is concentrated.",
       "fieldConfig": {
         "defaults": {},
         "overrides": []
@@ -857,7 +867,7 @@
         "type": "prometheus",
         "uid": "PBFA97CFB590B2093"
       },
-      "description": "",
+      "description": "Passing-DMARC messages grouped by the mailbox provider that sent the report (Google, Microsoft, …). Confirms which receivers see your mail and that it's passing there.",
       "fieldConfig": {
         "defaults": {},
         "overrides": []
