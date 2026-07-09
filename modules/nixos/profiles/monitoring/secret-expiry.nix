@@ -40,6 +40,10 @@ let
   # in bash (Nix has no date arithmetic) — coreutils `date` resolves the spec at runtime.
   dateSpec = e: e.expires or "${e.issued} + ${toString e.expiresDays} days";
 
+  # Escape a string for use as a Prometheus label VALUE (backslash, double-quote,
+  # newline) so a free-text `note` can't break the exposition format.
+  promLabel = lib.replaceStrings [ "\\" "\"" "\n" ] [ "\\\\" "\\\"" " " ];
+
   # Per-secret: emit a `check_secret` invocation the script's loop consumes.
   warnCsv = e: lib.concatMapStringsSep "," toString (e.warnDays or cfg.defaultWarnDays);
   mkCall =
@@ -50,6 +54,7 @@ let
       (lib.escapeShellArg (dateSpec e))
       (lib.escapeShellArg (warnCsv e))
       (lib.escapeShellArg (e.runbook or ""))
+      (lib.escapeShellArg (promLabel (e.note or "")))
     ];
   calls = lib.concatStringsSep "\n" (lib.mapAttrsToList mkCall registry);
 
@@ -85,8 +90,8 @@ let
         || echo "secret-expiry: failed to POST alert (hookshot down?): $1" >&2
     }
 
-    check_secret() { # $1=name $2=dateSpec $3=warnCsv $4=runbook
-      name="$1"; spec="$2"; warncsv="$3"; runbook="$4"
+    check_secret() { # $1=name $2=dateSpec $3=warnCsv $4=runbook $5=note(prom-escaped)
+      name="$1"; spec="$2"; warncsv="$3"; runbook="$4"; note="$5"
 
       expiry_epoch="$(${pkgs.coreutils}/bin/date -d "$spec" +%s 2>/dev/null || true)"
       if [ -z "$expiry_epoch" ]; then
@@ -97,7 +102,7 @@ let
       days_left=$(( (expiry_epoch - now) / 86400 ))
 
       ${lib.optionalString cfg.writeMetrics ''
-        [ -n "$metrics_tmp" ] && printf 'secret_expiry_timestamp_seconds{secret="%s"} %s\n' "$name" "$expiry_epoch" >> "$metrics_tmp"
+        [ -n "$metrics_tmp" ] && printf 'secret_expiry_timestamp_seconds{secret="%s",note="%s"} %s\n' "$name" "$note" "$expiry_epoch" >> "$metrics_tmp"
       ''}
 
       # Tightest breached band: the smallest warn threshold still >= days_left, or the
@@ -140,7 +145,14 @@ let
     ${calls}
 
     ${lib.optionalString cfg.writeMetrics ''
-      [ -n "$metrics_tmp" ] && ${pkgs.coreutils}/bin/mv -f "$metrics_tmp" "$metrics_dir/secret-expiry.prom"
+      # mktemp makes the temp file 0600; node-exporter runs as its own user and must be
+      # able to READ the published .prom, so widen to 0644 before the atomic rename.
+      # (Without this the metric is written but never scraped — the textfile silently
+      # stays root-only and the Grafana pane shows "No data".)
+      if [ -n "$metrics_tmp" ]; then
+        ${pkgs.coreutils}/bin/chmod 0644 "$metrics_tmp"
+        ${pkgs.coreutils}/bin/mv -f "$metrics_tmp" "$metrics_dir/secret-expiry.prom"
+      fi
     ''}
   '';
 in
