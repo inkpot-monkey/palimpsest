@@ -11,7 +11,7 @@ let
       modules,
       overlays ? [ ],
       # Standalone home builds have no system; supply a default hostFacts projection
-      # (ADR-0018, slice 12) so home modules that read host state still resolve. These
+      # (contract ADR-0002, slice 12) so home modules that read host state still resolve. These
       # are desktop configs, so gui is granted; nothing exposed/secret.
       hostFacts ? {
         exposed = false;

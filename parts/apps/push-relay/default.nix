@@ -1,4 +1,4 @@
-# Hermetic deploy of the out-of-band push relay (ADR-0027). Exposes:
+# Hermetic deploy of the out-of-band push relay (ADR-0020). Exposes:
 #   apps.push-relay-deploy  →  `nix run .#push-relay-deploy`   (build wasm + deploy)
 #   devShells.push-relay     →  `nix develop .#push-relay`      (iterate on the worker)
 #

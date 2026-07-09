@@ -19,7 +19,7 @@
     audio.enable = true;
     wireless.enable = true;
     gui-base.enable = true;
-    kanata.enable = true; # keyboard remap, host-side (ADR-0018 slice 11)
+    kanata.enable = true; # keyboard remap, host-side (contract ADR-0002 slice 11)
     bluetooth.enable = true;
     sops.enable = true;
     fonts.enable = true;
@@ -33,7 +33,7 @@
 
   # weedySeadragon hosts two gui users (inkpotmonkey Wayland + eyeofalligator X11).
   # The display surface is NOT set here — it is derived from the union of each
-  # granted gui user's `gui.session` by the contract realization (ADR-0019), so
+  # granted gui user's `gui.session` by the contract realization (contract ADR-0003), so
   # both session types are offered and each user logs into their own.
 
   sops = {

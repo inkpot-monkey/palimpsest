@@ -1,4 +1,4 @@
-# The on-host unit-state check — ADR-0026, the white-box layer that complements
+# The on-host unit-state check — ADR-0019, the white-box layer that complements
 # the off-host Gatus reachability probe. Runs on the watched host itself and
 # alerts to #infra-alerts (via the hookshot loopback webhook) when an
 # expected-up systemd unit is not `active`.
@@ -77,7 +77,7 @@ in
 {
   options.custom.profiles.monitoring-unit-state = {
     enable = lib.mkEnableOption ''
-      the on-host systemd unit-state check (ADR-0026). Polls an explicit
+      the on-host systemd unit-state check (ADR-0019). Polls an explicit
       expected-up unit list and alerts to #infra-alerts via the hookshot loopback
       webhook when a unit is not active. Enable on the watched host (kelpy);
       requires custom.profiles.matrix.infraAlerts (which publishes the webhook
@@ -142,7 +142,7 @@ in
     ];
 
     systemd.services.monitoring-unit-state-check = {
-      description = "Alert when an expected-up systemd unit is not active (ADR-0026)";
+      description = "Alert when an expected-up systemd unit is not active (ADR-0019)";
       after = [ "matrix-infra-alerts-room.service" ];
       serviceConfig = {
         Type = "oneshot";
@@ -152,7 +152,7 @@ in
     };
 
     systemd.timers.monitoring-unit-state-check = {
-      description = "Periodic on-host unit-state check (ADR-0026)";
+      description = "Periodic on-host unit-state check (ADR-0019)";
       wantedBy = [ "timers.target" ];
       timerConfig = {
         OnBootSec = "2min";

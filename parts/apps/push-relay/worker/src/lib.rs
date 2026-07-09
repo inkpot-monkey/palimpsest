@@ -1,4 +1,4 @@
-//! Cloudflare Worker shell for the out-of-band web-push relay (ADR-0027).
+//! Cloudflare Worker shell for the out-of-band web-push relay (ADR-0020).
 //!
 //! The thin, swappable platform adapter around `push-relay-core`: HTTP routing,
 //! Workers KV (subscription storage), secrets, outbound `fetch`, and serving the
@@ -69,7 +69,7 @@ async fn fetch(mut req: Request, env: Env, _ctx: Context) -> Result<Response> {
     }
 }
 
-// --- dead-man's switch (ADR-0027 / push-relay issue 06) ---------------------
+// --- dead-man's switch (ADR-0020 / push-relay issue 06) ---------------------
 // The one failure the out-of-band push can't catch is a full-site blackout: it
 // takes out rk1b too, so nothing at home is left to *send* an alert. So invert
 // the logic — rk1b beats to `/heartbeat` on a schedule, and a Cloudflare Cron
@@ -120,7 +120,7 @@ async fn scheduled(_event: ScheduledEvent, env: Env, _ctx: ScheduleContext) {
 }
 
 /// Cron-driven silence detector: alert once on staleness, recover once on return,
-/// no re-alerts in between (quiet semantics mirror the rest of ADR-0026).
+/// no re-alerts in between (quiet semantics mirror the rest of ADR-0019).
 async fn run_deadman(env: &Env) -> Result<()> {
     let kv = env.kv("SUBS")?;
     // No beat ever recorded (fresh deploy / OOB disabled) → nothing to judge yet.

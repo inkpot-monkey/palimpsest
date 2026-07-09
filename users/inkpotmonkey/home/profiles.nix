@@ -11,7 +11,7 @@ in
   # e.g. porcupineFish on home-manager-25_11 — must not import these at all.
   # See hosts/porcupineFish/README.md for the full rationale.
   #
-  # We branch on the restricted `hostFacts` projection (ADR-0018, slice 12) rather
+  # We branch on the restricted `hostFacts` projection (contract ADR-0002, slice 12) rather
   # than this module's own `config` (which would recurse, since imports determine
   # config) or raw `osConfig` (which exposes the whole system tree). `signing.nix`/
   # `git-annex.nix` carry no version-specific options and stay importable everywhere

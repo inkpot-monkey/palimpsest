@@ -37,11 +37,11 @@ touching secrets:
   is the sops admin key (`&admin`) and decrypts everything. Use a host's
   dedicated `signing_key`, not the admin key.
 - **Some components live in their own repos**, consumed as flake inputs — e.g.
-  `jmap-matrix-bridge` and `host-user-contract` (ADR-0017). Only host glue lives
+  `jmap-matrix-bridge` and `host-user-contract` (ADR-0016). Only host glue lives
   here; change behaviour in the upstream repo, then `nix flake update <input>`.
 - **Raspberry Pi kernel pin:** `nixos-raspberrypi` must pin a rev whose *default*
   kernel is stable; unstable/next kernels hang in initrd and aren't cached.
-- **Services are monitored by default (ADR-0026).** Every `settings.services` entry
+- **Services are monitored by default (ADR-0019).** Every `settings.services` entry
   is uptime-probed automatically. To exempt a *served* service, set
   `monitor = { enable = false; reason = "…"; }` on its entry (not delete it — that
   also drops its Caddy vhost). The `uptime_monitoring` flake check enforces the

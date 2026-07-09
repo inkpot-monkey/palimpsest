@@ -9,7 +9,7 @@ This is deliberate over the obvious-looking alternative of hand-importing only t
 ## Consequences
 
 - To give a host a feature, set its `custom.profiles.<name>.enable` — never add a bare `imports` of a profile.
-- This same import-all + `mkIf`-gate model is reused at the host↔user boundary, where a *feature* token-gates a user-owned bundle — see [0015](0015-host-user-contract.md).
+- This same import-all + `mkIf`-gate model is reused at the host↔user boundary, where a *feature* token-gates a user-owned bundle — see [contract ADR-0001](https://github.com/palebluebytes/host-user-contract/blob/main/docs/adr/0001-host-user-contract.md).
 - A profile MUST gate all of its config behind its `enable` flag (`mkIf`). A profile that applies config unconditionally would leak onto every host; that's now a fleet-wide invariant the bundle depends on.
 - Verifying behaviour-neutrality of an import change can't use the `toplevel` derivation hash — editing any tracked file changes the `self` flake source, which is baked into `NIX_PATH`/`nix.registry`, so the hash always differs. Compare a config fingerprint instead (package count, etc entries, systemd units, key `enable` flags), which is invariant to the source hash.
 

@@ -1,6 +1,6 @@
 # push-relay
 
-The out-of-band alert **Push relay** (ADR-0027): a self-hosted, ntfy-compatible
+The out-of-band alert **Push relay** (ADR-0020): a self-hosted, ntfy-compatible
 **web-push** service. `rk1b`'s watcher publishes to it when the Matrix delivery path
 is down; it delivers a browser push to the operator's installed phone PWA. Off-site
 (a Cloudflare Worker) so it survives `kelpy` being down.

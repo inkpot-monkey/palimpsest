@@ -1,7 +1,7 @@
 # Monitoring resolves peers by build-time tailscale-IP pins, independent of the DNS plane
 
 When the **monitoring server** moved from `kelpy` to `rk1b`
-([ADR-0028](0028-telemetry-durable-disk-capped-retention.md)), scraping broke:
+([ADR-0021](0021-telemetry-durable-disk-capped-retention.md)), scraping broke:
 on `kelpy` the server resolved peer hostnames through the co-located blocky, but
 `rk1b` has neither MagicDNS (`acceptDns = false`) nor, at the time, a blocky.
 Grafana showed only `rk1b` itself. This ADR records how monitoring resolves the
@@ -31,12 +31,12 @@ DNS is centralised on `kelpy`'s blocky (its global nameserver); resolving scrape
 targets through it would couple the observer to `kelpy` — so a `kelpy` outage
 would blind the very system meant to detect it. This is the same failure-domain
 logic that puts the uptime **watcher** and out-of-band push on `rk1b`
-([ADR-0026](0026-uptime-alerting.md), [ADR-0027](0027-out-of-band-web-push-relay.md)).
+([ADR-0019](0019-uptime-alerting.md), [ADR-0020](0020-out-of-band-web-push-relay.md)).
 `/etc/hosts` is consulted by glibc *before* any resolver, so these pins hold
 regardless of what DNS is doing.
 
 Note this holds even now that `rk1b` runs its own blocky
-([ADR-0030](0030-fleet-dns-dual-blocky.md)): monitoring still resolves via
+([ADR-0023](0023-fleet-dns-dual-blocky.md)): monitoring still resolves via
 `/etc/hosts`, not that blocky, keeping the collection path free of *any* DNS
 dependency — including its own.
 

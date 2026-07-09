@@ -5,7 +5,7 @@
 }:
 let
   inherit (self.lib) mkSystem mkPiSystem;
-  # Grant-as-data (ADR-0018, slice 16): a host grants a user's features here, as data,
+  # Grant-as-data (contract ADR-0002, slice 16): a host grants a user's features here, as data,
   # next to where it binds the user — never by importing a self-granting variant. This
   # is the fleet's grant matrix; `granted.*` is host-write-only, the user never sets it.
   grant = user: features: { custom.users.${user}.granted = features; };
@@ -39,7 +39,7 @@ in
         })
         # eyeofalligator co-administers this laptop and had sudo pre-clamp (its identity
         # declares wheel); the clamp drops untrusted identity groups, so its sudo must be
-        # an explicit grant now (ADR-0015 threat model; cloud-review finding).
+        # an explicit grant now (contract ADR-0001 threat model; cloud-review finding).
         (grant "eyeofalligator" {
           gui.enable = true;
           sudo.enable = true;
@@ -78,7 +78,7 @@ in
         ./porcupineFish/configuration.nix
         self.users.inkpotmonkey.manifest
         (grant "inkpotmonkey" { workstation.enable = true; })
-        # blocky removed here (ADR-0030) — the Pi-only module swap it needed went with it.
+        # blocky removed here (ADR-0023) — the Pi-only module swap it needed went with it.
       ];
     };
 
@@ -165,21 +165,21 @@ in
 
           # Off-host uptime watcher (Gatus): rk1b is always-on and not kelpy, so it
           # can observe kelpy failing. Probes the fleet + alerts to #infra-alerts.
-          # See ADR-0026 / modules/nixos/profiles/monitoring/watcher.nix.
+          # See ADR-0019 / modules/nixos/profiles/monitoring/watcher.nix.
           # Monitoring server (moved from kelpy — kelpy's shared-disk write IO was
           # flagged as resource abuse; NVMe on rk1b absorbs it cleanly). VL/VM data
-          # dirs redirect to /var/cache (NVMe) via BindPaths. See ADR-0028.
+          # dirs redirect to /var/cache (NVMe) via BindPaths. See ADR-0021.
           custom.profiles.monitoring-server.enable = true;
           custom.profiles.monitoring-client.enable = true;
           custom.profiles.backup.monitoringTelemetry.enable = true;
 
-          # DMARC aggregate-report metrics (ADR-0031 dashboard 11333). Co-located
+          # DMARC aggregate-report metrics (ADR-0024 dashboard 11333). Co-located
           # with the monitoring server so it's scraped over loopback; polls the
           # `dmarc` mailbox on kelpy's Stalwart via IMAP (imapHost default). Secret
           # dmarc_imap_password lives in monitoring.yaml (rk1b-readable).
           custom.profiles.monitoring-dmarc.enable = true;
 
-          # Second fleet DNS resolver (ADR-0030): rk1b is the tailnet's other global
+          # Second fleet DNS resolver (ADR-0023): rk1b is the tailnet's other global
           # nameserver alongside kelpy, replacing the drifted porcupineFish. No module
           # swap needed — rk1b is built with mkSystem (main nixpkgs → blocky 0.30). Also
           # makes rk1b self-resolve via its own blocky (nameservers = 127.0.0.1).
@@ -187,9 +187,9 @@ in
 
           # Off-host uptime watcher (Gatus): rk1b is always-on and not kelpy, so it
           # can observe kelpy failing. Probes the fleet + alerts to #infra-alerts.
-          # See ADR-0026 / modules/nixos/profiles/monitoring/watcher.nix.
+          # See ADR-0019 / modules/nixos/profiles/monitoring/watcher.nix.
           custom.profiles.monitoring-watcher.enable = true;
-          # Out-of-band web-push alerter (ADR-0027): fires the phone when the Matrix
+          # Out-of-band web-push alerter (ADR-0020): fires the phone when the Matrix
           # delivery path itself is down. topic + publish_token from monitoring.yaml.
           custom.profiles.monitoring-watcher.outOfBand.enable = true;
 

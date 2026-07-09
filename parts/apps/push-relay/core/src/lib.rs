@@ -1,5 +1,5 @@
 //! Portable Web Push request builder — the host-agnostic core of the out-of-band
-//! alert relay (ADR-0027).
+//! alert relay (ADR-0020).
 //!
 //! Given a browser `PushSubscription`, a plaintext payload, and VAPID credentials,
 //! it produces the `(url, headers, body)` of the HTTPS POST a server sends to the

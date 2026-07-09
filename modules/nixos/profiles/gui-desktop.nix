@@ -1,4 +1,4 @@
-# The host's desktop binding for the contract's gui-session decision (ADR-0021 review).
+# The host's desktop binding for the contract's gui-session decision (contract ADR-0005 review).
 # The contract (contract/realization.nix) decides which sessions the shared display
 # surface must offer — `custom.gui.surface = { enabled, wayland, x11 }` — and this
 # module RENDERS that decision with a concrete display backend: SDDM + Plasma 6.
@@ -45,7 +45,7 @@ in
       # plasma6 defaults the Wayland greeter on (mkDefault true). Keep that when the
       # union includes a Wayland user; override it off (above mkDefault, below a host
       # mkForce) when the union is X11-only — two mkDefaults of differing values would
-      # conflict, hence the explicit priority (ADR-0019).
+      # conflict, hence the explicit priority (contract ADR-0003).
       displayManager.sddm.wayland.enable = lib.mkIf (!surface.wayland) (lib.mkOverride 900 false);
     };
   };

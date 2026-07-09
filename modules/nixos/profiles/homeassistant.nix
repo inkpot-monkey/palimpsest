@@ -91,7 +91,7 @@ in
       # wyoming → add the Wyoming STT/TTS config entries in the UI; mobile_app → the
       # Companion app endpoint; default_config pulls in assist_pipeline + the standard set.
       # esphome → adopt LAN ESPHome devices (e.g. the cloudcutter-flashed smart bulbs, see
-      # ADR-0016). It is not in default_config and HA cannot pip-install it at runtime on
+      # ADR-0015). It is not in default_config and HA cannot pip-install it at runtime on
       # NixOS, so it must be declared; the device itself is added as a UI config entry.
       extraComponents = [
         "default_config"
@@ -155,7 +155,7 @@ in
     # ESPHome devices announce themselves over mDNS, so HA needs to receive multicast on
     # 5353 from the LAN to auto-discover them (control is outbound TCP 6053, already allowed).
     # Unlike HA's own port this is opened on every interface: mDNS is inherently a LAN
-    # broadcast and the upstream turing-rk1 module owns the LAN interface name. See ADR-0016.
+    # broadcast and the upstream turing-rk1 module owns the LAN interface name. See ADR-0015.
     networking.firewall.allowedUDPPorts = [ 5353 ];
   };
 }

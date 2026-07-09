@@ -18,10 +18,10 @@ let
   # own ~/.ssh key so nothing regresses there.
   signingPub = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINwuFsdbFSteWr3WwV6MCNZfYhtNpsmhKr48ofiRewHY";
   # The signing key now rides the user's own home sops (signing.nix), gated on the
-  # signing grant (ADR-0018, slice 13). So whether it is present is a property of THIS
+  # signing grant (contract ADR-0002, slice 13). So whether it is present is a property of THIS
   # home config — no osConfig, no hostName list. Absent (not granted, or a standalone
   # build) → fall back to ~/.ssh.
-  # Read the signing key through the backend-neutral platform seam (ADR-0021), not sops
+  # Read the signing key through the backend-neutral platform seam (contract ADR-0005), not sops
   # directly: present iff the signing feature declared it (granted on this host).
   hasSigningKey = config.custom.platform.secrets ? inkpotmonkey_signing_key;
   signingKeyPath =

@@ -2,7 +2,7 @@
 
 Manages the tailnet's **global nameservers** (the admin-console DNS list) from the
 command line, so the reflash IP-drift step in
-[ADR-0030](../../../docs/adr/0030-fleet-dns-dual-blocky.md) is one command, not a
+[ADR-0023](../../../docs/adr/0023-fleet-dns-dual-blocky.md) is one command, not a
 manual console edit.
 
 ```sh
@@ -34,5 +34,5 @@ than silently halving DNS redundancy.
 ## Not managed here
 
 The **"Override local DNS"** toggle. The Tailscale API exposes only `magicDNS`,
-not that toggle, so it stays a one-time console setting — keep it **ON** (ADR-0030)
+not that toggle, so it stays a one-time console setting — keep it **ON** (ADR-0023)
 so the unmanaged phone gets ad-block through blocky.

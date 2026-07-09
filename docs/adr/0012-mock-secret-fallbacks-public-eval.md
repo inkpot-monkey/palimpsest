@@ -8,7 +8,7 @@ This was originally added to support **Garnix CI**, which has since shut down. W
 
 - A mock fallback now prints `secrets: '<path>' … falling back to a MOCK` at eval time. Seeing that warning during your own build means a secret is missing or mis-pathed — treat it as an error, not noise.
 - "CI-able against mocks" is no longer a live goal, just a retained capability; don't invest in keeping checks green against the mock set unless CI is revived.
-- The same loud-fallback behaviour is what makes feature *denial* graceful under the planned host↔user split: an ungranted feature whose secret isn't re-keyed degrades to a `warnMock` warning, not a crash. See [0015](0015-host-user-contract.md).
+- The same loud-fallback behaviour is what makes feature *denial* graceful under the planned host↔user split: an ungranted feature whose secret isn't re-keyed degrades to a `warnMock` warning, not a crash. See [contract ADR-0001](https://github.com/palebluebytes/host-user-contract/blob/main/docs/adr/0001-host-user-contract.md).
 
 ## Considered Options
 

@@ -63,14 +63,14 @@ check-all:
 dns command="preview":
   nix run .#dns -- {{command}}
 
-# Deploy the out-of-band push relay to Cloudflare (ADR-0027). Hermetic: pins the
+# Deploy the out-of-band push relay to Cloudflare (ADR-0020). Hermetic: pins the
 # wasm toolchain + wrangler, reads vapid_private/publish_token/cloudflare_api_token
 # from sops. Run from the operator workstation (holds &admin) — NOT a headless host.
 deploy-push-relay:
   nix run .#push-relay-deploy
 
 # Print the sops recipients implied by the feature grants — the single source of
-# truth (ADR-0015 slice 06). Each secret-bearing feature's stash file should be
+# truth (contract ADR-0001 slice 06). Each secret-bearing feature's stash file should be
 # encrypted to EXACTLY these hosts: `{ "<file>" = [ "<host>" ... ]; }`.
 sops-recipients:
   @nix eval --json '.#lib.featureRecipients' | jq .

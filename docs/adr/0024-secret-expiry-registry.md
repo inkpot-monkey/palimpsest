@@ -12,7 +12,7 @@ fleet tracks and alerts on secret expiry.
 **A declared plaintext registry (`secrets/expiry.nix`) is the source of truth for
 when each rotatable secret expires, and a daily on-host check
 (`monitoring/secret-expiry.nix`) alerts `#infra-alerts` before it lapses** —
-reusing the ADR-0026 alerting tier wholesale.
+reusing the ADR-0019 alerting tier wholesale.
 
 - **Registry** — `secrets/expiry.nix`, a normal (non-sops) Nix file: per secret,
   `{ file; warnDays?; runbook; }` plus expiry declared either as an absolute
@@ -22,13 +22,13 @@ reusing the ADR-0026 alerting tier wholesale.
 - **Check** — `custom.profiles.monitoring-secret-expiry` (enabled on `kelpy`): a
   daily `systemd` timer computes days-remaining per entry and POSTs to the hookshot
   loopback webhook — the same sink, jq body and `webhookUrlFile` plumbing as the
-  ADR-0026 unit-state check. It alerts once as each `warnDays` band is first entered
+  ADR-0019 unit-state check. It alerts once as each `warnDays` band is first entered
   (default `30 → 14 → 3 → EXPIRED`), does **not** re-spam within a band, and sends a
   ✅ notice when the value is renewed. Per-secret state (the tightest band already
   reported) lives in `StateDirectory`, so the daily run is idempotent.
 - **Metric** — it also writes `secret_expiry_timestamp_seconds{secret="…"}` to the
   node-exporter textfile dir, for a Grafana "days remaining" gauge. Since the
-  monitoring stack is collection-only (no vmalert, ADR-0028), the webhook POST *is*
+  monitoring stack is collection-only (no vmalert, ADR-0021), the webhook POST *is*
   the alert; the metric is just free visibility. A provisioned in-tree dashboard
   (`monitoring/dashboards/secret-expiry.json`, "Secret Expiry") renders it as a
   days-remaining stat coloured on the same bands, alongside the expiry date.
@@ -63,7 +63,7 @@ rotation commit," which the colocation above makes a one-line, same-PR edit.
 - Adding a rotatable secret means adding a registry entry; a typo in its `file`
   fails the flake check (eval-time `pathExists` assertion), not silently at runtime.
 - The alert fires from `kelpy` — the host most likely to *hold* the expiring key —
-  which is acceptable here (unlike ADR-0026's reachability probe, expiry is not an
+  which is acceptable here (unlike ADR-0019's reachability probe, expiry is not an
   outage the observer could be blind to).
 - First consumer: the 90-day fleet `tailscale_key` (`issued = 2026-05-09` →
   **2026-08-07**), which is already inside the 30-day warn band.

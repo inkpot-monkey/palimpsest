@@ -31,7 +31,7 @@
     gui-base.enable = true;
     gaming.enable = true;
     virtualization.enable = true;
-    kanata.enable = true; # keyboard remap, host-side (ADR-0018 slice 11)
+    kanata.enable = true; # keyboard remap, host-side (contract ADR-0002 slice 11)
     fonts.enable = true;
     regreet.enable = false; # Disabled in favor of SDDM for Plasma 6
     bluetooth.enable = true;
@@ -45,7 +45,7 @@
   };
 
   # User grants (gui/workstation/virtualization/signing) live in the fleet grant matrix
-  # — hosts/default.nix — not here. This host config is pure host concern (ADR-0018).
+  # — hosts/default.nix — not here. This host config is pure host concern (contract ADR-0002).
 
   system.stateVersion = "25.05";
 

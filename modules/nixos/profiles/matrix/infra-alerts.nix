@@ -1,5 +1,5 @@
 # #infra-alerts room + a STATIC hookshot generic-webhook connection for fleet
-# uptime alerts (ADR-0026).
+# uptime alerts (ADR-0019).
 #
 # Why static (not the dynamic bot-command / masquerade path): only a *static*
 # connection in hookshot's config.yml lets us choose the hookId — there
@@ -76,7 +76,7 @@ let
       rid="$(curl "''${auth[@]}" -X POST "$url/_matrix/client/v3/createRoom" \
         -H 'content-type: application/json' \
         -d "$(jq -nc --arg b "$bot" \
-          '{name:"Infra Alerts",topic:"Fleet uptime alerts (ADR-0026)",preset:"private_chat",invite:[$b]}')" \
+          '{name:"Infra Alerts",topic:"Fleet uptime alerts (ADR-0019)",preset:"private_chat",invite:[$b]}')" \
         | jq -r '.room_id // empty')"
       [ -n "$rid" ] || { echo "infra-alerts: createRoom failed" >&2; exit 1; }
       echo "infra-alerts: created room $rid — pin into infraAlerts.roomId and redeploy"
@@ -128,7 +128,7 @@ in
   options.custom.profiles.matrix.infraAlerts = {
     enable = lib.mkEnableOption ''
       the #infra-alerts room + a static hookshot generic-webhook connection for
-      fleet uptime alerts (ADR-0026). Requires custom.profiles.matrix.hookshot.enable.
+      fleet uptime alerts (ADR-0019). Requires custom.profiles.matrix.hookshot.enable.
       The webhook id is the sops secret `infra_alerts_hook_id`, shared with the
       hosts that post (the kelpy unit-state check and the rk1b Gatus probe).
     '';

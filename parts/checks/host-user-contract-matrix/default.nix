@@ -1,4 +1,4 @@
-# The host-side COHERENCE GATE (ADR-0020 Q5). The generic conformance matrix — synthetic
+# The host-side COHERENCE GATE (contract ADR-0004 Q5). The generic conformance matrix — synthetic
 # users × host archetypes, proving the contract's invariants in isolation — now lives in
 # the contract flake's own checks (`inputs.contract.checks.<system>.conformance`). What
 # stays here is the fleet-specific tie-back: that THIS fleet's real hosts are coherent

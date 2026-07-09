@@ -1,4 +1,4 @@
-# The sops *binding* for the contract platform interface (ADR-0021): the one place that
+# The sops *binding* for the contract platform interface (contract ADR-0005): the one place that
 # names `sops.*`. It realizes the backend-neutral provisioning seam
 # (custom.platform.secrets) onto sops-nix, and publishes the runtime
 # paths and placeholders back through the interface for features to read.

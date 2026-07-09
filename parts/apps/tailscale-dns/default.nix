@@ -6,7 +6,7 @@
 # `nix run .#tailscale-dns -- [get|preview|push]`
 #
 # Manages the tailnet's GLOBAL NAMESERVERS (the admin-console DNS list) via the
-# Tailscale HTTP API, so the drift-prone step ADR-0030 called out — "after a
+# Tailscale HTTP API, so the drift-prone step ADR-0023 called out — "after a
 # reflash, re-enter the nameserver IP by hand" — becomes one command instead.
 #
 # The nameserver hosts are declared once in `settings.dns.nameserverHosts`
@@ -17,7 +17,7 @@
 #
 # NOT managed here: the "Override local DNS" toggle. The API exposes only
 # `magicDNS`, not that toggle (a known gap), so it stays a one-time console
-# setting — keep it ON (ADR-0030) so the unmanaged phone gets ad-block.
+# setting — keep it ON (ADR-0023) so the unmanaged phone gets ad-block.
 #
 # Auth is inkpotmonkey's Tailscale API key, decrypted from the user's sops file at
 # runtime and passed to curl via a config on STDIN (`-K -`) — never on the command

@@ -1,4 +1,4 @@
-# ADR-0026 slice 04 — the monitor-by-default guard.
+# ADR-0019 slice 04 — the monitor-by-default guard.
 #
 # The uptime watcher derives its endpoints from settings.services, so a new
 # service is monitored automatically. This `nix flake check` is the build-time net
@@ -85,7 +85,7 @@ assert lib.assertMsg selfTestOk
   "uptime-monitoring guard self-test failed (the invariant checker is broken)";
 if realViolations != [ ] then
   throw ''
-    uptime-monitoring guard (ADR-0026 slice 04) failed:
+    uptime-monitoring guard (ADR-0019 slice 04) failed:
     ${lib.concatMapStringsSep "\n" (v: "  - " + v) realViolations}
   ''
 else

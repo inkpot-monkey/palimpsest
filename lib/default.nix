@@ -16,7 +16,7 @@ let
   helpers = lib // {
     inherit overlays;
 
-    # Recipients-from-grants applied to THIS fleet (ADR-0015 slice 06, ADR-0020 Q4): the
+    # Recipients-from-grants applied to THIS fleet (contract ADR-0001 slice 06, contract ADR-0004 Q4): the
     # contract owns the algorithm (inputs.contract.lib.mkFeatureRecipients); the host
     # applies it to its own nixosConfigurations. The single source of truth for the
     # stash's .sops.yaml recipients, so they can never drift from the grants.
@@ -79,7 +79,7 @@ let
       in
       if builtins.pathExists path then path else warnMock "users/${user}.yaml" ../parts/mock-secrets.yaml;
 
-    # The host's implementation of the contract `platform` interface (ADR-0020 Q7): the
+    # The host's implementation of the contract `platform` interface (contract ADR-0004 Q7): the
     # one place the system names its secrets backend. Set as `config.custom.platform` by
     # both the system and home wiring (users/identity.nix, modules/homeManager/options.nix)
     # so the binding lives in exactly one place instead of being duplicated per eval-side.

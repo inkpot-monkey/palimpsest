@@ -3,11 +3,11 @@
 Per-bulb ESPHome configs for the Antela WiFi bulbs, flashed via tuya-cloudcutter.
 This directory is the **source of truth** for the bulb firmware. Design rationale
 and the rejected alternatives (Tuya cloud, `tuya_local`, OpenBeken/MQTT) are in
-[`../docs/adr/0016-bulbs-run-esphome-via-cloudcutter.md`](../docs/adr/0016-bulbs-run-esphome-via-cloudcutter.md).
+[`../docs/adr/0015-bulbs-run-esphome-via-cloudcutter.md`](../docs/adr/0015-bulbs-run-esphome-via-cloudcutter.md).
 
 Firmware is built with the `esphome` CLI **outside** the nix sandbox, because
 LibreTiny/PlatformIO downloads its toolchain at build time (so a hermetic nix
-derivation is not used — see ADR-0016).
+derivation is not used — see ADR-0015).
 
 For the full end-to-end procedure (flashing a bulb from stock, adopting it in HA,
 adding the light), see the runbook:

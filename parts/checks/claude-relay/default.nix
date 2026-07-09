@@ -4,7 +4,7 @@
   ...
 }:
 
-# VM check for the Claude relay (ADR-0025), slice 01: prove the relay logs in,
+# VM check for the Claude relay (ADR-0018), slice 01: prove the relay logs in,
 # syncs, and acts ONLY on the allowlisted sender (echo), ignoring everyone else.
 # A minimal tuwunel homeserver stands in for the real matrix profile.
 

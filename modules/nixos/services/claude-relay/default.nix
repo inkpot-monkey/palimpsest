@@ -49,7 +49,7 @@ let
 in
 {
   options.services.claude-relay = {
-    enable = lib.mkEnableOption "the Claude relay (Matrix <-> persistent claude sessions, ADR-0025)";
+    enable = lib.mkEnableOption "the Claude relay (Matrix <-> persistent claude sessions, ADR-0018)";
 
     package = lib.mkOption {
       type = lib.types.package;
@@ -83,7 +83,7 @@ in
       example = "@thomas:palebluebytes.space";
       description = ''
         The ONLY sender MXID the relay will act on. Enforced in-process per
-        ADR-0025 (room ACLs alone do not gate a federated room).
+        ADR-0018 (room ACLs alone do not gate a federated room).
       '';
     };
 

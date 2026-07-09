@@ -8,7 +8,7 @@
     git-annex = ./git-annex;
     kokoro-tts = ./kokoro;
     options = ./options.nix;
-    # The sops binding for the contract platform interface (ADR-0021); imported
+    # The sops binding for the contract platform interface (contract ADR-0005); imported
     # wherever sops-nix is the home secrets backend.
     platformSops = ./platform-sops.nix;
   };

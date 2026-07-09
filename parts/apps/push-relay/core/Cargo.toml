@@ -2,7 +2,7 @@
 name = "push-relay-core"
 version = "0.1.0"
 edition = "2021"
-description = "Portable, I/O-free Web Push (RFC 8291 aes128gcm + RFC 8292 VAPID) request builder — the host-agnostic core of the out-of-band alert relay (ADR-0027)."
+description = "Portable, I/O-free Web Push (RFC 8291 aes128gcm + RFC 8292 VAPID) request builder — the host-agnostic core of the out-of-band alert relay (ADR-0020)."
 license = "MIT"
 
 # Pure crypto + request construction. No I/O, no clock, no RNG: randomness (the

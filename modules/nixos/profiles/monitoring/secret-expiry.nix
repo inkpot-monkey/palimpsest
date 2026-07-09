@@ -1,5 +1,5 @@
-# Secret-expiry watcher — ADR-0031. The declared-registry complement to the
-# ADR-0026 alerting tier: a daily on-host check that reads the plaintext expiry
+# Secret-expiry watcher — ADR-0024. The declared-registry complement to the
+# ADR-0019 alerting tier: a daily on-host check that reads the plaintext expiry
 # registry (secrets/expiry.nix) and alerts #infra-alerts via the hookshot loopback
 # webhook BEFORE a rotatable secret lapses.
 #
@@ -66,7 +66,7 @@ let
       metrics_dir=${lib.escapeShellArg cfg.metricsDir}
       if [ -d "$metrics_dir" ]; then
         metrics_tmp="$(mktemp "$metrics_dir/.secret-expiry.XXXXXX")"
-        printf '# HELP secret_expiry_timestamp_seconds Unix time a rotatable secret expires (ADR-0031).\n' >> "$metrics_tmp"
+        printf '# HELP secret_expiry_timestamp_seconds Unix time a rotatable secret expires (ADR-0024).\n' >> "$metrics_tmp"
         printf '# TYPE secret_expiry_timestamp_seconds gauge\n' >> "$metrics_tmp"
       else
         echo "secret-expiry: metrics dir $metrics_dir absent — skipping textfile metric" >&2
@@ -147,7 +147,7 @@ in
 {
   options.custom.profiles.monitoring-secret-expiry = {
     enable = lib.mkEnableOption ''
-      the daily secret-expiry watcher (ADR-0031). Reads the plaintext expiry registry
+      the daily secret-expiry watcher (ADR-0024). Reads the plaintext expiry registry
       (secrets/expiry.nix) and alerts #infra-alerts via the hookshot loopback webhook
       before a rotatable secret lapses. Enable on the host that runs
       custom.profiles.matrix.infraAlerts (kelpy), which publishes the webhook url file.
@@ -215,7 +215,7 @@ in
     }) registry;
 
     systemd.services.monitoring-secret-expiry-check = {
-      description = "Alert before a rotatable secret expires (ADR-0031)";
+      description = "Alert before a rotatable secret expires (ADR-0024)";
       after = [ "matrix-infra-alerts-room.service" ];
       serviceConfig = {
         Type = "oneshot";
@@ -225,7 +225,7 @@ in
     };
 
     systemd.timers.monitoring-secret-expiry-check = {
-      description = "Daily secret-expiry check (ADR-0031)";
+      description = "Daily secret-expiry check (ADR-0024)";
       wantedBy = [ "timers.target" ];
       timerConfig = {
         OnCalendar = "daily";

@@ -1,4 +1,4 @@
-# Cloudflare Worker config for the out-of-band push relay (ADR-0027).
+# Cloudflare Worker config for the out-of-band push relay (ADR-0020).
 name = "push-relay"
 main = "worker/build/worker/shim.mjs"
 compatibility_date = "2024-09-23"
@@ -7,7 +7,7 @@ compatibility_date = "2024-09-23"
 [build]
 command = "cd worker && worker-build --release"
 
-# Dead-man's switch (ADR-0027 / issue 06): runs the `scheduled` handler every
+# Dead-man's switch (ADR-0020 / issue 06): runs the `scheduled` handler every
 # 5 min to check rk1b's heartbeat and alert the phone on silence (a full-site
 # blackout the out-of-band push itself can't catch). 5 min ≈ 3 ticks before the
 # 15-min stale threshold; also keeps KV writes under the free-plan 1000/day cap.

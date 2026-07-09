@@ -1,6 +1,6 @@
 //! claude-relay — relay persistent `claude` CLI sessions to/from Matrix.
 //!
-//! See `docs/adr/0025-claude-relay-matrix-interface.md`.
+//! See `docs/adr/0018-claude-relay-matrix-interface.md`.
 //!
 //! Slice 01: allowlist-gated bot. Slice 02: send-keys injection + transcript-driven
 //! replies via a Stop hook. Slice 03: MSC3381 polls for permission/choice grants.
@@ -622,7 +622,7 @@ async fn present_control_room(app: &Arc<App>, control: &OwnedRoomId) {
     }
 }
 
-/// Create a non-federated room inviting the operator (ADR-0025: rooms never
+/// Create a non-federated room inviting the operator (ADR-0018: rooms never
 /// federate, which replaces E2E given the co-located homeserver).
 async fn create_room(app: &Arc<App>, name: &str) -> Result<Room> {
     let mut creation = CreationContent::new();

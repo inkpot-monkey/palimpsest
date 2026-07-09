@@ -30,10 +30,10 @@
     # holds a stale exclusive lock from stargazer, failing every activation.
     # Re-enable once the lock is cleared and the host is reachable.
     backup.enable = false;
-    monitoring-server.enable = false; # moved to rk1b (ADR-0028)
+    monitoring-server.enable = false; # moved to rk1b (ADR-0021)
     monitoring-client.enable = true;
     monitoring-dmarc.enable = false;
-    # On-host white-box layer for ADR-0026: alerts to #infra-alerts (via the
+    # On-host white-box layer for ADR-0019: alerts to #infra-alerts (via the
     # hookshot loopback webhook) when a long-running daemon stops being active —
     # complements the off-host Gatus reachability probe on rk1b. The unit list is
     # CURATED (these names are kelpy-specific); add/remove as services change.
@@ -56,7 +56,7 @@
         "paperless-consumer.service"
       ];
     };
-    # Daily secret-expiry watcher (ADR-0031): reads the plaintext expiry registry
+    # Daily secret-expiry watcher (ADR-0024): reads the plaintext expiry registry
     # (secrets/expiry.nix) and alerts #infra-alerts before a rotatable secret (e.g.
     # the 90-day tailscale auth key) lapses. Reuses the infraAlerts webhook + the
     # node-exporter textfile metric for a Grafana "days remaining" gauge.
@@ -80,7 +80,7 @@
     paperless.enable = true;
     litellm.enable = true;
     openclaw.enable = true;
-    # The Claude relay (ADR-0025) is the Matrix interface to persistent `claude`
+    # The Claude relay (ADR-0018) is the Matrix interface to persistent `claude`
     # sessions — it replaced AionUi (now removed). Reuses inkpotmonkey's ~/.claude.
     claude-relay.enable = true;
     blocky.enable = true;
@@ -91,10 +91,10 @@
 
   # kelpy runs the Claude relay's code-executing `claude` sessions (claude-relay
   # above) — mark it exposed so the contract refuses any secret-bearing user-feature
-  # grant (ADR-0015).
+  # grant (contract ADR-0001).
   custom.host.exposed = true;
   # NOTE: signing is intentionally NOT granted here. It is now a home-sops feature
-  # (ADR-0018, slice 13) decryptable only by the user's own key, which a headless
+  # (contract ADR-0002, slice 13) decryptable only by the user's own key, which a headless
   # agent host lacks — and the agent should not sign commits as inkpotmonkey anyway.
 
   # OpenClaw models configuration — site-specific provider setup.

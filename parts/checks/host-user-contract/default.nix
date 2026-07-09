@@ -1,4 +1,4 @@
-# Regression gate for the host↔user contract (ADR-0015, slice 08).
+# Regression gate for the host↔user contract (its ADR-0001, slice 08).
 #
 # Proves the gui *grant* drives the gui feature and that *deny* (no grant) is a
 # true no-op. Both configs bind the SAME inkpotmonkey manifest; the only difference is
@@ -19,7 +19,7 @@ let
     self.lib.mkSystem {
       modules = [
         self.nixosProfiles.bundle
-        # The user is bound as a non-granting manifest (ADR-0018, slice 16); each test
+        # The user is bound as a non-granting manifest (contract ADR-0002, slice 16); each test
         # supplies the grants it needs via grantsModule, never a self-granting variant.
         self.users.inkpotmonkey.manifest
         {
@@ -44,7 +44,7 @@ let
   granted = grantedSys.config;
   denied = deniedSys.config;
 
-  # ADR-0019 — the gui-session union. `grantedSys` above has a single gui user whose
+  # contract ADR-0003 — the gui-session union. `grantedSys` above has a single gui user whose
   # session defaults to Wayland: the host enables the Wayland greeter and NOT X11.
   # A host whose only gui user wants X11 enables X11 and not the Wayland greeter.
   x11OnlySys = evalSystem {
@@ -117,7 +117,7 @@ let
     }
     # NOTE: the pure-contract-logic assertions (group policy, the derived safe set,
     # recipients-from-grants) moved to the contract flake's own conformance suite
-    # (inputs.contract.checks.<system>.conformance, ADR-0020 Q5). What remains here is
+    # (inputs.contract.checks.<system>.conformance, contract ADR-0004 Q5). What remains here is
     # INTEGRATION: the host bindings (display rendering, the emacs glue, the platform
     # resolver) realizing the contract as wired into THIS fleet, on the real manifest.
     {

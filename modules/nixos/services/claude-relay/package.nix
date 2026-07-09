@@ -35,7 +35,7 @@ rustPlatform.buildRustPackage {
   doCheck = false;
 
   meta = {
-    description = "Relay persistent claude CLI sessions to/from Matrix (ADR-0025)";
+    description = "Relay persistent claude CLI sessions to/from Matrix (ADR-0018)";
     mainProgram = "claude-relay";
   };
 }

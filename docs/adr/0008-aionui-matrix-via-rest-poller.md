@@ -1,13 +1,13 @@
 ______________________________________________________________________
 
-## status: superseded by ADR-0025
+## status: superseded by ADR-0018
 
 # AionUi→Matrix notifications via a REST poller, not a native aioncore channel
 
-> **Superseded by [ADR-0025](0025-claude-relay-matrix-interface.md):** the one-way poller
+> **Superseded by [ADR-0018](0018-claude-relay-matrix-interface.md):** the one-way poller
 > is replaced by the Claude relay's two-way, transcript-driven Matrix interface. This ADR's
 > deferral ("if richer two-way Matrix integration is ever wanted, reopen the fork decision
-> deliberately") is exactly what ADR-0025 does.
+> deliberately") is exactly what ADR-0018 does.
 
 AionUi can surface agent events (finished / needs-input / error) into a Matrix room. This is done with a small standalone poller (`services.aionui-notifier`) that watches aioncore's local `/api` and posts to Matrix via the client-server API — *not* by writing a native AionUi "channel" for Matrix.
 

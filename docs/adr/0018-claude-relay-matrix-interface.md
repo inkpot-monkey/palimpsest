@@ -60,7 +60,7 @@ ADR-0005's: full code-exec as that user. The boundary is therefore:
   homeserver restart, and isn't even more secrets. Cost: it's the lone self-registered
   account, with one `access_token` in stash.
 - **Python + matrix-nio** vs **Rust + matrix-rust-sdk** — chose Rust. It consolidates all
-  first-party Matrix services on one stack/toolchain alongside the jmap bridge (ADR-0017),
+  first-party Matrix services on one stack/toolchain alongside the jmap bridge (ADR-0016),
   rather than keeping the notifier's Python alive.
 - **Keep AionUi / extend its notifier two-way** — rejected. aioncore can't push and its
   native-channel route is a Rust fork (ADR-0008); the WebUI is the thing being replaced.
@@ -70,7 +70,7 @@ ADR-0005's: full code-exec as that user. The boundary is therefore:
 - **Supersedes [ADR-0005](0005-aionui-tailscale-only-boundary.md) and
   [ADR-0008](0008-aionui-matrix-via-rest-poller.md)**; AionUi (WebUI + notifier) is removed
   **atomically when the relay lands** (no notification gap), keeping the WebUI only as a
-  fallback during bring-up. [ADR-0024](0024-matrix-hookshot-webhooks-and-feeds.md)'s
+  fallback during bring-up. [ADR-0017](0017-matrix-hookshot-webhooks-and-feeds.md)'s
   hookshot **stays** for GitHub/feeds/generic webhooks — only its aionui generic-webhook
   connection (the `aionui-hookshot-provision` oneshot + `#aionui-alerts` room) goes.
 - **One new stash secret** — the bot's long-lived `access_token` (account created once via
@@ -85,5 +85,5 @@ ADR-0005's: full code-exec as that user. The boundary is therefore:
   transcript on hooks (output).
 - **Selectable choices are Element-centric** (MSC3381 polls render as cards in Element;
   other clients see fallback text) — acceptable since Element is the operator's client.
-- **The relay may graduate to its own repo** later the way the jmap bridge did (ADR-0017);
+- **The relay may graduate to its own repo** later the way the jmap bridge did (ADR-0016);
   today it is kelpy-specific glue.

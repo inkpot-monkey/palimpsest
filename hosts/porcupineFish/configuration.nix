@@ -35,7 +35,7 @@
     monitoring-client.enable = true;
     monitoring-smartctl.enable = true;
     backup.enable = true;
-    # blocky removed (ADR-0030): this audio node's recovery is a cold power-cycle,
+    # blocky removed (ADR-0023): this audio node's recovery is a cold power-cycle,
     # so it's a liability in the fastest-wins global-nameserver list. Fleet DNS is
     # now dual blocky on kelpy + rk1b.
   };

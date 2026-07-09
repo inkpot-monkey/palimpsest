@@ -7,7 +7,7 @@
         affine = import ./affine {
           inherit pkgs inputs self;
         };
-        # ADR-0026 slice 04: monitor-by-default guard over settings.services — opt-outs
+        # ADR-0019 slice 04: monitor-by-default guard over settings.services — opt-outs
         # need a reason, and every monitored service must resolve to a buildable probe.
         uptime_monitoring = import ./uptime-monitoring {
           inherit pkgs self;
@@ -18,7 +18,7 @@
         annas_opds = import ./annas-opds {
           inherit pkgs;
         };
-        # Claude relay (ADR-0025) slice 01: allowlist-gated echo over a minimal
+        # Claude relay (ADR-0018) slice 01: allowlist-gated echo over a minimal
         # tuwunel homeserver. The relay's mechanics are proven here (stub-driven in
         # later slices) so an AFK agent can verify via `nix flake check`.
         claude_relay = import ./claude-relay {
@@ -32,21 +32,21 @@
         };
         # jmap_bridge VM check moved to the bridge's own repo
         # (inputs.jmap-bridge.checks); its CI owns the round-trip test now.
-        # The contract's OWN conformance suite (ADR-0020 Q5), surfaced from the contract
+        # The contract's OWN conformance suite (contract ADR-0004 Q5), surfaced from the contract
         # flake so this repo's `nix flake check` runs it too. Synthetic users × the
         # contract umbrella, no host repo — the generic proof of the contract's promises.
         contract_conformance = inputs.contract.checks.${system}.conformance;
-        # Host INTEGRATION (ADR-0015): the host bindings realize the contract on the real
+        # Host INTEGRATION (contract ADR-0001): the host bindings realize the contract on the real
         # manifest — display rendering, emacs glue, platform resolver, the gui union.
         host_user_contract = import ./host-user-contract {
           inherit pkgs self;
         };
-        # The gui-union runtime VM moved into the contract's own suite (ADR-0020:
+        # The gui-union runtime VM moved into the contract's own suite (contract ADR-0004:
         # checks.<system>.conformance-vm there). It uses a test-only display binding, so
         # it no longer covers this fleet's gui-desktop.nix; re-surface it from
         # inputs.contract.checks once the contract is published with that check if a
         # fleet-side runtime smoke is wanted.
-        # The host-side COHERENCE GATE (ADR-0020 Q5): the real fleet ties back to the
+        # The host-side COHERENCE GATE (contract ADR-0004 Q5): the real fleet ties back to the
         # contract's conformance suite (the display binding is wired wherever the contract
         # decides a surface is needed; real exposed-traits are archetype-covered).
         host_fleet_coherence = import ./host-user-contract-matrix {

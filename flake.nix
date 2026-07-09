@@ -97,7 +97,7 @@
       url = "github:johnzfitch/claude-cowork-linux";
     };
 
-    # The email bridge lives in its own repo (ADR-0017), consumed via its
+    # The email bridge lives in its own repo (ADR-0016), consumed via its
     # nixosModule. Deliberately NOT `inputs.nixpkgs.follows = "nixpkgs"`: the
     # bridge's CI builds the crate against its OWN pinned nixpkgs and pushes the
     # closure to the palebluebytes cachix (trusted in nixConfig.nix). Following
@@ -112,9 +112,9 @@
       flake = false;
     };
 
-    # The host↔user contract (ADR-0020): the shared schema, host-invariant realization,
+    # The host↔user contract (its ADR-0004): the shared schema, host-invariant realization,
     # derivation logic, and conformance kit. Now its own public repo, consumed as a
-    # `github:` input — the "URL change, not a re-wire" of ADR-0015. nixpkgs follows the
+    # `github:` input — the "URL change, not a re-wire" of contract ADR-0001. nixpkgs follows the
     # fleet pin so there is one nixpkgs eval and no lib skew. Edit behaviour THERE, then
     # `nix flake update contract` here (the two-repo workflow of secrets/jmap-bridge).
     contract = {

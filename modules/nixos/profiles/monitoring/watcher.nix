@@ -1,4 +1,4 @@
-# The off-host uptime watcher (Gatus) — ADR-0026. Reachability-probes every
+# The off-host uptime watcher (Gatus) — ADR-0019. Reachability-probes every
 # registered service and alerts to #infra-alerts via the hookshot webhook
 # (slice 01). Runs on an always-on host that is NOT the one it watches (rk1b),
 # so it can still observe kelpy failing.
@@ -11,7 +11,7 @@
 # reachable over Tailscale. The single tailnet-reachable ingress is Caddy on :443.
 # So a Caddy-fronted service is probed at `https://<name>.<domain>` THROUGH Caddy
 # (a 200/302/404 means Caddy + backend are both up; a 502/503/504 means the backend
-# is down — exactly the "host up, service down" case ADR-0026 targets). Private
+# is down — exactly the "host up, service down" case ADR-0019 targets). Private
 # services are `internal_only` (tailnet source-IP gated); this watcher is on the
 # tailnet, so it passes. Services NOT behind a Caddy edge (e.g. the rk1a LLM) are
 # probed by raw TCP to the listener's tailscale IP.
@@ -36,7 +36,7 @@ let
   pushRelaySecrets = self.lib.getSecretFile "monitoring";
   domain = settings.primaryDomain;
 
-  # Out-of-band channel (ADR-0027): a second, ntfy-shaped alerter pointed at the
+  # Out-of-band channel (ADR-0020): a second, ntfy-shaped alerter pointed at the
   # self-hosted web-push relay, attached to ONLY the delivery-path endpoints so the
   # phone buzzes when the Matrix path itself is down. Disabled until the relay is
   # live + the publish token is keyed for rk1b (push-relay issue 04).
@@ -55,7 +55,7 @@ let
 
   viaCaddy = svc: lib.elem (edgeHost svc) caddyEdges;
 
-  # Monitor-by-default: a service is watched unless it opts out (ADR-0026 slice 04).
+  # Monitor-by-default: a service is watched unless it opts out (ADR-0019 slice 04).
   monitored = svc: svc.monitor.enable or true;
 
   # The hookshot webhook (in-band) rides every endpoint; the out-of-band ntfy/web-push
@@ -131,12 +131,12 @@ in
     enable = lib.mkEnableOption ''
       the off-host uptime watcher (Gatus). Reachability-probes the fleet's
       registered services and alerts to #infra-alerts via the hookshot webhook
-      (ADR-0026). Enable on an always-on host that is NOT the one it watches.
+      (ADR-0019). Enable on an always-on host that is NOT the one it watches.
     '';
 
     outOfBand = {
       enable = lib.mkEnableOption ''
-        the out-of-band web-push alerter (ADR-0027): a second, ntfy-shaped Gatus
+        the out-of-band web-push alerter (ADR-0020): a second, ntfy-shaped Gatus
         alerter pointed at the self-hosted push relay, attached to only the
         delivery-path `endpoints` so the phone is notified when the Matrix path
         itself is down. Enable once the relay is live and `push_relay_publish_token`
@@ -165,7 +165,7 @@ in
         type = lib.types.ints.positive;
         default = 300;
         description = ''
-          How often (seconds) to beat to the relay's dead-man's switch (ADR-0027,
+          How often (seconds) to beat to the relay's dead-man's switch (ADR-0020,
           push-relay issue 06). The relay's Cloudflare Cron Trigger alerts the
           phone if no beat arrives within its stale threshold (~15 min ≈ 3 missed
           5-min beats) — the one failure (a full-site blackout) the out-of-band
@@ -239,7 +239,7 @@ in
               TRIGGERED = "🚨 TRIGGERED";
               RESOLVED = "✅ RESOLVED";
             };
-            # ADR-0026 semantics: 3 consecutive fails (~90s) before alerting,
+            # ADR-0019 semantics: 3 consecutive fails (~90s) before alerting,
             # recovery notice on return, no periodic re-alerts.
             default-alert = {
               failure-threshold = 3;
@@ -249,7 +249,7 @@ in
           };
         }
         // lib.optionalAttrs oob.enable {
-          # Out-of-band: ntfy alerter → the web-push relay (ADR-0027). Same quiet
+          # Out-of-band: ntfy alerter → the web-push relay (ADR-0020). Same quiet
           # semantics; attached to the delivery-path endpoints only (see alertsFor).
           ntfy = {
             url = oob.relayUrl;
@@ -275,14 +275,14 @@ in
     # Status page + API, tailnet-only.
     networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ webPort ];
 
-    # Dead-man's switch heartbeat (ADR-0027, push-relay issue 06). When the
+    # Dead-man's switch heartbeat (ADR-0020, push-relay issue 06). When the
     # out-of-band channel is on, beat to the relay every `heartbeatSec` so its
     # Cloudflare Cron Trigger can alert the phone on SILENCE — the one failure (a
     # full-site blackout that kills this watcher too) the OOB push can't catch.
     # The beat is CHAINED to gatus being active, so silence means "the watcher
     # stopped watching", not merely "the host booted".
     systemd.services.deadman-heartbeat = lib.mkIf oob.enable {
-      description = "Beat to the out-of-band relay's dead-man's switch (ADR-0027)";
+      description = "Beat to the out-of-band relay's dead-man's switch (ADR-0020)";
       after = [ "gatus.service" ];
       serviceConfig.Type = "oneshot";
       # Runs as root to read the root-owned publish-token sops secret.
@@ -300,7 +300,7 @@ in
       '';
     };
     systemd.timers.deadman-heartbeat = lib.mkIf oob.enable {
-      description = "Periodic dead-man heartbeat to the relay (ADR-0027)";
+      description = "Periodic dead-man heartbeat to the relay (ADR-0020)";
       wantedBy = [ "timers.target" ];
       timerConfig = {
         OnBootSec = "2min";

@@ -1,6 +1,6 @@
 # Runbook: Antela A60 bulbs → Home Assistant (ESPHome via cloudcutter)
 
-How to bring an Antela Filament A60 WiFi bulb under local Home Assistant control by flashing ESPHome onto it with tuya-cloudcutter. Decision rationale and rejected alternatives are in [ADR-0016](../adr/0016-bulbs-run-esphome-via-cloudcutter.md); the per-bulb config lives in [`esphome/`](../../esphome/); work is tracked in `.scratch/antela-bulbs/` (local, gitignored).
+How to bring an Antela Filament A60 WiFi bulb under local Home Assistant control by flashing ESPHome onto it with tuya-cloudcutter. Decision rationale and rejected alternatives are in [ADR-0015](../adr/0015-bulbs-run-esphome-via-cloudcutter.md); the per-bulb config lives in [`esphome/`](../../esphome/); work is tracked in `.scratch/antela-bulbs/` (local, gitignored).
 
 ## The shape of it
 
@@ -110,7 +110,7 @@ In the menu:
    for the light config in step E.
 
 **Go/no-go:** success → bulb reboots into ESPHome, proceed. Failure → firmware is patched;
-fall back to `tuya_local` on cloud-cut stock firmware, or a serial flash (revisit ADR-0016).
+fall back to `tuya_local` on cloud-cut stock firmware, or a serial flash (revisit ADR-0015).
 Record the outcome (chip, profile, dumped config) in `.scratch/antela-bulbs/issues/01`.
 
 ### D. Adopt in Home Assistant
@@ -147,7 +147,7 @@ means the light config from bulb 1 carries over — no re-discovery.
 Then assign each bulb to an HA **Area** (Settings → Areas, or per-device). Since rk1b is the
 voice node, that is all Assist needs — confirm with *"turn on the \<area> light"*.
 
-Automations are phase 2 (declarative in nix per ADR-0016), tracked separately.
+Automations are phase 2 (declarative in nix per ADR-0015), tracked separately.
 
 ______________________________________________________________________
 

@@ -25,7 +25,7 @@ let
 
   # The service registry. Each entry: `edge` (host where DNS points + Caddy runs),
   # `port`, optional `origin` (host actually running it when off-edge), optional
-  # `proxy = false` (bypass Caddy). Optional `monitor` controls the ADR-0026 uptime
+  # `proxy = false` (bypass Caddy). Optional `monitor` controls the ADR-0019 uptime
   # watcher (monitor-by-default): `monitor.enable` (default true) and, when you set
   # it false, a required `monitor.reason`. Opting out here exempts a SERVED service
   # from probing/alerting; it does not stop Caddy fronting it (to fully retire a
@@ -133,7 +133,7 @@ in
     };
 
     # The tailnet's fleet DNS resolvers: the hosts running blocky that are registered
-    # as tailscale global nameservers (ADR-0030). Single source of truth for the
+    # as tailscale global nameservers (ADR-0023). Single source of truth for the
     # `tailscale-dns` app, which resolves each host's CURRENT tailscale IP and pushes
     # the admin-console nameserver list — self-healing against the reflash IP-drift
     # that silently killed the old porcupineFish secondary. Keep in sync with the
@@ -198,7 +198,7 @@ in
 
     services = checkPorts;
 
-    # Hosts that run the Caddy edge profile (proxy.nix). The ADR-0026 uptime
+    # Hosts that run the Caddy edge profile (proxy.nix). The ADR-0019 uptime
     # watcher probes a service's HTTPS vhost through Caddy when its edge is listed
     # here, else falls back to a raw TCP probe to the listener; the slice-04 guard
     # uses the same notion to decide whether a monitored service is probeable.

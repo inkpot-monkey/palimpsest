@@ -67,7 +67,7 @@ in
     # Telemetry backup: VictoriaMetrics consistent snapshot → rsync.net every 6h.
     # Uses VM's /snapshot/create API so the backup is always consistent; local
     # snapshots are deleted after each successful backup (restic deduplicates).
-    # RPO ≈ 6h. See ADR-0028.
+    # RPO ≈ 6h. See ADR-0021.
     (lib.mkIf cfg.monitoringTelemetry.enable {
       services.restic.backups.telemetry = {
         initialize = true;

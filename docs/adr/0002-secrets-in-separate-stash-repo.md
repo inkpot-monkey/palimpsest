@@ -7,7 +7,7 @@ We accept a real ergonomic cost for this separation: an edit to a sops file unde
 ## Consequences
 
 - The deploy workflow for any secret change is: `cd secrets && git commit -am … && git push` → `nix flake update secrets` → `just deploy <host>`. Never deploy before relocking.
-- The planned host↔user split makes this re-key step *per-feature*: granting a user's feature on a host re-keys that host into the feature's secret — same workflow, finer granularity. See [0015](0015-host-user-contract.md).
+- The planned host↔user split makes this re-key step *per-feature*: granting a user's feature on a host re-keys that host into the feature's secret — same workflow, finer granularity. See [contract ADR-0001](https://github.com/palebluebytes/host-user-contract/blob/main/docs/adr/0001-host-user-contract.md).
 
 ## Considered Options
 

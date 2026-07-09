@@ -2,7 +2,7 @@
 name = "push-relay-worker"
 version = "0.1.0"
 edition = "2021"
-description = "Cloudflare Worker shell for the out-of-band web-push relay (ADR-0027). The thin, swappable platform adapter around push-relay-core."
+description = "Cloudflare Worker shell for the out-of-band web-push relay (ADR-0020). The thin, swappable platform adapter around push-relay-core."
 
 [lib]
 crate-type = ["cdylib"]

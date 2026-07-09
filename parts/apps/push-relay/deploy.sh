@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Deploy the out-of-band push relay (ADR-0027). Run from the operator workstation
+# Deploy the out-of-band push relay (ADR-0020). Run from the operator workstation
 # (it decrypts sops with &admin) — NOT a headless host.
 #
 # PREFER the hermetic wrapper, which pins the whole toolchain and the sops file:

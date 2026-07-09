@@ -1,6 +1,6 @@
 # A hand-written JMAP↔Matrix email bridge, with per-thread rooms
 
-> **Update ([ADR-0017](0017-jmap-bridge-own-repo.md)):** the crate, its NixOS service module, and the VM check now live in the standalone `palebluebytes/jmap-matrix-bridge` repo, consumed here as the `jmap-bridge` flake input. The in-repo paths below (`pkgs/jmap-matrix-bridge`, `modules/nixos/services/jmap-bridge/`, `parts/checks/jmap-bridge/`) are historical; only the host glue in `modules/nixos/profiles/matrix/jmap-bridge.nix` remains in this repo. The design rationale below is unchanged.
+> **Update ([ADR-0016](0016-jmap-bridge-own-repo.md)):** the crate, its NixOS service module, and the VM check now live in the standalone `palebluebytes/jmap-matrix-bridge` repo, consumed here as the `jmap-bridge` flake input. The in-repo paths below (`pkgs/jmap-matrix-bridge`, `modules/nixos/services/jmap-bridge/`, `parts/checks/jmap-bridge/`) are historical; only the host glue in `modules/nixos/profiles/matrix/jmap-bridge.nix` remains in this repo. The design rationale below is unchanged.
 
 Email-to-Matrix bridging is done by a bespoke Rust appservice (`pkgs/jmap-matrix-bridge`, wired via `modules/nixos/services/jmap-bridge/`) that talks JMAP to Stalwart and the appservice API to tuwunel. We built our own rather than adopt an off-the-shelf email bridge so the behaviour — threading model, body rendering, double-puppeting, retry/submission semantics — is fully under our control and testable in a VM round-trip check (`parts/checks/jmap-bridge/`).
 

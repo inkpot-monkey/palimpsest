@@ -1,4 +1,4 @@
-# Kanata keyboard-remap, as HOST config (ADR-0018, slice 11). kanata runs as a
+# Kanata keyboard-remap, as HOST config (contract ADR-0002, slice 11). kanata runs as a
 # privileged system service and its keymap uses `danger-enable-cmd` + `(cmd …)` to
 # run shell — an executable payload that must NOT ride a safe-set (greeter-grantable)
 # user feature. So it is host config a host opts into, not a user request. Making the

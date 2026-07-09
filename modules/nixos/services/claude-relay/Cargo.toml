@@ -2,14 +2,14 @@
 name = "claude-relay"
 version = "0.1.0"
 edition = "2021"
-description = "Relay persistent claude CLI sessions to/from Matrix (ADR-0025)"
+description = "Relay persistent claude CLI sessions to/from Matrix (ADR-0018)"
 
 [[bin]]
 name = "claude-relay"
 path = "src/main.rs"
 
 [dependencies]
-# No E2E (ADR-0025: rooms are non-federated instead), so default-features off keeps
+# No E2E (ADR-0018: rooms are non-federated instead), so default-features off keeps
 # the build lean — no vodozemac, no sqlite store; the in-memory store is enough.
 # (matrix-sdk 0.18 wires TLS via its default deps, not a feature flag.)
 matrix-sdk = { version = "0.18", default-features = false }

@@ -8,4 +8,4 @@ Because of this, the admin key must never be shipped to a multi-user or code-exe
 
 - Only `kelpy`/`stargazer`/`sawtoothShark` host keys are recipients of `users/inkpotmonkey.yaml`.
 - This is a security boundary, not a convenience choice: treat any proposal to reuse the admin key on a headless host as a fleet compromise.
-- The planned host↔user split extends this boundary to feature granularity: a user's master key never reaches a host, which receives only the narrow per-feature secrets it grants — so a host granting only a login shell holds no private key material. See [0015](0015-host-user-contract.md).
+- The planned host↔user split extends this boundary to feature granularity: a user's master key never reaches a host, which receives only the narrow per-feature secrets it grants — so a host granting only a login shell holds no private key material. See [contract ADR-0001](https://github.com/palebluebytes/host-user-contract/blob/main/docs/adr/0001-host-user-contract.md).

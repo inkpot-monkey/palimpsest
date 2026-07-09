@@ -1,4 +1,4 @@
-// Service worker for the out-of-band alert PWA (ADR-0027). For each web-push the
+// Service worker for the out-of-band alert PWA (ADR-0020). For each web-push the
 // relay delivers it (a) persists the alert to IndexedDB so the app can show a
 // history that survives reloads/closes, (b) shows an OS notification (works with
 // the app closed), and (c) pings any open window so its list updates live.

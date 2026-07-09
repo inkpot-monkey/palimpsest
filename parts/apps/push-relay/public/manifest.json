@@ -1,7 +1,7 @@
 {
   "name": "infra alerts",
   "short_name": "infra alerts",
-  "description": "Out-of-band fleet alerts (ADR-0027)",
+  "description": "Out-of-band fleet alerts (ADR-0020)",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0b0f14",

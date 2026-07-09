@@ -7,7 +7,7 @@
   ...
 }:
 
-# Profile wiring for the Claude relay (ADR-0025) — the Matrix interface to
+# Profile wiring for the Claude relay (ADR-0018) — the Matrix interface to
 # persistent `claude` sessions that replaced AionUi (now removed). The service
 # module (modules/nixos/services/claude-relay) carries the daemon + options; this
 # profile wires it to the local homeserver and reuses inkpotmonkey's ~/.claude
@@ -43,13 +43,13 @@ in
   imports = [ self.nixosModules.claude-relay ];
 
   options.custom.profiles.claude-relay = {
-    enable = lib.mkEnableOption "the Claude relay (Matrix interface to persistent claude sessions, ADR-0025)";
+    enable = lib.mkEnableOption "the Claude relay (Matrix interface to persistent claude sessions, ADR-0018)";
 
     allowedSender = lib.mkOption {
       type = lib.types.str;
       default = "@inkpotmonkey:${matrixServer}";
       defaultText = lib.literalExpression ''"@inkpotmonkey:matrix.''${config.networking.domain}"'';
-      description = "The sole MXID allowed to drive the relay (enforced in-process, ADR-0025).";
+      description = "The sole MXID allowed to drive the relay (enforced in-process, ADR-0018).";
     };
   };
 
