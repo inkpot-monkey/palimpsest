@@ -62,16 +62,18 @@ let
         STALWART_PW=$(sops --decrypt --extract '["stalwart_admin_password_plain"]' "$MAIL_SECRETS")
         MAIL_RECORDS='{}'
         for D in "''${MAIL_DOMAINS[@]}"; do
-          # DMARC aggregate/forensic reports are drained by the dedicated `dmarc`
-          # mailbox (it owns dmarc@<domain>); postmaster@ would fall through to the
-          # human catch-all. Stalwart hardcodes rua/ruf=postmaster@<domain> in the
-          # _dmarc record it suggests, so we repoint just that record to dmarc@ here
-          # before emitting it. Scoped to _dmarc only — the TLSRPT (_smtp._tls) rua
-          # is deliberately left on postmaster@ (TLS reports aren't DMARC reports).
+          # Report mailboxes are drained by dedicated accounts, not the human
+          # catch-all: DMARC (_dmarc rua/ruf) → dmarc@<domain> (dmarc-metrics-exporter),
+          # and SMTP TLS Reporting (_smtp._tls rua) → tlsrpt@<domain> (monitoring-tlsrpt
+          # poller). Stalwart hardcodes postmaster@<domain> in both records it suggests,
+          # so we repoint each to its own mailbox here before emitting it. Scoped per
+          # record name so the two rewrites never touch each other's record.
           recs=$(curl -fsS -m 20 -u "admin:$STALWART_PW" "https://$MAILHOST/api/dns/records/$D" 2>/dev/null \
             | jq -c '[.data[]?
                        | {type, name, content}
-                       | if (.name | test("_dmarc")) then .content |= gsub("postmaster@"; "dmarc@") else . end
+                       | if   (.name | test("_dmarc"))      then .content |= gsub("postmaster@"; "dmarc@")
+                         elif (.name | test("_smtp\\._tls")) then .content |= gsub("postmaster@"; "tlsrpt@")
+                         else . end
                      ]' 2>/dev/null || true)
           if [ "$(printf '%s' "$recs" | jq 'length' 2>/dev/null || echo 0)" -lt 1 ]; then
             echo "ERROR: no DNS records returned for $D from $MAILHOST/api." >&2
