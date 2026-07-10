@@ -28,11 +28,12 @@ let
   # Construct a directory in the Nix store containing only the strictly cryptographically hashed dashboards
   dashboardsDir = pkgs.runCommand "grafana-dashboards" { } ''
     mkdir -p $out
-    # In-tree, pinned to the dmarc-metrics-exporter v1.3.1 sample dashboard (panels use
-    # dmarc_total/dmarc_compliant_total/etc., datasource=null → resolves to the default
-    # VictoriaMetrics source). Replaces grafana.com dashboard 11333, which was a mistargeted
-    # SRCDS/game-server board with no dmarc_* panels.
-    ln -s ${./dashboards/dmarc.json} $out/dmarc.json
+    # In-tree "Email" board: a DMARC section (dmarc_total/dmarc_compliant_total/…, seeded
+    # from the dmarc-metrics-exporter v1.3.1 sample) plus an SMTP TLS Reporting section
+    # (smtp_tls_report_* from the monitoring-tlsrpt poller's textfile metrics). Datasource
+    # pinned to the default VictoriaMetrics source. Full house-style migration is tracked
+    # separately (#30); the board keeps its legacy uid so it updates in place.
+    ln -s ${./dashboards/email.json} $out/email.json
     ln -s ${dashboards.node-exporter} $out/node-exporter.json
     # Fleet overview: host up/down, config-revision drift, per-host NixOS state, Gatus
     # probes, and the secret-expiry list (fed by node-exporter + the nixos-metrics
