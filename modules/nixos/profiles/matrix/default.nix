@@ -184,8 +184,9 @@ let
         echo "            state, restart -- leaving the homeserver + other bridges up."
         echo "            Matches resetState service names by substring, e.g."
         echo "            'matrix-reset jmap', 'matrix-reset hookshot'."
-        echo "            NOTE: wipes the bridge's LOCAL state only; rooms it created"
-        echo "            on the homeserver are NOT removed (use a full reset)."
+        echo "            NOTE: wipes the bridge's LOCAL state; the old rooms + space"
+        echo "            it created are left+forgotten from your client (the"
+        echo "            server-side shells linger until a full reset)."
         exit 0
       fi
 
@@ -230,14 +231,15 @@ let
             echo "  wiped $d"
           fi
         done
-        # restart (not start): re-runs the RemainAfterExit oneshots too; After=
-        # ordering (bridge before its DM) is honoured by systemd.
-        systemctl restart "''${svcs[@]}" || true
 
-        # Remove old test rooms: as the admin, leave+forget every room containing a
-        # member that matches one of the bridge's ghost prefixes — so they vanish
-        # from the client. (tuwunel has no room-delete API, so the server-side shell
-        # lingers until a full reset, but it's gone from your view.)
+        # Remove old rooms BEFORE restarting the bridge. With the bridge stopped,
+        # every room the admin is still in is a stale pre-wipe one, so there is no
+        # race against the rooms + space the bridge is about to recreate. As the
+        # admin, leave+forget every room containing one of the bridge's ghosts — this
+        # covers both the contact rooms AND the "email <addr>" space, since the bridge
+        # bot (@_jmap_bot, also in the @_jmap_ namespace) is the space's creator and a
+        # member. (tuwunel has no room-delete API, so the server-side shell lingers
+        # until a full reset, but it's gone from your view.)
         if [ "''${#prefixes[@]}" -gt 0 ]; then
           url="http://${address}:${toString matrixPort}"
           pass="$(cat ${config.sops.secrets.matrix_admin_password.path} 2>/dev/null || true)"
@@ -272,6 +274,10 @@ let
             echo "matrix-reset: left+forgot $removed old room(s)."
           fi
         fi
+
+        # restart (not start): re-runs the RemainAfterExit oneshots too; After=
+        # ordering (bridge before its DM) is honoured by systemd.
+        systemctl restart "''${svcs[@]}" || true
 
         echo "matrix-reset: done — '$pat' wiped + restarted."
         exit 0
@@ -410,9 +416,10 @@ in
               description = ''
                 MXID prefixes identifying this bridge's ghost/bot users. On a
                 SELECTIVE reset (`matrix-reset <bridge>`), the admin leaves+forgets
-                every room containing such a member, so old test rooms disappear
-                from the client. (A full reset wipes the homeserver outright, so it
-                needs none of this.)
+                every room containing such a member, so old test rooms — and any
+                space the bridge bot created and still belongs to — disappear from
+                the client. (A full reset wipes the homeserver outright, so it needs
+                none of this.)
               '';
             };
           };

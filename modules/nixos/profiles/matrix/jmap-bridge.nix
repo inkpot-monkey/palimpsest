@@ -112,8 +112,10 @@ in
       {
         service = "jmap-bridge.service";
         paths = [ "/var/lib/private/jmap-bridge" ];
-        # `matrix-reset jmap` also leaves+forgets the email rooms (ghosts + the
-        # @_jmap_bot are all @_jmap_*), clearing old test rooms from the client.
+        # `matrix-reset jmap` also leaves+forgets the email rooms — the ghosts, the
+        # @_jmap_bot, AND the "email <addr>" space (the bot creates it and stays a
+        # member, so it too is in the @_jmap_* namespace) — clearing old rooms +
+        # the orphaned space a DB wipe would otherwise leave behind.
         roomMemberPrefixes = [ "@_jmap_" ];
       }
     ];
