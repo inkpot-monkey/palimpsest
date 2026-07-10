@@ -1,0 +1,709 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 1,
+  "schemaVersion": 39,
+  "tags": ["house-style", "reference"],
+  "title": "House Style — Sample Panels",
+  "uid": "house-style-sample",
+  "timezone": "browser",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Data source",
+        "type": "datasource",
+        "query": "prometheus",
+        "refresh": 1,
+        "hide": 0,
+        "current": {},
+        "options": [],
+        "regex": "",
+        "multi": false,
+        "includeAll": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 100,
+      "type": "row",
+      "title": "GLANCE — is everything OK? (KPI stat row, h=4, top-left)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Hosts up",
+      "description": "Healthy-count KPI. colorMode=value, fixed status:good hex (#0ca30c). textMode=value_and_name.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "sum(up{job=\"node\"})",
+          "legendFormat": "up",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "count(up{job=\"node\"})",
+          "legendFormat": "total",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "value_and_name",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": { "mode": "fixed", "fixedColor": "#0ca30c" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Config drift",
+      "description": "State KPI. colorMode=background, thresholds good(#0ca30c) → critical(#d03b3b) at 2. This is the 'is everything OK' glance signal.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "count(count by (revision) (nixos_configuration_revision_info))",
+          "legendFormat": "revisions",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "value",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "type": "value", "options": { "1": { "text": "in sync" } } }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#0ca30c", "value": null },
+              { "color": "#d03b3b", "value": 2 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Probes up",
+      "description": "Healthy-count KPI, fixed status:good hex.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 1 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "sum(gatus_results_endpoint_success)",
+          "legendFormat": "up",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "count(gatus_results_endpoint_success)",
+          "legendFormat": "total",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "value_and_name",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": { "mode": "fixed", "fixedColor": "#0ca30c" }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Host status",
+      "description": "Per-entity state strip. colorMode=background, up/down mapped to status good(#0ca30c)/critical(#d03b3b).",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 5 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "label_replace(up{job=\"node\"}, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "legendFormat": "{{host}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "value_and_name",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "type": "value",
+              "options": { "0": { "text": "DOWN" }, "1": { "text": "UP" } }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#d03b3b", "value": null },
+              { "color": "#0ca30c", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 101,
+      "type": "row",
+      "title": "MAGNITUDE — bargauge for %-used and small comparisons",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 5,
+      "type": "bargauge",
+      "title": "Disk usage %",
+      "description": "%-used shape. Threshold bands: green(good) <80, warning(#fab219) ≥80, critical(#d03b3b) ≥90. min/max 0..100.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "label_replace(100 * (1 - node_filesystem_avail_bytes{fstype!~\"tmpfs|ramfs|overlay|squashfs|vfat\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|ramfs|overlay|squashfs|vfat\"}), \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "legendFormat": "{{host}} {{mountpoint}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "minVizHeight": 10,
+        "minVizWidth": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "decimals": 0,
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#0ca30c", "value": null },
+              { "color": "#fab219", "value": 80 },
+              { "color": "#d03b3b", "value": 90 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "bargauge",
+      "title": "Categorical palette — 8 slots (reference swatch)",
+      "description": "The fixed categorical hue order (dark-column hexes). Series get these by fixed byName override in slot order, never cycled/hashed.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "vector(1)",
+          "legendFormat": "1 · blue",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "vector(1)",
+          "legendFormat": "2 · aqua",
+          "instant": true
+        },
+        {
+          "refId": "C",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "vector(1)",
+          "legendFormat": "3 · yellow",
+          "instant": true
+        },
+        {
+          "refId": "D",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "vector(1)",
+          "legendFormat": "4 · green",
+          "instant": true
+        },
+        {
+          "refId": "E",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "vector(1)",
+          "legendFormat": "5 · violet",
+          "instant": true
+        },
+        {
+          "refId": "F",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "vector(1)",
+          "legendFormat": "6 · red",
+          "instant": true
+        },
+        {
+          "refId": "G",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "vector(1)",
+          "legendFormat": "7 · magenta",
+          "instant": true
+        },
+        {
+          "refId": "H",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "vector(1)",
+          "legendFormat": "8 · orange",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": true,
+        "minVizHeight": 8,
+        "minVizWidth": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "min": 0,
+          "max": 1,
+          "decimals": 0,
+          "color": { "mode": "fixed", "fixedColor": "text" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "1 · blue" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#3987e5" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "2 · aqua" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#199e70" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "3 · yellow" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#c98500" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "4 · green" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#008300" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "5 · violet" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#9085e9" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "6 · red" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#e66767" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "7 · magenta" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#d55181" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "8 · orange" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#d95926" }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 102,
+      "type": "row",
+      "title": "CHANGE OVER TIME — timeseries, categorical series pinned by entity",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 18 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Memory used %",
+      "description": "Entity→hue pinned: each host takes a fixed categorical slot by byName override (kelpy=1, rk1a=2, rk1b=3, sawtoothShark=4), so a filter never repaints the survivors.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 19 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "label_replace(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes), \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "legendFormat": "{{host}}"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom", "calcs": [] }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "lineWidth": 2
+          },
+          "color": { "mode": "palette-classic" }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "kelpy" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#3987e5" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "rk1a" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#199e70" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "rk1b" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#c98500" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "sawtoothShark" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#008300" }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Probe latency",
+      "description": "Latency shape: unit=s, 2px lines, soft fill. Threshold line at 1s (warning) / 3s (critical) using status hexes.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 19 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "gatus_results_duration_seconds",
+          "legendFormat": "{{name}}"
+        }
+      ],
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom", "calcs": [] }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "decimals": 2,
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "lineWidth": 2,
+            "thresholdsStyle": { "mode": "line" }
+          },
+          "color": { "mode": "palette-classic" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#0ca30c", "value": null },
+              { "color": "#fab219", "value": 1 },
+              { "color": "#d03b3b", "value": 3 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 103,
+      "type": "row",
+      "title": "PER-ENTITY DETAIL — table, and the age-in-days threshold ramp",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 27 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Probe status (per endpoint)",
+      "description": "Per-entity state strip, OK/FAIL mapped to status good/critical (background).",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 28 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "gatus_results_endpoint_success",
+          "legendFormat": "{{name}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "value_and_name",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "type": "value",
+              "options": { "0": { "text": "FAIL" }, "1": { "text": "OK" } }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#d03b3b", "value": null },
+              { "color": "#0ca30c", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Secret expiry (age-in-days ramp)",
+      "description": "Age-in-days shape. Non-linear ramp on 'Days left': critical(#d03b3b) ≤3, serious(#ec835a) ≤7, warning(#fab219) ≤14, then a low-chroma amber ≤30, good(#0ca30c) above. Soonest first.",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 33 },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "(secret_expiry_timestamp_seconds - time()) / 86400",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "max by (secret) (secret_expiry_timestamp_seconds) * 1000",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": { "include": { "pattern": "^(secret|Value #.*)$" } }
+        },
+        {
+          "id": "joinByField",
+          "options": { "byField": "secret", "mode": "outer" }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "renameByName": {
+              "secret": "Secret",
+              "Value #A": "Days left",
+              "Value #B": "Expires"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": "",
+            "sort": [{ "field": "Days left", "desc": false }]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "align": "left", "filterable": false } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Days left" },
+            "properties": [
+              { "id": "unit", "value": "d" },
+              { "id": "decimals", "value": 0 },
+              {
+                "id": "custom.cellOptions",
+                "value": { "type": "color-background", "mode": "gradient" }
+              },
+              { "id": "color", "value": { "mode": "thresholds" } },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "#d03b3b", "value": null },
+                    { "color": "#ec835a", "value": 3 },
+                    { "color": "#fab219", "value": 7 },
+                    { "color": "#e8c766", "value": 14 },
+                    { "color": "#0ca30c", "value": 30 }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Expires" },
+            "properties": [{ "id": "unit", "value": "dateTimeAsIso" }]
+          }
+        ]
+      }
+    }
+  ]
+}
