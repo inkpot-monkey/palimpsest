@@ -30,6 +30,7 @@
     # --- Application / Service Profiles ---
     matrix = ./matrix;
     mail = ./mail;
+    mail-dane-autoupdate = ./mail/dane-autoupdate.nix;
     paperless = ./paperless.nix;
     proxy = ./proxy.nix;
     podman = ./podman.nix;

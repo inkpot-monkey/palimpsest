@@ -65,6 +65,9 @@
       enable = true;
       inherit (settings.mail) domain extraDomains;
     };
+    # Auto-reconcile the mail domains' DANE/TLSA records when acme renews the mail cert,
+    # so the published TLSA never drifts from the served cert (mail-scoped dns push).
+    mail-dane-autoupdate.enable = true;
     matrix = {
       enable = true;
       whatsapp.enable = true;
