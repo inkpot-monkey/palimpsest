@@ -186,6 +186,17 @@ in
             webhookUrlFile = config.custom.profiles.monitoring-watcher.webhookUrlFile;
           };
 
+          # SMTP TLS Reporting (TLSRPT / RFC 8460). Same shape as the DMARC pair:
+          # poll the `tlsrpt` mailbox on kelpy's Stalwart (secret tlsrpt_imap_password
+          # in monitoring.yaml), export smtp_tls_report_* via the node-exporter
+          # textfile collector, and alert #infra-alerts when a report records failed
+          # TLS sessions. Routing: dns app repoints _smtp._tls rua postmaster@→tlsrpt@.
+          custom.profiles.monitoring-tlsrpt.enable = true;
+          custom.profiles.monitoring-tlsrpt-alert = {
+            enable = true;
+            webhookUrlFile = config.custom.profiles.monitoring-watcher.webhookUrlFile;
+          };
+
           # Second fleet DNS resolver (ADR-0023): rk1b is the tailnet's other global
           # nameserver alongside kelpy, replacing the drifted porcupineFish. No module
           # swap needed — rk1b is built with mkSystem (main nixpkgs → blocky 0.30). Also

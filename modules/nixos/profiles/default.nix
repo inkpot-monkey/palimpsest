@@ -49,6 +49,8 @@
     monitoring-exporters = ./monitoring/exporters.nix;
     monitoring-dmarc = ./monitoring/dmarc.nix;
     monitoring-dmarc-alert = ./monitoring/dmarc-alert.nix;
+    monitoring-tlsrpt = ./monitoring/tlsrpt.nix;
+    monitoring-tlsrpt-alert = ./monitoring/tlsrpt-alert.nix;
     monitoring-watcher = ./monitoring/watcher.nix;
     monitoring-unit-state = ./monitoring/unit-state.nix;
     monitoring-secret-expiry = ./monitoring/secret-expiry.nix;
