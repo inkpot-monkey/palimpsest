@@ -86,6 +86,13 @@ sops-recipients:
 #   drift:   `just sops-recipients` must match stash/.sops.yaml; a mismatch means a
 #            grant changed without a re-key (or vice versa).
 
+# Fast local Grafana preview loop for iterating on the in-tree dashboards.
+# Runs a throwaway Grafana pointed at rk1b's live VictoriaMetrics/VictoriaLogs
+# over Tailscale, provisioning modules/nixos/profiles/monitoring/dashboards/*.json
+# for editing — no deploy-to-rk1b round trip. Open http://127.0.0.1:3001.
+grafana-preview:
+  modules/nixos/profiles/monitoring/dashboards/preview.sh
+
 # Format all Nix files
 fmt:
   nix fmt
