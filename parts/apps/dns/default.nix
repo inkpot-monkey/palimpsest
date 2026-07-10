@@ -32,8 +32,13 @@ let
       SECRETS_FILE="''${SECRETS_PATH:-$NET_SECRETS}"
       DATA_FILE="$DNS_DIR/dns-data.json"
       COMMAND="''${1:-preview}"
+      # Second positional arg selects the scope: "all" (default) manages the whole zone;
+      # "mail" reconciles ONLY the mail/security records (DANE/TLSA, TLSRPT, DMARC, DKIM,
+      # MX, SPF) and IGNOREs everything else — used by the acme cert-renewal hook.
+      SCOPE="''${2:-all}"
+      case "$SCOPE" in all | mail) ;; *) echo "Error: scope must be 'all' or 'mail', got '$SCOPE'" >&2; exit 1 ;; esac
 
-      echo "Dumping infrastructure settings to $DATA_FILE..."
+      echo "Dumping infrastructure settings to $DATA_FILE (scope=$SCOPE)..."
       echo '${
         builtins.toJSON {
           inherit (self.settings)
@@ -43,7 +48,7 @@ let
             mail
             ;
         }
-      }' | jq . > "$DATA_FILE"
+      }' | jq --arg scope "$SCOPE" '. + {scope: $scope}' > "$DATA_FILE"
 
       MAILHOST="mail.$(jq -r .primaryDomain "$DATA_FILE")"
       mapfile -t MAIL_DOMAINS < <(jq -r '.mail.domain, (.mail.extraDomains[]?)' "$DATA_FILE")
@@ -54,12 +59,16 @@ let
       # an empty/failed fetch for any domain aborts rather than deleting that domain's records.
       # `check` runs offline (no secret), so it skips this and only validates our own records.
       if [ "$COMMAND" != "check" ]; then
-        if [ ! -f "$MAIL_SECRETS" ]; then
-          echo "Error: mail.yaml not found at $MAIL_SECRETS (needed for the Stalwart API)." >&2
-          exit 1
+        # STALWART_PW may be supplied via the environment (the cert-renewal hook on kelpy
+        # passes it from a sops-nix secret, so the app needs no sops key of its own).
+        if [ -z "''${STALWART_PW:-}" ]; then
+          if [ ! -f "$MAIL_SECRETS" ]; then
+            echo "Error: mail.yaml not found at $MAIL_SECRETS (needed for the Stalwart API)." >&2
+            exit 1
+          fi
+          STALWART_PW=$(sops --decrypt --extract '["stalwart_admin_password_plain"]' "$MAIL_SECRETS")
         fi
         echo "Fetching authoritative mail records from Stalwart ($MAILHOST/api)..."
-        STALWART_PW=$(sops --decrypt --extract '["stalwart_admin_password_plain"]' "$MAIL_SECRETS")
         MAIL_RECORDS='{}'
         for D in "''${MAIL_DOMAINS[@]}"; do
           # Report mailboxes are drained by dedicated accounts, not the human
@@ -97,14 +106,17 @@ let
           --outFile "$DNS_DIR/dnsconfig.js"
 
       if [[ "$COMMAND" != "check" ]]; then
-        if [[ ! -f "$SECRETS_FILE" ]]; then
-          echo "Error: networking.yaml not found at $SECRETS_FILE" >&2
-          echo "Hint: You can override this path by setting SECRETS_PATH env var." >&2
-          exit 1
+        # CLOUDFLARE_API_TOKEN may be supplied via the environment (the cert-renewal hook on
+        # kelpy passes it from a sops-nix secret); otherwise decrypt it from networking.yaml.
+        if [[ -z "''${CLOUDFLARE_API_TOKEN:-}" ]]; then
+          if [[ ! -f "$SECRETS_FILE" ]]; then
+            echo "Error: networking.yaml not found at $SECRETS_FILE" >&2
+            echo "Hint: You can override this path by setting SECRETS_PATH env var." >&2
+            exit 1
+          fi
+          echo "Decrypting Cloudflare token from $SECRETS_FILE..."
+          CLOUDFLARE_API_TOKEN=$(sops --decrypt --extract '["cloudflare_dns_token"]' "$SECRETS_FILE")
         fi
-
-        echo "Decrypting Cloudflare token from $SECRETS_FILE..."
-        CLOUDFLARE_API_TOKEN=$(sops --decrypt --extract '["cloudflare_dns_token"]' "$SECRETS_FILE")
         export CLOUDFLARE_API_TOKEN
 
         # creds.json references the env var (literal "$CLOUDFLARE_API_TOKEN") rather than the

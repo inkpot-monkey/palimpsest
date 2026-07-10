@@ -37,6 +37,10 @@ interface InfraData {
   // The authoritative mail/security records (MX, SPF, DMARC, TLSRPT, SRV, DKIM, DANE, …)
   // for each domain, fetched from Stalwart's management API by the `dns` app at run time.
   mailRecords?: Record<string, StalwartRecord[]>;
+  // "all" (default) manages the whole zone; "mail" manages ONLY the mail/security records
+  // for the mail domains and IGNOREs everything else — used by the acme cert-renewal hook
+  // to reconcile DANE/TLSA without touching service records. See the loop below.
+  scope?: string;
 }
 
 /**
@@ -179,9 +183,29 @@ function getMailRecords(domain: string, isPrimary: boolean): any[] {
 const primary = infra.mail.domain;
 const mailDomains = [primary].concat(infra.mail.extraDomains || []);
 
+// "mail" scope reconciles only the mail/security records and leaves the rest of each zone
+// untouched (IGNORE everything else). The cert-renewal hook uses it to push refreshed
+// DANE/TLSA without risking any other record. "all" (default) manages the whole zone.
+const mailOnly = infra.scope === "mail";
+
 for (let d = 0; d < mailDomains.length; d++) {
   const domain = mailDomains[d];
   const isPrimary = domain === primary;
+
+  if (mailOnly) {
+    // Declare only the mail records; IGNORE("*") leaves every other record in the zone
+    // alone. The managed mail records deliberately overlap that wildcard, so the ignore
+    // safety check must be disabled for this domain.
+    D(
+      domain,
+      REG_NONE,
+      DnsProvider(CF),
+      getMailRecords(domain, isPrimary),
+      DISABLE_IGNORE_SAFETY_CHECK,
+      IGNORE("*", "*", "*"),
+    );
+    continue;
+  }
 
   const serviceRecs = isPrimary
     ? getServiceRecords(infra.services.public, true).concat(
