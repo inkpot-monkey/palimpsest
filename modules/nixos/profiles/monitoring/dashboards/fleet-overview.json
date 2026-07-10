@@ -27,12 +27,20 @@
   },
   "panels": [
     {
+      "id": 100,
+      "type": "row",
+      "title": "Fleet health",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "panels": []
+    },
+    {
       "id": 1,
       "type": "stat",
       "title": "Hosts up",
-      "description": "node-exporter targets currently scraping (job=node) out of the total configured.",
+      "description": "node-exporter targets currently scraping (job=node) out of the total configured. Plain count, not alarm-coloured: offline laptops and potbelliedSeahorse (not on Tailscale) read down by design, so a sub-total here is expected — see the Host status strip for which.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 0 },
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 1 },
       "targets": [
         {
           "refId": "A",
@@ -74,9 +82,9 @@
       "id": 5,
       "type": "stat",
       "title": "Config drift",
-      "description": "Number of DISTINCT flake revisions running across the fleet (from nixos_configuration_revision_info). 1 = every host built from the same rev; >1 = at least one host is behind and needs a rebuild.",
+      "description": "Number of DISTINCT flake revisions running across the fleet (from nixos_configuration_revision_info). 1 = every host built from the same rev (mapped to 'in sync'); 2+ = at least one host is behind and needs a rebuild. good below 2, critical at 2.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 0 },
+      "gridPos": { "h": 4, "w": 8, "x": 8, "y": 1 },
       "targets": [
         {
           "refId": "A",
@@ -109,8 +117,8 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "red", "value": 2 }
+              { "color": "#0ca30c", "value": null },
+              { "color": "#d03b3b", "value": 2 }
             ]
           }
         },
@@ -121,9 +129,9 @@
       "id": 6,
       "type": "stat",
       "title": "Service probes up",
-      "description": "Gatus endpoints currently passing (gatus_results_endpoint_success == 1) out of all probed. Gatus runs on rk1b; if this panel is empty, the gatus scrape job hasn't landed yet.",
+      "description": "Gatus endpoints currently passing (gatus_results_endpoint_success == 1) out of all probed. Plain count. Gatus runs on rk1b; if this panel is empty, the gatus scrape job hasn't landed yet. Per-endpoint breakdown is the strip at the bottom.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 0 },
+      "gridPos": { "h": 4, "w": 8, "x": 16, "y": 1 },
       "targets": [
         {
           "refId": "A",
@@ -167,7 +175,7 @@
       "title": "Host status",
       "description": "Per-host node-exporter reachability (scraped by MagicDNS name). Green = scraping, red = target down / offline / name unresolved. Offline laptops and potbelliedSeahorse (not on Tailscale) read down — expected.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 4 },
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 5 },
       "targets": [
         {
           "refId": "A",
@@ -203,8 +211,8 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "green", "value": 1 }
+              { "color": "#d03b3b", "value": null },
+              { "color": "#0ca30c", "value": 1 }
             ]
           }
         },
@@ -212,18 +220,26 @@
       }
     },
     {
+      "id": 101,
+      "type": "row",
+      "title": "Host resources",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 9 },
+      "panels": []
+    },
+    {
       "id": 8,
       "type": "bargauge",
       "title": "Disk usage %",
-      "description": "Root-and-data filesystem fill per host (fstype filter drops impermanence tmpfs roots, overlay/squashfs and the vfat ESP, leaving real ext4/xfs/btrfs/zfs mounts — e.g. /nix, /persist, rk1b's NVMe /var/cache). Green <80, yellow ≥80, red ≥90.",
+      "description": "Filesystem fill per host, ONE bar per real device (max by host,device). Shows only meaningful, persistent fill: the fstype filter drops tmpfs/ramfs (so tmpfs impermanence roots on rk1a/rk1b never appear), the device!~impermanence filter drops kelpy's ZFS rollback-to-blank root, and the by-device collapse folds away the ~30 /var/lib bind mounts that all report one persist dataset. good <80, warning ≥80, critical ≥90.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 8 },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 10 },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "label_replace(100 * (1 - node_filesystem_avail_bytes{fstype!~\"tmpfs|ramfs|overlay|squashfs|vfat\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|ramfs|overlay|squashfs|vfat\"}), \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
-          "legendFormat": "{{host}} {{mountpoint}}",
+          "expr": "max by (host, device) (label_replace(100 * (1 - node_filesystem_avail_bytes{fstype!~\"tmpfs|ramfs|overlay|squashfs|vfat\",device!~\".*impermanence.*\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|ramfs|overlay|squashfs|vfat\",device!~\".*impermanence.*\"}), \"host\", \"$1\", \"instance\", \"([^.:]+).*\"))",
+          "legendFormat": "{{host}} {{device}}",
           "instant": true
         }
       ],
@@ -249,9 +265,9 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 80 },
-              { "color": "red", "value": 90 }
+              { "color": "#0ca30c", "value": null },
+              { "color": "#fab219", "value": 80 },
+              { "color": "#d03b3b", "value": 90 }
             ]
           }
         },
@@ -262,9 +278,9 @@
       "id": 9,
       "type": "bargauge",
       "title": "Memory used %",
-      "description": "Used memory as a share of total (1 - MemAvailable/MemTotal) per host. Green <80, yellow ≥80, red ≥90.",
+      "description": "Used memory as a share of total (1 - MemAvailable/MemTotal) per host. good <80, warning ≥80, critical ≥90.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 8 },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 10 },
       "targets": [
         {
           "refId": "A",
@@ -296,9 +312,9 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 80 },
-              { "color": "red", "value": 90 }
+              { "color": "#0ca30c", "value": null },
+              { "color": "#fab219", "value": 80 },
+              { "color": "#d03b3b", "value": 90 }
             ]
           }
         },
@@ -309,9 +325,9 @@
       "id": 10,
       "type": "timeseries",
       "title": "CPU busy %",
-      "description": "Non-idle CPU per host, averaged across cores (1 - rate(idle)). Trend over the dashboard window.",
+      "description": "Non-idle CPU per host, averaged across cores (1 - rate(idle)). Trend over the dashboard window. Series colour is pinned per host (house categorical slots); identity is by legend, never colour alone.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 15 },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 17 },
       "targets": [
         {
           "refId": "A",
@@ -338,16 +354,89 @@
           },
           "color": { "mode": "palette-classic" }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "kelpy" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#3987e5" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "porcupineFish" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#199e70" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "potbelliedSeahorse" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#c98500" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "rk1a" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#008300" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "rk1b" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#9085e9" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "sawtoothShark" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#e66767" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "stargazer" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#d55181" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "weedySeadragon" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#d95926" }
+              }
+            ]
+          }
+        ]
       }
     },
     {
       "id": 11,
       "type": "timeseries",
       "title": "Load per core",
-      "description": "1-minute load average normalised by core count (node_load1 / #cores), so 1.0 == fully saturated regardless of host size. The threshold line marks 1.0.",
+      "description": "1-minute load average normalised by core count (node_load1 / #cores), so 1.0 == fully saturated regardless of host size. Series colour is pinned per host (house categorical slots). The threshold line marks 1.0 (warning) and 2.0 (critical).",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 15 },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 17 },
       "targets": [
         {
           "refId": "A",
@@ -377,22 +466,103 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 1 },
-              { "color": "red", "value": 2 }
+              { "color": "#0ca30c", "value": null },
+              { "color": "#fab219", "value": 1 },
+              { "color": "#d03b3b", "value": 2 }
             ]
           }
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "kelpy" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#3987e5" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "porcupineFish" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#199e70" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "potbelliedSeahorse" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#c98500" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "rk1a" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#008300" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "rk1b" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#9085e9" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "sawtoothShark" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#e66767" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "stargazer" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#d55181" }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "weedySeadragon" },
+            "properties": [
+              {
+                "id": "color",
+                "value": { "mode": "fixed", "fixedColor": "#d95926" }
+              }
+            ]
+          }
+        ]
       }
+    },
+    {
+      "id": 102,
+      "type": "row",
+      "title": "Config, services & secrets",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 },
+      "panels": []
     },
     {
       "id": 3,
       "type": "table",
       "title": "Per-host NixOS state",
-      "description": "One row per host. Uptime from node_boot_time_seconds; generations / store size / config age / rev from the daily nixos-metrics textfile collector. 'Config age' = how long ago the running config's flake was last modified; a host with a stale age or an odd-one-out Rev is the drift. Rev is the flake git revision baked in at build time.",
+      "description": "One row per host. Uptime from node_boot_time_seconds; generations / store size / config age / rev from the daily nixos-metrics textfile collector (only the always-on servers report). 'Config age' = how long ago the running config's flake was last modified; a host with a stale age or an odd-one-out Rev is the drift. Rev is the flake git revision baked in at build time.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 22 },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 25 },
       "targets": [
         {
           "refId": "A",
@@ -487,8 +657,8 @@
                   {
                     "type": "value",
                     "options": {
-                      "0": { "text": "DOWN", "color": "red" },
-                      "1": { "text": "UP", "color": "green" }
+                      "0": { "text": "DOWN", "color": "#d03b3b" },
+                      "1": { "text": "UP", "color": "#0ca30c" }
                     }
                   }
                 ]
@@ -503,9 +673,9 @@
       "id": 7,
       "type": "stat",
       "title": "Service probes (Gatus)",
-      "description": "Per-endpoint probe result from Gatus (gatus_results_endpoint_success). Green = passing, red = failing. Same signal that fires #infra-alerts, surfaced as history.",
+      "description": "Per-endpoint probe result from Gatus (gatus_results_endpoint_success). Green = passing, red = failing. Same signal that fires #infra-alerts, surfaced here as a per-endpoint glance.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 31 },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 34 },
       "targets": [
         {
           "refId": "A",
@@ -541,8 +711,8 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "green", "value": 1 }
+              { "color": "#d03b3b", "value": null },
+              { "color": "#0ca30c", "value": 1 }
             ]
           }
         },
@@ -553,9 +723,9 @@
       "id": 4,
       "type": "table",
       "title": "Secret expiry",
-      "description": "Rotatable secrets with a declared expiry (ADR-0031), soonest first. The 'Days left' cell scales green→red NON-linearly: it stays green until the key nears expiry, then ramps sharply through yellow (≤30) / orange (≤14) / red (≤7) / dark-red (≤3). Fed by the daily secret-expiry check on kelpy — empty until that check first runs.",
+      "description": "Rotatable secrets with a declared expiry (ADR-0031), soonest first. The 'Days left' cell scales NON-linearly through the house age ramp: green until a key nears expiry, then soft-amber (≤30) / amber (≤14) / orange (≤7) / red (≤3). Fed by the daily secret-expiry check on kelpy — empty until that check first runs.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 37 },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 40 },
       "targets": [
         {
           "refId": "A",
@@ -619,11 +789,11 @@
                 "value": {
                   "mode": "absolute",
                   "steps": [
-                    { "color": "dark-red", "value": null },
-                    { "color": "red", "value": 3 },
-                    { "color": "orange", "value": 7 },
-                    { "color": "yellow", "value": 14 },
-                    { "color": "green", "value": 30 }
+                    { "color": "#d03b3b", "value": null },
+                    { "color": "#ec835a", "value": 3 },
+                    { "color": "#fab219", "value": 7 },
+                    { "color": "#e8c766", "value": 14 },
+                    { "color": "#0ca30c", "value": 30 }
                   ]
                 }
               }
