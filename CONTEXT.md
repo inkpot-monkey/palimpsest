@@ -38,6 +38,10 @@ _Avoid_: master key, root key.
 **Signing key**:
 The dedicated, non-admin key used for commit signing (and other private-key needs) on headless or code-executing hosts, so the admin key never has to leave a trusted machine.
 
+**Operator read**:
+An operator reading a single **secret** out of the **Stash** by hand at the terminal (the `secret` command). Distinct from feature-driven **provisioning**: the backend-agnostic rule (**Platform interface**) governs a *feature* getting a secret onto a *host*, so it never names sops — but this path is a human reading their own stash, and so deliberately *does* name the sops backend. It reads the **editable working-tree checkout**, not the flake-pinned/deployed value, so it answers "what is in my stash right now", never "what is host X actually running". Confined to the workstation, the only place the **admin key** and the checkout both live.
+_Avoid_: fetch/pull (reserve for git); it reads a value, it does not sync the stash.
+
 ### Users & the host↔user contract
 
 > Target architecture being designed: hosts and users split into separate repos bound by a shared contract, so any host can enable a user and on rebuild they transparently work, while hosts can deny features a user introduces. See [contract ADR-0001](https://github.com/palebluebytes/host-user-contract/blob/main/docs/adr/0001-host-user-contract.md). Today `users/` still lives in this repo; these terms fix the language the migration aims at.
