@@ -34,13 +34,26 @@ let
     # pinned to the default VictoriaMetrics source. Full house-style migration is tracked
     # separately (#30); the board keeps its legacy uid so it updates in place.
     ln -s ${./dashboards/email.json} $out/email.json
-    ln -s ${dashboards.node-exporter} $out/node-exporter.json
     # Fleet overview: host up/down, config-revision drift, per-host NixOS state, Gatus
     # probes, and the secret-expiry list (fed by node-exporter + the nixos-metrics
     # textfile collector + the gatus scrape job + the secret_expiry_timestamp_seconds
     # textfile metric). The former standalone secret-expiry board folded into its
     # "Secret expiry" panel (ADR-0031).
     ln -s ${./dashboards/fleet-overview.json} $out/fleet-overview.json
+    # Host Drill-Down: curated ~16-panel single-host incident view (CPU/mem/disk/IO/net/
+    # temps/failed-units) in the house style, driven by a $host template variable so one
+    # board serves any node. The house-conformant replacement for the imported ~200-panel
+    # Node Exporter Full board (1860), which is demoted to the "Advanced" folder below (#35).
+    ln -s ${./dashboards/host-drill-down.json} $out/host-drill-down.json
+  '';
+
+  # "Advanced" folder: deep-dive boards kept available but off the primary nav. The
+  # imported Node Exporter Full board (grafana.com 1860) — the ~200-panel firehose used
+  # for the rare deep dive that the curated Host Drill-Down doesn't cover. Provisioned
+  # into its own Grafana folder so it no longer competes with the in-house boards (#35).
+  advancedDashboardsDir = pkgs.runCommand "grafana-dashboards-advanced" { } ''
+    mkdir -p $out
+    ln -s ${dashboards.node-exporter} $out/node-exporter.json
   '';
 
   # True when the host has an NVMe /var/cache mount (rk1b) — used to redirect
@@ -177,6 +190,12 @@ in
             {
               name = "My Dashboards";
               options.path = dashboardsDir;
+            }
+            {
+              name = "Advanced";
+              # Land 1860 in its own Grafana folder so it's tucked away from the main nav.
+              folder = "Advanced";
+              options.path = advancedDashboardsDir;
             }
           ];
         };
