@@ -66,6 +66,21 @@ in
             .level = get(level_map, [to_string!(.PRIORITY)]) ?? "info"
             ._msg = .message
             del(.message)
+          ''
+          # Demote systemd's benign BPF cgroup-attach failures to debug on CONTAINER hosts.
+          # A container (kelpy is a vpsAdminOS/vpsFree container) shares the host kernel,
+          # which owns cgroup BPF — so systemd PID 1 can't attach its per-unit BPF firewall/
+          # device-control programs and logs an "error" every time a unit starts, e.g.
+          #   "<unit>: bpf-firewall: Attaching egress BPF program to cgroup … failed: Invalid argument"
+          #   "Attaching device control BPF program to cgroup … failed: Operation not permitted"
+          # Non-fatal noise that otherwise dominates the error views. Keyed on the CAUSE
+          # (boot.isContainer), not a hostname: covers any container host, and on a real
+          # machine a BPF-attach failure stays an error (a genuinely new signal worth seeing).
+          + lib.optionalString config.boot.isContainer ''
+            msg = string(._msg) ?? ""
+            if contains(msg, "BPF program to cgroup") {
+              .level = "debug"
+            }
           '';
         };
 
