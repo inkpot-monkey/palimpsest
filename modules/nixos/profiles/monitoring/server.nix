@@ -45,6 +45,12 @@ let
     # board serves any node. The house-conformant replacement for the imported ~200-panel
     # Node Exporter Full board (1860), which is demoted to the "Advanced" folder below (#35).
     ln -s ${./dashboards/host-drill-down.json} $out/host-drill-down.json
+    # Logs: fleet-wide VictoriaLogs board (glance error/warning/volume tiles, log volume by
+    # host, actionable rate by level, top noisy units, and an errors+warnings live tail),
+    # driven by the victoriametrics-logs-datasource plugin over LogsQL. Host + level filter
+    # template vars; the $host var is sourced from Prometheus label_values (short name) so it
+    # matches the log `host` stream field. The first log-driven board (#36).
+    ln -s ${./dashboards/logs.json} $out/logs.json
   '';
 
   # "Advanced" folder: deep-dive boards kept available but off the primary nav. The
