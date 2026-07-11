@@ -73,6 +73,15 @@ let
       find "$LOG_DIR" -name '*.jsonl' -mtime +30 -delete 2>/dev/null || true
     '';
   };
+
+  # The "Operator read" path onto the Stash (CONTEXT.md → Secrets). Factored into
+  # ./secret.nix so parts/checks/secret-read can exercise the real derivation; the
+  # rationale (why it names sops, working-tree-not-deployed, gui-scoping) lives there.
+  secret = import ./secret.nix {
+    inherit pkgs;
+    inherit (config.identity) username;
+    homeDirectory = config.home.homeDirectory;
+  };
 in
 {
   config = lib.mkIf config.custom.home.profiles.gui.enable {
@@ -144,68 +153,71 @@ in
     # ==========================================
     # User Packages
     # ==========================================
-    home.packages = with pkgs; [
-      # --- Fonts ---
-      recursive
-      montserrat
-      libre-caslon
+    home.packages =
+      with pkgs;
+      [
+        # --- Fonts ---
+        recursive
+        montserrat
+        libre-caslon
 
-      # --- Internet & Browsers ---
-      brave
-      slack
-      signal-desktop
-      zulip
-      zoom-us
-      beeper
+        # --- Internet & Browsers ---
+        brave
+        slack
+        signal-desktop
+        zulip
+        zoom-us
+        beeper
 
-      # Main browser — CDP-wrapped build enables per-renderer memory logging
-      vivaldiWithCdp
-      vivaldi-ffmpeg-codecs
-      vivaldiMemlog
+        # Main browser — CDP-wrapped build enables per-renderer memory logging
+        vivaldiWithCdp
+        vivaldi-ffmpeg-codecs
+        vivaldiMemlog
 
-      qbittorrent-enhanced
-      pritunl-client
-      proton-vpn
+        qbittorrent-enhanced
+        pritunl-client
+        proton-vpn
 
-      # --- Development & System ---
-      postman
-      beekeeper-studio
-      distrobox
-      quickemu
-      nss_latest # Cert tools
-      ledger-live-desktop
+        # --- Development & System ---
+        postman
+        beekeeper-studio
+        distrobox
+        quickemu
+        nss_latest # Cert tools
+        ledger-live-desktop
 
-      # --- Media & Creativity ---
-      spotify
-      gimp3
-      blender
-      ffmpeg
-      yt-dlp
-      mpv
+        # --- Media & Creativity ---
+        spotify
+        gimp3
+        blender
+        ffmpeg
+        yt-dlp
+        mpv
 
-      # --- Utilities & AI ---
-      # Claude Desktop + Cowork (community Linux repackaging; no official Linux
-      # build). Runs Cowork skills natively under bubblewrap — see the
-      # claude-cowork-linux input comment in flake.nix.
-      #
-      # NixOS gotcha: Cowork's exec registry resolves the Claude CLI and system
-      # tools (bash, git, curl, …) only from fixed FHS/dotfile paths, never
-      # $PATH. Two pieces outside this package are REQUIRED, or tasks die with
-      # "bash not found" / exit code 127:
-      #   - host: services.envfs.enable + git/libnotify/glib in systemPackages
-      #           (hosts/sawtoothShark/configuration.nix)
-      #   - user: the native claude CLI symlinked into ~/.local/bin
-      #           (../ai/default.nix)
-      inputs.claude-cowork-linux.packages.${pkgs.stdenv.hostPlatform.system}.claude-cowork-linux
-      ocr-shot
-      anki-bin
-      whisper-cpp
-      deepfilternet
-      playerctl
-      wl-clipboard
-      wl-clip-persist
-      brightnessctl
-    ];
+        # --- Utilities & AI ---
+        # Claude Desktop + Cowork (community Linux repackaging; no official Linux
+        # build). Runs Cowork skills natively under bubblewrap — see the
+        # claude-cowork-linux input comment in flake.nix.
+        #
+        # NixOS gotcha: Cowork's exec registry resolves the Claude CLI and system
+        # tools (bash, git, curl, …) only from fixed FHS/dotfile paths, never
+        # $PATH. Two pieces outside this package are REQUIRED, or tasks die with
+        # "bash not found" / exit code 127:
+        #   - host: services.envfs.enable + git/libnotify/glib in systemPackages
+        #           (hosts/sawtoothShark/configuration.nix)
+        #   - user: the native claude CLI symlinked into ~/.local/bin
+        #           (../ai/default.nix)
+        inputs.claude-cowork-linux.packages.${pkgs.stdenv.hostPlatform.system}.claude-cowork-linux
+        ocr-shot
+        anki-bin
+        whisper-cpp
+        deepfilternet
+        playerctl
+        wl-clipboard
+        wl-clip-persist
+        brightnessctl
+      ]
+      ++ [ secret ]; # Operator read onto the Stash (see the let-binding above)
 
     # ==========================================
     # Vivaldi renderer memory sampler
