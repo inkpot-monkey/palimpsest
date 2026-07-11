@@ -18,6 +18,12 @@
         annas_opds = import ./annas-opds {
           inherit pkgs;
         };
+        # Operator-read helper (users/inkpotmonkey/home/secret.nix): pure-derivation
+        # regression over the key->extract logic + `-l` listing. Guards the dotted-key
+        # bug (the `.`->`/` rewrite that made apikey@api.example.com unreachable).
+        secret_read = import ./secret-read {
+          inherit pkgs self;
+        };
         # Claude relay (ADR-0018) slice 01: allowlist-gated echo over a minimal
         # tuwunel homeserver. The relay's mechanics are proven here (stub-driven in
         # later slices) so an AFK agent can verify via `nix flake check`.
