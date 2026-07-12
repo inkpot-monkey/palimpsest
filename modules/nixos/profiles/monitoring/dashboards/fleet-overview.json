@@ -37,23 +37,16 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "Hosts up",
-      "description": "node-exporter targets currently scraping (job=node) out of the total configured. Plain count, not alarm-coloured: offline laptops and potbelliedSeahorse (not on Tailscale) read down by design, so a sub-total here is expected — see the Host status strip for which.",
+      "title": "Always-on hosts down",
+      "description": "Always-on hosts (settings.nodes presence=\"always-on\": kelpy, rk1a, rk1b, porcupineFish) whose node-exporter target is not scraping right now. This is the fleet's real alert signal — green 0 = every always-on host up, red ≥1 = one is unreachable. On-demand hosts (the workstations + laptop) are deliberately NOT counted: they run only when in use, so being off is expected, never a fault.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 4, "w": 8, "x": 0, "y": 1 },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "sum(up{job=\"node\"})",
-          "legendFormat": "up",
-          "instant": true
-        },
-        {
-          "refId": "B",
-          "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "count(up{job=\"node\"})",
-          "legendFormat": "total",
+          "expr": "count(up{job=\"node\", presence=\"always-on\"} == 0) or vector(0)",
+          "legendFormat": "down",
           "instant": true
         }
       ],
@@ -63,17 +56,27 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto",
-        "textMode": "value_and_name",
+        "textMode": "value",
         "orientation": "horizontal"
       },
       "fieldConfig": {
         "defaults": {
           "unit": "none",
           "decimals": 0,
-          "color": { "mode": "fixed", "fixedColor": "text" }
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "all up" } } }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#0ca30c", "value": null },
+              { "color": "#d03b3b", "value": 1 }
+            ]
+          }
         },
         "overrides": []
       }
@@ -82,7 +85,7 @@
       "id": 5,
       "type": "stat",
       "title": "Config drift",
-      "description": "Number of DISTINCT flake revisions running across the fleet (from nixos_configuration_revision_info). 1 = every host built from the same rev (mapped to 'in sync'); 2+ = at least one host is behind and needs a rebuild. good below 2, critical at 2.",
+      "description": "Number of DISTINCT flake revisions running across the fleet (from nixos_configuration_revision_info). 1 = every host built from the same rev (mapped to 'in sync'); 2+ = at least one host is behind and needs a rebuild. good below 2, critical at 2. Which host is the odd one out is the Rev column in the per-host table below.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 4, "w": 8, "x": 8, "y": 1 },
       "targets": [
@@ -126,25 +129,18 @@
       }
     },
     {
-      "id": 6,
+      "id": 12,
       "type": "stat",
-      "title": "Service probes up",
-      "description": "Gatus endpoints currently passing (gatus_results_endpoint_success == 1) out of all probed. Plain count. Gatus runs on rk1b; if this panel is empty, the gatus scrape job hasn't landed yet. Per-endpoint breakdown is the strip at the bottom.",
+      "title": "Failed units (fleet)",
+      "description": "systemd units in the `failed` state across the always-on hosts (node_systemd_unit_state{state=\"failed\"} == 1). A host-hygiene canary: it catches a unit that died on a host that is otherwise UP — timers, mounts and oneshots included, not just the curated services. green 0 = clean, red ≥1 = something failed (drill into Host Drill-Down / Per-Service Health to see which). Scoped to always-on hosts because an off workstation reports nothing.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 4, "w": 8, "x": 16, "y": 1 },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "sum(gatus_results_endpoint_success)",
-          "legendFormat": "up",
-          "instant": true
-        },
-        {
-          "refId": "B",
-          "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "count(gatus_results_endpoint_success)",
-          "legendFormat": "total",
+          "expr": "sum(node_systemd_unit_state{state=\"failed\", presence=\"always-on\"} == 1) or vector(0)",
+          "legendFormat": "failed",
           "instant": true
         }
       ],
@@ -154,17 +150,27 @@
           "fields": "",
           "values": false
         },
-        "colorMode": "value",
+        "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "auto",
-        "textMode": "value_and_name",
+        "textMode": "value",
         "orientation": "horizontal"
       },
       "fieldConfig": {
         "defaults": {
           "unit": "none",
           "decimals": 0,
-          "color": { "mode": "fixed", "fixedColor": "text" }
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "none" } } }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#0ca30c", "value": null },
+              { "color": "#d03b3b", "value": 1 }
+            ]
+          }
         },
         "overrides": []
       }
@@ -172,15 +178,15 @@
     {
       "id": 2,
       "type": "stat",
-      "title": "Host status",
-      "description": "Per-host node-exporter reachability (scraped by MagicDNS name). Green = scraping, red = target down / offline / name unresolved. Offline laptops and potbelliedSeahorse (not on Tailscale) read down — expected.",
+      "title": "Always-on host status",
+      "description": "Per-host node-exporter reachability for the always-on hosts only (scraped by MagicDNS name). Green = scraping, red = target down / offline / name unresolved — and for an always-on host, red is actionable. On-demand hosts are intentionally absent here so a switched-off workstation never lights the strip red; their state lives in the per-host table below (OFF, with a 'last online').",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "gridPos": { "h": 4, "w": 24, "x": 0, "y": 5 },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "label_replace(up{job=\"node\"}, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "expr": "label_replace(up{job=\"node\", presence=\"always-on\"}, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
           "legendFormat": "{{host}}",
           "instant": true
         }
@@ -233,7 +239,7 @@
       "title": "Disk usage %",
       "description": "Filesystem fill per host, ONE bar per real device (max by host,device). Shows only meaningful, persistent fill: the fstype filter drops tmpfs/ramfs (so tmpfs impermanence roots on rk1a/rk1b never appear), the device!~impermanence filter drops kelpy's ZFS rollback-to-blank root, and the by-device collapse folds away the ~30 /var/lib bind mounts that all report one persist dataset. good <80, warning ≥80, critical ≥90.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 10 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 10 },
       "targets": [
         {
           "refId": "A",
@@ -280,7 +286,7 @@
       "title": "Memory used %",
       "description": "Used memory as a share of total (1 - MemAvailable/MemTotal) per host. good <80, warning ≥80, critical ≥90.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 10 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 10 },
       "targets": [
         {
           "refId": "A",
@@ -327,7 +333,7 @@
       "title": "CPU busy %",
       "description": "Non-idle CPU per host, averaged across cores (1 - rate(idle)). Trend over the dashboard window. Series colour is pinned per host (house categorical slots); identity is by legend, never colour alone.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 17 },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
       "targets": [
         {
           "refId": "A",
@@ -348,9 +354,9 @@
           "custom": {
             "drawStyle": "line",
             "lineInterpolation": "smooth",
-            "fillOpacity": 10,
+            "fillOpacity": 8,
             "showPoints": "never",
-            "lineWidth": 1
+            "lineWidth": 2
           },
           "color": { "mode": "palette-classic" }
         },
@@ -436,7 +442,7 @@
       "title": "Load per core",
       "description": "1-minute load average normalised by core count (node_load1 / #cores), so 1.0 == fully saturated regardless of host size. Series colour is pinned per host (house categorical slots). The threshold line marks 1.0 (warning) and 2.0 (critical).",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 17 },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
       "targets": [
         {
           "refId": "A",
@@ -457,9 +463,9 @@
           "custom": {
             "drawStyle": "line",
             "lineInterpolation": "smooth",
-            "fillOpacity": 10,
+            "fillOpacity": 8,
             "showPoints": "never",
-            "lineWidth": 1,
+            "lineWidth": 2,
             "thresholdsStyle": { "mode": "line" }
           },
           "color": { "mode": "palette-classic" },
@@ -551,58 +557,65 @@
     {
       "id": 102,
       "type": "row",
-      "title": "Config, services & secrets",
+      "title": "Per-host state, config & secrets",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 24 },
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
       "panels": []
     },
     {
       "id": 3,
       "type": "table",
       "title": "Per-host NixOS state",
-      "description": "One row per host. Uptime from node_boot_time_seconds; generations / store size / config age / rev from the daily nixos-metrics textfile collector (only the always-on servers report). 'Config age' = how long ago the running config's flake was last modified; a host with a stale age or an odd-one-out Rev is the drift. Rev is the flake git revision baked in at build time.",
+      "description": "One row per host — the fleet's lifecycle at a glance. Status is presence-aware: UP (green) / DOWN (red, an always-on host that should be up but isn't) / OFF (grey, an on-demand host that is simply switched off — never an alarm). Uptime (from node_boot_time_seconds) shows for hosts that are up; 'Last online' is the last time the host was scraping, so it reads 'a few seconds ago' for a live host and e.g. '3 days ago' for one that's off (blank beyond ~30d of metrics retention). Generations / store size / config age / rev come from the daily nixos-metrics textfile collector (only the always-on servers report). Config age = how long ago the running config's flake was last modified; an odd-one-out Rev is the drift.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 25 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 27 },
       "targets": [
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "label_replace(up{job=\"node\"}, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "expr": "max by (host, presence) (label_replace(up{job=\"node\", presence=\"always-on\"} or (up{job=\"node\", presence=\"on-demand\"} + 2 * (up{job=\"node\", presence=\"on-demand\"} == bool 0)), \"host\", \"$1\", \"instance\", \"([^.:]+).*\"))",
           "instant": true,
           "format": "table"
         },
         {
           "refId": "B",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "label_replace(time() - node_boot_time_seconds{job=\"node\"}, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "expr": "max by (host) (label_replace(time() - node_boot_time_seconds{job=\"node\"}, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"))",
           "instant": true,
           "format": "table"
         },
         {
           "refId": "C",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "label_replace(nixos_generations_count, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "expr": "max by (host) (label_replace(max_over_time(timestamp(up{job=\"node\"} == 1)[30d:5m]) * 1000, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"))",
           "instant": true,
           "format": "table"
         },
         {
           "refId": "D",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "label_replace(nixos_store_size_bytes, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "expr": "max by (host) (label_replace(nixos_generations_count, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"))",
           "instant": true,
           "format": "table"
         },
         {
           "refId": "E",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "label_replace(time() - nixos_configuration_last_modified_seconds, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "expr": "max by (host) (label_replace(nixos_store_size_bytes, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"))",
           "instant": true,
           "format": "table"
         },
         {
           "refId": "F",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "label_replace(nixos_configuration_revision_info, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "expr": "max by (host) (label_replace(time() - nixos_configuration_last_modified_seconds, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"))",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "G",
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "expr": "max by (host, revision) (label_replace(nixos_configuration_revision_info, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"))",
           "instant": true,
           "format": "table"
         }
@@ -610,7 +623,9 @@
       "transformations": [
         {
           "id": "filterFieldsByName",
-          "options": { "include": { "pattern": "^(host|revision|Value #.*)$" } }
+          "options": {
+            "include": { "pattern": "^(host|presence|revision|Value #.*)$" }
+          }
         },
         {
           "id": "joinByField",
@@ -619,14 +634,27 @@
         {
           "id": "organize",
           "options": {
-            "excludeByName": { "Value #F": true },
+            "excludeByName": { "Value #G": true },
+            "indexByName": {
+              "host": 0,
+              "presence": 1,
+              "Value #A": 2,
+              "Value #B": 3,
+              "Value #C": 4,
+              "Value #D": 5,
+              "Value #E": 6,
+              "Value #F": 7,
+              "revision": 8
+            },
             "renameByName": {
               "host": "Host",
-              "Value #A": "Up",
+              "presence": "Presence",
+              "Value #A": "Status",
               "Value #B": "Uptime",
-              "Value #C": "Generations",
-              "Value #D": "Store size",
-              "Value #E": "Config age",
+              "Value #C": "Last online",
+              "Value #D": "Generations",
+              "Value #E": "Store size",
+              "Value #F": "Config age",
               "revision": "Rev"
             }
           }
@@ -636,19 +664,7 @@
         "defaults": { "custom": { "align": "left", "filterable": true } },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Uptime" },
-            "properties": [{ "id": "unit", "value": "s" }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "Config age" },
-            "properties": [{ "id": "unit", "value": "s" }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "Store size" },
-            "properties": [{ "id": "unit", "value": "bytes" }]
-          },
-          {
-            "matcher": { "id": "byName", "options": "Up" },
+            "matcher": { "id": "byName", "options": "Status" },
             "properties": [
               { "id": "unit", "value": "none" },
               {
@@ -658,74 +674,41 @@
                     "type": "value",
                     "options": {
                       "0": { "text": "DOWN", "color": "#d03b3b" },
-                      "1": { "text": "UP", "color": "#0ca30c" }
+                      "1": { "text": "UP", "color": "#0ca30c" },
+                      "2": { "text": "OFF", "color": "#8e8e8e" }
                     }
                   }
                 ]
               },
               { "id": "custom.cellOptions", "value": { "type": "color-text" } }
             ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Uptime" },
+            "properties": [{ "id": "unit", "value": "s" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Last online" },
+            "properties": [{ "id": "unit", "value": "dateTimeFromNow" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Config age" },
+            "properties": [{ "id": "unit", "value": "s" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Store size" },
+            "properties": [{ "id": "unit", "value": "bytes" }]
           }
         ]
-      }
-    },
-    {
-      "id": 7,
-      "type": "stat",
-      "title": "Service probes (Gatus)",
-      "description": "Per-endpoint probe result from Gatus (gatus_results_endpoint_success). Green = passing, red = failing. Same signal that fires #infra-alerts, surfaced here as a per-endpoint glance.",
-      "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 34 },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "gatus_results_endpoint_success",
-          "legendFormat": "{{name}}",
-          "instant": true
-        }
-      ],
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "textMode": "value_and_name",
-        "orientation": "horizontal"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "decimals": 0,
-          "color": { "mode": "thresholds" },
-          "mappings": [
-            {
-              "type": "value",
-              "options": { "0": { "text": "FAIL" }, "1": { "text": "OK" } }
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "#d03b3b", "value": null },
-              { "color": "#0ca30c", "value": 1 }
-            ]
-          }
-        },
-        "overrides": []
       }
     },
     {
       "id": 4,
       "type": "table",
       "title": "Secret expiry",
-      "description": "Rotatable secrets with a declared expiry (ADR-0031), soonest first. The 'Days left' cell scales NON-linearly through the house age ramp: green until a key nears expiry, then soft-amber (≤30) / amber (≤14) / orange (≤7) / red (≤3). Fed by the daily secret-expiry check on kelpy — empty until that check first runs.",
+      "description": "Rotatable secrets with a declared expiry (ADR-0024), soonest first. The 'Days left' cell scales NON-linearly through the house age ramp: green until a key nears expiry, then soft-amber (≤30) / amber (≤14) / orange (≤7) / red (≤3). Fed by the daily secret-expiry check on kelpy — empty until that check first runs.",
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
-      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 40 },
+      "gridPos": { "h": 7, "w": 24, "x": 0, "y": 37 },
       "targets": [
         {
           "refId": "A",
