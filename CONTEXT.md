@@ -14,6 +14,10 @@ _Avoid_: cluster, estate.
 A single machine with a `nixosConfiguration`, named by a marine/animal codename (`kelpy`, `porcupineFish`, `stargazer`, …). The RK1 LLM boxes `rk1a`/`rk1b` are hosts too — "node" is just a more specific word for them, not a separate category.
 _Avoid_: box, server.
 
+**Always-on host** / **On-demand host**:
+A host's **presence** — its intrinsic operational cadence, declared as `settings.nodes.<host>.presence` (`"always-on" | "on-demand"`). An **always-on host** runs 24/7 (`kelpy`, the `rk1a`/`rk1b` nodes, the `porcupineFish` audio host); an **on-demand host** runs only when in use (the interactive workstations and the laptop). This is a *fact about the machine*, not a monitoring policy: alert-worthiness is *derived* from it (an on-demand host being unreachable is expected, never a fault), so there is no separate opt-out. Distinct in shape from an **Expected-up service**, which is a uniform monitor-by-default *policy* with explicit opt-outs — presence is read off the host, not chosen per-host. Emitted as a Prometheus scrape label so boards derive alert-worthiness ([ADR-0026](docs/adr/0026-host-presence-scrape-label.md)).
+_Avoid_: server/workstation as the *field* values (the axis is cadence, not machine type; and "server" is an avoided word for a host), role (an avoided word — see Profile).
+
 **Profile**:
 A toggleable feature bundle enabled through the `custom.*` namespace, composing existing modules rather than being a long-running program itself. Two kinds, structurally distinct: a **NixOS profile** is fleet-shared (under `modules/nixos/profiles/`, toggled via `custom.profiles.*`); a **home profile** is per-user (under `users/<user>/home/`, toggled via `custom.home.profiles.*`).
 _Avoid_: role, preset.
@@ -30,6 +34,10 @@ The repo's own NixOS/home-manager option namespace (`custom.profiles.*`, `custom
 **Stash**:
 The separate private git repository (`stash.git`) that holds all sops-encrypted secrets, consumed by this repo as the `secrets` flake input. Edits only take effect after commit + push + relock.
 _Avoid_: vault, the secrets folder (it is a repo, not just a directory).
+
+**Fleet secret / User secret**:
+The Stash's two ownership classes. A *fleet secret* (`profiles/*.yaml`) is owned and consumed by the fleet itself — its host services, operator apps, and monitoring. A *user secret* (`users/<name>.yaml`) belongs to the **User** bundle and leaves with it when the user is extracted to its own repo. The invariant between them is **consumption purity**: fleet infrastructure must never depend on a *user* secret, so lifting a user out breaks nothing on the fleet. A user-owned credential that does fleet work is therefore relocated into a fleet file ([ADR-0025](docs/adr/0025-fleet-user-secret-consumption-purity.md)).
+_Avoid_: treating the Stash as one undifferentiated bag — ownership is the seam the user's extraction hinges on.
 
 **Admin key**:
 The single age recipient (`&admin`) that can decrypt every secret in the fleet and re-key the rest. It is the same key as the user's personal SSH login/signing key.
