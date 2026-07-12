@@ -19,11 +19,13 @@
 # `magicDNS`, not that toggle (a known gap), so it stays a one-time console
 # setting — keep it ON (ADR-0023) so the unmanaged phone gets ad-block.
 #
-# Auth is inkpotmonkey's Tailscale API key, decrypted from the user's sops file at
-# runtime and passed to curl via a config on STDIN (`-K -`) — never on the command
-# line (would show in `ps`) nor written to disk. Assumes a personal API key
-# (`tskey-api-…`) usable as a Bearer token directly; an OAuth client secret would
-# need a token-exchange step first.
+# Auth is the FLEET's Tailscale API key (profiles/networking.yaml → tailscale_dns_api_key),
+# decrypted at runtime and passed to curl via a config on STDIN (`-K -`) — never on the
+# command line (would show in `ps`) nor written to disk. It lives in a fleet file so no
+# fleet tooling reads a user secret (consumption purity, ADR-0025). It is still a personal
+# access token (`tskey-api-…`) usable as a Bearer directly; TODO(2026-10-05): at the
+# token's forced rotation, re-mint it as a fleet-owned OAuth client (DNS scope) to also cut
+# the user-login provenance — which adds a token-exchange step before the Bearer call.
 let
   inherit (pkgs) lib;
 
@@ -66,9 +68,9 @@ let
         DNS_JSON="$(jq -c --arg ip "$ip" '. + [$ip]' <<<"$DNS_JSON")"
       done
 
-      # ── Auth: decrypt inkpotmonkey's tailscale API key, keep it off ps + disk ─────
-      USER_SECRETS="${self.lib.getUserSecretFile "inkpotmonkey"}"
-      TS_API_KEY="$(sops --decrypt --extract '["tailscale"]' "$USER_SECRETS")"
+      # ── Auth: decrypt the fleet's tailscale API key, keep it off ps + disk ─────
+      FLEET_SECRETS="${self.lib.getSecretPath "profiles/networking.yaml"}"
+      TS_API_KEY="$(sops --decrypt --extract '["tailscale_dns_api_key"]' "$FLEET_SECRETS")"
       # `auth` emits a curl config line consumed via `-K -` (stdin), so the key never
       # appears in the process table or on disk. The request BODY (plain IPs) is not
       # secret, so it rides the normal `-d` flag.
