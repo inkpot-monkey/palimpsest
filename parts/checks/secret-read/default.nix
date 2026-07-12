@@ -62,6 +62,22 @@ pkgs.runCommand "secret-read-test"
     if secret 2>/dev/null;    then echo "FAIL: missing key should exit nonzero"; exit 1; fi
     if secret -f 2>/dev/null;  then echo "FAIL: -f without arg should exit nonzero"; exit 1; fi
 
+    # --- set: add a new key from stdin, read it back through the same extract path ---
+    printf 'added-value' | secret set brandnew
+    [ "$(secret brandnew)" = "added-value" ] || { echo "FAIL: set/read round-trip"; exit 1; }
+    printf 'deep-value' | secret set a/b/c
+    [ "$(secret a/b/c)" = "deep-value" ] || { echo "FAIL: set nested round-trip"; exit 1; }
+
+    # --- set refuses to clobber an existing key without --force, and existing value survives ---
+    if printf 'x' | secret set brandnew 2>/dev/null; then echo "FAIL: set should refuse overwrite"; exit 1; fi
+    [ "$(secret brandnew)" = "added-value" ] || { echo "FAIL: refused overwrite still mutated"; exit 1; }
+    # --- ...but --force overwrites ---
+    printf 'replaced' | secret set --force brandnew
+    [ "$(secret brandnew)" = "replaced" ] || { echo "FAIL: --force overwrite"; exit 1; }
+
+    # --- set refuses an empty value ---
+    if printf "" | secret set emptyone 2>/dev/null; then echo "FAIL: set should reject empty value"; exit 1; fi
+
     echo "secret-read: all assertions passed"
     touch "$out"
   ''
