@@ -58,11 +58,6 @@ let
     # board serves any node. The house-conformant replacement for the imported ~200-panel
     # Node Exporter Full board (1860), which is demoted to the "Advanced" folder below (#35).
     ln -s ${./dashboards/host-drill-down.json} $out/host-drill-down.json
-    # Per-Service Health: the services counterpart to the hosts-focused Fleet Overview.
-    # Owns unit/probe/error/latency/TLS-cert signals (Units down, Failed probes, probe
-    # latency, per-service error rate, TLS cert expiry) so Fleet Overview can stay purely
-    # host/OS/config/secrets. The deliberate hosts-vs-services board split.
-    ln -s ${./dashboards/per-service-health.json} $out/per-service-health.json
     # Logs: fleet-wide VictoriaLogs board (glance error/warning/volume tiles, log volume by
     # host, actionable rate by level, top noisy units, and an errors+warnings live tail),
     # driven by the victoriametrics-logs-datasource plugin over LogsQL. Host + level filter
