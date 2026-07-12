@@ -51,6 +51,13 @@ let
     # template vars; the $host var is sourced from Prometheus label_values (short name) so it
     # matches the log `host` stream field. The first log-driven board (#36).
     ln -s ${./dashboards/logs.json} $out/logs.json
+    # Per-Service Health: app-level health of the self-hosted services, beyond the
+    # Gatus up/down dot. Three orthogonal per-service signals — systemd unit-state
+    # (node_systemd_unit_state, the curated ADR-0019 expected-up set incl. internal
+    # infra no other board graphs), Gatus probe latency + TLS cert expiry, and per-unit
+    # log error-rate (Vector→VictoriaLogs) — as a status grid + latency/cert + error
+    # panels. Graduated from map #30's fog (#38).
+    ln -s ${./dashboards/per-service-health.json} $out/per-service-health.json
   '';
 
   # "Advanced" folder: deep-dive boards kept available but off the primary nav. The

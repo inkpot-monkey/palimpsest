@@ -1,0 +1,760 @@
+{
+  "id": null,
+  "uid": "per-service-health",
+  "title": "Per-Service Health",
+  "tags": ["fleet", "nixos", "services"],
+  "schemaVersion": 39,
+  "version": null,
+  "graphTooltip": 1,
+  "timezone": "browser",
+  "editable": true,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Data source",
+        "type": "datasource",
+        "query": "prometheus",
+        "refresh": 1,
+        "hide": 0,
+        "current": {},
+        "options": [],
+        "regex": "",
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "name": "logs_datasource",
+        "label": "Logs data source",
+        "type": "datasource",
+        "query": "victoriametrics-logs-datasource",
+        "refresh": 1,
+        "hide": 0,
+        "current": {},
+        "options": [],
+        "regex": "",
+        "multi": false,
+        "includeAll": false
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Service health",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Units down",
+      "description": "Count of curated expected-up units (ADR-0019 monitoring-unit-state set) that are NOT active right now \u2014 kelpy's 13 app/infra units + rk1b's grafana/VictoriaMetrics/VictoriaLogs. Green = all up; red = one or more expected units down. This is the white-box complement to the Gatus probe: it catches a unit that exited cleanly-dead on a port something else still answers.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(count((node_systemd_unit_state{state=\"active\", instance=~\"kelpy.*\", name=~\"caddy.service|blocky.service|stalwart.service|tuwunel.service|matrix-hookshot.service|litellm.service|openclaw-gateway.service|jellyfin.service|podman-qbittorrent-app.service|vector.service|paperless-scheduler.service|paperless-task-queue.service|paperless-consumer.service\"} == 0) or (node_systemd_unit_state{state=\"active\", instance=~\"rk1b.*\", name=~\"grafana.service|victoriametrics.service|victorialogs.service|vector.service\"} == 0))) or vector(0)",
+          "legendFormat": "",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "value",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#0ca30c",
+                "value": null
+              },
+              {
+                "color": "#d03b3b",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Failed probes",
+      "description": "Count of Gatus endpoint probes currently failing (gatus_results_endpoint_success == 0) \u2014 the black-box reachability view. Green = all probes pass; red = one or more services unreachable through Caddy. Same signal that fires #infra-alerts.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(gatus_results_endpoint_success == 0) or vector(0)",
+          "legendFormat": "",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "value",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#0ca30c",
+                "value": null
+              },
+              {
+                "color": "#d03b3b",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Errors (window)",
+      "description": "Total error+critical+fatal log lines over the board window, scoped to the curated expected-up units ONLY. On this fleet the curated services are near-silent \u2014 the ~8k lines/hr of log noise is all system/session units (user@\u2026 , sshd, ModemManager, kernel, init.scope), none of them a curated service \u2014 so this tile normally reads 0/green and empty is the healthy state. A non-zero value means one of OUR services is actually erroring: green 0, amber \u22655, red \u226525 over 6h (calibrate against the real per-service baseline in the preview loop if it proves noisier). Read the sparkline for shape.",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "${logs_datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "${logs_datasource}"
+          },
+          "queryType": "statsRange",
+          "expr": "unit:in(\"caddy.service\",\"blocky.service\",\"stalwart.service\",\"tuwunel.service\",\"matrix-hookshot.service\",\"litellm.service\",\"openclaw-gateway.service\",\"jellyfin.service\",\"podman-qbittorrent-app.service\",\"vector.service\",\"paperless-scheduler.service\",\"paperless-task-queue.service\",\"paperless-consumer.service\",\"grafana.service\",\"victoriametrics.service\",\"victorialogs.service\") level:in(error,critical,fatal) | stats count() logs",
+          "legendFormat": "",
+          "step": ""
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["sum"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "textMode": "value",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#0ca30c",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 5
+              },
+              {
+                "color": "#d03b3b",
+                "value": 25
+              }
+            ]
+          },
+          "noValue": "0"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Service status",
+      "description": "Per expected-up unit, one tile: green = active, red = not active. Rows are the curated ADR-0019 unit set pinned per host (kelpy app/infra + rk1b grafana/VM/VL); includes internal infra no other board graphs (caddy, blocky, VictoriaMetrics/Logs, vector). A tile reads DOWN the instant the unit leaves `active` \u2014 the direct white-box state, not a reachability inference.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "label_replace(node_systemd_unit_state{state=\"active\", instance=~\"kelpy.*\", name=~\"caddy.service|blocky.service|stalwart.service|tuwunel.service|matrix-hookshot.service|litellm.service|openclaw-gateway.service|jellyfin.service|podman-qbittorrent-app.service|vector.service|paperless-scheduler.service|paperless-task-queue.service|paperless-consumer.service\"}, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "legendFormat": "{{host}} / {{name}}",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "label_replace(node_systemd_unit_state{state=\"active\", instance=~\"rk1b.*\", name=~\"grafana.service|victoriametrics.service|victorialogs.service|vector.service\"}, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "legendFormat": "{{host}} / {{name}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "value_and_name",
+        "orientation": "horizontal"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN"
+                },
+                "1": {
+                  "text": "UP"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#d03b3b",
+                "value": null
+              },
+              {
+                "color": "#0ca30c",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "row",
+      "title": "Reachability & latency",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
+      "panels": []
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Probe latency",
+      "description": "Gatus probe round-trip per service (gatus_results_duration_seconds). Warning band at 1s (soft SLO), critical at 3s. Unbounded service set \u2192 palette-classic + legend for identity (house rule for >8 series). Only Caddy-fronted HTTPS services have a latency series; localLlmA (raw TCP) does too.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 2,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "gradientMode": "opacity",
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#0ca30c",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 1
+              },
+              {
+                "color": "#d03b3b",
+                "value": 3
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["last", "max"],
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "gatus_results_duration_seconds",
+          "legendFormat": "{{name}}"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "TLS cert expiry",
+      "description": "Days until each Caddy-fronted service's TLS certificate expires (gatus_results_certificate_expiration_seconds / 86400), soonest first. Same house age ramp as Secret expiry: green >30d, soft-amber \u226430, amber \u226414, orange \u22647, red \u22643. Empty for raw-TCP probes (localLlmA) which have no cert.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "gatus_results_certificate_expiration_seconds / 86400",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "pattern": "^(name|Value)$"
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "name": 0,
+              "Value": 1
+            },
+            "renameByName": {
+              "name": "Service",
+              "Value": "Expires in"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": "",
+            "sort": [
+              {
+                "field": "Expires in",
+                "desc": false
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Expires in"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "d"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#d03b3b",
+                      "value": null
+                    },
+                    {
+                      "color": "#ec835a",
+                      "value": 3
+                    },
+                    {
+                      "color": "#fab219",
+                      "value": 7
+                    },
+                    {
+                      "color": "#e8c766",
+                      "value": 14
+                    },
+                    {
+                      "color": "#0ca30c",
+                      "value": 30
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 9,
+      "type": "row",
+      "title": "Errors by service",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Error rate by service",
+      "description": "Actionable (warning+error+critical+fatal) log lines per interval, per expected-up unit, from Vector\u2192VictoriaLogs. Info/debug excluded. Unbounded unit set \u2192 palette-classic + legend. A service climbing here is degrading even if its unit stays active and its probe passes \u2014 the third, orthogonal signal. NORMALLY EMPTY: the curated services are near-silent on this fleet, so a flat/blank panel is the healthy state; lines appearing here are the signal.",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "${logs_datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 1,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "axisPlacement": "auto",
+            "gradientMode": "opacity"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["sum", "max"],
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "${logs_datasource}"
+          },
+          "queryType": "statsRange",
+          "expr": "unit:in(\"caddy.service\",\"blocky.service\",\"stalwart.service\",\"tuwunel.service\",\"matrix-hookshot.service\",\"litellm.service\",\"openclaw-gateway.service\",\"jellyfin.service\",\"podman-qbittorrent-app.service\",\"vector.service\",\"paperless-scheduler.service\",\"paperless-task-queue.service\",\"paperless-consumer.service\",\"grafana.service\",\"victoriametrics.service\",\"victorialogs.service\") level:in(warning,error,critical,fatal) | stats by (unit) count() logs",
+          "legendFormat": "{{unit}}",
+          "step": ""
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "Top services by error volume",
+      "description": "The noisiest expected-up units by actionable (warning+) line count over the window \u2014 where to look first. Scoped to the curated unit set (fleet noise like init.scope excluded), so it is EMPTY when the services are healthy (the normal state here) and only fills during an incident.",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "${logs_datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "${logs_datasource}"
+          },
+          "queryType": "stats",
+          "expr": "unit:in(\"caddy.service\",\"blocky.service\",\"stalwart.service\",\"tuwunel.service\",\"matrix-hookshot.service\",\"litellm.service\",\"openclaw-gateway.service\",\"jellyfin.service\",\"podman-qbittorrent-app.service\",\"vector.service\",\"paperless-scheduler.service\",\"paperless-task-queue.service\",\"paperless-consumer.service\",\"grafana.service\",\"victoriametrics.service\",\"victorialogs.service\") level:in(warning,error,critical,fatal) | stats by (host, unit) count() total | sort by (total desc) | limit 15",
+          "legendFormat": "",
+          "step": ""
+        }
+      ],
+      "transformations": [
+        {
+          "id": "labelsToFields",
+          "options": {}
+        },
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true
+            },
+            "renameByName": {
+              "Value": "actionable lines",
+              "total": "actionable lines"
+            },
+            "indexByName": {
+              "host": 0,
+              "unit": 1
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": "",
+            "sort": [
+              {
+                "field": "actionable lines",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "actionable lines"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "gauge",
+                  "mode": "gradient"
+                }
+              },
+              {
+                "id": "custom.align",
+                "value": "left"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
