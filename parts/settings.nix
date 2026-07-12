@@ -152,9 +152,15 @@ in
       "rk1b"
     ];
 
+    # `presence` is a host's operational cadence (CONTEXT.md → Always-on / On-demand
+    # host): `always-on` runs 24/7, `on-demand` runs only when in use. It is plumbed
+    # into the node scrape targets as a label (server.nix) so a host's monitoring
+    # alert-worthiness is *derived* — an on-demand host being unreachable is expected,
+    # never a fault, so it never colours a fleet health signal red.
     nodes.kelpy = {
       hostName = "kelpy";
       domain = "palebluebytes.space";
+      presence = "always-on";
       tailscale = {
         ip4 = getMeta "kelpy" [ "tailscale" "ip4" ] "100.64.0.1";
         ip6 = getMeta "kelpy" [ "tailscale" "ip6" ] "fd7a:115c:a1e0::1";
@@ -171,30 +177,37 @@ in
     # `tailscale` block, for the consumers that structurally need an IP literal.
     nodes.porcupineFish = {
       hostName = "porcupineFish";
+      presence = "always-on";
     };
 
     nodes.stargazer = {
       hostName = "stargazer";
+      presence = "on-demand";
     };
 
     nodes.sawtoothShark = {
       hostName = "sawtoothShark";
+      presence = "on-demand";
     };
 
     nodes.weedySeadragon = {
       hostName = "weedySeadragon";
+      presence = "on-demand";
     };
 
     nodes.potbelliedSeahorse = {
       hostName = "potbelliedSeahorse";
+      presence = "on-demand";
     };
 
     nodes.rk1a = {
       hostName = "rk1a";
+      presence = "always-on";
     };
 
     nodes.rk1b = {
       hostName = "rk1b";
+      presence = "always-on";
       tailscale = {
         ip4 = getMeta "rk1b" [ "tailscale" "ip4" ] "100.64.0.5";
         ip6 = getMeta "rk1b" [ "tailscale" "ip6" ] "fd7a:115c:a1e0::5";

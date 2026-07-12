@@ -10,13 +10,23 @@
 let
   cfg = config.custom.profiles.monitoring-server;
 
-  # Dynamically get all defined nodes from settings.nix
-  senderNodes = builtins.attrNames settings.nodes;
-
   # Scrape targets by MagicDNS name (`<host>.<tailnet>`), resolved live by blocky's
   # ts.net forward — NOT pinned tailscale IPs, which rot when a host re-keys. DNS is
   # case-insensitive, so the camelCase node names resolve fine.
-  makeTargets = port: map (name: "${name}.${settings.tailnet}:${toString port}") senderNodes;
+  #
+  # One static_config per host so each carries a `presence` label (always-on /
+  # on-demand, from settings.nodes — CONTEXT.md). That label rides onto `up` and
+  # every `node_*` series, letting boards derive alert-worthiness by presence
+  # (an on-demand host being unreachable is expected, never a fault). A node without
+  # an explicit presence defaults to on-demand (fail-safe-quiet).
+  makeTargets =
+    port:
+    lib.mapAttrsToList (name: node: {
+      targets = [ "${name}.${settings.tailnet}:${toString port}" ];
+      labels = {
+        presence = node.presence or "on-demand";
+      };
+    }) settings.nodes;
 
   dashboards = {
     node-exporter = pkgs.fetchurl {
@@ -34,17 +44,25 @@ let
     # pinned to the default VictoriaMetrics source. Full house-style migration is tracked
     # separately (#30); the board keeps its legacy uid so it updates in place.
     ln -s ${./dashboards/email.json} $out/email.json
-    # Fleet overview: host up/down, config-revision drift, per-host NixOS state, Gatus
-    # probes, and the secret-expiry list (fed by node-exporter + the nixos-metrics
-    # textfile collector + the gatus scrape job + the secret_expiry_timestamp_seconds
-    # textfile metric). The former standalone secret-expiry board folded into its
-    # "Secret expiry" panel (ADR-0031).
+    # Fleet Overview: the HOSTS board (services live on Per-Service Health below).
+    # Presence-aware host up/down (always-on hosts alarm red, on-demand ones never do),
+    # config-revision drift, a failed-units canary, the per-host NixOS lifecycle table
+    # (status/uptime/last-online/generations/store/config-age/rev), and the secret-expiry
+    # list (fed by node-exporter with the `presence` scrape label + the nixos-metrics
+    # textfile collector + the secret_expiry_timestamp_seconds textfile metric). The
+    # former standalone secret-expiry board folded into its "Secret expiry" panel
+    # (ADR-0031).
     ln -s ${./dashboards/fleet-overview.json} $out/fleet-overview.json
     # Host Drill-Down: curated ~16-panel single-host incident view (CPU/mem/disk/IO/net/
     # temps/failed-units) in the house style, driven by a $host template variable so one
     # board serves any node. The house-conformant replacement for the imported ~200-panel
     # Node Exporter Full board (1860), which is demoted to the "Advanced" folder below (#35).
     ln -s ${./dashboards/host-drill-down.json} $out/host-drill-down.json
+    # Per-Service Health: the services counterpart to the hosts-focused Fleet Overview.
+    # Owns unit/probe/error/latency/TLS-cert signals (Units down, Failed probes, probe
+    # latency, per-service error rate, TLS cert expiry) so Fleet Overview can stay purely
+    # host/OS/config/secrets. The deliberate hosts-vs-services board split.
+    ln -s ${./dashboards/per-service-health.json} $out/per-service-health.json
     # Logs: fleet-wide VictoriaLogs board (glance error/warning/volume tiles, log volume by
     # host, actionable rate by level, top noisy units, and an errors+warnings live tail),
     # driven by the victoriametrics-logs-datasource plugin over LogsQL. Host + level filter
@@ -138,9 +156,7 @@ in
             scrape_configs = [
               {
                 job_name = "node";
-                static_configs = [
-                  { targets = makeTargets config.services.prometheus.exporters.node.port; }
-                ];
+                static_configs = makeTargets config.services.prometheus.exporters.node.port;
               }
             ]
             ++ lib.optionals (config.custom.profiles.monitoring-dmarc.enable or false) [
