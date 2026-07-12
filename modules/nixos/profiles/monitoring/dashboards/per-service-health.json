@@ -261,13 +261,13 @@
       "id": 5,
       "type": "stat",
       "title": "Service status",
-      "description": "Per expected-up unit, one tile: green = active, red = not active. Rows are the curated ADR-0019 unit set pinned per host (kelpy app/infra + rk1b grafana/VM/VL); includes internal infra no other board graphs (caddy, blocky, VictoriaMetrics/Logs, vector). A tile reads DOWN the instant the unit leaves `active` \u2014 the direct white-box state, not a reachability inference.",
+      "description": "Per expected-up unit, one tile in a grid: green = active, red = not active \u2014 a DOWN tile pops against the green field. The curated ADR-0019 unit set pinned per host (kelpy app/infra + rk1b grafana/VM/VL); includes internal infra no other board graphs (caddy, blocky, VictoriaMetrics/Logs, vector). Tile label is `host/unit` (host kept because e.g. vector runs on both kelpy and rk1b). A tile reads DOWN the instant the unit leaves `active` \u2014 the direct white-box state, not a reachability inference.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "gridPos": {
-        "h": 7,
+        "h": 8,
         "w": 24,
         "x": 0,
         "y": 5
@@ -279,8 +279,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "label_replace(node_systemd_unit_state{state=\"active\", instance=~\"kelpy.*\", name=~\"caddy.service|blocky.service|stalwart.service|tuwunel.service|matrix-hookshot.service|litellm.service|openclaw-gateway.service|jellyfin.service|podman-qbittorrent-app.service|vector.service|paperless-scheduler.service|paperless-task-queue.service|paperless-consumer.service\"}, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
-          "legendFormat": "{{host}} / {{name}}",
+          "expr": "label_replace(label_replace(node_systemd_unit_state{state=\"active\", instance=~\"kelpy.*\", name=~\"caddy.service|blocky.service|stalwart.service|tuwunel.service|matrix-hookshot.service|litellm.service|openclaw-gateway.service|jellyfin.service|podman-qbittorrent-app.service|vector.service|paperless-scheduler.service|paperless-task-queue.service|paperless-consumer.service\"}, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"svc\", \"$1\", \"name\", \"(.*).service\")",
+          "legendFormat": "{{host}}/{{svc}}",
           "instant": true
         },
         {
@@ -289,8 +289,8 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "label_replace(node_systemd_unit_state{state=\"active\", instance=~\"rk1b.*\", name=~\"grafana.service|victoriametrics.service|victorialogs.service|vector.service\"}, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
-          "legendFormat": "{{host}} / {{name}}",
+          "expr": "label_replace(label_replace(node_systemd_unit_state{state=\"active\", instance=~\"rk1b.*\", name=~\"grafana.service|victoriametrics.service|victorialogs.service|vector.service\"}, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"svc\", \"$1\", \"name\", \"(.*).service\")",
+          "legendFormat": "{{host}}/{{svc}}",
           "instant": true
         }
       ],
@@ -304,7 +304,7 @@
         "graphMode": "none",
         "justifyMode": "auto",
         "textMode": "value_and_name",
-        "orientation": "horizontal"
+        "orientation": "auto"
       },
       "fieldConfig": {
         "defaults": {
@@ -352,7 +352,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 12
+        "y": 13
       },
       "panels": []
     },
@@ -369,7 +369,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 13
+        "y": 14
       },
       "fieldConfig": {
         "defaults": {
@@ -452,7 +452,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 13
+        "y": 14
       },
       "targets": [
         {
@@ -579,7 +579,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 21
+        "y": 22
       },
       "panels": []
     },
@@ -596,7 +596,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 23
       },
       "fieldConfig": {
         "defaults": {
@@ -661,7 +661,7 @@
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 30
+        "y": 31
       },
       "targets": [
         {
