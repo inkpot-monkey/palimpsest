@@ -63,6 +63,13 @@ check-all:
 dns command="preview":
   nix run .#dns -- {{command}}
 
+# DNS management AS inkpotmonkey: sources the Cloudflare token from your own stash
+# (cloudflare/dns_token, via the `secret` helper) instead of networking.yaml, so you can
+# run it with your user identity's key. Needs the `secret` command on PATH (home rebuild).
+# Defaults to the read-only `preview`; pass `push`/`check` explicitly.
+dns-me command="preview":
+  CLOUDFLARE_API_TOKEN="$(secret cloudflare/dns_token)" nix run .#dns -- {{command}}
+
 # Deploy the out-of-band push relay to Cloudflare (ADR-0020). Hermetic: pins the
 # wasm toolchain + wrangler, reads vapid_private/publish_token/cloudflare_api_token
 # from sops. Run from the operator workstation (holds &admin) — NOT a headless host.
