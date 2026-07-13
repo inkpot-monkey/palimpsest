@@ -90,6 +90,16 @@ let
         port = 8123;
         origin = "rk1b";
       };
+      # Navidrome — the friends' shared music platform (ADR-0027). Same shape as
+      # Home Assistant: it RUNS on rk1b (media node, library on the NVMe /var/cache),
+      # fronted by kelpy's Caddy at music.<domain> with TLS + the internal_only tailnet
+      # guard. The vhost subdomain is this attribute name, so it's `music` (not
+      # `navidrome`); the profile that runs it is custom.profiles.navidrome.
+      music = {
+        edge = "kelpy";
+        port = 4533;
+        origin = "rk1b";
+      };
     };
   };
 

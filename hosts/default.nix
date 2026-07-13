@@ -155,6 +155,14 @@ in
           custom.rk1.nvme.enable = true;
           custom.rk1.nvme.relocateNixStore = true;
 
+          # Navidrome — the friends' shared music platform (ADR-0027). Media node: the
+          # library (/var/cache/music) and DB (/var/cache/navidrome) live on the NVMe
+          # /var/cache subtree (durable across the tmpfs-root reboot). Tailnet-only,
+          # fronted by kelpy's Caddy at music.<domain>; admin user bootstrapped from the
+          # navidrome_admin_password sops secret. See modules/nixos/profiles/navidrome.nix
+          # and the `music` entry in parts/settings.nix.
+          custom.profiles.navidrome.enable = true;
+
           # Off-host uptime watcher (Gatus): rk1b is always-on and not kelpy, so it
           # can observe kelpy failing. Probes the fleet + alerts to #infra-alerts.
           # See ADR-0019 / modules/nixos/profiles/monitoring/watcher.nix.
