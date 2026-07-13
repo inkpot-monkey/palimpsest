@@ -81,7 +81,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "(count((node_systemd_unit_state{state=\"active\", instance=~\"kelpy.*\", name=~\"caddy.service|blocky.service|stalwart.service|tuwunel.service|matrix-hookshot.service|litellm.service|openclaw-gateway.service|jellyfin.service|podman-qbittorrent-app.service|vector.service|paperless-scheduler.service|paperless-task-queue.service|paperless-consumer.service\"} == 0) or (node_systemd_unit_state{state=\"active\", instance=~\"rk1b.*\", name=~\"grafana.service|victoriametrics.service|victorialogs.service|vector.service\"} == 0))) or vector(0)",
+          "expr": "(count((node_systemd_unit_state{state=\"active\", instance=~\"kelpy.*\", name=~\"caddy.service|blocky.service|stalwart.service|tuwunel.service|matrix-hookshot.service|litellm.service|jellyfin.service|podman-qbittorrent-app.service|vector.service|paperless-scheduler.service|paperless-task-queue.service|paperless-consumer.service\"} == 0) or (node_systemd_unit_state{state=\"active\", instance=~\"rk1b.*\", name=~\"grafana.service|victoriametrics.service|victorialogs.service|vector.service\"} == 0))) or vector(0)",
           "legendFormat": "",
           "instant": true
         }
@@ -210,7 +210,7 @@
             "uid": "${logs_datasource}"
           },
           "queryType": "statsRange",
-          "expr": "unit:in(\"caddy.service\",\"blocky.service\",\"stalwart.service\",\"tuwunel.service\",\"matrix-hookshot.service\",\"litellm.service\",\"openclaw-gateway.service\",\"jellyfin.service\",\"podman-qbittorrent-app.service\",\"vector.service\",\"paperless-scheduler.service\",\"paperless-task-queue.service\",\"paperless-consumer.service\",\"grafana.service\",\"victoriametrics.service\",\"victorialogs.service\") level:in(error,critical,fatal) | stats count() logs",
+          "expr": "unit:in(\"caddy.service\",\"blocky.service\",\"stalwart.service\",\"tuwunel.service\",\"matrix-hookshot.service\",\"litellm.service\",\"jellyfin.service\",\"podman-qbittorrent-app.service\",\"vector.service\",\"paperless-scheduler.service\",\"paperless-task-queue.service\",\"paperless-consumer.service\",\"grafana.service\",\"victoriametrics.service\",\"victorialogs.service\") level:in(error,critical,fatal) | stats count() logs",
           "legendFormat": "",
           "step": ""
         }
@@ -279,7 +279,7 @@
             "type": "prometheus",
             "uid": "${datasource}"
           },
-          "expr": "label_replace(label_replace(node_systemd_unit_state{state=\"active\", instance=~\"kelpy.*\", name=~\"caddy.service|blocky.service|stalwart.service|tuwunel.service|matrix-hookshot.service|litellm.service|openclaw-gateway.service|jellyfin.service|podman-qbittorrent-app.service|vector.service|paperless-scheduler.service|paperless-task-queue.service|paperless-consumer.service\"}, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"svc\", \"$1\", \"name\", \"(.*).service\")",
+          "expr": "label_replace(label_replace(node_systemd_unit_state{state=\"active\", instance=~\"kelpy.*\", name=~\"caddy.service|blocky.service|stalwart.service|tuwunel.service|matrix-hookshot.service|litellm.service|jellyfin.service|podman-qbittorrent-app.service|vector.service|paperless-scheduler.service|paperless-task-queue.service|paperless-consumer.service\"}, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"svc\", \"$1\", \"name\", \"(.*).service\")",
           "legendFormat": "{{host}}/{{svc}}",
           "instant": true
         },
@@ -360,7 +360,7 @@
       "id": 7,
       "type": "timeseries",
       "title": "Probe latency",
-      "description": "Gatus probe round-trip per service (gatus_results_duration_seconds). Warning band at 1s (soft SLO), critical at 3s. Unbounded service set \u2192 palette-classic + legend for identity (house rule for >8 series). Only Caddy-fronted HTTPS services have a latency series; localLlmA (raw TCP) does too.",
+      "description": "Gatus probe round-trip per service (gatus_results_duration_seconds). Warning band at 1s (soft SLO), critical at 3s. Unbounded service set \u2192 palette-classic + legend for identity (house rule for >8 series). Only Caddy-fronted HTTPS services have a latency series.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -443,7 +443,7 @@
       "id": 8,
       "type": "table",
       "title": "TLS cert expiry",
-      "description": "Days until each Caddy-fronted service's TLS certificate expires (gatus_results_certificate_expiration_seconds / 86400), soonest first. Same house age ramp as Secret expiry: green >30d, soft-amber \u226430, amber \u226414, orange \u22647, red \u22643. Empty for raw-TCP probes (localLlmA) which have no cert.",
+      "description": "Days until each Caddy-fronted service's TLS certificate expires (gatus_results_certificate_expiration_seconds / 86400), soonest first. Same house age ramp as Secret expiry: green >30d, soft-amber \u226430, amber \u226414, orange \u22647, red \u22643. Empty for any raw-TCP probe, which has no cert.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"

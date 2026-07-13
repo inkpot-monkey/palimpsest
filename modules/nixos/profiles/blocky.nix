@@ -17,9 +17,8 @@ let
     (lib.mapAttrs (_: svc: svc // { isPublic = true; }) settings.services.public)
     // (lib.mapAttrs (_: svc: svc // { isPublic = false; }) settings.services.private);
 
-  # DNS names are case-insensitive; store them lowercased so camelCase service keys
-  # (e.g. localLlmA) match — blocky lowercases queries but matches hosts-file/customDNS
-  # entries verbatim.
+  # DNS names are case-insensitive; store them lowercased so any camelCase service key
+  # matches — blocky lowercases queries but matches hosts-file/customDNS entries verbatim.
   fqdn = name: lib.toLower "${name}.${domain}";
 
   # Public services resolve to a node's stable public IP — safe to hardcode in customDNS.

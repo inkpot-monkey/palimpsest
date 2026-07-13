@@ -145,17 +145,13 @@ _Avoid_: channel, chat, thread (a session is its own room, not a thread).
 ### Local LLMs
 
 **RK1 node** (or just **node**):
-Either of the pair of Turing-Pi RK1 single-board computers, `rk1a` and `rk1b` (RK3588, 32 GB). A node is also a host (see **Host**); "node" just emphasises its place in this pair. The two are currently split by role: `rk1a` is the **LLM node**, `rk1b` is the **voice node**.
-
-**LLM node**:
-`rk1a` specifically — serves local MoE models on CPU via `llama.cpp` (`custom.rk1.llm`), fronted by the `litellm` gateway on `kelpy`.
-_Avoid_: GPU node, inference server.
+Either of the pair of Turing-Pi RK1 single-board computers, `rk1a` and `rk1b` (RK3588, 32 GB). A node is also a host (see **Host**); "node" just emphasises its place in this pair. The local-LLM serving stack was **retired** (ADR-0027): `rk1b` is the **voice node** (and hosts monitoring); `rk1a` is freed of the LLM and earmarked to take over voice.
 
 **Voice node**:
-`rk1b` specifically — runs Home Assistant plus a local Wyoming voice pipeline (faster-whisper STT + piper TTS, CPU) for the smart-home setup (`custom.rk1.homeAssistant`). It no longer serves an LLM.
+`rk1b` specifically — runs Home Assistant plus a local Wyoming voice pipeline (faster-whisper STT + piper TTS, CPU) for the smart-home setup (`custom.profiles.homeassistant`).
 
 **Gateway**:
-The `litellm` proxy on `kelpy` that presents the local LLM nodes (and remote fallbacks) under stable backend names (`qwen-general`, `qwen-coder`).
+The `litellm` proxy on `kelpy` that presents remote (cloud) models under stable backend names (e.g. `qwen3-coder`, `deepseek-flash`). It no longer fronts a local model — the RK1 local LLM was retired (ADR-0027).
 
 ### Storage & data classes
 

@@ -1,12 +1,12 @@
 # Optional M.2 NVMe storage for the Turing Pi RK1 nodes.
 #
-# The 29 GB eMMC is too small for the big model caches these nodes can host: full-quant
-# GGUF weights for the LLM node (a Q4/Q5 of the 27B/35B is 17-32 GB), or the torch +
-# Whisper/pyannote model downloads for the voice node's WhisperX batch transcription.
-# This module mounts an NVMe drive at /var/cache so those model caches (and systemd's
-# DynamicUser private cache dirs under /var/cache/private/*) land on the big disk while
-# the OS stays on eMMC. It is consumer-agnostic: whichever cache-heavy service the node
-# runs adds its own RequiresMountsFor=/var/cache (this module wires llama-cpp's when present).
+# The 29 GB eMMC is too small for the big caches these nodes can host: the torch +
+# Whisper/pyannote model downloads for the voice node's WhisperX batch transcription,
+# telemetry/paperless data, or any other large service cache. This module mounts an NVMe
+# drive at /var/cache so those caches (and systemd's DynamicUser private cache dirs under
+# /var/cache/private/*) land on the big disk while the OS stays on eMMC. It is
+# consumer-agnostic: whichever cache-heavy service the node runs adds its own
+# RequiresMountsFor=/var/cache.
 #
 # Imported (inert) by hosts/rk1/common.nix. Enable per node once the drive is fitted:
 #
@@ -38,7 +38,7 @@ let
 in
 {
   options.custom.rk1.nvme = {
-    enable = lib.mkEnableOption "host the llama.cpp model cache on an M.2 NVMe drive";
+    enable = lib.mkEnableOption "host large service caches (/var/cache) on an M.2 NVMe drive";
 
     device = lib.mkOption {
       type = lib.types.str;
@@ -67,8 +67,8 @@ in
   config = lib.mkIf cfg.enable (
     lib.mkMerge [
       {
-        # Park the whole /var/cache on the NVMe. systemd's CacheDirectory=llama-cpp (and the
-        # DynamicUser indirection at /var/cache/private/llama-cpp) then live on the big disk,
+        # Park the whole /var/cache on the NVMe. A service's CacheDirectory=<name> (and the
+        # DynamicUser indirection at /var/cache/private/<name>) then live on the big disk,
         # with systemd still managing ownership/permissions.
         fileSystems."/var/cache" = {
           inherit (cfg) device fsType;
@@ -85,13 +85,9 @@ in
         # Periodic TRIM keeps the SSD healthy (preferred over the continuous `discard` option).
         services.fstrim.enable = true;
 
-        # Don't start the LLM server until its model disk is actually mounted (only on the LLM
-        # node — the voice node has no llama-cpp service, and a bare unitConfig would otherwise
-        # define a phantom unit). Cache-heavy services on other nodes (e.g. WhisperX) add their
-        # own RequiresMountsFor=/var/cache in their module.
-        systemd.services.llama-cpp.unitConfig.RequiresMountsFor =
-          lib.mkIf config.services.llama-cpp.enable
-            [ "/var/cache" ];
+        # Cache-heavy services must gate their start on the mount so they don't re-fill the
+        # eMMC when the drive is absent — each adds its own `RequiresMountsFor=/var/cache`
+        # (e.g. WhisperX on the voice node). This module deliberately wires none itself.
       }
 
       (lib.mkIf cfg.relocateNixStore {

@@ -12,8 +12,7 @@
     # Hardware: boot, u-boot, mainline kernel, device tree, root fileSystem.
     inputs.nixos-turing-rk1.nixosModules.turing-rk1
 
-    # RK1-specific local modules (not shared profiles — only these nodes serve LLMs / use NVMe).
-    ./llm.nix # local llama.cpp LLM server (custom.rk1.llm)
+    # RK1-specific local module (not a shared profile — only these nodes use the NVMe cache).
     ./nvme.nix # optional NVMe model-cache storage (inert until custom.rk1.nvme.enable = true)
     # Home Assistant + Wyoming voice is now the shared `homeassistant` profile (in the
     # bundle below); rk1b enables it via custom.profiles.homeassistant in hosts/default.nix.
@@ -84,9 +83,6 @@
   environment.persistence."/persistent".directories = [ "/boot" ];
 
   hardware.deviceTree.enable = true;
-
-  # The local LLM server is enabled per-node in hosts/default.nix: rk1a serves the general
-  # MoE; rk1b is voice-only (Home Assistant) and leaves the LLM off to free RAM/disk.
 
   # Declared users are authoritative: removes the GiyoMoon base-image `nixos`/`turing`
   # account on the first switch. Login is key-only SSH as inkpotmonkey (see profiles/ssh.nix);

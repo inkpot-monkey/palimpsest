@@ -81,10 +81,6 @@ let
       #   edge = "kelpy";
       #   port = 3010;
       # };
-      openclaw = {
-        edge = "kelpy";
-        port = 8001;
-      };
       # Home Assistant. It RUNS on rk1b, but is fronted by kelpy's Caddy (TLS via
       # Cloudflare DNS-01 + the internal_only tailnet guard). `edge` is the edge
       # (kelpy: where DNS points and Caddy runs); `origin` is the upstream Caddy
@@ -93,12 +89,6 @@ let
         edge = "kelpy";
         port = 8123;
         origin = "rk1b";
-      };
-      # Local llama.cpp endpoint on Turing Pi RK1 node rk1a. (rk1b was repurposed as the
-      # Home Assistant voice node and no longer serves an LLM, so there is no localLlmB.)
-      localLlmA = {
-        edge = "rk1a";
-        port = 8080;
       };
     };
   };

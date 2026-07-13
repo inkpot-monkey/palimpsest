@@ -110,7 +110,7 @@ in
     };
 
     # Turing Pi RK1 nodes (RK3588, 32 GB). Shared config in ./rk1/common.nix;
-    # each node differs only by hostname + served model.
+    # each node differs only by hostname + enabled profiles.
     #
     # Deploy (build on the node itself — aarch64):
     # nixos-rebuild switch --flake .#rk1a \
@@ -123,14 +123,9 @@ in
         {
           networking.hostName = "rk1a";
           custom.profiles.monitoring-client.enable = true;
-          custom.rk1.llm.enable = true;
-          # Fast MoE daily driver (3B active → ~10-15 tok/s on CPU).
-          # TEMP: Q3_K_S (15.4G) to fit the 29G eMMC; restore UD-Q4_K_XL (22.4G) once the NVMe is in.
-          custom.rk1.llm.model = "unsloth/Qwen3.6-35B-A3B-GGUF:UD-Q3_K_S";
-          # 128K context (native 256K). This MoE's KV is tiny (~0.02 MB/tok) so 128K uses only
-          # ~20G RAM total, ~12G free — measured. KV is allocated upfront; decode speed only
-          # drops as the window actually fills.
-          custom.rk1.llm.ctxSize = 131072;
+          # The local llama.cpp LLM stack was retired (ADR-0027): the ~15 GB GGUF and its
+          # ~20 GB of pinned RAM are gone, freeing the node. rk1a is earmarked as the voice
+          # node (HA + Wyoming moved off rk1b) — that migration lands separately.
         }
       ];
     };
@@ -142,12 +137,9 @@ in
         (grant "inkpotmonkey" { workstation.enable = true; })
         ({ config, ... }: {
           networking.hostName = "rk1b";
-          # rk1b is the voice node, NOT an LLM server. The qwen-coder MoE was removed to free
-          # ~22G RAM + 13G eMMC for Home Assistant. custom.rk1.llm is therefore left disabled
-          # (default). The coder model still exists in the cloud as `qwen3-coder` (DeepInfra) via
-          # kelpy's LiteLLM; rk1a serves the local general MoE (qwen-general).
-          #
-          # Home Assistant + local Wyoming voice (STT/TTS); the wake word runs on the phone.
+          # rk1b is the voice node. The local llama.cpp LLM stack is retired fleet-wide
+          # (ADR-0027) — the cloud `qwen3-coder` (DeepInfra) via kelpy's LiteLLM is what
+          # remains. Home Assistant + local Wyoming voice (STT/TTS); the wake word runs on the phone.
           # See modules/nixos/profiles/homeassistant.nix. The real-time STT here is the small
           # base-int8 faster-whisper; voice latency isn't critical so it's fine on CPU.
           # (Heavyweight WhisperX batch transcription lives on stargazer now — its Zen 5 CPU is

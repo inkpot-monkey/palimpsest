@@ -76,7 +76,7 @@ in
       default = 2;
       description = ''
         Concurrent build jobs per rk1 node. Kept low so image builds don't starve the
-        llama.cpp model serving the rk1 nodes are primarily there for.
+        node's other workloads (e.g. Home Assistant / Wyoming voice on rk1b).
       '';
     };
   };

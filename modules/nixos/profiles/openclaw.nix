@@ -2,7 +2,6 @@
   config,
   lib,
   inputs,
-  settings,
   pkgs,
   self,
   ...
@@ -49,7 +48,10 @@ in
     services.openclaw-gateway = {
       enable = true;
       package = inputs.openclaw-nix.packages.${pkgs.stdenv.hostPlatform.system}.openclaw-gateway;
-      inherit (settings.services.private.openclaw) port;
+      # Loopback port for the gateway. Hardcoded because the `openclaw` entry in
+      # settings.services was dropped when the service was disabled (ADR-0027); re-add that
+      # entry (with a Caddy vhost + monitor) if openclaw returns as a served service.
+      port = 8001;
 
       environmentFiles = [ config.sops.templates."openclaw-env".path ];
 
@@ -67,18 +69,10 @@ in
           };
         };
         agents = {
-          # Default agent (`main`) stays on the fast cloud model for interactive use. The
-          # generous global run-timeout ceiling lets a slow local-brain background run
-          # (multi-minute prefill) finish instead of being cut — it's a cap, not a delay, so
-          # the fast cloud agent is unaffected.
-          #
-          # The rk1-only background brain is NOT declared here: this OpenClaw version registers
-          # addressable agents from STATE (`/var/lib/openclaw`), not from config (`agents.list`
-          # validates but does nothing). Provision it once against the running gateway:
-          #   openclaw agents add rk1-bg --model litellm/qwen-general \
-          #     --workspace /var/lib/openclaw/workspace-rk1-bg --non-interactive
-          # then drive it with `openclaw agent --agent rk1-bg --message ... --timeout 7200`.
-          # /var/lib/openclaw is persisted (impermanence), so the agent survives reboots.
+          # Default agent (`main`) runs on a cloud model via LiteLLM. The local rk1 MoE that
+          # once backed a slow background agent was retired with the local-LLM stack (ADR-0027),
+          # so there is no local brain to route to; the generous run-timeout ceiling is a cap,
+          # not a delay, and is harmless for the fast cloud agent.
           defaults = {
             model = {
               primary = "litellm/deepseek-flash";
