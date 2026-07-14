@@ -88,17 +88,13 @@ in
       enable = lib.mkEnableOption ''
         a post-start oneshot that wires the Assist pipeline to the local Wyoming
         STT/TTS via HA's config-flow API (ha-provision-voice.py). Idempotent and
-        fail-loud; needs the `ha_owner_password` sops secret. HA has no declarative
-        path for config entries, so this codifies the one-time UI wiring'';
+        fail-loud; reads the `username` + `password` from the homeassistant sops
+        secret. HA has no declarative path for config entries, so this codifies
+        the one-time UI wiring'';
       ownerName = lib.mkOption {
         type = lib.types.str;
         default = "Administrator";
         description = "Display name for the HA owner account created on first run.";
-      };
-      ownerUsername = lib.mkOption {
-        type = lib.types.str;
-        default = "admin";
-        description = "Login username for the HA owner account (created on a fresh HA).";
       };
     };
   };
@@ -200,10 +196,18 @@ in
       # — idempotent (safe to re-run) and fail-loud (a failed unit means broken wiring).
       # See docs/runbooks/ha-voice-provisioning.md.
       (lib.mkIf cfg.provision.enable {
-        # HA owner password: onboards the owner on a fresh HA and logs in thereafter.
-        # New sops file profiles/homeassistant.yaml, keyed to admin + rk1a in
-        # secrets/.sops.yaml (mind the all-or-nothing-per-host rule).
-        sops.secrets.ha_owner_password.sopsFile = self.lib.getSecretFile "homeassistant";
+        # HA owner credentials (username + password) from the sops secret: onboards
+        # the owner on a fresh HA and logs in thereafter. Both live in the new sops
+        # file profiles/homeassistant.yaml (keys `username` + `password`), keyed to
+        # admin + rk1a in secrets/.sops.yaml (mind the all-or-nothing-per-host rule).
+        sops.secrets.ha_owner_username = {
+          sopsFile = self.lib.getSecretFile "homeassistant";
+          key = "username";
+        };
+        sops.secrets.ha_owner_password = {
+          sopsFile = self.lib.getSecretFile "homeassistant";
+          key = "password";
+        };
 
         systemd.services.home-assistant-voice-provision = {
           description = "Wire HA Assist pipeline to local Wyoming STT/TTS";
@@ -221,14 +225,14 @@ in
           environment = {
             HA_URL = "http://127.0.0.1:${toString haPort}";
             HA_OWNER_NAME = cfg.provision.ownerName;
-            HA_OWNER_USERNAME = cfg.provision.ownerUsername;
           };
           serviceConfig = {
             Type = "oneshot";
             RemainAfterExit = true;
-            # LoadCredential drops the secret into a per-service tmpfs, not the env of
-            # unrelated processes; the wrapper reads it into HA_OWNER_PASSWORD.
+            # LoadCredential drops each secret into a per-service tmpfs, not the env of
+            # unrelated processes; the wrapper reads them into HA_OWNER_USERNAME/PASSWORD.
             LoadCredential = [
+              "owner_username:${config.sops.secrets.ha_owner_username.path}"
               "owner_password:${config.sops.secrets.ha_owner_password.path}"
             ];
             # HA takes ~30-60s to boot on first run; wait for its API, then provision.
@@ -240,6 +244,7 @@ in
                 [ "$code" = "200" ] && break
                 sleep 2
               done
+              export HA_OWNER_USERNAME="$(cat "$CREDENTIALS_DIRECTORY/owner_username")"
               export HA_OWNER_PASSWORD="$(cat "$CREDENTIALS_DIRECTORY/owner_password")"
               exec ${pkgs.python3}/bin/python3 ${../../../hosts/rk1/ha-provision-voice.py}
             '';
