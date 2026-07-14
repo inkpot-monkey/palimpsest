@@ -135,6 +135,11 @@ in
           # is ~8-10x faster than the A76s for large-v3, so an hour of audio takes ~15 min
           # vs ~2h.)
           custom.profiles.homeassistant.enable = true;
+          # Codify the Assist-pipeline wiring (Wyoming STT/TTS) as a fail-loud,
+          # idempotent post-start oneshot instead of a manual UI step. Owner
+          # username defaults to `admin`; password from the ha_owner_password sops
+          # secret. See modules/nixos/profiles/homeassistant.nix + the runbook.
+          custom.profiles.homeassistant.provision.enable = true;
         }
       ];
     };
