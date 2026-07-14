@@ -8,20 +8,20 @@ Two **independent repo tasks** (do anytime) plus a **per-bulb pipeline**. The pi
 
 Recommended order:
 
-① deploy rk1b
+① deploy rk1a
 ② seed the stash secret
 ③ first bulb
 ④ remaining bulbs.
 
 ______________________________________________________________________
 
-## ① Deploy rk1b
+## ① Deploy rk1a
 
-Adds the `esphome` component + opens mDNS (UDP 5353) on rk1b. Already in `homeassistant.nix`.
+Adds the `esphome` component + opens mDNS (UDP 5353) on rk1a. Already in `homeassistant.nix`.
 
 ```sh
 cd /path/to/nixos
-just deploy rk1b
+just deploy rk1a
 ```
 
 Verify: HA (`https://home.palebluebytes.space`) → Settings → Devices & Services → Add Integration → "ESPHome" should be listed. No device is added yet.
@@ -144,7 +144,7 @@ Per additional bulb: add `api_key_antela_a60_N` / `ota_password_antela_a60_N` to
 secret, copy the YAML to `antela-a60-N.yaml` (unique `name`), repeat B–E. Identical hardware
 means the light config from bulb 1 carries over — no re-discovery.
 
-Then assign each bulb to an HA **Area** (Settings → Areas, or per-device). Since rk1b is the
+Then assign each bulb to an HA **Area** (Settings → Areas, or per-device). Since rk1a is the
 voice node, that is all Assist needs — confirm with *"turn on the \<area> light"*.
 
 Automations are phase 2 (declarative in nix per ADR-0015), tracked separately.
@@ -155,7 +155,7 @@ ______________________________________________________________________
 
 | Task | Command |
 |------|---------|
-| Deploy rk1b | `just deploy rk1b` |
+| Deploy rk1a | `just deploy rk1a` |
 | Decrypt build secrets | `sops -d secrets/profiles/esphome.yaml > esphome/secrets.yaml` |
 | Compile firmware | `nix run nixpkgs#esphome -- compile esphome/antela-a60-N.yaml` |
 | OTA a config change | `nix run nixpkgs#esphome -- run esphome/antela-a60-N.yaml` |

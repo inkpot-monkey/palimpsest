@@ -145,10 +145,10 @@ _Avoid_: channel, chat, thread (a session is its own room, not a thread).
 ### Local LLMs
 
 **RK1 node** (or just **node**):
-Either of the pair of Turing-Pi RK1 single-board computers, `rk1a` and `rk1b` (RK3588, 32 GB). A node is also a host (see **Host**); "node" just emphasises its place in this pair. The local-LLM serving stack was **retired** (ADR-0027): `rk1b` is the **voice node** (and hosts monitoring); `rk1a` is freed of the LLM and earmarked to take over voice.
+Either of the pair of Turing-Pi RK1 single-board computers, `rk1a` and `rk1b` (RK3588, 32 GB). A node is also a host (see **Host**); "node" just emphasises its place in this pair. The local-LLM serving stack was **retired** (ADR-0027): `rk1a` is the **voice node** (Home Assistant + Wyoming, moved off `rk1b` with fresh state, fits its 29 GB eMMC), and `rk1b` is the **media + monitoring node** (Navidrome on its NVMe `/var/cache`, plus the monitoring server and the aarch64 remote builder).
 
 **Voice node**:
-`rk1b` specifically — runs Home Assistant plus a local Wyoming voice pipeline (faster-whisper STT + piper TTS, CPU) for the smart-home setup (`custom.profiles.homeassistant`).
+`rk1a` specifically — runs Home Assistant plus a local Wyoming voice pipeline (faster-whisper STT + piper TTS, CPU) for the smart-home setup (`custom.profiles.homeassistant`).
 
 **Gateway**:
 The `litellm` proxy on `kelpy` that presents remote (cloud) models under stable backend names (e.g. `qwen3-coder`, `deepseek-flash`). It no longer fronts a local model — the RK1 local LLM was retired (ADR-0027).
@@ -214,7 +214,7 @@ The build-time `/etc/hosts` entry (via `networking.hosts`) that maps a node's **
 _Avoid_: `file_sd` (considered and rejected — a runtime generator buys nothing here), DNS resolution (the whole point is to avoid the kelpy-hosted DNS plane).
 
 **Uptime watcher** (or **watcher**):
-The off-host process that probes the fleet's services over the network and alerts when one stops answering — Gatus on the always-on voice node `rk1b`, deliberately *not* on `kelpy`, so it can still observe `kelpy` itself failing. Distinct from the **monitoring stack**, which only collects.
+The off-host process that probes the fleet's services over the network and alerts when one stops answering — Gatus on the always-on media + monitoring node `rk1b`, deliberately *not* on `kelpy`, so it can still observe `kelpy` itself failing. Distinct from the **monitoring stack**, which only collects.
 _Avoid_: monitor, uptime robot.
 
 **Reachability probe**:

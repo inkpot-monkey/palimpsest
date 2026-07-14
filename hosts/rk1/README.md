@@ -6,13 +6,14 @@ profiles they enable (set in `../default.nix`).
 
 > **Role note (ADR-0027).** These nodes used to serve a local LLM on CPU via
 > `llama.cpp`. That stack was **retired** — the ~15 GB GGUF and its ~20 GB of pinned
-> RAM are gone. `rk1b` is the **media + monitoring** node (Navidrome — the friends'
-> shared music platform, with its library + DB on the NVMe `/var/cache` — plus Home
-> Assistant / Wyoming voice, the monitoring server, and the fleet's aarch64 remote
-> builder, all on its NVMe); `rk1a` is freed of the LLM and earmarked to take over
-> voice. `openclaw`, the
-> LLM's sole consumer, is disabled and can return later pointed at a funded cloud
-> model. Cloud models remain available fleet-wide through kelpy's LiteLLM gateway.
+> RAM are gone. `rk1a` is the **voice** node: Home Assistant + local Wyoming voice
+> (STT/TTS), moved off `rk1b` with fresh state (it was a PoC). Voice needs no disk, so
+> it fits `rk1a`'s 29 GB eMMC without an NVMe. `rk1b` is the **media + monitoring**
+> node: Navidrome — the friends' shared music platform, with its library + DB on the
+> NVMe `/var/cache` — plus the monitoring server and the fleet's aarch64 remote
+> builder, all on its NVMe. `openclaw`, the LLM's sole consumer, is disabled and can
+> return later pointed at a funded cloud model. Cloud models remain available
+> fleet-wide through kelpy's LiteLLM gateway.
 
 ## Quick Specs
 

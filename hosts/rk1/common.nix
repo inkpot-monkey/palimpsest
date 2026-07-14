@@ -15,7 +15,8 @@
     # RK1-specific local module (not a shared profile — only these nodes use the NVMe cache).
     ./nvme.nix # optional NVMe model-cache storage (inert until custom.rk1.nvme.enable = true)
     # Home Assistant + Wyoming voice is now the shared `homeassistant` profile (in the
-    # bundle below); rk1b enables it via custom.profiles.homeassistant in hosts/default.nix.
+    # bundle below); rk1a (the voice node) enables it via custom.profiles.homeassistant
+    # in hosts/default.nix.
 
     # The same kitchen-sink bundle every other host uses. Features stay OFF unless toggled
     # in `custom.profiles` below; disabled profiles are mkIf-gated no-ops, so importing the

@@ -123,9 +123,18 @@ in
         {
           networking.hostName = "rk1a";
           custom.profiles.monitoring-client.enable = true;
-          # The local llama.cpp LLM stack was retired (ADR-0027): the ~15 GB GGUF and its
-          # ~20 GB of pinned RAM are gone, freeing the node. rk1a is earmarked as the voice
-          # node (HA + Wyoming moved off rk1b) — that migration lands separately.
+
+          # rk1a is the voice node (ADR-0027). The local llama.cpp LLM stack was retired
+          # (its ~15 GB GGUF and ~20 GB of pinned RAM are gone), freeing the node to take
+          # over Home Assistant + local Wyoming voice (STT/TTS) — moved here off rk1b with
+          # fresh state (it was a PoC). The wake word runs on the phone. See
+          # modules/nixos/profiles/homeassistant.nix. The real-time STT is the small
+          # base-int8 faster-whisper; voice latency isn't critical so it's fine on CPU.
+          # Voice is light on disk (no GGUF), so it fits rk1a's 29 GB eMMC without an NVMe.
+          # (Heavyweight WhisperX batch transcription lives on stargazer now — its Zen 5 CPU
+          # is ~8-10x faster than the A76s for large-v3, so an hour of audio takes ~15 min
+          # vs ~2h.)
+          custom.profiles.homeassistant.enable = true;
         }
       ];
     };
@@ -137,14 +146,11 @@ in
         (grant "inkpotmonkey" { workstation.enable = true; })
         ({ config, ... }: {
           networking.hostName = "rk1b";
-          # rk1b is the voice node. The local llama.cpp LLM stack is retired fleet-wide
-          # (ADR-0027) — the cloud `qwen3-coder` (DeepInfra) via kelpy's LiteLLM is what
-          # remains. Home Assistant + local Wyoming voice (STT/TTS); the wake word runs on the phone.
-          # See modules/nixos/profiles/homeassistant.nix. The real-time STT here is the small
-          # base-int8 faster-whisper; voice latency isn't critical so it's fine on CPU.
-          # (Heavyweight WhisperX batch transcription lives on stargazer now — its Zen 5 CPU is
-          # ~8-10x faster than the A76s for large-v3, so an hour of audio takes ~15 min vs ~2h.)
-          custom.profiles.homeassistant.enable = true;
+          # rk1b is the media + monitoring node (ADR-0027). The local llama.cpp LLM stack is
+          # retired fleet-wide — the cloud `qwen3-coder` (DeepInfra) via kelpy's LiteLLM is
+          # what remains. Home Assistant + Wyoming voice moved off this node to rk1a (voice
+          # needs no disk; media does, and the NVMe is here). rk1b keeps its `tailscale` block
+          # (shared common.nix) — the Vector monitoring receiver still needs the tailnet.
 
           # NVMe (Samsung PM981, 512G, fitted Jun 2026): /nix on the `nixstore` partition (128G)
           # so the store has room for build offload (this node is the fleet's aarch64 remote

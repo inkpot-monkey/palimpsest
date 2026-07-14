@@ -71,7 +71,7 @@ system. See the automated variant below.
 
 Extends the manual runtime-switch above — instead of picking "couch"/"desk" by hand, detect
 which listening zone the phone is in and load the matching CamillaDSP profile automatically.
-All FOSS, and it slots onto existing fleet infra (rk1b already runs Home Assistant).
+All FOSS, and it slots onto existing fleet infra (rk1a already runs Home Assistant).
 
 **Mechanism:** phone presence → Home Assistant → CamillaDSP websocket (`SetConfigName` /
 reload). Stand up [ESPresense](https://espresense.com/) nodes (ESP32, a few € each) as HA

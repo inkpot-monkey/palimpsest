@@ -72,7 +72,7 @@ in
             # Most services are co-located with Caddy (proxy to loopback). A service may
             # instead run on another node and set `origin`, in which case Caddy proxies
             # to that node over tailscale by MagicDNS name (resolved live, not a pinned IP;
-            # e.g. Home Assistant on rk1b). DNS still points at this (edge) host, so the
+            # e.g. Home Assistant on rk1a). DNS still points at this (edge) host, so the
             # service stays tailnet-only behind internal_only.
             upstream = if svc ? origin then "${svc.origin}.${settings.tailnet}" else "127.0.0.1";
           in
