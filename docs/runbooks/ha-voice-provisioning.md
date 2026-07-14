@@ -61,11 +61,42 @@ The STT/TTS servers can be exercised directly (piper -> whisper round-trip); see
 the scratch `wyoming_e2e.py` recipe used during the rk1a migration (#42), or just
 talk to Assist from the HA companion app once the pipeline is wired.
 
-## Optional: run it declaratively as a post-deploy oneshot
+## Declarative path (default on rk1a): the post-start oneshot
 
-To make a from-scratch rk1a come up voice-ready with zero touch, wire the script
-as a systemd oneshot after `home-assistant.service`, feeding it a token (or owner
-creds) from sops and pointing at loopback. It is idempotent, so running on every
-deploy is a no-op once wired, and a failure shows up as a red unit (hook it into
-`custom.profiles.monitoring-unit-state` for an alert). Not enabled yet — this
-runbook is the manual path.
+`custom.profiles.homeassistant.provision.enable = true` (set on rk1a) installs
+`home-assistant-voice-provision.service` — a oneshot that runs after HA + the
+Wyoming servers, waits for HA's API, then runs this script against loopback. It
+is idempotent, so it is a no-op once wired; a failure surfaces as a red unit
+(hook it into `custom.profiles.monitoring-unit-state` for an alert). The owner
+account (`admin` by default, `provision.ownerUsername`) is created on the first
+run from a sops secret.
+
+### The secret
+
+The service needs `ha_owner_password`. It lives in a **new sops file in the
+secrets repo**: `secrets/profiles/homeassistant.yaml`, keyed to `admin` + `rk1a`
+(the creation rule is already added to `secrets/.sops.yaml`).
+
+```bash
+# In the secrets repo working copy (where the admin age key lives):
+sops secrets/profiles/homeassistant.yaml     # add:  ha_owner_password: <password>
+git -C secrets add profiles/homeassistant.yaml .sops.yaml
+git -C secrets commit -m "feat(ha): owner password for voice provisioning"
+git -C secrets push
+# Back in the nixos repo, pull the new secret into the flake input, then deploy:
+nix flake update secrets
+```
+
+Because the owner username is changing from the migration-era `inkpotmonkey` to
+`admin`, the account must be re-created: wipe HA's state so the oneshot onboards
+fresh (state is otherwise reproduced by this script, so nothing of value is lost):
+
+```bash
+ssh rk1a 'sudo systemctl stop home-assistant home-assistant-voice-provision \
+  && sudo find /var/lib/hass -mindepth 1 -delete'
+# deploy rk1a; on start the oneshot onboards `admin` and re-wires the pipeline.
+ssh rk1a 'systemctl is-active home-assistant-voice-provision'   # -> active (exited)
+```
+
+After a *deliberate* state wipe later, re-run with
+`systemctl start home-assistant-voice-provision`.
