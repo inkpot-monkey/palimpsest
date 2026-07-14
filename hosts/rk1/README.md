@@ -10,8 +10,10 @@ profiles they enable (set in `../default.nix`).
 > (STT/TTS), moved off `rk1b` with fresh state (it was a PoC). Voice needs no disk, so
 > it fits `rk1a`'s 29 GB eMMC without an NVMe. `rk1b` is the **media + monitoring**
 > node: Navidrome — the friends' shared music platform, with its library + DB on the
-> NVMe `/var/cache` — plus the monitoring server and the fleet's aarch64 remote
-> builder, all on its NVMe. `openclaw`, the LLM's sole consumer, is disabled and can
+> NVMe `/var/cache` and a **Beets ingest pipeline** (drop files in `/var/cache/music-inbox`
+> → fingerprint/tag/file into the library, uncertain matches quarantined to
+> `/var/cache/music-review`; see `docs/runbooks/beets-ingest.md`) — plus the monitoring
+> server and the fleet's aarch64 remote builder, all on its NVMe. `openclaw`, the LLM's sole consumer, is disabled and can
 > return later pointed at a funded cloud model. Cloud models remain available
 > fleet-wide through kelpy's LiteLLM gateway.
 
