@@ -52,11 +52,17 @@ let
   #   fetchart.auto     — pull cover art for matched albums.
   # NB: `quiet` is deliberately NOT set here — the automated importer passes `-q` on the CLI, so
   # the config stays interactive and a manual `beet import` (quarantine sorting) actually prompts.
+  #
+  # `musicbrainz` MUST be in the plugins list: in beets 2.x MusicBrainz is a metadata-source
+  # PLUGIN, not core. beets' built-in default config enables it implicitly, but the moment we set
+  # an explicit `plugins:` line we override that default — omitting it here means beets finds ZERO
+  # match candidates and quarantines every single import. (Verified on rk1b: without it, 0
+  # candidates; with it, the tagged test track matched at distance 0.07.)
   beetsConfig = ''
     directory: ${library}
     library: ${stateDir}/library.db
 
-    plugins: chroma fetchart
+    plugins: musicbrainz chroma fetchart
 
     import:
       move: yes
