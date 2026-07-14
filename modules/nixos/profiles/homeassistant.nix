@@ -144,8 +144,22 @@ in
       voice = "en_US-lessac-medium";
     };
 
+    # Persist HA state, and declare its owner. On a fresh host, impermanence creates
+    # the persistent source dir before home-assistant.service first runs; the plain
+    # string form creates it root:root, which then masks systemd's StateDirectory
+    # chown (the source is bind-mounted over /var/lib/hass), so HA's pre-start can't
+    # write configuration.yaml and the unit crash-loops on "Permission denied". Giving
+    # the entry an explicit user/group makes the dir hass-owned at creation, so a
+    # from-scratch rk1a comes up without a manual chown. See [[kelpy-uid-map-drift]].
     environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
-      directories = [ "/var/lib/hass" ];
+      directories = [
+        {
+          directory = "/var/lib/hass";
+          user = "hass";
+          group = "hass";
+          mode = "0700";
+        }
+      ];
     };
 
     # Expose Home Assistant only on the tailnet, never the public LAN. The phone reaches it
