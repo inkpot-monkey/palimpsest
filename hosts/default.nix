@@ -174,6 +174,14 @@ in
           # and the `music` entry in parts/settings.nix.
           custom.profiles.navidrome.enable = true;
 
+          # Beets ingest pipeline (ADR-0027, #43): a systemd path unit watches
+          # /var/cache/music-inbox and fires a throttled `beet import` that fingerprints
+          # (Chromaprint/AcoustID), tags from MusicBrainz, fetches art, de-dupes, and files
+          # confident matches into the /var/cache/music library (Navidrome's watcher scans
+          # them in); uncertain ones quarantine to /var/cache/music-review. Runs as the
+          # navidrome user so filed tracks are library-owned. See modules/nixos/profiles/beets.nix.
+          custom.profiles.beets.enable = true;
+
           # Off-host uptime watcher (Gatus): rk1b is always-on and not kelpy, so it
           # can observe kelpy failing. Probes the fleet + alerts to #infra-alerts.
           # See ADR-0019 / modules/nixos/profiles/monitoring/watcher.nix.

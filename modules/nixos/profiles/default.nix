@@ -40,6 +40,7 @@
     claude-relay = ./claude-relay.nix;
     homeassistant = ./homeassistant.nix;
     navidrome = ./navidrome.nix;
+    beets = ./beets.nix;
     backup = ./backup.nix;
     blocky = ./blocky.nix;
     # Flat keys so each matches its enable option 1:1 (custom.profiles.<key>), the same
