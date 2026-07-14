@@ -81,17 +81,19 @@ let
       #   edge = "kelpy";
       #   port = 3010;
       # };
-      # Home Assistant. It RUNS on rk1b, but is fronted by kelpy's Caddy (TLS via
-      # Cloudflare DNS-01 + the internal_only tailnet guard). `edge` is the edge
-      # (kelpy: where DNS points and Caddy runs); `origin` is the upstream Caddy
-      # reverse-proxies to over tailscale. Reachable tailnet-only at home.<domain>.
+      # Home Assistant. It RUNS on rk1a (the voice node, ADR-0027), but is fronted by
+      # kelpy's Caddy (TLS via Cloudflare DNS-01 + the internal_only tailnet guard).
+      # `edge` is the edge (kelpy: where DNS points and Caddy runs); `origin` is the
+      # upstream Caddy reverse-proxies to over tailscale. Reachable tailnet-only at
+      # home.<domain>. Flip `origin` only after HA is verified up on the new node, so
+      # Caddy never proxies to a dead upstream (ADR-0027 migration ordering).
       home = {
         edge = "kelpy";
         port = 8123;
-        origin = "rk1b";
+        origin = "rk1a";
       };
-      # Navidrome — the friends' shared music platform (ADR-0027). Same shape as
-      # Home Assistant: it RUNS on rk1b (media node, library on the NVMe /var/cache),
+      # Navidrome — the friends' shared music platform (ADR-0027). Same edge/origin
+      # split as Home Assistant: it RUNS on rk1b (media node, library on the NVMe /var/cache),
       # fronted by kelpy's Caddy at music.<domain> with TLS + the internal_only tailnet
       # guard. The vhost subdomain is this attribute name, so it's `music` (not
       # `navidrome`); the profile that runs it is custom.profiles.navidrome.
@@ -104,7 +106,7 @@ let
   };
 
   # Collision check keys on the host that actually LISTENS on the port — the
-  # origin when the service runs off-edge (e.g. Home Assistant on rk1b),
+  # origin when the service runs off-edge (e.g. Home Assistant on rk1a),
   # otherwise the edge it is co-located with.
   listenerHost = svc: svc.origin or svc.edge;
   allServiceEndpoints =
