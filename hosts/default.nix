@@ -173,6 +173,9 @@ in
           # navidrome_admin_password sops secret. See modules/nixos/profiles/navidrome.nix
           # and the `music` entry in parts/settings.nix.
           custom.profiles.navidrome.enable = true;
+          # Provision friend/listener accounts declaratively from the sops `users` map
+          # (profiles/navidrome.yaml) via Navidrome's native API — see navidrome.nix.
+          custom.profiles.navidrome.provisionUsers = true;
 
           # Beets ingest pipeline (ADR-0027, #43): a systemd path unit watches
           # /var/cache/music-inbox and fires a throttled `beet import` that fingerprints

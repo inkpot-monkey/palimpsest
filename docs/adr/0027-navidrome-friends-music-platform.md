@@ -40,9 +40,13 @@ lands where the disk is.**
   categorically smaller surface than public Funkwhale would have been.
 - **Admin** — declarative via sops-nix: `ND_DEVAUTOCREATEADMINPASSWORD` (through
   the module's `environmentFile`) bootstraps the `admin` user on first run.
-  Friends are created on demand in the admin UI (Navidrome has no self-signup, by
-  design; hand-provisioning is *better* onboarding for non-technical people than a
-  signup flow).
+  Friend accounts are provisioned declaratively too (`custom.profiles.navidrome.provisionUsers`):
+  a post-start oneshot ensures an account exists for every entry in the sops `users` map, driven
+  through Navidrome's native REST API (it has no declarative user support and its Subsonic
+  `createUser` returns 501). Adding a friend is a secret edit + redeploy; accounts still survive
+  a DB wipe. They can equally be hand-created in the admin UI. *(This supersedes the original "friends
+  created on demand in the admin UI" stance — hand-creation stays available, but the sops-map
+  path makes the roster reproducible and survives a from-scratch rebuild.)*
 - **Ingest** — files land in `/var/cache/music-inbox`; a systemd path unit fires a
   `nice`/`ionice`-throttled `beet import` that fingerprints (Chromaprint/AcoustID),
   tags from MusicBrainz, fetches art, de-dupes, and files into `/var/cache/music`;
