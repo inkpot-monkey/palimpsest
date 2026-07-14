@@ -59,8 +59,8 @@ tail -n 50 /var/cache/beets/import.log     # beets' own per-item decisions
 ## Sorting the quarantine
 
 Items in `/var/cache/music-review` were not confidently matched (bad/missing tags **and** no
-usable fingerprint, or a duplicate). To retag one interactively and re-file it, run an
-**interactive** import as `navidrome`, pointing at the same config:
+usable fingerprint, a duplicate, or a **lone track** — see below). To retag one interactively
+and re-file it, run an **interactive** import as `navidrome`, pointing at the same config:
 
 ```bash
 sudo -u navidrome env HOME=/var/cache/beets \
@@ -70,6 +70,22 @@ sudo -u navidrome env HOME=/var/cache/beets \
 The rendered config does **not** set `quiet` (the automated pipeline passes `-q` on the CLI
 instead), so this manual run prompts you to pick a match by hand. Matched items move into the
 library; Navidrome scans them in as usual.
+
+**Lone single tracks.** The automated pipeline matches by *album*, so a single track dropped on
+its own is scored against the whole release it belongs to and almost always lands in review
+(even when its AcoustID fingerprint identifies it perfectly — the identification is right, but
+one track can't satisfy an N-track album match). Re-import a single track in **singleton** mode
+with `-s`, which matches the recording instead of the album:
+
+```bash
+sudo -u navidrome env HOME=/var/cache/beets \
+  beet -c /run/secrets/rendered/beets-config import -s /var/cache/music-review/<item>
+```
+
+One caveat for a track with **no tags at all**: beets falls back to a metadata text search that
+is empty and errors out, so a fully-tagless singleton may still not match — add even a rough
+`title`/`artist` tag first (or drop such tracks as part of their album folder, where the
+combined fingerprints match the whole release and it auto-files).
 
 ## Seeding / reconciling the beets DB with an existing library
 
