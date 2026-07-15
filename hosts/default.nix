@@ -62,6 +62,14 @@ in
           virtualization.enable = true;
           signing.enable = true;
         })
+        # Photo-sync client: the home git-annex assistant backs inkpotmonkey's
+        # ~/Pictures up to kelpy's `pictures` repo over SSH (git-annex@kelpy:~/pictures,
+        # server in hosts/kelpy/git-annex.nix). Opt-in per host; the client decrypts
+        # git-annex.yaml through the user's own home sops (the admin key), so no host
+        # re-key is needed on this workstation.
+        {
+          home-manager.users.inkpotmonkey.custom.home.profiles.git-annex.enable = true;
+        }
       ];
     };
 
