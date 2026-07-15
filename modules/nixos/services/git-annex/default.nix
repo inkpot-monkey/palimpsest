@@ -259,7 +259,11 @@ in
             echo "Git Annex repository ${name} appears damaged or missing. Scheduling repair..."
             # Check if the service unit exists (is loaded)
             if ${pkgs.systemd}/bin/systemctl list-unit-files "git-annex-init-${name}.service" | grep -q "git-annex-init-${name}.service"; then
-              ${pkgs.systemd}/bin/systemctl restart git-annex-init-${name}.service
+              # On a first-time switch the unit file is present in the new generation
+              # but not yet loaded, so `restart` fails with "Unit not found". That is
+              # harmless — the init service is wantedBy multi-user.target and will run
+              # on its own — so never let it fail the activation script.
+              ${pkgs.systemd}/bin/systemctl restart git-annex-init-${name}.service || true
               ${lib.optionalString repo.assistant ''
                 # Ensure assistant is started after repair (since Conflicts stopped it)
                 ${pkgs.systemd}/bin/systemctl start git-annex-assistant-${name}.service || true
@@ -297,11 +301,20 @@ in
             # Wait for SSH key file if configured (e.g. sops secret)
             unitConfig.ConditionPathExists = lib.optional (cfg.sshKeyFile != null) cfg.sshKeyFile;
 
-            # Prevent race conditions with assistant
-            # We use ExecStartPre to stop the assistant instead of Conflicts,
-            # because Conflicts cancels the assistant's pending start job during boot.
-            # We only stop if active to avoid cancelling the pending start job during boot.
-            serviceConfig.ExecStartPre = "+${pkgs.bash}/bin/sh -c '${pkgs.systemd}/bin/systemctl is-active --quiet git-annex-assistant-${name}.service && ${pkgs.systemd}/bin/systemctl stop git-annex-assistant-${name}.service || true'";
+            serviceConfig.ExecStartPre = [
+              # Create the repository directory as root and hand it to the repo user.
+              # The parent may be a persistence bind-mount created root:root (impermanence
+              # hosts), so the git-annex user cannot mkdir it itself, and a plain tmpfiles
+              # rule races the mount on a first switch. `install -d` (run as root via the
+              # '+' prefix) makes this deterministic and host-agnostic.
+              "+${pkgs.coreutils}/bin/install -d -o ${repo.user} -g ${repo.ownerGroup} -m 0770 ${repo.path}"
+
+              # Prevent race conditions with assistant. We use ExecStartPre to stop the
+              # assistant instead of Conflicts, because Conflicts cancels the assistant's
+              # pending start job during boot. We only stop if active to avoid cancelling
+              # the pending start job during boot.
+              "+${pkgs.bash}/bin/sh -c '${pkgs.systemd}/bin/systemctl is-active --quiet git-annex-assistant-${name}.service && ${pkgs.systemd}/bin/systemctl stop git-annex-assistant-${name}.service || true'"
+            ];
             path = with pkgs; [
               coreutils
               git
