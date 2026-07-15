@@ -12,6 +12,8 @@
     inputs.vpsFree.nixosModules.containerUnstable
 
     self.nixosProfiles.bundle
+
+    ./git-annex.nix
   ];
 
   custom.profiles = {

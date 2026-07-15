@@ -6,6 +6,7 @@
 }:
 let
   cfg = config.services.git-annex;
+  gaLib = import ../../../shared/git-annex/lib.nix { inherit lib; };
 in
 {
   options.services.git-annex = {
@@ -35,11 +36,6 @@ in
               type = lib.types.str;
               description = "Description for git annex init.";
             };
-            uuid = lib.mkOption {
-              type = lib.types.nullOr lib.types.str;
-              default = null;
-              description = "The UUID of this repository. Useful for referencing it from other repositories.";
-            };
             gateway = lib.mkOption {
               type = lib.types.bool;
               default = false;
@@ -49,6 +45,11 @@ in
               type = lib.types.nullOr lib.types.str;
               default = null;
               description = "Name of the cluster to initialize if gateway is true.";
+            };
+            unlock = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = "Whether to unlock the repository (git annex adjust --unlock) so annexed files are real, editable files in the working tree instead of symlinks into .git/annex/objects.";
             };
             assistant = lib.mkOption {
               type = lib.types.bool;
@@ -92,7 +93,29 @@ in
                     clusterNode = lib.mkOption {
                       type = lib.types.nullOr lib.types.str;
                       default = null;
-                      description = "If set, configures remote.<name>.annex-cluster-node to this value.";
+                      description = "If set, configures remote.<name>.annex-cluster-node to this value (the cluster name this remote is a node of).";
+                    };
+                    proxy = lib.mkOption {
+                      type = lib.types.bool;
+                      default = false;
+                      description = "Configure this remote as a git-annex proxy (sets remote.<name>.annex-proxy true and runs 'git annex updateproxy'). Lets clients reach content through this gateway.";
+                    };
+                    cost = lib.mkOption {
+                      type = lib.types.nullOr lib.types.int;
+                      default = null;
+                      description = "Sets remote.<name>.annex-cost; lower is preferred when the gateway chooses a node to proxy from.";
+                    };
+                    trust = lib.mkOption {
+                      type = lib.types.nullOr (
+                        lib.types.enum [
+                          "trusted"
+                          "semitrusted"
+                          "untrusted"
+                          "dead"
+                        ]
+                      );
+                      default = null;
+                      description = "Trust level to assign to this remote (git annex trust/semitrust/untrust/dead).";
                     };
                     wanted = lib.mkOption {
                       type = lib.types.nullOr lib.types.str;
@@ -187,6 +210,21 @@ in
       chown git-annex:git-annex /var/lib/git-annex/.ssh
       chmod 700 /var/lib/git-annex/.ssh
 
+      # Managed SSH client config so git-annex's own ssh invocations (git fetch,
+      # and git-annex P2P / rsync-over-ssh transfers) work non-interactively
+      # against declared remotes. accept-new is trust-on-first-use: new host keys
+      # are accepted automatically, but a changed key for a known host is still
+      # rejected. NixOS does not Include /etc/ssh/ssh_config.d/*, so the config
+      # must live in the git-annex user's own ~/.ssh/config.
+      cp ${pkgs.writeText "git-annex-ssh-config" ''
+        Host *
+          StrictHostKeyChecking accept-new
+          ServerAliveInterval 15
+          ServerAliveCountMax 3
+      ''} /var/lib/git-annex/.ssh/config
+      chown git-annex:git-annex /var/lib/git-annex/.ssh/config
+      chmod 600 /var/lib/git-annex/.ssh/config
+
       ${
         if cfg.sshKeyFile != null then
           ''
@@ -209,19 +247,6 @@ in
             fi
           ''
       }
-    '';
-
-    system.activationScripts.git-annex-gpg-key = lib.mkIf (cfg.gpgKeyFile != null) ''
-      mkdir -p /var/lib/git-annex/.gnupg
-      chown git-annex:git-annex /var/lib/git-annex/.gnupg
-      chmod 700 /var/lib/git-annex/.gnupg
-
-      # Import the key if it exists
-      if [ -f "${cfg.gpgKeyFile}" ]; then
-        ${pkgs.sudo}/bin/sudo -u git-annex ${pkgs.gnupg}/bin/gpg --batch --import ${cfg.gpgKeyFile} || true
-      else
-        echo "Warning: git-annex gpgKeyFile configured but not found at ${cfg.gpgKeyFile}"
-      fi
     '';
 
     system.activationScripts.git-annex-repair = ''
@@ -257,7 +282,11 @@ in
           name: repo:
           lib.nameValuePair "git-annex-init-${name}" {
             description = "Initialize git-annex repository ${name}";
-            after = [ "network.target" ];
+            after = [
+              "network.target"
+            ]
+            ++ lib.optional (cfg.gpgKeyFile != null) "git-annex-gpg-import.service";
+            wants = lib.optional (cfg.gpgKeyFile != null) "git-annex-gpg-import.service";
             wantedBy = [ "multi-user.target" ];
             serviceConfig = {
               User = repo.user;
@@ -302,6 +331,8 @@ in
                 git -C "${repo.path}" commit --allow-empty -m "Initial commit"
               fi
 
+              ${gaLib.mkUnlock repo}
+
               ${lib.optionalString repo.gateway ''
                 git -C "${repo.path}" annex initcluster "${
                   if repo.clusterName != null then repo.clusterName else "mycluster"
@@ -325,9 +356,23 @@ in
                 ${lib.optionalString (remote.url != null) ''
                   if ! git -C "${repo.path}" remote | grep -q "^${remote.name}$"; then
                     git -C "${repo.path}" remote add "${remote.name}" "${remote.url}"
-                    # Removed || echo warning to ensure we fail if network/keys are wrong
-                    git -C "${repo.path}" fetch "${remote.name}"
-                    
+                    # Retry the fetch: at boot the remote host/repo may not be ready
+                    # yet (sshd still starting, peer's init service not finished).
+                    # We fail loudly only after exhausting the retries.
+                    fetched=false
+                    for _attempt in $(seq 1 30); do
+                      if git -C "${repo.path}" fetch "${remote.name}"; then
+                        fetched=true
+                        break
+                      fi
+                      echo "Fetch of remote ${remote.name} failed; retrying in 2s..."
+                      sleep 2
+                    done
+                    if [ "$fetched" != true ]; then
+                      echo "Error: could not fetch remote ${remote.name} after retries."
+                      exit 1
+                    fi
+
                     ${lib.optionalString (remote.expectedUUID != null) ''
                       # Verify UUID
                       if ACTUAL_UUID=$(git -C "${repo.path}" annex info "${remote.name}" 2>/dev/null | grep uuid | awk '{print $2}'); then
@@ -345,13 +390,19 @@ in
                   ${lib.optionalString (remote.clusterNode != null) ''
                     git -C "${repo.path}" config remote.${remote.name}.annex-cluster-node "${remote.clusterNode}"
                   ''}
+                  ${lib.optionalString remote.proxy ''
+                    git -C "${repo.path}" config remote.${remote.name}.annex-proxy true
+                  ''}
+                  ${lib.optionalString (remote.cost != null) ''
+                    git -C "${repo.path}" config remote.${remote.name}.annex-cost ${toString remote.cost}
+                  ''}
                 ''}
 
                 # Handle Special Remote (Content)
                 ${lib.optionalString (remote.type != "git") ''
                   # For hybrid remotes (where url is set), we must use a different name for the special remote
                   # to avoid conflict with the git remote. We append "-content".
-                  SPECIAL_REMOTE_NAME="${remote.name}${if remote.url != null then "-content" else ""}"
+                  SPECIAL_REMOTE_NAME="${remote.name}${gaLib.contentSuffix remote}"
 
                   # Check if the special remote is already initialized
                   if ! git -C "${repo.path}" annex info "$SPECIAL_REMOTE_NAME" | grep -q "type: ${remote.type}"; then
@@ -373,9 +424,7 @@ in
 
                 # Apply Remote Policy
                 ${lib.optionalString (remote.group != null || remote.wanted != null) ''
-                  TARGET_REMOTE_NAME="${remote.name}${
-                    if remote.type != "git" && remote.url != null then "-content" else ""
-                  }"
+                  TARGET_REMOTE_NAME="${remote.name}${gaLib.contentSuffix remote}"
 
                   # Ensure git-annex knows about the remote's UUID (only needed for git remotes)
                   ${lib.optionalString (remote.type == "git") ''
@@ -389,34 +438,40 @@ in
                     git -C "${repo.path}" annex wanted "$TARGET_REMOTE_NAME" "${remote.wanted}" || echo "Warning: Failed to set wanted for ${remote.name}"
                   ''}
                 ''}
+
+                # Apply Trust Level
+                ${lib.optionalString (remote.trust != null) ''
+                  TRUST_TARGET_NAME="${remote.name}${gaLib.contentSuffix remote}"
+                  # Ensure git-annex knows the remote's UUID before trusting it.
+                  ${lib.optionalString (remote.type == "git") ''
+                    git -C "${repo.path}" annex sync "$TRUST_TARGET_NAME" --no-content || true
+                  ''}
+                  git -C "${repo.path}" annex ${gaLib.trustCommand remote.trust} "$TRUST_TARGET_NAME" || echo "Warning: Failed to set trust for ${remote.name}"
+                ''}
               '') repo.remotes}
 
-              ${lib.optionalString (repo.gateway && (lib.any (r: r.clusterNode != null) repo.remotes)) ''
-                git -C "${repo.path}" annex updatecluster || echo "Warning: Failed to update cluster"
+              # Publish proxy configuration to the git-annex branch so clients can
+              # reach content through this gateway.
+              ${lib.optionalString (repo.gateway && lib.any (r: r.proxy) repo.remotes) ''
+                git -C "${repo.path}" annex updateproxy || echo "Warning: Failed to update proxy"
               ''}
 
-              ${lib.optionalString (repo.tags != [ ]) ''
-                # Create post-commit hook to auto-tag new files
-                mkdir -p "${repo.path}/.git/hooks"
-                cat > "${repo.path}/.git/hooks/post-commit" << 'EOF'
-                #!/bin/sh
-                # Auto-tag files committed by the assistant
-                # We use git diff to find changed files in the last commit
-                # and apply the tag.
+              # Publish cluster configuration to the git-annex branch.
+              ${lib.optionalString
+                (repo.gateway && (repo.clusterName != null || lib.any (r: r.clusterNode != null) repo.remotes))
+                ''
+                  git -C "${repo.path}" annex updatecluster || echo "Warning: Failed to update cluster"
+                ''
+              }
 
-                # Check if there are any changes in the last commit
-                if git rev-parse --verify HEAD >/dev/null 2>&1; then
-                    # Get list of added/modified files
-                    # We use -z for null-terminated output to handle spaces in filenames
-                    # and xargs -0 to pass them to git annex metadata
-                    git diff-tree -r --name-only --no-commit-id -z HEAD | \
-                      xargs -0 -r git annex metadata \
-                        ${lib.concatMapStringsSep " " (tag: "--tag=${tag}") repo.tags} \
-                        >/dev/null 2>&1
-                fi
-                EOF
-                chmod +x "${repo.path}/.git/hooks/post-commit"
-              ''}
+              # Note: updateproxy/updatecluster commit proxy.log/cluster.log to this
+              # gateway's local git-annex branch, which is all consumers need — a
+              # client learns the cluster by fetching the gateway's git-annex branch
+              # directly. We deliberately do NOT `annex sync` to the nodes here: the
+              # gateway and its nodes often have unrelated git histories, which makes
+              # a full sync noisy (and it is unnecessary for proxying to work).
+
+              ${gaLib.mkAutoTagHook repo}
             '';
           }
         ) cfg.repositories;
@@ -449,7 +504,36 @@ in
             }
           )
         ) cfg.repositories;
+
+        # Import the GPG key as the git-annex user in a proper service context.
+        # (Doing this in an activation script is unreliable: it can run before the
+        # user/home exist, and a failing `sudo -u git-annex` is silently ignored,
+        # leaving the secret key un-imported.)
+        gpgImportServices = lib.optionalAttrs (cfg.gpgKeyFile != null) {
+          git-annex-gpg-import = {
+            description = "Import git-annex GPG key";
+            after = [ "network.target" ];
+            wantedBy = [ "multi-user.target" ];
+            unitConfig.ConditionPathExists = cfg.gpgKeyFile;
+            environment.GNUPGHOME = "/var/lib/git-annex/.gnupg";
+            path = [
+              pkgs.coreutils
+              pkgs.gnupg
+            ];
+            serviceConfig = {
+              User = "git-annex";
+              Group = "git-annex";
+              Type = "oneshot";
+              RemainAfterExit = true;
+            };
+            script = ''
+              mkdir -p /var/lib/git-annex/.gnupg
+              chmod 700 /var/lib/git-annex/.gnupg
+              gpg --batch --import ${cfg.gpgKeyFile} || echo "Warning: git-annex gpg import failed"
+            '';
+          };
+        };
       in
-      initServices // assistantServices;
+      initServices // assistantServices // gpgImportServices;
   };
 }

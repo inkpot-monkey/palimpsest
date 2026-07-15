@@ -6,6 +6,7 @@
 }:
 let
   cfg = config.services.git-annex;
+  gaLib = import ../../shared/git-annex/lib.nix { inherit lib; };
 in
 {
   options.services.git-annex = {
@@ -93,6 +94,23 @@ in
                       default = false;
                       description = "Whether to configure this remote as a git-annex proxy.";
                     };
+                    cost = lib.mkOption {
+                      type = lib.types.nullOr lib.types.int;
+                      default = null;
+                      description = "Sets remote.<name>.annex-cost; lower is preferred.";
+                    };
+                    trust = lib.mkOption {
+                      type = lib.types.nullOr (
+                        lib.types.enum [
+                          "trusted"
+                          "semitrusted"
+                          "untrusted"
+                          "dead"
+                        ]
+                      );
+                      default = null;
+                      description = "Trust level to assign to this remote (git annex trust/semitrust/untrust/dead).";
+                    };
                     wanted = lib.mkOption {
                       type = lib.types.nullOr lib.types.str;
                       default = null;
@@ -123,6 +141,11 @@ in
               type = lib.types.nullOr lib.types.int;
               default = null;
               description = "Global numcopies setting to enforce.";
+            };
+            tags = lib.mkOption {
+              type = lib.types.listOf lib.types.str;
+              default = [ ];
+              description = "List of tags to automatically apply to new files (via a post-commit hook).";
             };
           };
         }
@@ -167,9 +190,6 @@ in
       programs.git = {
         enable = true;
       };
-
-      # Debugging aids (can be removed later or kept for troubleshooting)
-      home.file."git-annex-config".text = builtins.toJSON cfg;
     })
 
     # Service Generation
@@ -213,12 +233,7 @@ in
                   git -C "${repo.path}" commit --allow-empty -m "Initial commit"
                 fi
 
-                ${lib.optionalString repo.unlock ''
-                  # Check if already unlocked
-                  if ! git -C "${repo.path}" branch --show-current | grep -q "adjusted/master(unlocked)"; then
-                     git -C "${repo.path}" annex adjust --unlock
-                  fi
-                ''}
+                ${gaLib.mkUnlock repo}
 
                 ${lib.optionalString (repo.wanted != null) ''
                   git -C "${repo.path}" annex wanted . "${repo.wanted}"
@@ -237,10 +252,26 @@ in
                   ${lib.optionalString (remote.url != null) ''
                     if ! git -C "${repo.path}" remote | grep -q "^${remote.name}$"; then
                       git -C "${repo.path}" remote add "${remote.name}" "${remote.url}"
-                      
-                      # Fetch with timeout to avoid hangs
-                      timeout ${remote.fetchTimeout} git -C "${repo.path}" fetch "${remote.name}"
-                      
+
+                      # Retry the fetch: at boot the server (e.g. kelpy) may not
+                      # be reachable yet — its sshd may still be starting, the
+                      # network may be down, or its own init may be unfinished.
+                      # Each attempt is bounded by fetchTimeout to avoid hangs.
+                      # Fail loudly only after exhausting the retries.
+                      fetched=false
+                      for _attempt in $(seq 1 30); do
+                        if timeout ${remote.fetchTimeout} git -C "${repo.path}" fetch "${remote.name}"; then
+                          fetched=true
+                          break
+                        fi
+                        echo "Fetch of remote ${remote.name} failed; retrying in 2s..."
+                        sleep 2
+                      done
+                      if [ "$fetched" != true ]; then
+                        echo "Error: could not fetch remote ${remote.name} after retries."
+                        exit 1
+                      fi
+
                       ${lib.optionalString (remote.expectedUUID != null) ''
                         # Verify UUID
                         ACTUAL_UUID=$(git -C "${repo.path}" annex info "${remote.name}" | grep uuid | awk '{print $2}')
@@ -258,13 +289,16 @@ in
                     ${lib.optionalString remote.proxy ''
                       git -C "${repo.path}" config remote.${remote.name}.annex-proxy true
                     ''}
+                    ${lib.optionalString (remote.cost != null) ''
+                      git -C "${repo.path}" config remote.${remote.name}.annex-cost ${toString remote.cost}
+                    ''}
                   ''}
 
                   # Handle Special Remote (Content)
                   ${lib.optionalString (remote.type != "git") ''
                     # For hybrid remotes (where url is set), we must use a different name for the special remote
                     # to avoid conflict with the git remote. We append "-content".
-                    SPECIAL_REMOTE_NAME="${remote.name}${if remote.url != null then "-content" else ""}"
+                    SPECIAL_REMOTE_NAME="${remote.name}${gaLib.contentSuffix remote}"
 
                     # Check if the special remote is already initialized
                     if ! git -C "${repo.path}" annex info "$SPECIAL_REMOTE_NAME" | grep -q "type: ${remote.type}"; then
@@ -286,9 +320,7 @@ in
 
                   # Apply Remote Policy
                   ${lib.optionalString (remote.group != null || remote.wanted != null) ''
-                    TARGET_REMOTE_NAME="${remote.name}${
-                      if remote.type != "git" && remote.url != null then "-content" else ""
-                    }"
+                    TARGET_REMOTE_NAME="${remote.name}${gaLib.contentSuffix remote}"
 
                     ${lib.optionalString (remote.type == "git") ''
                       git -C "${repo.path}" annex sync "$TARGET_REMOTE_NAME" --no-content
@@ -301,7 +333,18 @@ in
                       git -C "${repo.path}" annex wanted "$TARGET_REMOTE_NAME" "${remote.wanted}"
                     ''}
                   ''}
+
+                  # Apply Trust Level
+                  ${lib.optionalString (remote.trust != null) ''
+                    TRUST_TARGET_NAME="${remote.name}${gaLib.contentSuffix remote}"
+                    ${lib.optionalString (remote.type == "git") ''
+                      git -C "${repo.path}" annex sync "$TRUST_TARGET_NAME" --no-content || true
+                    ''}
+                    git -C "${repo.path}" annex ${gaLib.trustCommand remote.trust} "$TRUST_TARGET_NAME" || true
+                  ''}
                 '') repo.remotes}
+
+                ${gaLib.mkAutoTagHook repo}
               '';
               unitFile = pkgs.writeText "git-annex-init-${name}.service" ''
                 [Unit]

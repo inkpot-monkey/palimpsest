@@ -1,17 +1,21 @@
 # Git Annex Home Manager Module Guide
 
-This guide documents the client-side `git-annex` configuration using the Home Manager module located in `modules/home-manager/git-annex.nix`.
+This guide documents the client-side `git-annex` configuration using the Home Manager module located in `modules/homeManager/git-annex/default.nix`.
 
 ## Overview
 
-The Home Manager module allows you to configure `git-annex` on your personal machines (e.g., laptops, workstations). It focuses on setting up repositories that sync with a central gateway.
+The Home Manager module allows you to configure `git-annex` on your personal machines (e.g., laptops, workstations). It focuses on setting up repositories that sync with a central gateway. Pure helper fragments shared with the NixOS service module live in `modules/shared/git-annex/lib.nix`.
+
+> [!NOTE]
+> Despite being a home-manager module, its options live under `services.git-annex` (not `programs.git-annex`), matching the NixOS service module.
 
 ## Key Features
 
 - **Declarative Repositories**: Define repositories and their remotes in your home configuration.
-- **Auto-Unlock**: Automatically unlock files for easy usage (no need to `git annex get`).
+- **Auto-Unlock**: Optionally keep files unlocked (real editable files, not symlinks) for easy usage.
+- **Per-remote Policy**: Set `cost` and `trust` per remote, plus per-repo `tags`.
 - **Assistant Service**: Runs the assistant as a user service to auto-sync changes.
-- **Proxy Configuration**: Easily configure clients to route traffic through a gateway to hidden backup nodes.
+- **Proxy Configuration**: Configure clients to route traffic through a gateway to hidden backup nodes.
 - **Failsafes**: Pin remote UUIDs to prevent connecting to the wrong server.
 
 ## Configuration Reference
@@ -19,14 +23,13 @@ The Home Manager module allows you to configure `git-annex` on your personal mac
 ### Enabling the Module
 
 ```nix
-imports = [ ./modules/home-manager/git-annex.nix ];
-programs.git-annex.enable = true;
-programs.git-annex.assistant.enable = true;
+services.git-annex.enable = true;
+services.git-annex.assistant.enable = true;
 ```
 
 ### Defining Repositories
 
-Repositories are defined under `programs.git-annex.repositories`.
+Repositories are defined under `services.git-annex.repositories`.
 
 #### Example: Client Syncing to Gateway
 
@@ -58,17 +61,24 @@ services.git-annex = {
 
 ### Options Detail
 
-#### Repository Options
+#### Module Options
 
+- `enable` (bool): Enable the module.
 - `sshKeyFile` (path, optional): Path to the private SSH key file to use for git-annex operations (e.g. from `sops-nix`).
 - `gpgKeyFile` (path, optional): Path to the GPG key file to import for git-annex.
+- `assistant.enable` (bool): Installs and enables the `git-annex-assistant` user service (`git-annex assistant --autostart`). Required for the daemon to actually run; per-repo `assistant = true` only registers the repo path in `~/.config/git-annex/autostart`.
+- `assistant.autostartPaths` (list of path): Extra repo paths to watch, written to the autostart file.
+
+#### Repository Options
+
 - `path` (path): Absolute path to the repository.
 - `description` (str): Description for `git annex init`.
-- `unlock` (bool): If true, runs `git annex adjust --unlock` after initialization. This makes files appear as normal files (not symlinks) and is recommended for general use.
-- `assistant` (bool): If true, adds this repository to the assistant's autostart list.
+- `unlock` (bool): If true, runs `git annex adjust --unlock` after initialization. Files then appear as normal editable files (not symlinks) and is recommended for general use.
+- `assistant` (bool): If true, adds this repository to the assistant's autostart list. (Also requires top-level `assistant.enable` for the service to run.)
 - `wanted` (str): Preferred content expression (e.g., 'standard').
 - `group` (str): Standard group to assign (e.g., 'backup').
 - `numcopies` (int): Global numcopies setting.
+- `tags` (list of str): Tags automatically applied to new files via a `post-commit` hook (fires on explicit `git commit`).
 - `remotes` (list): List of remotes to add.
 
 #### Remote Options
@@ -79,11 +89,13 @@ services.git-annex = {
 - `type` (str): Type of remote (default "git"). Use "rsync", "directory", "S3", etc. for special remotes.
 - `encryption` (str): Encryption setting for special remotes (e.g., "none", "shared", "pubkey").
 - `params` (attrs): Additional parameters for special remotes (e.g., `{ directory = "/path"; }`).
-- `proxy` (bool): If true, configures `remote.<name>.annex-proxy` to true. This is essential for cluster gateways.
 - `expectedUUID` (str): Fails activation if the remote's UUID doesn't match.
+- `clusterNode` (str): Configures `remote.<name>.annex-cluster-node`.
+- `proxy` (bool): If true, configures `remote.<name>.annex-proxy` to true. Essential for cluster gateways.
+- `cost` (int, optional): Sets `remote.<name>.annex-cost`; lower is preferred.
+- `trust` (enum, optional): Trust level — `trusted`, `semitrusted`, `untrusted`, `dead`.
 - `wanted` (str): Preferred content expression for the remote.
 - `group` (str): Standard group to assign to the remote.
-- `clusterNode` (str): Configures `remote.<name>.annex-cluster-node`.
 
 ## SSH Configuration & Automation
 
