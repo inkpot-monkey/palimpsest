@@ -9,6 +9,7 @@ _: {
         git-annex-encryption = pkgs.callPackage ./tests/git-annex-encryption.nix { };
         git-annex-keys = pkgs.callPackage ./tests/git-annex-keys.nix { };
         git-annex-init-hardening = pkgs.callPackage ./tests/git-annex-init-hardening.nix { };
+        git-annex-shared-group = pkgs.callPackage ./tests/git-annex-shared-group.nix { };
       };
     };
 }
