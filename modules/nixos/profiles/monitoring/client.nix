@@ -95,6 +95,13 @@ in
             unit = "{{ unit }}";
             level = "{{ level }}";
           };
+          # Vector 0.49+ refuses fully-dynamic label templates (no static prefix)
+          # unless this opt-out is set, to guard against label-cardinality/injection
+          # from untrusted event fields. Here every label comes from our own
+          # parse_journal transform (hostname, systemd unit, job, derived level) —
+          # trusted internal values — and a static prefix would corrupt the label
+          # values that dashboards/queries expect verbatim. So opt out explicitly.
+          dangerously_allow_unconfined_template_resolution = true;
         };
       };
     };
