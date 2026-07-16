@@ -37,6 +37,10 @@
           # here: the assistant re-ingests any in-place edit, and kelpy's repo
           # holds a full second copy so the pre-edit content is never lost.
           thin = true;
+          # Per-repo opt-in that puts ~/Pictures into ~/.config/git-annex/autostart
+          # so the assistant (assistant.enable below) actually watches it. Without
+          # this the assistant unit starts with nothing to watch and exits 1.
+          assistant = true;
           remotes = [
             {
               name = "kelpy";
