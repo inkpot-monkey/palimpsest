@@ -33,6 +33,10 @@
           path = "${config.home.homeDirectory}/Pictures";
           description = "inkpotmonkey-pictures";
           unlock = true;
+          # Hardlink worktree files to the annex objects (1x disk, not 2x). Safe
+          # here: the assistant re-ingests any in-place edit, and kelpy's repo
+          # holds a full second copy so the pre-edit content is never lost.
+          thin = true;
           remotes = [
             {
               name = "kelpy";

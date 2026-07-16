@@ -51,6 +51,11 @@ in
               default = false;
               description = "Whether to unlock the repository (git annex adjust --unlock) so annexed files are real, editable files in the working tree instead of symlinks into .git/annex/objects.";
             };
+            thin = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = "Set annex.thin (only meaningful with unlock): the working-tree file is a hardlink to the annex object (1x disk) instead of an independent copy (2x). Editing a thin file mutates the shared object until the next re-add re-hashes it.";
+            };
             assistant = lib.mkOption {
               type = lib.types.bool;
               default = false;

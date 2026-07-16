@@ -25,10 +25,15 @@
 
   # Put the repository on an adjusted branch so annexed files are real,
   # editable files in the working tree instead of symlinks into
-  # .git/annex/objects.
+  # .git/annex/objects. When `repo.thin` is set, the working-tree file is a
+  # hardlink to the annex object (1x disk) rather than an independent copy (2x);
+  # set annex.thin BEFORE adjusting so the adjusted worktree is materialised thin.
   mkUnlock =
     repo:
     lib.optionalString repo.unlock ''
+      ${lib.optionalString repo.thin ''
+        git -C "${repo.path}" config annex.thin true
+      ''}
       # Only adjust if not already on the unlocked branch.
       if ! git -C "${repo.path}" branch --show-current | grep -q "adjusted/master(unlocked)"; then
         git -C "${repo.path}" annex adjust --unlock

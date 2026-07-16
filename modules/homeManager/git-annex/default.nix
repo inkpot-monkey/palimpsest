@@ -41,6 +41,11 @@ in
               default = false;
               description = "Whether to unlock the repository (git annex adjust --unlock).";
             };
+            thin = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = "Set annex.thin (only meaningful with unlock): the working-tree file is a hardlink to the annex object (1x disk) instead of an independent copy (2x). Editing a thin file mutates the shared object until the next re-add re-hashes it.";
+            };
             assistant = lib.mkOption {
               type = lib.types.bool;
               default = false;
@@ -232,6 +237,23 @@ in
                 if ! git -C "${repo.path}" rev-parse HEAD >/dev/null 2>&1; then
                   git -C "${repo.path}" commit --allow-empty -m "Initial commit"
                 fi
+
+                ${lib.optionalString (cfg.sshKeyFile != null) ''
+                  # Persist the git-annex SSH key into the repo config so EVERY later
+                  # operation uses it — not just this init unit's transient
+                  # GIT_SSH_COMMAND env. The background assistant (git-annex assistant)
+                  # and any manual `git annex sync` run without that env, so they would
+                  # otherwise fall back to the user's default ~/.ssh/id_ed25519, which on
+                  # a workstation is a different key that the server's git-annex user does
+                  # not authorise (connection refused, no content transfer).
+                  #   - core.sshCommand covers git fetch/push (the assistant's sync).
+                  #   - annex.ssh-options covers git-annex's own P2P/content ssh.
+                  #   - IdentitiesOnly=yes stops the default key being offered first.
+                  git -C "${repo.path}" config core.sshCommand \
+                    "ssh -i ${cfg.sshKeyFile} -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o BatchMode=yes"
+                  git -C "${repo.path}" config annex.ssh-options \
+                    "-i ${cfg.sshKeyFile} -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+                ''}
 
                 ${gaLib.mkUnlock repo}
 
