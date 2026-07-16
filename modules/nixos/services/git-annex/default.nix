@@ -187,6 +187,39 @@ in
               default = "git-annex";
               description = "Group to own this repository.";
             };
+            mode = lib.mkOption {
+              type = lib.types.str;
+              default = "0770";
+              example = "2770";
+              description = ''
+                Permission mode for the repository directory.
+
+                Use a setgid mode (2770) when the repository is shared between the
+                repo `user` and a different SSH peer: git-annex-shell serves an
+                inbound sync as the `git-annex` user, whose primary group is
+                `git-annex`, so without setgid the files it writes are unreadable to
+                a repo whose `user` is someone else (e.g. navidrome). Setgid forces
+                every new file to inherit `ownerGroup` regardless of who wrote it.
+
+                This governs the worktree directory only. The `.git` internals need
+                `shared = true` as well.
+              '';
+            };
+            shared = lib.mkOption {
+              type = lib.types.bool;
+              default = false;
+              description = ''
+                Initialize the repository with `git init --shared=group` (setting
+                `core.sharedRepository=group`), making `.git` group-writable.
+
+                Required alongside a setgid `mode` when an SSH peer syncs into a
+                repository owned by a different `user`: setgid fixes group
+                *ownership*, but `.git/objects` is still created with the owner's
+                umask (0755), so an inbound push dies with "remote unpack failed:
+                unable to create temporary object directory". This only takes
+                effect at creation — an existing repo keeps its original modes.
+              '';
+            };
           };
         }
       );
@@ -287,7 +320,7 @@ in
     '';
 
     systemd.tmpfiles.rules = lib.mapAttrsToList (
-      _name: repo: "d '${repo.path}' 0770 ${repo.user} ${repo.ownerGroup} - -"
+      _name: repo: "d '${repo.path}' ${repo.mode} ${repo.user} ${repo.ownerGroup} - -"
     ) cfg.repositories;
 
     systemd.services =
@@ -317,7 +350,7 @@ in
               # hosts), so the git-annex user cannot mkdir it itself, and a plain tmpfiles
               # rule races the mount on a first switch. `install -d` (run as root via the
               # '+' prefix) makes this deterministic and host-agnostic.
-              "+${pkgs.coreutils}/bin/install -d -o ${repo.user} -g ${repo.ownerGroup} -m 0770 ${repo.path}"
+              "+${pkgs.coreutils}/bin/install -d -o ${repo.user} -g ${repo.ownerGroup} -m ${repo.mode} ${repo.path}"
 
               # Prevent race conditions with assistant. We use ExecStartPre to stop the
               # assistant instead of Conflicts, because Conflicts cancels the assistant's
@@ -341,12 +374,29 @@ in
               fi
 
               if [ ! -d "${repo.path}/.git" ]; then
-                git -C "${repo.path}" init
+                git -C "${repo.path}" init${lib.optionalString repo.shared " --shared=group"}
               fi
 
               if ! git -C "${repo.path}" annex info >/dev/null 2>&1; then
                 git -C "${repo.path}" config user.email "git-annex@localhost"
+                # user.name must be set explicitly: git otherwise derives the
+                # committer name from the account's GECOS field, and a repo whose
+                # `user` is a plain system user with no description (navidrome,
+                # for one) has an empty GECOS — making every commit below die with
+                # "fatal: empty ident name (for <git-annex@localhost>) not allowed".
+                # The git-annex user only avoids this by having a description set.
+                git -C "${repo.path}" config user.name "git-annex"
                 git -C "${repo.path}" config receive.denyCurrentBranch updateInstead
+                ${lib.optionalString repo.shared ''
+                  # `git init --shared=group` turns receive.denyNonFastForwards ON as a
+                  # side effect (git-config documents it as "set when initializing a
+                  # shared repository"). That blocks the force-push reconciliation these
+                  # repos depend on — each self-inits with its own unrelated initial
+                  # commit and the receiver reconciles via denyCurrentBranch=updateInstead
+                  # — so a peer's first push dies with "denying non-fast-forward". Sharing
+                  # the filesystem group is orthogonal to ref-update policy: turn it back off.
+                  git -C "${repo.path}" config receive.denyNonFastForwards false
+                ''}
                 git -C "${repo.path}" annex init "${repo.description}"
               fi
 
