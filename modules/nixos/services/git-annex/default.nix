@@ -74,6 +74,11 @@ in
                       default = null;
                       description = "URL of the git remote (for history syncing). Required for 'git' and hybrid remotes.";
                     };
+                    fetchTimeout = lib.mkOption {
+                      type = lib.types.str;
+                      default = "30s";
+                      description = "Timeout for each git fetch attempt at init (e.g. '30s', '5m').";
+                    };
                     type = lib.mkOption {
                       type = lib.types.str;
                       default = "git";
@@ -369,104 +374,7 @@ in
                 git -C "${repo.path}" annex numcopies ${toString repo.numcopies}
               ''}
 
-              ${lib.concatMapStringsSep "\n" (remote: ''
-                # Handle Git Remote (History)
-                ${lib.optionalString (remote.url != null) ''
-                  if ! git -C "${repo.path}" remote | grep -q "^${remote.name}$"; then
-                    git -C "${repo.path}" remote add "${remote.name}" "${remote.url}"
-                    # Retry the fetch: at boot the remote host/repo may not be ready
-                    # yet (sshd still starting, peer's init service not finished).
-                    # We fail loudly only after exhausting the retries.
-                    fetched=false
-                    for _attempt in $(seq 1 30); do
-                      if git -C "${repo.path}" fetch "${remote.name}"; then
-                        fetched=true
-                        break
-                      fi
-                      echo "Fetch of remote ${remote.name} failed; retrying in 2s..."
-                      sleep 2
-                    done
-                    if [ "$fetched" != true ]; then
-                      echo "Error: could not fetch remote ${remote.name} after retries."
-                      exit 1
-                    fi
-
-                    ${lib.optionalString (remote.expectedUUID != null) ''
-                      # Verify UUID
-                      if ACTUAL_UUID=$(git -C "${repo.path}" annex info "${remote.name}" 2>/dev/null | grep uuid | awk '{print $2}'); then
-                        if [ -n "$ACTUAL_UUID" ] && [ "$ACTUAL_UUID" != "${remote.expectedUUID}" ]; then
-                          echo "Error: UUID mismatch for remote ${remote.name}."
-                          echo "Expected: ${remote.expectedUUID}"
-                          echo "Actual:   $ACTUAL_UUID"
-                          exit 1
-                        fi
-                      else
-                        echo "Warning: Could not verify UUID for remote ${remote.name} (network issue?)"
-                      fi
-                    ''}
-                  fi
-                  ${lib.optionalString (remote.clusterNode != null) ''
-                    git -C "${repo.path}" config remote.${remote.name}.annex-cluster-node "${remote.clusterNode}"
-                  ''}
-                  ${lib.optionalString remote.proxy ''
-                    git -C "${repo.path}" config remote.${remote.name}.annex-proxy true
-                  ''}
-                  ${lib.optionalString (remote.cost != null) ''
-                    git -C "${repo.path}" config remote.${remote.name}.annex-cost ${toString remote.cost}
-                  ''}
-                ''}
-
-                # Handle Special Remote (Content)
-                ${lib.optionalString (remote.type != "git") ''
-                  # For hybrid remotes (where url is set), we must use a different name for the special remote
-                  # to avoid conflict with the git remote. We append "-content".
-                  SPECIAL_REMOTE_NAME="${remote.name}${gaLib.contentSuffix remote}"
-
-                  # Check if the special remote is already initialized
-                  if ! git -C "${repo.path}" annex info "$SPECIAL_REMOTE_NAME" | grep -q "type: ${remote.type}"; then
-                    echo "Initializing special remote $SPECIAL_REMOTE_NAME..."
-                    git -C "${repo.path}" annex initremote "$SPECIAL_REMOTE_NAME" \
-                      type="${remote.type}" \
-                      ${
-                        lib.concatStringsSep " " (
-                          lib.mapAttrsToList (k: v: "${k}=${v}") (
-                            (if remote.type == "rsync" && remote.url != null then { rsyncurl = remote.url; } else { })
-                            // (if remote.encryption != null then { inherit (remote) encryption; } else { })
-                            // remote.params
-                          )
-                        )
-                      } \
-                      autoenable=true
-                  fi
-                ''}
-
-                # Apply Remote Policy
-                ${lib.optionalString (remote.group != null || remote.wanted != null) ''
-                  TARGET_REMOTE_NAME="${remote.name}${gaLib.contentSuffix remote}"
-
-                  # Ensure git-annex knows about the remote's UUID (only needed for git remotes)
-                  ${lib.optionalString (remote.type == "git") ''
-                    git -C "${repo.path}" annex sync "$TARGET_REMOTE_NAME" --no-content
-                  ''}
-
-                  ${lib.optionalString (remote.group != null) ''
-                    git -C "${repo.path}" annex group "$TARGET_REMOTE_NAME" "${remote.group}" || echo "Warning: Failed to set group for ${remote.name}"
-                  ''}
-                  ${lib.optionalString (remote.wanted != null) ''
-                    git -C "${repo.path}" annex wanted "$TARGET_REMOTE_NAME" "${remote.wanted}" || echo "Warning: Failed to set wanted for ${remote.name}"
-                  ''}
-                ''}
-
-                # Apply Trust Level
-                ${lib.optionalString (remote.trust != null) ''
-                  TRUST_TARGET_NAME="${remote.name}${gaLib.contentSuffix remote}"
-                  # Ensure git-annex knows the remote's UUID before trusting it.
-                  ${lib.optionalString (remote.type == "git") ''
-                    git -C "${repo.path}" annex sync "$TRUST_TARGET_NAME" --no-content || true
-                  ''}
-                  git -C "${repo.path}" annex ${gaLib.trustCommand remote.trust} "$TRUST_TARGET_NAME" || echo "Warning: Failed to set trust for ${remote.name}"
-                ''}
-              '') repo.remotes}
+              ${gaLib.mkRemotesScript repo}
 
               # Publish proxy configuration to the git-annex branch so clients can
               # reach content through this gateway.
