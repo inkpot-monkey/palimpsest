@@ -204,7 +204,7 @@ in
       createHome = true;
       shell = pkgs.bash;
       openssh.authorizedKeys.keys = [
-        "<SCRUBBED_SSH_KEY>"
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKXnHps1Xb0Qbe9g+w9klMqU3yIKw0ZZ0wzjpwPrleQD git-annex@fleet"
       ];
     };
 
