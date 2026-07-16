@@ -84,7 +84,12 @@ in
           echo "# TYPE nixos_configuration_last_modified_seconds gauge" >> $prom_file
           echo "nixos_configuration_last_modified_seconds ${configLastModified}" >> $prom_file
         '';
-        wantedBy = [ "multi-user.target" ];
+        # Deliberately NOT wantedBy multi-user.target. The script does a full
+        # recursive `du -sb /nix/store`; ordered before multi-user.target (with
+        # an infinite start timeout) it stalls the whole boot transaction until
+        # the walk finishes — minutes on a large store. The timer below
+        # (OnBootSec=1m) already runs it shortly after boot, off the critical
+        # path, and switch-to-configuration restarts it on every deploy.
       };
 
       timers.nixos-metrics = {
