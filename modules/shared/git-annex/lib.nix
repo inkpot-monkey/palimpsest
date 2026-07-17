@@ -88,6 +88,18 @@ in
               echo "Warning: Could not verify UUID for remote ${remote.name} (network issue?)"
             fi
           ''}
+        else
+          # The remote already exists, so `remote add` above is skipped — but the URL in
+          # Nix may have changed since it was first added. `remote add` is a no-op on an
+          # existing remote, so without this an edited `url` silently never reaches the
+          # repo: git keeps using the original forever and the only symptom is git-annex
+          # quietly failing to connect ("Unable to parse git config from <remote>") while
+          # history still looks fine. Reconcile it every run — set-url is idempotent.
+          #
+          # Deliberately NOT re-running the retrying fetch here: that blocking fetch is a
+          # first-contact concern, and repeating it would make every deploy fail whenever
+          # a peer happens to be down.
+          git -C "${repo.path}" remote set-url "${remote.name}" "${remote.url}"
         fi
         ${lib.optionalString (remote.clusterNode != null) ''
           git -C "${repo.path}" config remote.${remote.name}.annex-cluster-node "${remote.clusterNode}"

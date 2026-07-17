@@ -93,6 +93,18 @@ pkgs.testers.nixosTest {
     assert "2" in client.succeed(f"{C} annex numcopies")
     client.succeed("test -x /var/lib/git-annex/client/.git/hooks/post-commit")
 
+    # --- a CHANGED `url` must reach an already-initialized repo. `git remote add` is
+    # a no-op once the remote exists, so without an explicit set-url the repo keeps the
+    # original URL forever and an edited `url` in Nix silently does nothing — the only
+    # symptom being git-annex failing to connect while history still looks healthy.
+    # Simulate the drift by pointing the remote elsewhere, then re-init. ---
+    client.succeed(f"{C} remote set-url origin ssh://stale.invalid/gone")
+    client.succeed("systemctl restart git-annex-init-client.service")
+    url = client.succeed(f"{C} remote get-url origin").strip()
+    assert url == "${gatewayUrl}", f"init must reconcile a drifted remote URL back to the declared one, got {url!r}"
+    # and it still must not have duplicated the remote while doing so
+    assert client.succeed(f"{C} remote").split() == ["origin"]
+
     # --- expectedUUID mismatch → init FAILS loudly (fetch succeeds, then the
     # UUID check rejects the remote and the script exits non-zero) ---
     client_baduuid.wait_until_fails(
