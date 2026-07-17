@@ -155,6 +155,9 @@ in
     rk1b = mkSystem {
       modules = [
         ./rk1/common.nix
+        # The music library as a git-annex repo, replicated to kelpy so slskd can share it
+        # (ADR-0027). rk1b-only: rk1a has no library. See the topology note in the file.
+        ./rk1/git-annex.nix
         self.users.inkpotmonkey.manifest
         (grant "inkpotmonkey" { workstation.enable = true; })
         ({ config, ... }: {

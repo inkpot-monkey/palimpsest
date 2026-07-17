@@ -21,6 +21,30 @@
       group = "backup";
       wanted = "standard";
     };
+
+    # A full replica of rk1b's music library (ADR-0027; .scratch/music-pipeline.md §2).
+    # rk1b is authoritative and owns the tree there; this is the sharing side — slskd will
+    # read it to seed on Soulseek, which is why it is unlocked rather than a tree of symlinks
+    # into .git/annex/objects. `thin` makes the working file a hardlink to the annex object
+    # (1x disk, not 2x) — kelpy has ~87G on /persistent and that is the whole budget.
+    #
+    # No `music` group here: nothing else on kelpy touches this tree (Navidrome and beets are
+    # rk1b-side), so the repo stays plain git-annex-owned and needs no sharing seam.
+    repositories.music = {
+      path = "/var/lib/git-annex/music";
+      description = "kelpy-music";
+      unlock = true;
+      thin = true;
+      assistant = true;
+      group = "backup";
+      wanted = "standard";
+      remotes = [
+        {
+          name = "rk1b";
+          url = "git-annex@rk1b:/var/cache/music";
+        }
+      ];
+    };
   };
 
   environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
