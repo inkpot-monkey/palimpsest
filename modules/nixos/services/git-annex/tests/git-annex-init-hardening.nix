@@ -44,6 +44,20 @@ pkgs.testers.nixosTest {
         };
       };
 
+    # A repo running the assistant, to pin the init/assistant interaction. Kept on its
+    # own node so the assistant's background commits can't perturb the numcopies/tag
+    # assertions on `client`.
+    client_assistant =
+      { ... }:
+      {
+        imports = [ helper.commonNode ];
+        services.git-annex.repositories.assist = {
+          path = "/var/lib/git-annex/assist";
+          description = "assist";
+          assistant = true;
+        };
+      };
+
     # A remote with a deliberately wrong expectedUUID: init must fail loudly.
     client_baduuid =
       { ... }:
@@ -104,6 +118,17 @@ pkgs.testers.nixosTest {
     assert url == "${gatewayUrl}", f"init must reconcile a drifted remote URL back to the declared one, got {url!r}"
     # and it still must not have duplicated the remote while doing so
     assert client.succeed(f"{C} remote").split() == ["origin"]
+
+    # --- re-running init must leave the assistant RUNNING. init's ExecStartPre stops
+    # the assistant to avoid racing it, so without an ExecStartPost putting it back,
+    # every deploy that re-runs init (any repo config change) left the assistant dead
+    # until the next reboot — the repo silently stops noticing and syncing new files
+    # while every unit still reports healthy. This is the actual deploy path. ---
+    client_assistant.wait_for_unit("git-annex-init-assist.service")
+    client_assistant.wait_for_unit("git-annex-assistant-assist.service")
+    client_assistant.succeed("systemctl restart git-annex-init-assist.service")
+    client_assistant.wait_for_unit("git-annex-assistant-assist.service", timeout=90)
+    client_assistant.succeed("systemctl is-active --quiet git-annex-assistant-assist.service")
 
     # --- expectedUUID mismatch → init FAILS loudly (fetch succeeds, then the
     # UUID check rejects the remote and the script exits non-zero) ---

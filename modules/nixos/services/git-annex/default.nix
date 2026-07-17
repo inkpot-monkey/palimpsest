@@ -358,6 +358,18 @@ in
               # the pending start job during boot.
               "+${pkgs.bash}/bin/sh -c '${pkgs.systemd}/bin/systemctl is-active --quiet git-annex-assistant-${name}.service && ${pkgs.systemd}/bin/systemctl stop git-annex-assistant-${name}.service || true'"
             ];
+
+            # Put the assistant back. The ExecStartPre above stops it, and nothing else
+            # started it again: on every deploy that re-runs init (i.e. any change to the
+            # repo's config) the assistant stayed down until the next reboot. That is not
+            # cosmetic — the assistant is what notices new files and syncs them, so the
+            # repo would quietly stop replicating while every unit still looked healthy.
+            #
+            # --no-block is required, not incidental: the assistant is ordered After= this
+            # unit, so a blocking start would wait for init to finish while init waits for
+            # the start — a deadlock. Queuing the job lets it run once init completes.
+            # `|| true` because a repo with assistant = false has no such unit.
+            serviceConfig.ExecStartPost = lib.optional repo.assistant "+${pkgs.bash}/bin/sh -c '${pkgs.systemd}/bin/systemctl start --no-block git-annex-assistant-${name}.service || true'";
             path = with pkgs; [
               coreutils
               git
