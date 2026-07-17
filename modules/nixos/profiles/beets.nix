@@ -15,9 +15,11 @@
 # Everything lives on the durable NVMe /var/cache subtree (hosts/rk1/nvme.nix), same as the
 # Navidrome library + DB: the inbox, the review quarantine, and beets' own DB/config/logs.
 #
-# The importer runs as the `navidrome` user (created by services.navidrome). That is what lets
-# it write into the 0700 navidrome-owned library with no chown dance, and files land already
-# owned by the user Navidrome reads as. `fpcalc` (chromaprint) and pyacoustid are on PATH for
+# The importer runs as the `navidrome` user (created by services.navidrome) so files land owned
+# by the user Navidrome reads as. The library itself is owned by git-annex and shared via the
+# `music` group (navidrome.nix) so it can replicate to kelpy, so the importer also runs with
+# Group=music and UMask=0002 — see the serviceConfig comment; without that, git-annex cannot
+# adopt what beets files. `fpcalc` (chromaprint) and pyacoustid are on PATH for
 # free: nixpkgs' `beets` enables the `chroma` + `fetchart` plugins and wraps the binary with
 # their helper bins, so we only select them in the config, not repackage anything.
 {
@@ -178,7 +180,15 @@ in
       serviceConfig = {
         Type = "oneshot";
         User = "navidrome";
-        Group = "navidrome";
+        # Group + UMask are what let git-annex adopt what beets files. The library is
+        # owned by git-annex and shared via the `music` group (navidrome.nix); the
+        # importer must therefore create Artist/Album dirs that the git-annex user can
+        # write into, because `git annex add` MOVES a file into .git/annex/objects and a
+        # rename needs write on the containing directory, not on the file. With the
+        # default 022 umask those dirs land 0755 and the move fails — the tracks would
+        # sit in the library un-annexed and never replicate. 0002 makes them 0775/0664.
+        Group = "music";
+        UMask = "0002";
         # Courtesy to the co-located monitoring server: fingerprinting/transcoding is CPU- and
         # IO-heavy, so run it at the lowest CPU priority and idle IO class (the nice/ionice throttle).
         Nice = 19;

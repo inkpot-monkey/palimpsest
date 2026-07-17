@@ -68,6 +68,23 @@ in
           environmentFile = config.sops.templates."navidrome-env".path;
         };
 
+        # The library is a SHARED tree, not Navidrome's private one, so its access is a
+        # group rather than an owner. git-annex owns /var/cache/music (see
+        # hosts/rk1/git-annex.nix) because the fleet annex SSH key is readable only by
+        # the `git-annex` user — a repo owned by anyone else can never sync outbound, so
+        # the replicating node must own what it replicates. Navidrome reads the library
+        # through this group instead; it never needs write access, since upstream puts
+        # MusicFolder in BindReadOnlyPaths. beets writes into the same tree via the group
+        # (see beets.nix). Harmless on a host running Navidrome without git-annex: the
+        # group simply has one member and upstream's own tmpfiles rule owns the dir.
+        #
+        # GID is pinned deliberately: the library's group ownership lives on persistent
+        # disk, and an auto-allocated GID reshuffle would orphan every file's group in
+        # place (this fleet has been bitten by exactly that). 978 is free fleet-wide and
+        # unclaimed by any other pinned id in this repo.
+        users.groups.music.gid = 978;
+        users.users.navidrome.extraGroups = [ "music" ];
+
         sops.secrets.navidrome_admin_password.sopsFile = self.lib.getSecretFile "navidrome";
         sops.templates."navidrome-env".content = ''
           ND_DEVAUTOCREATEADMINPASSWORD=${config.sops.placeholder.navidrome_admin_password}
