@@ -110,6 +110,18 @@
   # is disabled. mkIf on the attrset removes the entry entirely.
   services.restic.backups.daily = lib.mkIf config.custom.profiles.backup.enable {
     paths = [ "/persistent" ];
+    # The music replica must never go off-site: it is bulk, re-acquirable data, not
+    # personal documents — and once seeded it is by far the largest thing on this 90G
+    # host. This is not hypothetical housekeeping: `paths` is /persistent wholesale,
+    # and hosts/kelpy/git-annex.nix persists /var/lib/git-annex into it, so the day
+    # `backup.enable` flips true (see the note above — it is off only because the
+    # rsync.net repo is unreachable, and is meant to come back) the entire library
+    # would ship to rsync.net. `thin` makes the worktree files hardlinks to the annex
+    # objects, which restic reads as full content, so it would go twice over.
+    #
+    # Scoped to `music` deliberately: the `pictures` repo alongside it is personal
+    # photos and SHOULD be backed up. Do not widen this to /var/lib/git-annex.
+    exclude = [ "/persistent/var/lib/git-annex/music" ];
   };
 
   # Persist the agent's home state across impermanence reboots: Claude Code

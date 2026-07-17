@@ -8,7 +8,7 @@
 # exactly how a silent replication stop shipped (the assistant was left dead by every
 # deploy that re-ran init) and survived a green test suite.
 #
-# This mirrors the production music topology (rk1b -> kelpy, ADR-0027):
+# This mirrors the production music topology (rk1b -> kelpy, ADR-0028):
 #   source  — authoritative, assistant adopts whatever appears in the tree
 #   replica — unlocked + thin, wants all content, materialises REAL files
 #

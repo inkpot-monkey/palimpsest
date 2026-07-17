@@ -1,25 +1,10 @@
-# rk1b's music library as a git-annex repository (ADR-0027; .scratch/music-pipeline.md §2).
+# rk1b's music library as a git-annex repository. The decision this implements — why
+# git-annex owns the tree rather than navidrome, and why the obvious alternative is a
+# security hazard — is ADR-0028; read that before changing the ownership model here.
+#
 # Imported by rk1b only — rk1a has no library. There is no hosts/rk1b/ directory; rk1b is
 # assembled in hosts/default.nix on top of the shared hosts/rk1/common.nix, so host-specific
 # files live here alongside it (cf. nvme.nix, inert until enabled).
-#
-# TOPOLOGY (option "B" in the handoff doc). The repo is owned by the `git-annex` user, not by
-# navidrome, and that is not incidental: the module installs the fleet annex SSH key into
-# /var/lib/git-annex/.ssh/ (0600, in a 0700 dir owned by git-annex), so a repo whose `user` is
-# anyone else can never sync OUTBOUND — it can only receive. Since rk1b holds the authoritative
-# library, it must be able to push, therefore git-annex must own the tree.
-#
-# The inverse (navidrome owning it, git-annex joining the group) was rejected: it makes rk1b
-# passive, so new music only reaches kelpy whenever kelpy next polls. The other inverse —
-# "fix" the module to hand the key to any repo user — was rejected outright: there is ONE
-# keypair for the whole fleet, so that would put a credential granting access to every annex
-# repo (including kelpy's `pictures` = personal photos) inside a network-facing web app that
-# serves friends. See palimpsest#58 for replacing that shared key with per-node keys.
-#
-# Navidrome and beets reach the library through the `music` group instead (declared in
-# modules/nixos/profiles/navidrome.nix). Navidrome only ever reads it — upstream puts
-# MusicFolder in BindReadOnlyPaths — and its supplementary group survives the unit's
-# PrivateUsers=true sandbox (verified on the host, not assumed).
 {
   config,
   lib,
@@ -44,6 +29,17 @@
 
   # The other half of the seam: git-annex owns the tree, navidrome/beets get in via `music`.
   users.users.git-annex.extraGroups = [ "music" ];
+
+  # The repo path is read from Navidrome's MusicFolder below, and the `music` group it
+  # shares with is declared by the navidrome profile — so without Navidrome this would
+  # silently init an annex against the module-default folder instead of the library.
+  # Mirrors the same guard in modules/nixos/profiles/beets.nix.
+  assertions = [
+    {
+      assertion = config.services.navidrome.enable;
+      message = "hosts/rk1/git-annex.nix replicates Navidrome's library (services.navidrome.settings.MusicFolder) and shares it via the `music` group declared by custom.profiles.navidrome — enable that profile, or drop this import.";
+    }
+  ];
 
   services.git-annex = {
     enable = true;
@@ -74,9 +70,9 @@
       #
       # MagicDNS name, not the bare hostname and not a pinned tailscale IP: rk1b cannot
       # resolve `kelpy` at all (only kelpy carries a networking.hosts pin for rk1b — the
-      # asymmetry is easy to miss because the reverse direction works), and
-      # settings.nix:130 is explicit that fleet upstreams use `<host>.${settings.tailnet}`
-      # because pinned IPs silently rot when a host re-keys.
+      # asymmetry is easy to miss because the reverse direction works), and `settings.tailnet`
+      # is the fleet's documented way to address a peer, precisely because pinned IPs
+      # silently rot when a host re-keys.
       remotes = [
         {
           name = "kelpy";

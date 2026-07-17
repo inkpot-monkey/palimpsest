@@ -23,14 +23,18 @@
       wanted = "standard";
     };
 
-    # A full replica of rk1b's music library (ADR-0027; .scratch/music-pipeline.md §2).
-    # rk1b is authoritative and owns the tree there; this is the sharing side — slskd will
-    # read it to seed on Soulseek, which is why it is unlocked rather than a tree of symlinks
-    # into .git/annex/objects. `thin` makes the working file a hardlink to the annex object
-    # (1x disk, not 2x) — kelpy has ~87G on /persistent and that is the whole budget.
+    # A full replica of rk1b's music library (ADR-0028). rk1b is authoritative and owns the
+    # tree there; this is the sharing side — slskd will read it to seed on Soulseek, which is
+    # why it is unlocked rather than a tree of symlinks into .git/annex/objects. `thin` makes
+    # the working file a hardlink to the annex object (1x disk, not 2x) — kelpy has ~87G on
+    # /persistent and that is the whole budget, for this AND slskd's downloads.
     #
     # No `music` group here: nothing else on kelpy touches this tree (Navidrome and beets are
     # rk1b-side), so the repo stays plain git-annex-owned and needs no sharing seam.
+    #
+    # NOTE: this path is persisted into /persistent (below), which restic backs up wholesale
+    # — so it is explicitly excluded in hosts/kelpy/configuration.nix. Bulk, re-acquirable
+    # data must not go off-site; `pictures` alongside it is personal and must.
     repositories.music = {
       path = "/var/lib/git-annex/music";
       description = "kelpy-music";
@@ -39,7 +43,7 @@
       assistant = true;
       group = "backup";
       wanted = "standard";
-      # MagicDNS name per settings.nix:130, not the bare hostname. A bare `rk1b` happens
+      # MagicDNS name (`settings.tailnet`), not the bare hostname. A bare `rk1b` happens
       # to resolve here (kelpy carries a networking.hosts pin for it) but that pin is
       # one-directional and host-specific; relying on it is what made the rk1b side fail.
       remotes = [

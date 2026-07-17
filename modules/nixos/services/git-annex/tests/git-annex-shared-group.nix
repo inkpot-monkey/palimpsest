@@ -1,4 +1,4 @@
-# Coverage for the shared-group topology the music library needs (rk1b, ADR-0027):
+# Coverage for the shared-group topology the music library needs (rk1b, ADR-0028):
 # the repository is owned by a *different* user than the `git-annex` user that
 # git-annex-shell runs as when a peer syncs in over SSH. On rk1b the library is
 # written by beets/Navidrome (user `navidrome`, here `libowner`), while kelpy
