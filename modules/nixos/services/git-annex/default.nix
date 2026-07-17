@@ -248,50 +248,6 @@ in
 
     users.groups.git-annex = { };
 
-    system.activationScripts.git-annex-ssh-key = ''
-      mkdir -p /var/lib/git-annex/.ssh
-      chown git-annex:git-annex /var/lib/git-annex/.ssh
-      chmod 700 /var/lib/git-annex/.ssh
-
-      # Managed SSH client config so git-annex's own ssh invocations (git fetch,
-      # and git-annex P2P / rsync-over-ssh transfers) work non-interactively
-      # against declared remotes. accept-new is trust-on-first-use: new host keys
-      # are accepted automatically, but a changed key for a known host is still
-      # rejected. NixOS does not Include /etc/ssh/ssh_config.d/*, so the config
-      # must live in the git-annex user's own ~/.ssh/config.
-      cp ${pkgs.writeText "git-annex-ssh-config" ''
-        Host *
-          StrictHostKeyChecking accept-new
-          ServerAliveInterval 15
-          ServerAliveCountMax 3
-      ''} /var/lib/git-annex/.ssh/config
-      chown git-annex:git-annex /var/lib/git-annex/.ssh/config
-      chmod 600 /var/lib/git-annex/.ssh/config
-
-      ${
-        if cfg.sshKeyFile != null then
-          ''
-            # Install provided SSH key from file (runtime path)
-            if [ -f "${cfg.sshKeyFile}" ]; then
-              cp "${cfg.sshKeyFile}" /var/lib/git-annex/.ssh/id_ed25519
-              chown git-annex:git-annex /var/lib/git-annex/.ssh/id_ed25519
-              chmod 600 /var/lib/git-annex/.ssh/id_ed25519
-            else
-              echo "Warning: git-annex sshKeyFile configured but not found at ${cfg.sshKeyFile}"
-            fi
-          ''
-        else
-          ''
-            # Generate ephemeral key if none provided (fallback)
-            if [ ! -f /var/lib/git-annex/.ssh/id_ed25519 ]; then
-              ${pkgs.openssh}/bin/ssh-keygen -t ed25519 -N "" -f /var/lib/git-annex/.ssh/id_ed25519 -C "git-annex@${config.networking.hostName}"
-              chown git-annex:git-annex /var/lib/git-annex/.ssh/id_ed25519
-              chmod 600 /var/lib/git-annex/.ssh/id_ed25519
-            fi
-          ''
-      }
-    '';
-
     system.activationScripts.git-annex-repair = ''
       # Check if any git-annex repositories are missing their .git directory
       # If so, force the init service to restart to recreate them.
@@ -325,6 +281,80 @@ in
 
     systemd.services =
       let
+        # Installing the SSH identity is a UNIT, not an activation script, and the
+        # ordering is the entire reason why.
+        #
+        # As an activation script this could never work on the switch that first
+        # introduced the key: sops-nix installs secrets from
+        # sops-install-secrets.service, and NixOS runs every activation script BEFORE
+        # it starts any unit. So the script ran, found no /run/secrets/..., printed a
+        # "Warning: git-annex sshKeyFile configured but not found" nobody reads, and
+        # left the annex with no identity — the host then failed `Permission denied
+        # (publickey)` until someone deployed a second time. Existing hosts only looked
+        # fine because their key had been copied by some earlier switch and persisted.
+        sshKeyService = {
+          git-annex-ssh-key = {
+            description = "Install the git-annex SSH identity";
+            wantedBy = [ "multi-user.target" ];
+            # Ordering against a unit that does not exist (the VM tests, any non-sops
+            # host) is simply ignored by systemd, so this stays correct there.
+            after = [ "sops-install-secrets.service" ];
+            before = lib.mapAttrsToList (n: _: "git-annex-init-${n}.service") cfg.repositories;
+            # On an impermanence host /var/lib/git-annex is a bind mount. The old
+            # activation script wrote .ssh to the tmpfs underneath and the mount then
+            # hid it — which is why rk1b needed a *third* switch to get its key.
+            unitConfig.RequiresMountsFor = [ "/var/lib/git-annex" ];
+            serviceConfig = {
+              Type = "oneshot";
+              RemainAfterExit = true;
+            };
+            script = ''
+              mkdir -p /var/lib/git-annex/.ssh
+              chown git-annex:git-annex /var/lib/git-annex/.ssh
+              chmod 700 /var/lib/git-annex/.ssh
+
+              # Managed SSH client config so git-annex's own ssh invocations (git fetch,
+              # and git-annex P2P / rsync-over-ssh transfers) work non-interactively
+              # against declared remotes. accept-new is trust-on-first-use: new host keys
+              # are accepted automatically, but a changed key for a known host is still
+              # rejected. NixOS does not Include /etc/ssh/ssh_config.d/*, so the config
+              # must live in the git-annex user's own ~/.ssh/config.
+              cp ${pkgs.writeText "git-annex-ssh-config" ''
+                Host *
+                  StrictHostKeyChecking accept-new
+                  ServerAliveInterval 15
+                  ServerAliveCountMax 3
+              ''} /var/lib/git-annex/.ssh/config
+              chown git-annex:git-annex /var/lib/git-annex/.ssh/config
+              chmod 600 /var/lib/git-annex/.ssh/config
+
+              ${
+                if cfg.sshKeyFile != null then
+                  ''
+                    # Install provided SSH key from file (runtime path)
+                    if [ -f "${cfg.sshKeyFile}" ]; then
+                      cp "${cfg.sshKeyFile}" /var/lib/git-annex/.ssh/id_ed25519
+                      chown git-annex:git-annex /var/lib/git-annex/.ssh/id_ed25519
+                      chmod 600 /var/lib/git-annex/.ssh/id_ed25519
+                    else
+                      echo "Warning: git-annex sshKeyFile configured but not found at ${cfg.sshKeyFile}"
+                    fi
+                  ''
+                else
+                  ''
+                    # Generate ephemeral key if none provided (fallback)
+                    if [ ! -f /var/lib/git-annex/.ssh/id_ed25519 ]; then
+                      ${pkgs.openssh}/bin/ssh-keygen -t ed25519 -N "" -f /var/lib/git-annex/.ssh/id_ed25519 -C "git-annex@${config.networking.hostName}"
+                      chown git-annex:git-annex /var/lib/git-annex/.ssh/id_ed25519
+                      chmod 600 /var/lib/git-annex/.ssh/id_ed25519
+                    fi
+                  ''
+              }
+
+            '';
+          };
+        };
+
         initServices = lib.mapAttrs' (
           name: repo:
           lib.nameValuePair "git-annex-init-${name}" {
@@ -522,6 +552,6 @@ in
           };
         };
       in
-      initServices // assistantServices // gpgImportServices;
+      sshKeyService // initServices // assistantServices // gpgImportServices;
   };
 }
