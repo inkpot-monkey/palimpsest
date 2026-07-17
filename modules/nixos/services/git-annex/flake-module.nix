@@ -10,6 +10,7 @@ _: {
         git-annex-keys = pkgs.callPackage ./tests/git-annex-keys.nix { };
         git-annex-init-hardening = pkgs.callPackage ./tests/git-annex-init-hardening.nix { };
         git-annex-shared-group = pkgs.callPackage ./tests/git-annex-shared-group.nix { };
+        git-annex-assistant-sync = pkgs.callPackage ./tests/git-annex-assistant-sync.nix { };
       };
     };
 }
