@@ -22,11 +22,25 @@
 # PrivateUsers=true sandbox (verified on the host, not assumed).
 {
   config,
+  lib,
+  settings,
   self,
   ...
 }:
 {
   imports = [ self.nixosModules.git-annex ];
+
+  # rk1b's root is a tmpfs (impermanence), so the git-annex user's HOME — which is where
+  # the module installs the annex SSH key and its managed ssh config — would be wiped on
+  # every reboot without this. The repo itself lives on the durable NVMe at /var/cache and
+  # is unaffected; it is the *identity* that needs persisting, and losing it silently
+  # breaks outbound sync rather than failing loudly at boot. Mirrors the same block in
+  # hosts/kelpy/git-annex.nix.
+  environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
+    directories = [
+      "/var/lib/git-annex"
+    ];
+  };
 
   # The other half of the seam: git-annex owns the tree, navidrome/beets get in via `music`.
   users.users.git-annex.extraGroups = [ "music" ];
@@ -57,10 +71,16 @@
       wanted = "standard";
 
       # rk1b initiates. kelpy declares the mirror-image remote so either end can reconcile.
+      #
+      # MagicDNS name, not the bare hostname and not a pinned tailscale IP: rk1b cannot
+      # resolve `kelpy` at all (only kelpy carries a networking.hosts pin for rk1b — the
+      # asymmetry is easy to miss because the reverse direction works), and
+      # settings.nix:130 is explicit that fleet upstreams use `<host>.${settings.tailnet}`
+      # because pinned IPs silently rot when a host re-keys.
       remotes = [
         {
           name = "kelpy";
-          url = "git-annex@kelpy:/var/lib/git-annex/music";
+          url = "git-annex@kelpy.${settings.tailnet}:/var/lib/git-annex/music";
         }
       ];
     };

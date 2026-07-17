@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  settings,
   self,
   ...
 }:
@@ -38,10 +39,13 @@
       assistant = true;
       group = "backup";
       wanted = "standard";
+      # MagicDNS name per settings.nix:130, not the bare hostname. A bare `rk1b` happens
+      # to resolve here (kelpy carries a networking.hosts pin for it) but that pin is
+      # one-directional and host-specific; relying on it is what made the rk1b side fail.
       remotes = [
         {
           name = "rk1b";
-          url = "git-annex@rk1b:/var/cache/music";
+          url = "git-annex@rk1b.${settings.tailnet}:/var/cache/music";
         }
       ];
     };
