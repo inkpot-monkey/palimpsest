@@ -805,8 +805,20 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
  ;; already here, so the C-x p prefix (C-x p f = project-find-file) works too.
  ;; M-& so the global `async-shell-command' binding (remapped to
  ;; `chelys-galactica-run') reaches Emacs instead of going to the TUI.
+ ;; M-g so `goto-map' reaches Emacs from a Claude buffer: M-g a =
+ ;; `agents-hud-avy' (jump to another session), M-g l = `avy-goto-line', etc.
  (ghostel-keymap-exceptions
-  '("C-c" "C-x" "C-u" "C-h" "M-x" "M-:" "C-\\" "M-o" "M-s" "M-&"))
+  '("C-c"
+    "C-x"
+    "C-u"
+    "C-h"
+    "M-x"
+    "M-:"
+    "C-\\"
+    "M-o"
+    "M-s"
+    "M-&"
+    "M-g"))
  :config
  ;; --- claude-code.el <-> ghostel 0.31 API shim ----------------------------
  ;; stevemolitor/claude-code.el (<=0.4.5, == current upstream HEAD) targets
@@ -1257,6 +1269,30 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
  :config (proc-notify-setup)
  (with-eval-after-load 'consult
    (add-to-list 'consult-buffer-sources 'proc-notify-consult-source
+                'append)))
+
+;; agents-hud — live status view + switcher for the terminal/agent buffers you
+;; run: every claude-code session and every plain ghostel terminal.  One
+;; collector (redraw-activity / bell / OSC-133 stamps → ⧗ working / ! waiting /
+;; ○ idle / ✕ dead), rendered two ways from the same backend: a toggle-able
+;; right-side panel (`C-x C-a', grouped by project, attention floats up) and a
+;; consult group (the "Agents" group in `consult-buffer', narrow `a'; or the
+;; scoped picker on `C-c c b').  `:demand t' so the state-tracking hooks wire at
+;; daemon startup (like proc-notify), and it reads proc-notify's pending-set as
+;; the primary waiting signal.  The picker supersedes claude-code's `C-c c b'
+;; (`claude-code-switch-to-buffer'); select-buffer stays on `C-c c B'.
+(use-package
+ agents-hud
+ :demand t
+ :bind ("C-x C-a" . agents-hud-toggle-sidebar)
+ ;; avy quick-select over the visible HUD rows, alongside `M-g l'
+ ;; (avy-goto-line): label every session row, jump on the keypress.
+ (:map goto-map ("a" . agents-hud-avy))
+ :config (agents-hud-setup)
+ (with-eval-after-load 'claude-code
+   (define-key claude-code-command-map (kbd "b") #'agents-hud-picker))
+ (with-eval-after-load 'consult
+   (add-to-list 'consult-buffer-sources 'agents-hud-consult-source
                 'append)))
 
 
