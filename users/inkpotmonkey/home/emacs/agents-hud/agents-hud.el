@@ -259,15 +259,30 @@ available."
       'claude
     'shell))
 
-(defun agents-hud--buffer-path (buffer)
+(defun agents-hud--git (dir &rest args)
+  "Run git with ARGS in DIR; return trimmed stdout, or nil on failure."
+  (when (and dir (file-directory-p dir) (executable-find "git"))
+    (let ((default-directory (file-name-as-directory dir)))
+      (with-temp-buffer
+        (when (eq
+               0
+               (ignore-errors
+                 (apply #'process-file "git" nil t nil args)))
+          (let ((s (string-trim (buffer-string))))
+            (unless (string-empty-p s)
+              s)))))))
+
+(defun agents-hud--buffer-dir (buffer)
   "Return BUFFER's live working directory (OSC-7 cwd if tracked)."
   (with-current-buffer buffer
-    (abbreviate-file-name
-     (directory-file-name
-      (or
-       (and (boundp 'ghostel--last-directory) ghostel--last-directory)
-       default-directory
-       "~")))))
+    (or (and (boundp 'ghostel--last-directory)
+             ghostel--last-directory)
+        default-directory)))
+
+(defun agents-hud--buffer-path (buffer)
+  "Return BUFFER's live working directory, abbreviated for display."
+  (abbreviate-file-name
+   (directory-file-name (or (agents-hud--buffer-dir buffer) "~"))))
 
 (defvar agents-hud--repo-root-cache (make-hash-table :test 'equal)
   "Memoises `agents-hud--repo-root' per directory.
@@ -289,41 +304,61 @@ directory is the shared root.  This keeps sibling worktrees (e.g. a project's
        (cached
         cached)
        (t
-        (let ((root
-               (and (executable-find "git")
-                    (let ((default-directory
-                           (file-name-as-directory key)))
-                      (with-temp-buffer
-                        (when (eq
-                               0
-                               (ignore-errors
-                                 (process-file
-                                  "git"
-                                  nil
-                                  t
-                                  nil
-                                  "rev-parse"
-                                  "--path-format=absolute"
-                                  "--git-common-dir")))
-                          (let ((common
-                                 (string-trim (buffer-string))))
-                            (when (string-suffix-p ".git" common)
-                              (directory-file-name
-                               (file-name-directory
-                                (directory-file-name common)))))))))))
+        (let* ((common
+                (agents-hud--git key
+                                 "rev-parse"
+                                 "--path-format=absolute"
+                                 "--git-common-dir"))
+               (root
+                (and common
+                     (string-suffix-p ".git" common)
+                     (directory-file-name
+                      (file-name-directory
+                       (directory-file-name common))))))
           (puthash key (or root 'none) agents-hud--repo-root-cache)
           root))))))
+
+(defvar agents-hud--worktree-cache (make-hash-table :test 'equal)
+  "Memoises `agents-hud--worktree-tag' per directory (\\='none = no tag).
+Cleared with the repo-root cache on `agents-hud-refresh'.")
+
+(defun agents-hud--worktree-tag (dir repo-root)
+  "Return a short id for DIR's git worktree within REPO-ROOT, or nil.
+A linked worktree is named by its own directory basename; the main worktree is
+named by its current branch.  Because sibling worktrees group under one repo,
+this is what keeps their rows tellable apart."
+  (when (and dir repo-root)
+    (let* ((key (directory-file-name (expand-file-name dir)))
+           (cached (gethash key agents-hud--worktree-cache 'miss)))
+      (if (not (eq cached 'miss))
+          (unless (eq cached 'none)
+            cached)
+        (let* ((top
+                (agents-hud--git key "rev-parse" "--show-toplevel"))
+               (tag
+                (cond
+                 ((null top)
+                  nil)
+                 ((equal
+                   (directory-file-name top)
+                   (directory-file-name repo-root))
+                  (agents-hud--git key
+                                   "rev-parse"
+                                   "--abbrev-ref"
+                                   "HEAD"))
+                 (t
+                  (file-name-nondirectory
+                   (directory-file-name top))))))
+          (puthash key (or tag 'none) agents-hud--worktree-cache)
+          tag)))))
 
 (defun agents-hud--buffer-project (buffer)
   "Return BUFFER's project root, collapsing git worktrees onto their repo.
 Falls back to `project-current' when the buffer is in a non-git project, and
 nil when it is in no project at all."
-  (with-current-buffer buffer
-    (let ((dir
-           (or (and (boundp 'ghostel--last-directory)
-                    ghostel--last-directory)
-               default-directory)))
-      (or (agents-hud--repo-root dir)
+  (let ((dir (agents-hud--buffer-dir buffer)))
+    (or (agents-hud--repo-root dir)
+        (with-current-buffer buffer
           (when-let ((proj
                       (ignore-errors
                         (project-current nil))))
@@ -346,9 +381,16 @@ ghostel buffers it is the title portion of `*ghostel: TITLE*'."
 ;;; ── State computation (pure) ─────────────────────────────────────────────────
 
 (cl-defstruct
- (agents-hud-entry
-  (:constructor agents-hud-entry--create))
- buffer type project path instance state since exit)
+ (agents-hud-entry (:constructor agents-hud-entry--create))
+ buffer
+ type
+ project
+ worktree
+ path
+ instance
+ state
+ since
+ exit)
 
 (defun agents-hud--waiting-p (pending bell activity)
   "Non-nil when a buffer counts as waiting-on-you.
@@ -417,18 +459,20 @@ Priority: dead → waiting → working → idle."
             ('waiting (or bell now))
             ('working (or working-since activity now))
             ('idle (or activity now))
-            (_ nil))))
+            (_ nil)))
+         (project (agents-hud--buffer-project buffer)))
     (agents-hud-entry--create
      :buffer buffer
      :type type
-     :project (agents-hud--buffer-project buffer)
+     :project project
+     :worktree
+     (agents-hud--worktree-tag
+      (agents-hud--buffer-dir buffer) project)
      :path (agents-hud--buffer-path buffer)
-     :instance
-     (agents-hud--buffer-instance buffer type)
+     :instance (agents-hud--buffer-instance buffer type)
      :state state
      :since since
-     :exit
-     (buffer-local-value 'agents-hud--exit buffer))))
+     :exit (buffer-local-value 'agents-hud--exit buffer))))
 
 (defun agents-hud--entries (&optional now)
   "Return `agents-hud-entry' snapshots for all live Claude/ghostel buffers."
@@ -448,13 +492,25 @@ Priority: dead → waiting → working → idle."
        (agents-hud-entry-state entry) agents-hud--state-priority)
       9))
 
-(defun agents-hud--entry-label (entry)
-  "Return the project[:instance] label used for display and secondary sort."
+(defun agents-hud--entry-label (entry &optional relative)
+  "Return the display/sort label for ENTRY.
+The worktree/branch tag distinguishes sibling worktrees, which group under one
+repo.  With RELATIVE (sidebar rows, already under the repo heading) the label
+leads with that tag and omits the repo; otherwise it is repo-qualified
+\(\"repo/worktree\") so it stands alone in the flat consult list."
   (let* ((proj (agents-hud-entry-project entry))
+         (repo (and proj (file-name-nondirectory proj)))
+         (wt (agents-hud-entry-worktree entry))
+         (fallback
+          (when-let ((p (agents-hud-entry-path entry)))
+            (file-name-nondirectory p)))
          (base
-          (if proj
-              (file-name-nondirectory proj)
-            (file-name-nondirectory (agents-hud-entry-path entry))))
+          (if relative
+              (or wt repo fallback)
+            (let ((r (or repo fallback)))
+              (if (and wt (not (string= wt r)))
+                  (format "%s/%s" r wt)
+                r))))
          (inst (agents-hud-entry-instance entry)))
     (if (and inst (not (string= inst base)))
         (format "%s:%s" base inst)
@@ -659,7 +715,7 @@ appears when `agents-hud-show-state-label' is on (a dead exit code always does).
          (icon (agents-hud--state-icon state))
          (tyicon
           (agents-hud--type-icon (agents-hud-entry-type entry)))
-         (label (agents-hud--entry-label entry))
+         (label (agents-hud--entry-label entry t))
          (status (agents-hud--sidebar-status entry))
          (path (agents-hud-entry-path entry))
          (start (point)))
@@ -731,6 +787,7 @@ appears when `agents-hud-show-state-label' is on (a dead exit code always does).
 Clears the worktree→repo cache so an explicit refresh re-resolves grouping."
   (interactive)
   (clrhash agents-hud--repo-root-cache)
+  (clrhash agents-hud--worktree-cache)
   (agents-hud--get-buffer)
   (agents-hud--render))
 

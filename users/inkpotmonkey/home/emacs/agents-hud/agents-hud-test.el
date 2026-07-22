@@ -168,6 +168,29 @@
     (agents-hud--entry-label
      (agents-hud-test--entry :project nil :path "/var/logs")))))
 
+(ert-deftest agents-hud-test-label-worktree ()
+  "The worktree tag qualifies the repo (flat) or leads the row (relative)."
+  (let ((e
+         (agents-hud-test--entry
+          :project "/home/me/code/nixos"
+          :worktree "stump"
+          :instance "default")))
+    ;; flat (consult): repo/worktree:instance
+    (should (equal "nixos/stump:default" (agents-hud--entry-label e)))
+    ;; relative (sidebar, under the nixos heading): worktree:instance
+    (should (equal "stump:default" (agents-hud--entry-label e t)))))
+
+(ert-deftest agents-hud-test-label-worktree-branch ()
+  "A main-worktree tag (a branch name) disambiguates from sibling worktrees."
+  (let ((e
+         (agents-hud-test--entry
+          :project "/home/me/code/nixos"
+          :worktree "feat/backups-board")))
+    (should
+     (equal "nixos/feat/backups-board" (agents-hud--entry-label e)))
+    (should
+     (equal "feat/backups-board" (agents-hud--entry-label e t)))))
+
 ;;; --- grouping ----------------------------------------------------------------
 
 (ert-deftest agents-hud-test-group-by-project ()
