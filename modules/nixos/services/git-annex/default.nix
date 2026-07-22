@@ -516,9 +516,19 @@ in
               serviceConfig = {
                 User = repo.user;
                 Group = repo.ownerGroup;
-                ExecStart = "${pkgs.git-annex}/bin/git-annex assistant";
-                Type = "forking";
-                Restart = "on-failure";
+                # `--foreground` + Type=simple so systemd supervises the real daemon
+                # directly. Without it, `git-annex assistant` double-forks and Type=forking
+                # made systemd record even a signal-death (observed: SIGPIPE when the sync
+                # connection to a remote broke) as `Result=success` — so `Restart=on-failure`
+                # never fired and the repo silently stopped replicating until the next reboot.
+                # Foreground also sends the assistant's log to the journal instead of burying
+                # it in .git/annex/daemon.log. Restart=always (not on-failure) covers a clean
+                # exit too; the init unit's explicit stop/start is a requested stop, which
+                # systemd never auto-restarts, so it does not fight this.
+                ExecStart = "${pkgs.git-annex}/bin/git-annex assistant --foreground";
+                Type = "simple";
+                Restart = "always";
+                RestartSec = 10;
                 WorkingDirectory = repo.path;
               };
             }

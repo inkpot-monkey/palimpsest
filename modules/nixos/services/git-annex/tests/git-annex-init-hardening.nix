@@ -130,6 +130,26 @@ pkgs.testers.nixosTest {
     client_assistant.wait_for_unit("git-annex-assistant-assist.service", timeout=90)
     client_assistant.succeed("systemctl is-active --quiet git-annex-assistant-assist.service")
 
+    # --- the assistant must be RESTARTED when its process dies, not left dead. In
+    # production it died on SIGPIPE (broken sync connection) and stayed down: Type=forking
+    # made systemd see the signal-death as a clean exit, so Restart=on-failure never fired
+    # and the repo silently stopped replicating. Kill the daemon and prove systemd brings
+    # it back (Type=simple + --foreground + Restart=always). ---
+    old_pid = client_assistant.succeed(
+        "systemctl show -p MainPID --value git-annex-assistant-assist.service"
+    ).strip()
+    assert old_pid not in ("", "0"), f"expected a live assistant MainPID, got {old_pid!r}"
+    client_assistant.succeed(f"kill -KILL {old_pid}")
+    client_assistant.wait_until_succeeds(
+        "systemctl is-active --quiet git-annex-assistant-assist.service", timeout=120
+    )
+    new_pid = client_assistant.succeed(
+        "systemctl show -p MainPID --value git-annex-assistant-assist.service"
+    ).strip()
+    assert new_pid not in ("", "0") and new_pid != old_pid, (
+        f"assistant must be auto-restarted after it dies: old={old_pid!r} new={new_pid!r}"
+    )
+
     # --- expectedUUID mismatch → init FAILS loudly (fetch succeeds, then the
     # UUID check rejects the remote and the script exits non-zero) ---
     client_baduuid.wait_until_fails(
