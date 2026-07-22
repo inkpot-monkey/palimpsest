@@ -88,10 +88,16 @@ pkgs.testers.nixosTest {
 
     # --- healthy baseline ---------------------------------------------------
     metrics = check(replica)
-    assert 'git_annex_assistant_up{repo="lib"} 1' in metrics, metrics
-    assert 'git_annex_remote_reachable{repo="lib",remote="source"} 1' in metrics, metrics
+    assert 'git_annex_assistant_up{repo="lib",user="git-annex"} 1' in metrics, metrics
+    assert 'git_annex_remote_reachable{repo="lib",user="git-annex",remote="source"} 1' in metrics, metrics
     assert "git_annex_last_commit_timestamp_seconds" in metrics, metrics
     assert "git_annex_check_timestamp_seconds" in metrics, metrics
+
+    # The inventory info-metric: a constant-1 series carrying the static facts a
+    # topology board joins against. The `user` label is what makes "across users"
+    # expressible — a host repo is owned by `git-annex`, a home repo by a human.
+    assert 'git_annex_repo_info{repo="lib",user="git-annex"' in metrics, metrics
+    assert 'description="replica"' in metrics, metrics
 
     # node-exporter runs as its own user and must be able to READ the published file.
     # mktemp creates 0600, so a missing widen-before-rename publishes a metric that is
@@ -110,10 +116,10 @@ pkgs.testers.nixosTest {
     # perfectly healthy while the repo had stopped replicating.
     replica.succeed("systemctl stop git-annex-assistant-lib.service")
     replica.succeed("systemctl is-active git-annex-init-lib.service")  # still 'active'
-    assert 'git_annex_assistant_up{repo="lib"} 0' in check(replica)
+    assert 'git_annex_assistant_up{repo="lib",user="git-annex"} 0' in check(replica)
 
     replica.succeed("systemctl start git-annex-assistant-lib.service")
-    assert 'git_annex_assistant_up{repo="lib"} 1' in check(replica)
+    assert 'git_annex_assistant_up{repo="lib",user="git-annex"} 1' in check(replica)
 
     # --- the remote rots (3b05044 / 5269fde) --------------------------------
     # Point the remote at a host that does not exist. This stands in for both bugs:
@@ -123,12 +129,12 @@ pkgs.testers.nixosTest {
         "sudo -u git-annex git -C ${repoPath} remote set-url source git-annex@nosuchhost:/nope"
     )
     metrics = check(replica)
-    assert 'git_annex_remote_reachable{repo="lib",remote="source"} 0' in metrics, metrics
-    assert 'git_annex_assistant_up{repo="lib"} 1' in metrics, metrics
+    assert 'git_annex_remote_reachable{repo="lib",user="git-annex",remote="source"} 0' in metrics, metrics
+    assert 'git_annex_assistant_up{repo="lib",user="git-annex"} 1' in metrics, metrics
 
     replica.succeed(
         "sudo -u git-annex git -C ${repoPath} remote set-url source git-annex@source:${repoPath}"
     )
-    assert 'git_annex_remote_reachable{repo="lib",remote="source"} 1' in check(replica)
+    assert 'git_annex_remote_reachable{repo="lib",user="git-annex",remote="source"} 1' in check(replica)
   '';
 }
