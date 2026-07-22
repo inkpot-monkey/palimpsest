@@ -1,0 +1,1181 @@
+{
+  "id": null,
+  "uid": "backups",
+  "title": "Backups",
+  "tags": ["fleet", "backup"],
+  "schemaVersion": 39,
+  "version": null,
+  "graphTooltip": 1,
+  "timezone": "browser",
+  "editable": true,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Data source",
+        "type": "datasource",
+        "query": "prometheus",
+        "refresh": 1,
+        "hide": 0,
+        "current": {},
+        "options": [],
+        "regex": "",
+        "multi": false,
+        "includeAll": false
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 8,
+      "type": "row",
+      "title": "Glance \u2014 is everything backed up?",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Annex assistants up",
+      "description": "1 (UP) only if every git-annex assistant on the fleet is running. DOWN means at least one repo has silently stopped replicating.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "min(git_annex_assistant_up)",
+          "instant": true,
+          "legendFormat": "assistants"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN"
+                },
+                "1": {
+                  "text": "UP"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#d03b3b",
+                "value": null
+              },
+              {
+                "color": "#0ca30c",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "value_and_name",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Annex remotes reachable",
+      "description": "1 (UP) only if every annex repo can reach every declared remote. DOWN means a peer/link is unreachable \u2014 content is going nowhere.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 8,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "min(git_annex_remote_reachable)",
+          "instant": true,
+          "legendFormat": "remotes"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN"
+                },
+                "1": {
+                  "text": "UP"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#d03b3b",
+                "value": null
+              },
+              {
+                "color": "#0ca30c",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "value_and_name",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 6,
+      "type": "stat",
+      "title": "Off-site jobs enabled",
+      "description": "Count of restic off-site jobs currently enabled fleet-wide. 0 today: restic is off while rsync.net is unreachable (amber = worth knowing, not an error).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(backup_restic_enabled)",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "0 \u2014 all off"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#fab219",
+                "value": null
+              },
+              {
+                "color": "#0ca30c",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "value",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 9,
+      "type": "row",
+      "title": "Topology",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "panels": []
+    },
+    {
+      "id": 1,
+      "type": "canvas",
+      "title": "Backup topology",
+      "description": "Fleet backup flow. Green = on-fleet git-annex replication (live): inkpotmonkey's ~/Pictures and rk1b's music library both replicate to kelpy. Grey = restic off-site to rsync.net, currently DISABLED fleet-wide (rsync.net unreachable). Structure + current-state colours are fixed here; live per-link/per-job health is in the tables below. Dynamic colouring is a preview-loop follow-up (canvas can't be authored headless).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "up",
+          "instant": true
+        }
+      ],
+      "options": {
+        "inlineEditing": false,
+        "showAdvancedTypes": true,
+        "panzoom": false,
+        "infinitePan": false,
+        "root": {
+          "type": "frame",
+          "elements": [
+            {
+              "type": "rectangle",
+              "name": "laptop-pictures",
+              "config": {
+                "text": {
+                  "fixed": "inkpotmonkey ~/Pictures\n(sawtoothShark)",
+                  "mode": "fixed"
+                },
+                "color": {
+                  "fixed": "#ffffff"
+                },
+                "align": "center",
+                "valign": "middle",
+                "size": 13,
+                "backgroundColor": {
+                  "fixed": "#3987e5"
+                }
+              },
+              "background": {
+                "color": {
+                  "fixed": "#3987e5"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "#00000000"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "top": 20,
+                "left": 20,
+                "width": 180,
+                "height": 44,
+                "rotation": 0
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "connections": [
+                {
+                  "source": {
+                    "x": 1,
+                    "y": 0
+                  },
+                  "target": {
+                    "x": -1,
+                    "y": 0
+                  },
+                  "targetName": "kelpy-annex",
+                  "color": {
+                    "fixed": "#0ca30c"
+                  },
+                  "size": {
+                    "fixed": 3
+                  },
+                  "path": "straight",
+                  "targetName_hint": ""
+                }
+              ]
+            },
+            {
+              "type": "rectangle",
+              "name": "rk1b-music",
+              "config": {
+                "text": {
+                  "fixed": "rk1b music library",
+                  "mode": "fixed"
+                },
+                "color": {
+                  "fixed": "#ffffff"
+                },
+                "align": "center",
+                "valign": "middle",
+                "size": 13,
+                "backgroundColor": {
+                  "fixed": "#3987e5"
+                }
+              },
+              "background": {
+                "color": {
+                  "fixed": "#3987e5"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "#00000000"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "top": 84,
+                "left": 20,
+                "width": 180,
+                "height": 44,
+                "rotation": 0
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "connections": [
+                {
+                  "source": {
+                    "x": 1,
+                    "y": 0
+                  },
+                  "target": {
+                    "x": -1,
+                    "y": 0
+                  },
+                  "targetName": "kelpy-annex",
+                  "color": {
+                    "fixed": "#0ca30c"
+                  },
+                  "size": {
+                    "fixed": 3
+                  },
+                  "path": "straight",
+                  "targetName_hint": ""
+                }
+              ]
+            },
+            {
+              "type": "rectangle",
+              "name": "kelpy-annex",
+              "config": {
+                "text": {
+                  "fixed": "kelpy /var/lib/git-annex\n(pictures + music)",
+                  "mode": "fixed"
+                },
+                "color": {
+                  "fixed": "#ffffff"
+                },
+                "align": "center",
+                "valign": "middle",
+                "size": 13,
+                "backgroundColor": {
+                  "fixed": "#199e70"
+                }
+              },
+              "background": {
+                "color": {
+                  "fixed": "#199e70"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "#00000000"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "top": 52,
+                "left": 300,
+                "width": 200,
+                "height": 56,
+                "rotation": 0
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "connections": [
+                {
+                  "source": {
+                    "x": 1,
+                    "y": 0
+                  },
+                  "target": {
+                    "x": -1,
+                    "y": 0
+                  },
+                  "targetName": "rsync-net",
+                  "color": {
+                    "fixed": "#8a8a8a"
+                  },
+                  "size": {
+                    "fixed": 3
+                  },
+                  "path": "straight",
+                  "targetName_hint": ""
+                }
+              ]
+            },
+            {
+              "type": "rectangle",
+              "name": "porcupinefish",
+              "config": {
+                "text": {
+                  "fixed": "porcupineFish\n/home, /var/lib",
+                  "mode": "fixed"
+                },
+                "color": {
+                  "fixed": "#ffffff"
+                },
+                "align": "center",
+                "valign": "middle",
+                "size": 13,
+                "backgroundColor": {
+                  "fixed": "#3987e5"
+                }
+              },
+              "background": {
+                "color": {
+                  "fixed": "#3987e5"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "#00000000"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "top": 176,
+                "left": 20,
+                "width": 180,
+                "height": 44,
+                "rotation": 0
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "connections": [
+                {
+                  "source": {
+                    "x": 1,
+                    "y": 0
+                  },
+                  "target": {
+                    "x": -1,
+                    "y": 0
+                  },
+                  "targetName": "rsync-net",
+                  "color": {
+                    "fixed": "#8a8a8a"
+                  },
+                  "size": {
+                    "fixed": 3
+                  },
+                  "path": "straight",
+                  "targetName_hint": ""
+                }
+              ]
+            },
+            {
+              "type": "rectangle",
+              "name": "rk1b-telemetry",
+              "config": {
+                "text": {
+                  "fixed": "rk1b VM snapshots\n(telemetry)",
+                  "mode": "fixed"
+                },
+                "color": {
+                  "fixed": "#ffffff"
+                },
+                "align": "center",
+                "valign": "middle",
+                "size": 13,
+                "backgroundColor": {
+                  "fixed": "#3987e5"
+                }
+              },
+              "background": {
+                "color": {
+                  "fixed": "#3987e5"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "#00000000"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "top": 240,
+                "left": 20,
+                "width": 180,
+                "height": 44,
+                "rotation": 0
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "connections": [
+                {
+                  "source": {
+                    "x": 1,
+                    "y": 0
+                  },
+                  "target": {
+                    "x": -1,
+                    "y": 0
+                  },
+                  "targetName": "rsync-net",
+                  "color": {
+                    "fixed": "#8a8a8a"
+                  },
+                  "size": {
+                    "fixed": 3
+                  },
+                  "path": "straight",
+                  "targetName_hint": ""
+                }
+              ]
+            },
+            {
+              "type": "rectangle",
+              "name": "rsync-net",
+              "config": {
+                "text": {
+                  "fixed": "rsync.net\n(off-site \u2014 OFF)",
+                  "mode": "fixed"
+                },
+                "color": {
+                  "fixed": "#ffffff"
+                },
+                "align": "center",
+                "valign": "middle",
+                "size": 13,
+                "backgroundColor": {
+                  "fixed": "#6b6b6b"
+                }
+              },
+              "background": {
+                "color": {
+                  "fixed": "#6b6b6b"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "#00000000"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "top": 150,
+                "left": 600,
+                "width": 190,
+                "height": 70,
+                "rotation": 0
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "legend-live",
+              "config": {
+                "text": {
+                  "fixed": "\u2500 git-annex (live)",
+                  "mode": "fixed"
+                },
+                "color": {
+                  "fixed": "#ffffff"
+                },
+                "align": "center",
+                "valign": "middle",
+                "size": 13,
+                "backgroundColor": {
+                  "fixed": "#0ca30c"
+                }
+              },
+              "background": {
+                "color": {
+                  "fixed": "#0ca30c"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "#00000000"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "top": 150,
+                "left": 300,
+                "width": 180,
+                "height": 26,
+                "rotation": 0
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "connections": []
+            },
+            {
+              "type": "rectangle",
+              "name": "legend-off",
+              "config": {
+                "text": {
+                  "fixed": "\u2500 restic (disabled)",
+                  "mode": "fixed"
+                },
+                "color": {
+                  "fixed": "#ffffff"
+                },
+                "align": "center",
+                "valign": "middle",
+                "size": 13,
+                "backgroundColor": {
+                  "fixed": "#8a8a8a"
+                }
+              },
+              "background": {
+                "color": {
+                  "fixed": "#8a8a8a"
+                }
+              },
+              "border": {
+                "color": {
+                  "fixed": "#00000000"
+                },
+                "width": 0,
+                "radius": 6
+              },
+              "placement": {
+                "top": 184,
+                "left": 300,
+                "width": 180,
+                "height": 26,
+                "rotation": 0
+              },
+              "constraint": {
+                "horizontal": "left",
+                "vertical": "top"
+              },
+              "connections": []
+            }
+          ],
+          "background": {
+            "color": {
+              "fixed": "transparent"
+            }
+          },
+          "border": {
+            "color": {
+              "fixed": "dark-green"
+            }
+          },
+          "name": "root",
+          "constraint": {
+            "horizontal": "left",
+            "vertical": "top"
+          },
+          "placement": {
+            "top": 0,
+            "left": 0,
+            "width": 800,
+            "height": 340
+          }
+        }
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "git-annex \u2014 across hosts and users",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "panels": []
+    },
+    {
+      "id": 7,
+      "type": "stat",
+      "title": "Annex replication (per link)",
+      "description": "Per-repo assistant liveness and per-remote reachability, across hosts and users. Green UP / red DOWN.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "label_replace(git_annex_assistant_up, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "instant": true,
+          "legendFormat": "{{host}}/{{user}}/{{repo}} assistant"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "label_replace(git_annex_remote_reachable, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "instant": true,
+          "legendFormat": "{{host}}/{{user}}/{{repo}} \u2192 {{remote}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN"
+                },
+                "1": {
+                  "text": "UP"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#d03b3b",
+                "value": null
+              },
+              {
+                "color": "#0ca30c",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "value_and_name",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "Annex repositories \u2014 across hosts and users",
+      "description": "Every git-annex repo on the fleet, host and home-manager alike, enriched from git_annex_repo_info. Value is time since the newest commit on any ref (context, not liveness \u2014 an idle repo goes stale by design). Live assistant/remote health is the state strip above.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "time() - label_replace(git_annex_last_commit_timestamp_seconds * on(instance,repo,user) group_left(description,group,wanted) git_annex_repo_info, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "pattern": "^(host|user|repo|description|group|wanted|Value)$"
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "host": 0,
+              "user": 1,
+              "repo": 2,
+              "description": 3,
+              "group": 4,
+              "wanted": 5,
+              "Value": 6
+            },
+            "renameByName": {
+              "host": "Host",
+              "user": "User",
+              "repo": "Repo",
+              "description": "Description",
+              "group": "Group",
+              "wanted": "Wanted",
+              "Value": "Since last commit"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": "",
+            "sort": [
+              {
+                "field": "Since last commit",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Since last commit"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 11,
+      "type": "row",
+      "title": "Off-site (restic \u2192 rsync.net)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 31
+      },
+      "panels": []
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Off-site backups (restic \u2192 rsync.net)",
+      "description": "Per off-site job the fleet OWNS (custom.profiles.backup.reportJobs), whether or not enabled \u2014 so a disabled job shows as OFF, not missing. Enabled reads 0 fleet-wide today (rsync.net unreachable). Last success is blank until a job runs; when restic returns it fills in and ages.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 32
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "label_replace(backup_restic_enabled, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "time() - label_replace(backup_restic_last_success_timestamp_seconds, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "pattern": "^(host|job|Value #A|Value #B)$"
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "host": 0,
+              "job": 1,
+              "Value #A": 2,
+              "Value #B": 3
+            },
+            "renameByName": {
+              "host": "Host",
+              "job": "Job",
+              "Value #A": "Enabled",
+              "Value #B": "Last success"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": "",
+            "sort": [
+              {
+                "field": "Host",
+                "desc": false
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Enabled"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "OFF",
+                        "color": "#fab219"
+                      },
+                      "1": {
+                        "text": "ON",
+                        "color": "#0ca30c"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#fab219",
+                      "value": null
+                    },
+                    {
+                      "color": "#0ca30c",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Last success"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
