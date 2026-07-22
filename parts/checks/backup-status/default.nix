@@ -53,9 +53,10 @@ pkgs.testers.nixosTest {
     node.succeed("systemctl start backup-restic-status.service")
     m = node.succeed("cat ${metricsDir}/backup-restic-status.prom")
 
-    # Both owned jobs surface as known-disabled edges, not as missing data.
-    assert 'backup_restic_enabled{job="daily"} 0' in m, m
-    assert 'backup_restic_enabled{job="telemetry"} 0' in m, m
+    # Both owned jobs surface as known-disabled edges, not as missing data. The label is
+    # `restic_job`, not the reserved `job` (which the scrape would overwrite to "node").
+    assert 'backup_restic_enabled{restic_job="daily"} 0' in m, m
+    assert 'backup_restic_enabled{restic_job="telemetry"} 0' in m, m
     # A heartbeat so a dead emitter is distinguishable from a healthy all-off host.
     assert "backup_restic_check_timestamp_seconds" in m, m
 

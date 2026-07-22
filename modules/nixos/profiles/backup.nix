@@ -20,12 +20,16 @@ let
     else
       false;
 
-  # Publishes `backup_restic_enabled{job}` for every job this host reports, from the
+  # Publishes `backup_restic_enabled{restic_job}` for every job this host reports, from the
   # CONFIG (not from a running restic), so the Backups board can draw an off-site edge as
   # a known-disabled state rather than as missing data — the whole reason it survives the
   # jobs being switched off. A separate last-success file (stamped by the restic unit on
   # success, below) carries the freshness; keeping them in different files means a
   # disabled job still shows its last real success age next to enabled=0.
+  #
+  # The label is `restic_job`, NOT `job`: `job` is a RESERVED Prometheus label (the scrape
+  # job name), so a textfile `job="daily"` is silently overwritten to `job="node"` at
+  # scrape time — every host's jobs would collapse into one. Do not rename it back.
   statusScript = pkgs.writeShellScript "backup-restic-status" ''
     set -u
     metrics_dir=${lib.escapeShellArg cfg.metricsDir}
@@ -42,7 +46,7 @@ let
     emit '# HELP backup_restic_enabled Whether this restic backup job is currently enabled (1) or intentionally off (0).'
     emit '# TYPE backup_restic_enabled gauge'
     ${lib.concatMapStringsSep "\n" (job: ''
-      emit 'backup_restic_enabled{job="${job}"} ${if jobEnabled job then "1" else "0"}'
+      emit 'backup_restic_enabled{restic_job="${job}"} ${if jobEnabled job then "1" else "0"}'
     '') cfg.reportJobs}
 
     emit '# HELP backup_restic_check_timestamp_seconds Unix time this backup status check last ran.'
@@ -53,7 +57,7 @@ let
     ${pkgs.coreutils}/bin/mv -f "$tmp" "$metrics_dir/backup-restic-status.prom"
   '';
 
-  # Stamps `backup_restic_last_success_timestamp_seconds{job}` — wired as ExecStartPost on
+  # Stamps `backup_restic_last_success_timestamp_seconds{restic_job}` — wired as ExecStartPost on
   # the restic unit, so it runs ONLY after a backup actually succeeds and the file then
   # persists across later failures (a broken backup keeps showing its last real success,
   # not nothing). Runs as root, like the restic unit, so it can write the exporter dir.
@@ -68,7 +72,7 @@ let
       {
         printf '%s\n' '# HELP backup_restic_last_success_timestamp_seconds Unix time of the last successful restic backup for this job.'
         printf '%s\n' '# TYPE backup_restic_last_success_timestamp_seconds gauge'
-        printf 'backup_restic_last_success_timestamp_seconds{job="%s"} %s\n' "${job}" "$(${pkgs.coreutils}/bin/date +%s)"
+        printf 'backup_restic_last_success_timestamp_seconds{restic_job="%s"} %s\n' "${job}" "$(${pkgs.coreutils}/bin/date +%s)"
       } > "$tmp"
       ${pkgs.coreutils}/bin/chmod 0644 "$tmp"
       ${pkgs.coreutils}/bin/mv -f "$tmp" "$metrics_dir/backup-restic-${job}-lastsuccess.prom"

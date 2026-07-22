@@ -1061,7 +1061,7 @@
           "id": "filterFieldsByName",
           "options": {
             "include": {
-              "pattern": "^(host|job|Value #A|Value #B)$"
+              "pattern": "^(host|restic_job|Value #A|Value #B)$"
             }
           }
         },
@@ -1071,13 +1071,13 @@
             "excludeByName": {},
             "indexByName": {
               "host": 0,
-              "job": 1,
+              "restic_job": 1,
               "Value #A": 2,
               "Value #B": 3
             },
             "renameByName": {
               "host": "Host",
-              "job": "Job",
+              "restic_job": "Job",
               "Value #A": "Enabled",
               "Value #B": "Last success"
             }
