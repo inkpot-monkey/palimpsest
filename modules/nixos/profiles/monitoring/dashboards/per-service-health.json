@@ -63,7 +63,7 @@
       "id": 2,
       "type": "stat",
       "title": "Units down",
-      "description": "Count of curated expected-up units (ADR-0019 monitoring-unit-state set) that are NOT active right now \u2014 kelpy's 13 app/infra units + rk1b's grafana/VictoriaMetrics/VictoriaLogs. Green = all up; red = one or more expected units down. This is the white-box complement to the Gatus probe: it catches a unit that exited cleanly-dead on a port something else still answers.",
+      "description": "Count of curated expected-up units (ADR-0019 monitoring-unit-state set) that are NOT active right now — kelpy's 13 app/infra units + rk1b's grafana/VictoriaMetrics/VictoriaLogs. Green = all up; red = one or more expected units down. This is the white-box complement to the Gatus probe: it catches a unit that exited cleanly-dead on a port something else still answers.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -127,7 +127,7 @@
       "id": 3,
       "type": "stat",
       "title": "Failed probes",
-      "description": "Count of Gatus endpoint probes currently failing (gatus_results_endpoint_success == 0) \u2014 the black-box reachability view. Green = all probes pass; red = one or more services unreachable through Caddy. Same signal that fires #infra-alerts.",
+      "description": "Count of Gatus endpoint probes currently failing (gatus_results_endpoint_success == 0) — the black-box reachability view. Green = all probes pass; red = one or more services unreachable through Caddy. Same signal that fires #infra-alerts.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -191,7 +191,7 @@
       "id": 4,
       "type": "stat",
       "title": "Errors (window)",
-      "description": "Total error+critical+fatal log lines over the board window, scoped to the curated expected-up units ONLY. On this fleet the curated services are near-silent \u2014 the ~8k lines/hr of log noise is all system/session units (user@\u2026 , sshd, ModemManager, kernel, init.scope), none of them a curated service \u2014 so this tile normally reads 0/green and empty is the healthy state. A non-zero value means one of OUR services is actually erroring: green 0, amber \u22655, red \u226525 over 6h (calibrate against the real per-service baseline in the preview loop if it proves noisier). Read the sparkline for shape.",
+      "description": "Total error+critical+fatal log lines over the board window, scoped to the curated expected-up units ONLY. On this fleet the curated services are near-silent — the ~8k lines/hr of log noise is all system/session units (user@… , sshd, ModemManager, kernel, init.scope), none of them a curated service — so this tile normally reads 0/green and empty is the healthy state. A non-zero value means one of OUR services is actually erroring: green 0, amber ≥5, red ≥25 over 6h (calibrate against the real per-service baseline in the preview loop if it proves noisier). Read the sparkline for shape.",
       "datasource": {
         "type": "victoriametrics-logs-datasource",
         "uid": "${logs_datasource}"
@@ -261,7 +261,7 @@
       "id": 5,
       "type": "stat",
       "title": "Service status",
-      "description": "Per expected-up unit, one tile in a grid: green = active, red = not active \u2014 a DOWN tile pops against the green field. The curated ADR-0019 unit set pinned per host (kelpy app/infra + rk1b grafana/VM/VL); includes internal infra no other board graphs (caddy, blocky, VictoriaMetrics/Logs, vector). Tile label is `host/unit` (host kept because e.g. vector runs on both kelpy and rk1b). A tile reads DOWN the instant the unit leaves `active` \u2014 the direct white-box state, not a reachability inference.",
+      "description": "Per expected-up unit, one tile in a grid: green = active, red = not active — a DOWN tile pops against the green field. The curated ADR-0019 unit set pinned per host (kelpy app/infra + rk1b grafana/VM/VL); includes internal infra no other board graphs (caddy, blocky, VictoriaMetrics/Logs, vector). Tile label is `host/unit` (host kept because e.g. vector runs on both kelpy and rk1b). A tile reads DOWN the instant the unit leaves `active` — the direct white-box state, not a reachability inference.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -360,7 +360,7 @@
       "id": 7,
       "type": "timeseries",
       "title": "Probe latency",
-      "description": "Gatus probe round-trip per service (gatus_results_duration_seconds). Warning band at 1s (soft SLO), critical at 3s. Unbounded service set \u2192 palette-classic + legend for identity (house rule for >8 series). Only Caddy-fronted HTTPS services have a latency series.",
+      "description": "Gatus probe round-trip per service (gatus_results_duration_seconds). Warning band at 1s (soft SLO), critical at 3s. Unbounded service set → palette-classic + legend for identity (house rule for >8 series). Only Caddy-fronted HTTPS services have a latency series.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -443,7 +443,7 @@
       "id": 8,
       "type": "table",
       "title": "TLS cert expiry",
-      "description": "Days until each Caddy-fronted service's TLS certificate expires (gatus_results_certificate_expiration_seconds / 86400), soonest first. Same house age ramp as Secret expiry: green >30d, soft-amber \u226430, amber \u226414, orange \u22647, red \u22643. Empty for any raw-TCP probe, which has no cert.",
+      "description": "Days until each Caddy-fronted service's TLS certificate expires (gatus_results_certificate_expiration_seconds / 86400), soonest first. Same house age ramp as Secret expiry: green >30d, soft-amber ≤30, amber ≤14, orange ≤7, red ≤3. Empty for any raw-TCP probe, which has no cert.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -564,6 +564,197 @@
                     }
                   ]
                 }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 9,
+      "type": "row",
+      "title": "git-annex replication",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 22
+      },
+      "panels": []
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Annex replication",
+      "description": "Per git-annex repo, the two signals that a repo is still replicating (palimpsest#60): its assistant is running, and each of its remotes answers. A stopped annex is otherwise INVISIBLE — init keeps reading `active`, no unit fails, and content just stops moving; every replication bug found during the music bring-up hid exactly there. Published by services.git-annex.metrics as node-exporter textfiles (git-annex repos have no port or vhost, so the ADR-0019 probe cannot see them at all). A repo with no assistant and no remotes (kelpy `pictures`, which is push-only from the desktop) has no tile here — there is nothing on this side to check.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "label_replace(git_annex_assistant_up, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "legendFormat": "{{host}}/{{repo}} assistant",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "label_replace(git_annex_remote_reachable, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "legendFormat": "{{host}}/{{repo}} → {{remote}}",
+          "instant": true
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "value_and_name",
+        "orientation": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN"
+                },
+                "1": {
+                  "text": "UP"
+                }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#d03b3b",
+                "value": null
+              },
+              {
+                "color": "#0ca30c",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "Annex repositories — time since last commit",
+      "description": "How long since each repo's history last moved (newest commit on any ref). CONTEXT, NOT HEALTH — deliberately uncoloured and unalerted: a repo's history only moves when its content does, so a perfectly healthy library nobody added music to for a fortnight reads two weeks old. Judge liveness by the tiles above, which probe regardless of activity; read this to answer \"when did this repo last do anything?\".",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 24,
+        "x": 0,
+        "y": 29
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "time() - label_replace(git_annex_last_commit_timestamp_seconds, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "pattern": "^(host|repo|Value)$"
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "host": 0,
+              "repo": 1,
+              "Value": 2
+            },
+            "renameByName": {
+              "host": "Host",
+              "repo": "Repository",
+              "Value": "Last commit"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": "",
+            "sort": [
+              {
+                "field": "Last commit",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Last commit"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 0
               }
             ]
           }
