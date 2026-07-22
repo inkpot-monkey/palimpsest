@@ -12,6 +12,7 @@ in
   imports = [
     ./qbittorrent.nix
     ./jellyfin.nix
+    ./slskd.nix
   ];
 
   options.custom.profiles.media = {

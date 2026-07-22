@@ -102,6 +102,16 @@ let
         port = 4533;
         origin = "rk1b";
       };
+      # slskd — the Soulseek client that seeds the shared music library outward
+      # (ADR-0028). It RUNS on kelpy (where the git-annex `music` replica lives),
+      # inside the ProtonVPN container's netns, with its web UI published to loopback;
+      # kelpy's Caddy fronts it tailnet-only at slskd.<domain> (internal_only guard).
+      # No `origin`: unlike Navidrome it is co-located with the edge. The profile that
+      # runs it is custom.profiles.media.slskd.
+      slskd = {
+        edge = "kelpy";
+        port = 5030;
+      };
     };
   };
 

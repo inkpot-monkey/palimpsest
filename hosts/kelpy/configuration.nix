@@ -51,6 +51,7 @@
         "litellm.service"
         "jellyfin.service"
         "podman-qbittorrent-app.service" # torrent
+        "podman-slskd.service" # Soulseek music seeder (ADR-0029)
         "vector.service" # monitoring-client still runs here; server moved to rk1b
         "paperless-scheduler.service"
         "paperless-task-queue.service"
@@ -100,6 +101,10 @@
     blocky.enable = true;
     media = {
       enable = true;
+      # slskd seeds the git-annex `music` replica (ADR-0028) out to Soulseek, through
+      # the same ProtonVPN container the torrent stack uses. Reads the replica in
+      # ./git-annex.nix read-only; web UI fronted tailnet-only at slskd.<domain>.
+      slskd.enable = true;
     };
   };
 
@@ -132,7 +137,14 @@
     #
     # Scoped to `music` deliberately: the `pictures` repo alongside it is personal
     # photos and SHOULD be backed up. Do not widen this to /var/lib/git-annex.
-    exclude = [ "/persistent/var/lib/git-annex/music" ];
+    #
+    # slskd's own downloads (ADR-0029) are the same category — bulk, re-acquirable data
+    # that must never ship off-site — so they are excluded too. slskd's small state dir
+    # (/var/lib/slskd: share DB, config) is left in: it is not bulk and is cheap to keep.
+    exclude = [
+      "/persistent/var/lib/git-annex/music"
+      "/persistent/var/lib/media/slskd-downloads"
+    ];
   };
 
   # Persist the agent's home state across impermanence reboots: Claude Code
