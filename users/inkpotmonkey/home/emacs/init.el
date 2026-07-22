@@ -805,8 +805,20 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
  ;; already here, so the C-x p prefix (C-x p f = project-find-file) works too.
  ;; M-& so the global `async-shell-command' binding (remapped to
  ;; `chelys-galactica-run') reaches Emacs instead of going to the TUI.
+ ;; M-g so `goto-map' reaches Emacs from a Claude buffer: M-g a =
+ ;; `agents-hud-avy' (jump to another session), M-g l = `avy-goto-line', etc.
  (ghostel-keymap-exceptions
-  '("C-c" "C-x" "C-u" "C-h" "M-x" "M-:" "C-\\" "M-o" "M-s" "M-&"))
+  '("C-c"
+    "C-x"
+    "C-u"
+    "C-h"
+    "M-x"
+    "M-:"
+    "C-\\"
+    "M-o"
+    "M-s"
+    "M-&"
+    "M-g"))
  :config
  ;; --- claude-code.el <-> ghostel 0.31 API shim ----------------------------
  ;; stevemolitor/claude-code.el (<=0.4.5, == current upstream HEAD) targets
