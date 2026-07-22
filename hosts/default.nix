@@ -80,6 +80,10 @@ in
             home-manager.users.inkpotmonkey.custom.home.profiles.git-annex = {
               enable = true;
               metrics.enable = true;
+              # User-level replication alert (option C): pages #infra-alerts when the sync
+              # breaks while the laptop is in use. Its webhook secret is the user's own
+              # sops (admin key already here) — no host re-key, no host secret.
+              alert.enable = true;
             };
             users.users.inkpotmonkey.extraGroups = [ "node-exporter" ];
             assertions = [

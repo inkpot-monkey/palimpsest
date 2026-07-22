@@ -9,6 +9,8 @@ let
   gaLib = import ../../shared/git-annex/lib.nix { inherit lib; };
 in
 {
+  imports = [ ./alert.nix ];
+
   options.services.git-annex = {
     enable = lib.mkEnableOption "git-annex";
 

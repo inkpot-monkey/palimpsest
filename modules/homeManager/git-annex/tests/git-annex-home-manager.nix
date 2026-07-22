@@ -14,6 +14,24 @@ let
         mkdir -p $out
         ssh-keygen -t ed25519 -f $out/id_ed25519 -N "" -C "test-key"
       '';
+
+  # A captive webhook receiver + a plain webhook-url file, so the user-level alert
+  # (services.git-annex.alert) can be driven and its POST captured — the real workstation
+  # assembles the same url from the user's sops, which a VM cannot exercise.
+  alertPort = 9098;
+  hookReceiver = pkgs.writeShellScript "hook-receiver" ''
+    exec ${pkgs.python3}/bin/python3 - <<'PY'
+    import http.server
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            n = int(self.headers.get("content-length", 0))
+            open("/tmp/hooks.log", "a").write(self.rfile.read(n).decode("utf-8", "replace") + "\n")
+            self.send_response(200); self.end_headers()
+        def log_message(self, *a): pass
+    http.server.HTTPServer(("127.0.0.1", ${toString alertPort}), H).serve_forever()
+    PY
+  '';
+  webhookFile = pkgs.writeText "webhook-url" "http://127.0.0.1:${toString alertPort}/hook";
 in
 pkgs.testers.nixosTest {
   name = "git-annex-home-manager";
@@ -123,6 +141,11 @@ pkgs.testers.nixosTest {
           "d /var/lib/prometheus-node-exporter-text-files 0775 bob users -"
         ];
 
+        systemd.services.hook-receiver = {
+          wantedBy = [ "multi-user.target" ];
+          serviceConfig.ExecStart = hookReceiver;
+        };
+
         home-manager.useGlobalPkgs = true;
         home-manager.useUserPackages = true;
         home-manager.users.bob =
@@ -176,6 +199,13 @@ pkgs.testers.nixosTest {
                 # Publish this user's annex health to the textfile collector, exactly as
                 # the sawtoothShark workstation does — the "across users" half of #60.
                 metrics.enable = true;
+                # And page over it, as a USER unit (option C). One bad read pages so the
+                # test is decisive; the real deploy keeps the two-tick debounce.
+                alert = {
+                  enable = true;
+                  webhookUrlFile = webhookFile;
+                  failureThreshold = 1;
+                };
               };
             };
           };
@@ -351,6 +381,25 @@ pkgs.testers.nixosTest {
         "stat -c %a /var/lib/prometheus-node-exporter-text-files/git-annex-bob-annex.prom"
     ).strip()
     assert mode == "644", f"published metrics must be world-readable, got {mode}"
+
+    # 11d. The user-level ALERT (option C): the watcher runs as bob (systemctl --user),
+    # reads bob's own .prom, and pages the captive webhook. Stop the metrics writer's
+    # timer first so it can't overwrite the deliberately-bad reading we inject, then
+    # confirm a fresh assistant-down pages.
+    client_full.wait_for_open_port(${toString alertPort})
+    client_full.succeed(bob + "systemctl --user stop git-annex-metrics-annex.timer")
+    ts = client_full.succeed("date +%s").strip()
+    client_full.succeed(
+        f"cat > /var/lib/prometheus-node-exporter-text-files/git-annex-bob-annex.prom <<EOF\n"
+        f'git_annex_check_timestamp_seconds{{repo="annex",user="bob"}} {ts}\n'
+        f'git_annex_assistant_up{{repo="annex",user="bob"}} 0\n'
+        "EOF"
+    )
+    client_full.succeed(": > /tmp/hooks.log")
+    client_full.succeed(bob + "systemctl --user start git-annex-alert-check.service")
+    alert_hooks = client_full.succeed("cat /tmp/hooks.log")
+    assert "assistant is NOT running" in alert_hooks, f"user alert must page, got: {alert_hooks!r}"
+    assert "🚨" in alert_hooks, alert_hooks
 
     # Stop the assistant so the remaining checks are deterministic (it can't race
     # in its own commits or transfers).
