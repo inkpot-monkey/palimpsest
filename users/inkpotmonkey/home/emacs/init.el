@@ -1273,6 +1273,9 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
  agents-hud
  :demand t
  :bind ("C-x C-a" . agents-hud-toggle-sidebar)
+ ;; avy quick-select over the visible HUD rows, alongside `M-g l'
+ ;; (avy-goto-line): label every session row, jump on the keypress.
+ (:map goto-map ("a" . agents-hud-avy))
  :config (agents-hud-setup)
  (with-eval-after-load 'claude-code
    (define-key claude-code-command-map (kbd "b") #'agents-hud-picker))

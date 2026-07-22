@@ -65,6 +65,9 @@
 (declare-function nerd-icons-faicon "nerd-icons" (name &rest args))
 (declare-function nerd-icons-icon-for-buffer "nerd-icons"
                   (&rest args))
+(declare-function avy-process "avy"
+                  (candidates &optional overlay-fn cleanup-fn))
+(defvar avy-action)
 
 ;;; ── Customization ────────────────────────────────────────────────────────────
 
@@ -684,6 +687,8 @@ either way, since no icon can convey it."
   #'agents-hud-next
   "p"
   #'agents-hud-prev
+  "."
+  #'agents-hud-avy
   "q"
   #'quit-window)
 
@@ -839,23 +844,35 @@ Clears the worktree→repo cache so an explicit refresh re-resolves grouping."
   (get-text-property (point) 'agents-hud-entry))
 
 (defun agents-hud--main-window ()
-  "Return a non-side window to show a buffer in (never the sidebar)."
-  (or (get-mru-window nil nil 'not-selected)
-      (get-largest-window nil nil)))
+  "Return the widest window to show a buffer in — never a side window.
+Explicitly excludes the HUD sidebar and any other `window-side' window, so it
+is correct whether called from the panel (RET) or from a code window (avy)."
+  (let* ((cands
+          (seq-remove
+           (lambda (w)
+             (window-parameter w 'window-side))
+           (window-list nil 'no-mini))))
+    (or (car
+         (sort cands
+               (lambda (a b) (> (window-width a) (window-width b)))))
+        (get-mru-window nil nil 'not-selected) (selected-window))))
+
+(defun agents-hud--goto-buffer (buf)
+  "Switch to BUF in the main window (never the sidebar); keep the panel open."
+  (if (buffer-live-p buf)
+      (let ((win (agents-hud--main-window)))
+        (if (window-live-p win)
+            (progn
+              (select-window win)
+              (switch-to-buffer buf))
+          (pop-to-buffer buf)))
+    (message "agents-hud: buffer no longer live")))
 
 (defun agents-hud-jump ()
   "Switch to the buffer on the current line in the main window; keep the panel."
   (interactive)
-  (when-let* ((entry (agents-hud--entry-at-point))
-              (buf (agents-hud-entry-buffer entry)))
-    (if (buffer-live-p buf)
-        (let ((win (agents-hud--main-window)))
-          (if (window-live-p win)
-              (progn
-                (select-window win)
-                (switch-to-buffer buf))
-            (pop-to-buffer buf)))
-      (message "agents-hud: buffer no longer live"))))
+  (when-let* ((entry (agents-hud--entry-at-point)))
+    (agents-hud--goto-buffer (agents-hud-entry-buffer entry))))
 
 (defun agents-hud-peek ()
   "Show the current line's buffer in the main window without leaving the panel."
@@ -866,6 +883,55 @@ Clears the worktree→repo cache so an explicit refresh re-resolves grouping."
                (and (buffer-live-p buf) (agents-hud--main-window))))
     (when (window-live-p win)
       (set-window-buffer win buf))))
+
+;;; ── avy quick-select ─────────────────────────────────────────────────────────
+
+(defun agents-hud--entry-positions (buffer)
+  "Return the positions that start each session row in BUFFER."
+  (with-current-buffer buffer
+    (let ((pos (point-min))
+          result)
+      (when (get-text-property pos 'agents-hud-entry)
+        (push pos result))
+      (while (setq pos
+                   (next-single-property-change
+                    pos 'agents-hud-entry))
+        (when (get-text-property pos 'agents-hud-entry)
+          (push pos result)))
+      (nreverse result))))
+
+(defun agents-hud--avy-action (pt)
+  "avy action: jump to the session whose row starts at PT in the sidebar.
+PT is a position in the HUD buffer, so the entry is read there directly —
+independent of which window avy leaves selected."
+  (when-let* ((buf (get-buffer agents-hud--buffer-name))
+              (entry
+               (with-current-buffer buf
+                 (get-text-property pt 'agents-hud-entry))))
+    (agents-hud--goto-buffer (agents-hud-entry-buffer entry)))
+  t)
+
+;;;###autoload
+(defun agents-hud-avy ()
+  "Pick a session with avy: label every visible HUD row, jump on the keypress.
+Works from any window while the sidebar is open — no need to focus it first."
+  (interactive)
+  (unless (require 'avy nil t)
+    (user-error "agents-hud: avy is not available"))
+  (let ((win (get-buffer-window agents-hud--buffer-name)))
+    (unless (window-live-p win)
+      (user-error "agents-hud: sidebar is not open (C-x C-a)"))
+    (let ((cands
+           (mapcar
+            (lambda (pos) (cons pos win))
+            (agents-hud--entry-positions (window-buffer win)))))
+      (unless cands
+        (user-error "agents-hud: no sessions to pick"))
+      ;; Bind avy-action to our jumper (avy-process reads it); avy-keys keep
+      ;; their global default, so no `avy-with' macro (hence no compile-time
+      ;; dependency on avy) is needed.
+      (let ((avy-action #'agents-hud--avy-action))
+        (avy-process cands)))))
 
 (defun agents-hud-kill ()
   "Kill the buffer/process on the current line (with confirmation)."

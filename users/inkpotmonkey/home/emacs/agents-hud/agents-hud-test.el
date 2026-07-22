@@ -337,6 +337,56 @@
             (should (cl-every #'get-buffer cands))))
       (mapc #'kill-buffer bufs))))
 
+;;; --- avy quick-select --------------------------------------------------------
+
+(ert-deftest agents-hud-test-entry-positions ()
+  "One position is collected per session row, at the row's start."
+  (with-temp-buffer
+    (let ((ea (agents-hud-test--entry :state 'idle :project "/p/a"))
+          (eb (agents-hud-test--entry :state 'idle :project "/p/b")))
+      (insert "── heading\n")
+      (let ((s1 (point)))
+        (insert "  row-a\n     path\n")
+        (put-text-property s1 (point) 'agents-hud-entry ea))
+      (insert "\n── heading2\n")
+      (let ((s2 (point)))
+        (insert "  row-b\n     path\n")
+        (put-text-property s2 (point) 'agents-hud-entry eb))
+      (let ((positions
+             (agents-hud--entry-positions (current-buffer))))
+        (should (= 2 (length positions)))
+        ;; each position carries its entry
+        (should
+         (eq
+          ea (get-text-property (nth 0 positions) 'agents-hud-entry)))
+        (should
+         (eq
+          eb
+          (get-text-property
+           (nth 1 positions) 'agents-hud-entry)))))))
+
+(ert-deftest agents-hud-test-avy-action-jumps ()
+  "The avy action reads the entry at PT in the HUD buffer and jumps to it."
+  (let* ((target (generate-new-buffer " agents-hud-target"))
+         (entry (agents-hud-test--entry :state 'idle :buffer target))
+         (hud (get-buffer-create agents-hud--buffer-name))
+         (jumped nil))
+    (unwind-protect
+        (progn
+          (with-current-buffer hud
+            (let ((inhibit-read-only t))
+              (erase-buffer)
+              (insert "  row\n     path\n")
+              (put-text-property
+               (point-min) (point-max) 'agents-hud-entry entry)))
+          (cl-letf (((symbol-function 'agents-hud--goto-buffer)
+                     (lambda (b) (setq jumped b))))
+            (agents-hud--avy-action (point-min)))
+          (should (eq target jumped)))
+      (kill-buffer target)
+      (when (buffer-live-p hud)
+        (kill-buffer hud)))))
+
 (ert-deftest agents-hud-test-nerd-icon-advice ()
   "The buffer-icon advice picks Claude vs shell by name/mode, else defers."
   (cl-letf (((symbol-function 'nerd-icons-mdicon)
