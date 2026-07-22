@@ -257,6 +257,14 @@ in
               "vector.service"
             ];
           };
+
+          # git-annex replication watcher (palimpsest#60): rk1b is authoritative for the
+          # music library, so a silent stop here means nothing beets files ever reaches
+          # kelpy for slskd to seed. Same webhook story as the checks above.
+          custom.profiles.monitoring-git-annex-alert = {
+            enable = true;
+            webhookUrlFile = config.custom.profiles.monitoring-watcher.webhookUrlFile;
+          };
         })
       ];
     };

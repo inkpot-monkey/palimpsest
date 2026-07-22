@@ -62,6 +62,17 @@
     # the 90-day tailscale auth key) lapses. Reuses the infraAlerts webhook + the
     # node-exporter textfile metric for a Grafana "days remaining" gauge.
     monitoring-secret-expiry.enable = true;
+    # git-annex replication watcher (palimpsest#60): a git-annex repo that stops
+    # replicating reports healthy in every other way, so nothing else here can see it.
+    # Uses the infraAlerts webhook by default, like the checks above.
+    #
+    # This covers the `music` replica (assistant + remote → rk1b). It does NOT
+    # meaningfully cover `pictures`: that repo is passive — no assistant, no remotes,
+    # the desktop's home-manager client pushes INTO it — so the only signal available
+    # on this side is whether the check itself still runs. Watching the photo link
+    # properly means teaching the home-manager module to export too, which is where
+    # that repo's outbound half actually lives. Not done here.
+    monitoring-git-annex-alert.enable = true;
     mail = {
       enable = true;
       inherit (settings.mail) domain extraDomains;
