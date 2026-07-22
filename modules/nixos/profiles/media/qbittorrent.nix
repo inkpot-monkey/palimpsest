@@ -129,6 +129,15 @@ in
               VPN_SERVICE_PROVIDER = "protonvpn";
               VPN_TYPE = "wireguard";
               SERVER_COUNTRIES = "Switzerland";
+              # Restrict selection to port-forwarding-capable servers, i.e. ProtonVPN's
+              # standard P2P servers. gluetun's filters are inclusion-only with no
+              # "exclude Tor" flag, and Switzerland's pool includes Tor-over-VPN servers
+              # (Swiss entry, but traffic exits via the Tor network — a German Tor exit
+              # was observed). Tor and Secure Core servers don't offer port forwarding, so
+              # PORT_FORWARD_ONLY excludes them and guarantees a plain Swiss P2P exit — the
+              # right kind of server for qBittorrent and slskd. (This only filters server
+              # SELECTION; it does not enable the port-forwarding feature itself.)
+              PORT_FORWARD_ONLY = "on";
             };
         ports = [
           "127.0.0.1:${toString settings.services.private.torrent.port}:${toString cfg.qbittorrent.webuiPort}/tcp" # WebUI
