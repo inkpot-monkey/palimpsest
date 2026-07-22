@@ -67,9 +67,29 @@ in
         # server in hosts/kelpy/git-annex.nix). Opt-in per host; the client decrypts
         # git-annex.yaml through the user's own home sops (the admin key), so no host
         # re-key is needed on this workstation.
-        {
-          home-manager.users.inkpotmonkey.custom.home.profiles.git-annex.enable = true;
-        }
+        #
+        # metrics.enable makes that sync visible on the fleet Backups board. The three
+        # lines below travel together and only make sense together: the home writer runs
+        # as inkpotmonkey but publishes into the node-exporter-owned textfile dir, so the
+        # user needs node-exporter group write, and that dir only exists where the
+        # monitoring exporters run — asserted, so a mis-wiring fails the build loudly
+        # rather than silently publishing nowhere.
+        (
+          { config, ... }:
+          {
+            home-manager.users.inkpotmonkey.custom.home.profiles.git-annex = {
+              enable = true;
+              metrics.enable = true;
+            };
+            users.users.inkpotmonkey.extraGroups = [ "node-exporter" ];
+            assertions = [
+              {
+                assertion = config.custom.profiles.monitoring-exporters.enable;
+                message = "sawtoothShark enables the home git-annex metrics writer, which publishes into the node-exporter textfile dir — enable custom.profiles.monitoring-exporters (via monitoring-client) or drop metrics.enable.";
+              }
+            ];
+          }
+        )
       ];
     };
 

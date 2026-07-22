@@ -8,6 +8,15 @@
 {
   options.custom.home.profiles.git-annex = {
     enable = lib.mkEnableOption "git-annex assistant for file synchronization";
+
+    metrics.enable = lib.mkEnableOption ''
+      publishing this user's git-annex health metrics to the node-exporter textfile
+      collector, so the workstation's ~/Pictures sync is visible on the fleet Backups
+      board the same way a host repo is. Off by default and NixOS-gated: it only works
+      where the host runs the monitoring exporters and has added this user to the
+      node-exporter group, which the host must arrange alongside setting this (see
+      hosts/default.nix)
+    '';
   };
 
   imports = [
@@ -23,6 +32,9 @@
     services.git-annex = {
       enable = true;
       sshKeyFile = config.sops.secrets.git_annex_ssh_key.path;
+      # Gated by the host (see the option): the writer needs node-exporter group write,
+      # which only the NixOS side can grant.
+      metrics.enable = config.custom.home.profiles.git-annex.metrics.enable;
       repositories = {
         # ~/Pictures is the working copy. unlock = true keeps photos as real,
         # editable files (image viewers see files, not annex symlinks). The

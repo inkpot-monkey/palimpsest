@@ -114,6 +114,15 @@ pkgs.testers.nixosTest {
           pkgs.git-annex
         ];
 
+        # The user-run metrics writer publishes into the node-exporter textfile dir. On
+        # a real host that dir is node-exporter-owned and the user is granted group write
+        # (hosts/default.nix); here there is no monitoring profile, so stand the dir up
+        # owned by bob — this test exercises the WRITER, not the permission model (that
+        # is the host-side group grant, verified by eval).
+        systemd.tmpfiles.rules = [
+          "d /var/lib/prometheus-node-exporter-text-files 0775 bob users -"
+        ];
+
         home-manager.useGlobalPkgs = true;
         home-manager.useUserPackages = true;
         home-manager.users.bob =
@@ -164,6 +173,9 @@ pkgs.testers.nixosTest {
                   };
                 };
                 assistant.enable = true;
+                # Publish this user's annex health to the textfile collector, exactly as
+                # the sawtoothShark workstation does — the "across users" half of #60.
+                metrics.enable = true;
               };
             };
           };
@@ -315,6 +327,30 @@ pkgs.testers.nixosTest {
 
     # 11. Verify per-remote cost was applied declaratively.
     client_full.succeed("sudo -u bob git -C /home/bob/Annex config remote.gateway.annex-cost | grep 50")
+
+    # 11c. The user-run health metrics writer (the "across users" half of #60). Driven
+    # while bob's assistant is still up, so assistant_up must read 1. Proves the home
+    # counterpart of the NixOS exporter: it runs AS the user, labels every series with
+    # that user, probes the shared `--user` assistant, and publishes a user-namespaced
+    # file into the shared textfile dir — the same schema a host repo emits, so one
+    # board can carry both.
+    bob = "sudo -u bob XDG_RUNTIME_DIR=/run/user/1000 "
+    client_full.succeed(bob + "systemctl --user start git-annex-metrics-annex.service")
+    prom = client_full.succeed(
+        "cat /var/lib/prometheus-node-exporter-text-files/git-annex-bob-annex.prom"
+    )
+    assert 'git_annex_repo_info{repo="annex",user="bob"' in prom, prom
+    assert 'description="bob-annex"' in prom, prom
+    assert 'git_annex_assistant_up{repo="annex",user="bob"} 1' in prom, prom
+    # The reachability series is emitted for the git remote (gateway); its value is
+    # environment-dependent, but the presence proves the per-user probe ran. The 1↔0
+    # semantics are pinned by the NixOS git-annex-metrics test against the same body.
+    assert 'git_annex_remote_reachable{repo="annex",user="bob",remote="gateway"}' in prom, prom
+    # World-readable, or node-exporter (a different user) could never scrape it.
+    mode = client_full.succeed(
+        "stat -c %a /var/lib/prometheus-node-exporter-text-files/git-annex-bob-annex.prom"
+    ).strip()
+    assert mode == "644", f"published metrics must be world-readable, got {mode}"
 
     # Stop the assistant so the remaining checks are deterministic (it can't race
     # in its own commits or transfers).
