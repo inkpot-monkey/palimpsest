@@ -58,6 +58,12 @@
         host_fleet_coherence = import ./host-user-contract-matrix {
           inherit pkgs self;
         };
+        # Presence-aware git-annex replication alerting (palimpsest#60): on-demand hosts
+        # suppress stale/absent metrics (a closed laptop lid must not page) and alert
+        # only on fresh faults, while always-on hosts keep the strict staleness check.
+        git_annex_alert = import ./git-annex-alert {
+          inherit pkgs self inputs;
+        };
       };
     };
 }
