@@ -1259,6 +1259,27 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
    (add-to-list 'consult-buffer-sources 'proc-notify-consult-source
                 'append)))
 
+;; agents-hud — live status view + switcher for the terminal/agent buffers you
+;; run: every claude-code session and every plain ghostel terminal.  One
+;; collector (redraw-activity / bell / OSC-133 stamps → ⧗ working / ! waiting /
+;; ○ idle / ✕ dead), rendered two ways from the same backend: a toggle-able
+;; right-side panel (`C-x C-a', grouped by project, attention floats up) and a
+;; consult group (the "Agents" group in `consult-buffer', narrow `a'; or the
+;; scoped picker on `C-c c b').  `:demand t' so the state-tracking hooks wire at
+;; daemon startup (like proc-notify), and it reads proc-notify's pending-set as
+;; the primary waiting signal.  The picker supersedes claude-code's `C-c c b'
+;; (`claude-code-switch-to-buffer'); select-buffer stays on `C-c c B'.
+(use-package
+ agents-hud
+ :demand t
+ :bind ("C-x C-a" . agents-hud-toggle-sidebar)
+ :config (agents-hud-setup)
+ (with-eval-after-load 'claude-code
+   (define-key claude-code-command-map (kbd "b") #'agents-hud-picker))
+ (with-eval-after-load 'consult
+   (add-to-list 'consult-buffer-sources 'agents-hud-consult-source
+                'append)))
+
 
 (use-package
  ement
