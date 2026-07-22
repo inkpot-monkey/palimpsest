@@ -535,10 +535,44 @@ leads with that tag and omits the repo; otherwise it is repo-qualified
   "Return the grouping key (project root, else path) for ENTRY."
   (or (agents-hud-entry-project entry) (agents-hud-entry-path entry)))
 
+;; Stable ordering for the sidebar.  Rows must NOT reshuffle when a session
+;; flips working↔idle↔waiting — position is tied to identity, not state.  Each
+;; buffer gets a monotonically increasing "first-seen" sequence the first time
+;; it is rendered; rows and groups are ordered by it, so a row keeps its slot
+;; for life and only earlier removals shift it up.  (The transient consult
+;; picker still uses the attention-first `agents-hud--sort-entries'.)
+(defvar agents-hud--seq-counter 0
+  "Monotonic counter handing out `agents-hud--seq' values.")
+
+(defvar agents-hud--seq-table
+  (make-hash-table :test 'eq :weakness 'key)
+  "Maps a buffer to its stable first-seen sequence number.
+Weak on the key so entries vanish when their buffer is garbage-collected.")
+
+(defun agents-hud--seq (buffer)
+  "Return BUFFER's stable first-seen sequence, assigning the next one if new."
+  (or (gethash buffer agents-hud--seq-table)
+      (puthash
+       buffer
+       (cl-incf agents-hud--seq-counter)
+       agents-hud--seq-table)))
+
+(defun agents-hud--stable-sort (entries)
+  "Return ENTRIES ordered by stable first-seen sequence (ascending)."
+  (sort (copy-sequence entries)
+        (lambda (a b)
+          (< (agents-hud--seq (agents-hud-entry-buffer a))
+             (agents-hud--seq (agents-hud-entry-buffer b))))))
+
 (defun agents-hud--group-by-project (entries)
-  "Group ENTRIES by project into (GROUP-KEY . SORTED-ENTRIES) pairs.
-Rows within a group are attention-sorted; groups with an attention-needing
-session sort ahead of quiet ones, then alphabetically by key."
+  "Group ENTRIES by project into (GROUP-KEY . STABLE-ENTRIES) pairs.
+Rows within a group and the groups themselves keep first-seen order, so a row
+holds its position across state changes — only an earlier row (or group) being
+removed shifts it.  A group's position is set by its earliest member."
+  ;; Assign sequences up front, in the order ENTRIES arrive, so the first-seen
+  ;; order is deterministic rather than however `sort' happens to compare.
+  (dolist (e entries)
+    (agents-hud--seq (agents-hud-entry-buffer e)))
   (let ((groups '()))
     (dolist (e entries)
       (let* ((key (agents-hud--group-key e))
@@ -549,15 +583,15 @@ session sort ahead of quiet ones, then alphabetically by key."
     (setq groups
           (mapcar
            (lambda (g)
-             (cons (car g) (agents-hud--sort-entries (cdr g))))
+             (cons (car g) (agents-hud--stable-sort (cdr g))))
            groups))
+    ;; groups ordered by their earliest member (rows already ascending, so the
+    ;; first entry carries the group's minimum sequence)
     (sort groups
           (lambda (a b)
-            (let ((pa (agents-hud--entry-priority (cadr a)))
-                  (pb (agents-hud--entry-priority (cadr b))))
-              (if (/= pa pb)
-                  (< pa pb)
-                (string< (or (car a) "") (or (car b) ""))))))))
+            (< (agents-hud--seq (agents-hud-entry-buffer (cadr a)))
+               (agents-hud--seq
+                (agents-hud-entry-buffer (cadr b))))))))
 
 ;;; ── Formatting (pure) ────────────────────────────────────────────────────────
 
@@ -766,12 +800,14 @@ appears when `agents-hud-show-state-label' is on (a dead exit code always does).
                           (file-name-nondirectory
                            (directory-file-name key))
                         "No project"))
-                     ;; Rows are attention-sorted, so the first is the
-                     ;; highest-priority; only a genuine waiting session
-                     ;; (priority 0) earns the ‹needs you› marker — a merely
-                     ;; working group still floats up but is not flagged.
+                     ;; Rows keep stable order, so scan the whole group: it
+                     ;; earns the ‹needs you› marker when ANY member is a
+                     ;; genuine waiting session (priority 0).
                      (needs
-                      (= (agents-hud--entry-priority (cadr g)) 0)))
+                      (seq-some
+                       (lambda (e)
+                         (= (agents-hud--entry-priority e) 0))
+                       (cdr g))))
                   (insert
                    "\n"
                    (propertize (format "── %s%s"

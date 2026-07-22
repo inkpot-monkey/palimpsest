@@ -193,29 +193,61 @@
 
 ;;; --- grouping ----------------------------------------------------------------
 
-(ert-deftest agents-hud-test-group-by-project ()
-  "Entries collect under their project key; a waiting group sorts first."
-  (let* ((n1
-          (agents-hud-test--entry :state 'idle :project "/p/nixos"))
-         (n2
-          (agents-hud-test--entry
-           :state 'working
-           :project "/p/nixos"))
-         (m1
-          (agents-hud-test--entry
-           :state 'waiting
-           :project "/p/music"))
-         (groups (agents-hud--group-by-project (list n1 n2 m1))))
-    ;; two groups
-    (should (= 2 (length groups)))
-    ;; the group containing the waiting session comes first
-    (should (equal "/p/music" (car (car groups))))
-    ;; within nixos, working floats above idle
-    (let ((nixos (assoc "/p/nixos" groups)))
-      (should
-       (equal
-        '(working idle)
-        (mapcar #'agents-hud-entry-state (cdr nixos)))))))
+(ert-deftest agents-hud-test-group-stable-order ()
+  "Rows and groups keep first-seen order regardless of state (no reshuffle)."
+  (let (bufs)
+    (unwind-protect
+        (let ((b1 (generate-new-buffer " ah1"))
+              (b2 (generate-new-buffer " ah2"))
+              (b3 (generate-new-buffer " ah3")))
+          (setq bufs (list b1 b2 b3))
+          ;; prime the first-seen sequence in creation order: b1 < b2 < b3
+          (agents-hud--seq b1)
+          (agents-hud--seq b2)
+          (agents-hud--seq b3)
+          (let*
+              ((e1
+                (agents-hud-test--entry
+                 :buffer b1
+                 :state 'idle
+                 :project "/p/nixos"))
+               (e2
+                (agents-hud-test--entry
+                 :buffer b2
+                 :state 'waiting
+                 :project "/p/music"))
+               (e3
+                (agents-hud-test--entry
+                 :buffer b3
+                 :state 'working
+                 :project "/p/nixos"))
+               ;; pass in a jumbled order — grouping must ignore it and state
+               (groups
+                (agents-hud--group-by-project (list e3 e2 e1))))
+            (should (= 2 (length groups)))
+            ;; group order follows the earliest member: nixos (b1) before music (b2)
+            (should
+             (equal '("/p/nixos" "/p/music") (mapcar #'car groups)))
+            ;; within nixos: creation order b1 then b3 — NOT working-above-idle
+            (should
+             (equal
+              (list b1 b3)
+              (mapcar
+               #'agents-hud-entry-buffer
+               (cdr (assoc "/p/nixos" groups)))))))
+      (mapc #'kill-buffer bufs))))
+
+(ert-deftest agents-hud-test-seq-stable ()
+  "A buffer keeps its sequence; a newly seen buffer gets a higher one."
+  (let (bufs)
+    (unwind-protect
+        (let ((a (generate-new-buffer " ahs1"))
+              (b (generate-new-buffer " ahs2")))
+          (setq bufs (list a b))
+          (let ((sa (agents-hud--seq a)))
+            (should (= sa (agents-hud--seq a))) ; stable on re-lookup
+            (should (> (agents-hud--seq b) sa)))) ; newcomer ranks later
+      (mapc #'kill-buffer bufs))))
 
 (ert-deftest agents-hud-test-group-no-project-key ()
   "A project-less entry groups under its path."
