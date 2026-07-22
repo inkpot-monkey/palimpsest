@@ -11,6 +11,7 @@ _: {
         git-annex-init-hardening = pkgs.callPackage ./tests/git-annex-init-hardening.nix { };
         git-annex-shared-group = pkgs.callPackage ./tests/git-annex-shared-group.nix { };
         git-annex-assistant-sync = pkgs.callPackage ./tests/git-annex-assistant-sync.nix { };
+        git-annex-metrics = pkgs.callPackage ./tests/git-annex-metrics.nix { };
       };
     };
 }

@@ -15,6 +15,7 @@ The NixOS module lets you declaratively configure `git-annex` repositories, serv
 - **Unlocked Repositories**: Optionally keep annexed files as real, editable files (`git annex adjust --unlock`) instead of symlinks.
 - **Automatic Initialization**: Handles `git init`, `git annex init`, and initial commits automatically.
 - **Service Management**: Runs `git-annex assistant` as a per-repository systemd service for auto-syncing.
+- **Health Metrics**: Publishes per-repository `git_annex_*` metrics to the node-exporter textfile collector, so a repo that has silently stopped replicating is visible (see [Health metrics](#health-metrics)).
 
 ## Configuration Reference
 
@@ -72,6 +73,8 @@ services.git-annex.repositories = {
 - `enable` (bool): Enable the module.
 - `sshKeyFile` (path, optional): Private SSH key for git-annex operations (e.g. from `sops-nix`).
 - `gpgKeyFile` (path, optional): GPG key to import for the git-annex user (used by encrypted/pubkey remotes).
+- `metrics.enable` (bool, default `true`): Publish per-repository health metrics. See [Health metrics](#health-metrics).
+- `metrics.interval` (str, default `"5min"`), `metrics.probeTimeout` (str, default `"20s"`), `metrics.metricsDir` (path): Check cadence, per-remote probe bound, and where the `.prom` files are written.
 
 ### Repository Options
 
@@ -173,6 +176,43 @@ services.git-annex.repositories.paperless = {
 };
 ```
 
+## Health metrics
+
+This module's characteristic failure is **silent non-replication**: the repo stops
+syncing while `git-annex-init-<repo>` still reads `active`, no unit fails, and the
+logs stay quiet. It fails loudly at *init* and had no notion of ongoing health, so
+every replication bug found during the music-library bring-up surfaced only because
+somebody happened to be looking.
+
+`metrics.enable` (on by default) publishes one
+`<metricsDir>/git-annex-<repo>.prom` per repository, scraped by the node-exporter
+textfile collector. It is on by default because a health check that must be
+remembered is off exactly where it is needed. On a host with no textfile directory
+(no `monitoring-exporters` profile) the check logs a skip and does nothing.
+
+| Series | Meaning |
+|---|---|
+| `git_annex_assistant_up{repo}` | The repo's assistant is running. Emitted only for `assistant = true` repos. |
+| `git_annex_remote_reachable{repo,remote}` | `git ls-remote` reached this remote. One per remote with a `url`. |
+| `git_annex_last_commit_timestamp_seconds{repo}` | Newest commit on any ref. **Context, not health** — see below. |
+| `git_annex_check_timestamp_seconds{repo}` | When this check last completed, so a dead exporter is detectable. |
+
+**Only the first two are health signals.** Both probe on every tick regardless of
+whether anything changed, so they read the same on an idle repo as on a busy one —
+that is what makes a heartbeat. `last_commit` is *not* one: a repo's history only
+moves when its content moves, so alerting on its age would page every time nobody
+touched the library for a fortnight. Nothing alerts on it; reachability already
+covers what such an alert would be reaching for, without the false positives.
+
+Alerting on these is a separate concern, deliberately: see the
+`monitoring-git-annex-alert` profile, which reads the published series and messages
+`#infra-alerts`. This module only measures.
+
+A **passive** repo — no assistant, no remotes, written only by an inbound SSH peer
+(kelpy's `pictures`) — emits neither health signal, because there is nothing on that
+side to check. Its outbound half lives on the pushing host, and watching it means
+exporting from there.
+
 ## Troubleshooting
 
 ### Service Status
@@ -180,6 +220,15 @@ services.git-annex.repositories.paperless = {
 ```bash
 systemctl status git-annex-assistant-<repo-name>
 systemctl status git-annex-init-<repo-name>
+```
+
+Note that a green `git-annex-init-<repo>` says nothing about whether the repo is
+still replicating — it is a `RemainAfterExit` oneshot reporting on a run that may be
+weeks old. For the live answer, read the health metrics instead:
+
+```bash
+systemctl start git-annex-metrics-<repo-name>   # force a fresh check
+cat /var/lib/prometheus-node-exporter-text-files/git-annex-<repo-name>.prom
 ```
 
 ### UUID Mismatch
