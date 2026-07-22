@@ -228,7 +228,10 @@ in
           # dirs redirect to /var/cache (NVMe) via BindPaths. See ADR-0021.
           custom.profiles.monitoring-server.enable = true;
           custom.profiles.monitoring-client.enable = true;
-          custom.profiles.backup.monitoringTelemetry.enable = true;
+          # Off while rsync.net is unreachable fleet-wide (meant to return); reportJobs
+          # keeps the telemetry backup visible on the Backups board as a disabled edge.
+          custom.profiles.backup.monitoringTelemetry.enable = false;
+          custom.profiles.backup.reportJobs = [ "telemetry" ];
 
           # DMARC aggregate-report metrics. Co-located with the monitoring server so
           # it's scraped over loopback; polls the `dmarc` mailbox on kelpy's Stalwart

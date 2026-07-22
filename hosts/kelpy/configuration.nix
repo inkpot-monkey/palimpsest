@@ -32,6 +32,8 @@
     # holds a stale exclusive lock from stargazer, failing every activation.
     # Re-enable once the lock is cleared and the host is reachable.
     backup.enable = false;
+    # Still surface this host's off-site job on the Backups board — as a known-off edge.
+    backup.reportJobs = [ "daily" ];
     monitoring-server.enable = false; # moved to rk1b (ADR-0021)
     monitoring-client.enable = true;
     monitoring-dmarc.enable = false;

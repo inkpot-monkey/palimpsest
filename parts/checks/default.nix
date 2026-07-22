@@ -64,6 +64,12 @@
         git_annex_alert = import ./git-annex-alert {
           inherit pkgs self inputs;
         };
+        # Restic backup status metrics (Workstream D): a disabled-but-owned off-site job
+        # still publishes backup_restic_enabled=0 so the Backups board shows it off, not
+        # missing.
+        backup_status = import ./backup-status {
+          inherit pkgs self inputs;
+        };
       };
     };
 }
