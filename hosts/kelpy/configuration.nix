@@ -54,6 +54,10 @@
         "jellyfin.service"
         "podman-qbittorrent-app.service" # torrent
         "podman-slskd.service" # Soulseek music seeder (ADR-0029)
+        # music-sync.service is deliberately NOT listed: it is a oneshot (path/timer
+        # triggered), so it is `inactive` by design between runs and this active-watch
+        # would spam. A failed drain surfaces via its systemd unit-state metric + the
+        # backstop timer's retry; a dedicated OnFailure alert is a possible follow-up.
         "vector.service" # monitoring-client still runs here; server moved to rk1b
         "paperless-scheduler.service"
         "paperless-task-queue.service"

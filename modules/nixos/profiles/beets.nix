@@ -149,11 +149,25 @@ in
     # The inbox, the review quarantine, and beets' DB/config/log dir. navidrome-owned so the
     # importer (which runs as navidrome, to write the 0700 library) owns everything it touches.
     # The library dir itself is created + owned by services.navidrome; we don't redeclare it.
+    #
+    # The inbox is setgid `music` (2770-style, group-writable) rather than plain navidrome:
+    # music-sync on kelpy rsyncs completed downloads into it as the `git-annex` SSH identity
+    # (modules/nixos/services/music-sync), and git-annex is in the `music` group on rk1b
+    # (hosts/rk1/git-annex.nix). So the inbox has to be group-writable by `music` for the
+    # incoming files to land, while navidrome (its owner, also in `music`) still drains it.
+    # setgid makes each incoming album dir inherit `music` too, so beets can read+move all of
+    # it. The review + state dirs stay navidrome-private — nothing external writes there.
     systemd.tmpfiles.rules = [
-      "d ${inbox} 0755 navidrome navidrome -"
+      "d ${inbox} 2775 navidrome music -"
       "d ${review} 0755 navidrome navidrome -"
       "d ${stateDir} 0755 navidrome navidrome -"
     ];
+
+    # rsync must be on the system PATH for the INCOMING side of music-sync: when kelpy runs
+    # `rsync -e ssh ... git-annex@rk1b:...`, sshd launches `rsync --server` for the git-annex
+    # user, resolved from the login PATH (not any unit's PATH). Without this the transfer
+    # fails with "rsync: command not found" and downloads never reach the inbox.
+    environment.systemPackages = [ pkgs.rsync ];
 
     # A new file in the inbox fires the importer. DirectoryNotEmpty (not PathExists on a glob)
     # keeps firing until the inbox is fully drained, so a burst of drops all get processed.

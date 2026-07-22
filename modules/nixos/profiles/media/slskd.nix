@@ -28,6 +28,10 @@ let
   );
 in
 {
+  # The cross-host drain that carries completed downloads to rk1b's beets inbox
+  # (config below). Generic module; slskd is one consumer.
+  imports = [ self.nixosModules.music-sync ];
+
   options.custom.profiles.media.slskd = {
     enable = lib.mkEnableOption "slskd, seeding the music library on Soulseek through the VPN";
 
@@ -76,11 +80,30 @@ in
 
     # slskd's own state (share database, generated slskd.yml, transfer history). Kept
     # deliberately OUT of the library tree; the container runs as root, so 0700 root.
+    #
+    # `slskd-downloads` holds ONLY completed downloads and is what music-sync drains, so
+    # the in-progress `incomplete` staging dir is a SIBLING, not a child: if it lived
+    # under slskd-downloads the drain's DirectoryNotEmpty watch would never settle (the
+    # incomplete dir is always present) and half-written files could be shipped. Both are
+    # under mediaPath, so slskd's completed-download move stays an atomic same-filesystem
+    # rename.
     systemd.tmpfiles.rules = [
       "d /var/lib/slskd 0700 root root - -"
       "d ${cfg.mediaPath}/slskd-downloads 2775 root media - -"
-      "d ${cfg.mediaPath}/slskd-downloads/incomplete 2775 root media - -"
+      "d ${cfg.mediaPath}/slskd-incomplete 2775 root media - -"
     ];
+
+    # Acquisition half of the pipeline: a completed slskd download on kelpy has to reach
+    # rk1b's beets inbox, and the two hosts are separate (slskd here for the VPN egress,
+    # beets/Navidrome/library on rk1b). music-sync rsyncs the finished download over the
+    # existing git-annex SSH channel into /var/cache/music-inbox (modules/nixos/profiles/
+    # beets.nix), where the beets .path unit already picks it up, tags it, and files it
+    # into the library. The inbox is setgid `music`, so files land drainable by beets.
+    services.music-sync = {
+      enable = true;
+      source = "${cfg.mediaPath}/slskd-downloads";
+      target = "git-annex@rk1b.${settings.tailnet}:/var/cache/music-inbox";
+    };
 
     environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
       directories = [
@@ -149,7 +172,9 @@ in
       environment = {
         SLSKD_SHARED_DIR = "/music";
         SLSKD_DOWNLOADS_DIR = "/downloads";
-        SLSKD_INCOMPLETE_DIR = "/downloads/incomplete";
+        # Sibling of /downloads, not a child — see the tmpfiles comment: music-sync
+        # drains /downloads, so in-progress files must not sit inside it.
+        SLSKD_INCOMPLETE_DIR = "/incomplete";
         SLSKD_HTTP_PORT = toString webPort;
         SLSKD_SLSK_LISTEN_PORT = toString listenPort;
         SLSKD_NO_VERSION_CHECK = "true";
@@ -160,6 +185,7 @@ in
         "/var/lib/slskd:/app"
         "${slskd.libraryPath}:/music:ro"
         "${cfg.mediaPath}/slskd-downloads:/downloads"
+        "${cfg.mediaPath}/slskd-incomplete:/incomplete"
       ];
     };
   };
