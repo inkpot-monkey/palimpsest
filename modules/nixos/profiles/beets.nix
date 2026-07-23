@@ -19,14 +19,20 @@
 # by the user Navidrome reads as. The library itself is owned by git-annex and shared via the
 # `music` group (navidrome.nix) so it can replicate to kelpy, so the importer also runs with
 # Group=music and UMask=0002 — see the serviceConfig comment; without that, git-annex cannot
-# adopt what beets files. `fpcalc` (chromaprint) and pyacoustid are on PATH for
-# free: nixpkgs' `beets` enables the `chroma` + `fetchart` plugins and wraps the binary with
-# their helper bins, so we only select them in the config, not repackage anything.
+# adopt what beets files.
+#
+# Metadata matching is MusicBrainz-only (name + track-length). We deliberately do NOT run the
+# `chroma` acoustic-fingerprint plugin: on the well-named "Artist - Album / NN - Title" folders
+# Soulseek delivers, MusicBrainz already matches at ~distance 0.00, and chroma actively HURT —
+# for a classic album pressed in many editions its per-track AcoustID recordings didn't line up
+# with the chosen release and it piled on ~0.11 of penalty, pushing a genuinely-correct album
+# past the auto-file threshold into review (Cocteau Twins — Treasure, verified live: 0.00 without
+# chroma, 0.11 with). The narrow case chroma would still win — a file with NO usable tags AND a
+# useless filename — safely lands in the review quarantine anyway.
 {
   config,
   lib,
   pkgs,
-  self,
   ...
 }:
 let
@@ -50,7 +56,6 @@ let
   #   duplicate_action  — a track already in beets' library DB is skipped (→ quarantine), not
   #                       doubled. (Dedup is DB-scoped; see the runbook on seeding the DB from an
   #                       rsync-seeded library so pre-existing tracks are known.)
-  #   chroma.auto       — fingerprint every import, so even untagged files get identified.
   #   fetchart.auto     — pull cover art for matched albums.
   # NB: `quiet` is deliberately NOT set here — the automated importer passes `-q` on the CLI, so
   # the config stays interactive and a manual `beet import` (quarantine sorting) actually prompts.
@@ -64,7 +69,7 @@ let
     directory: ${library}
     library: ${stateDir}/library.db
 
-    plugins: musicbrainz chroma fetchart
+    plugins: musicbrainz fetchart
 
     import:
       move: yes
@@ -74,15 +79,15 @@ let
       log: ${stateDir}/import.log
 
     # Auto-file clearly-correct albums even in quiet mode. beets' default strong-match threshold
-    # (0.04) is tighter than the chroma fingerprinter's own noise floor: a correct album carrying
-    # an embedded MusicBrainz release ID still lands around distance 0.07 (tag drift between, say, a
-    # 2024 digital reissue and an original CD rip), which the default downgrades to a *medium* rec —
-    # so quiet mode skips it to review and nothing reaches Navidrome unattended. 0.10 promotes those
-    # unambiguously-right matches to strong so they auto-file. The safety net stays: beets' max_rec
-    # caps a match with missing/extra tracks at medium regardless of this, so a genuinely wrong or
-    # half-arrived album still falls through to the review sweep rather than mis-filing. (Verified
-    # live on rk1b: a full Daft Punk — Discovery rip matched at 0.067, skipped at 0.04, auto-filed
-    # at 0.10.)
+    # (0.04) is tighter than real-world rips clear: a correct album still lands around distance 0.07
+    # from tag drift (a 2024 digital reissue vs an original CD rip, an embedded release ID pointing
+    # at a sibling edition), which the default downgrades to a *medium* rec — so quiet mode skips it
+    # to review and nothing reaches Navidrome unattended. 0.10 promotes those unambiguously-right
+    # matches to strong so they auto-file, while still comfortably clearing the ~0.00 MusicBrainz
+    # matches the common well-named rip produces. The safety net stays: beets' max_rec caps a match
+    # with missing/extra tracks at medium regardless of this, so a genuinely wrong or half-arrived
+    # album still falls through to the review sweep rather than mis-filing. (Verified live on rk1b:
+    # Daft Punk — Discovery matched at 0.067, and a fully-untagged Cocteau Twins — Treasure at 0.00.)
     match:
       strong_rec_thresh: 0.10
 
@@ -90,12 +95,6 @@ let
       default: $albumartist/$album%aunique{}/$track $title
       singleton: $artist/Non-Album/$title
       comp: Compilations/$album%aunique{}/$track $title
-
-    chroma:
-      auto: yes
-
-    acoustid:
-      apikey: ${config.sops.placeholder.acoustid_api_key}
 
     fetchart:
       auto: yes
@@ -187,11 +186,6 @@ in
       }
     ];
 
-    # AcoustID key lives in the navidrome sops bundle (profiles/navidrome.yaml, already keyed
-    # admin+rk1b): beets is the Navidrome ingest, on the same host, so it rides the same file
-    # rather than forcing a new sops file + per-host re-key. Declared so the placeholder exists
-    # for the config template above.
-    sops.secrets.acoustid_api_key.sopsFile = self.lib.getSecretFile "navidrome";
     sops.templates."beets-config" = {
       content = beetsConfig;
       owner = "navidrome";
