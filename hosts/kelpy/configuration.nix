@@ -142,7 +142,12 @@
     # objects, which restic reads as full content, so it would go twice over.
     #
     # Scoped to `music` deliberately: the `pictures` repo alongside it is personal
-    # photos and SHOULD be backed up. Do not widen this to /var/lib/git-annex.
+    # photos and SHOULD be backed up. Do not widen this to /var/lib/git-annex — the
+    # Supernote document library replica (`/var/lib/git-annex/library`, ADR-0031 /
+    # palimpsest#90) lives there too and is DELIBERATELY included offsite (personal
+    # documents, not re-acquirable media), so it must stay out of this exclude list.
+    # NOTE: `backup.enable` is currently false above (rsync.net unreachable), so nothing
+    # ships until it returns; when it does, `library` goes offsite via the /persistent path.
     #
     # slskd's own downloads (ADR-0029) are the same category — bulk, re-acquirable data
     # that must never ship off-site — so they are excluded too. slskd's small state dir
@@ -152,6 +157,23 @@
       "/persistent/var/lib/media/slskd-downloads"
     ];
   };
+
+  # Enforce the ADR-0031/#90 divergence from music: the document library replica MUST go
+  # offsite, so no restic exclude may cover it. The comments above can't stop a future edit
+  # widening the music exclusion to /var/lib/git-annex; this fails the build the moment such an
+  # exclude covers the library — as soon as backup is re-enabled. Lazy-safe: when backup is off,
+  # restic.backups.daily (and its `exclude`) is removed by the mkIf, but `||` short-circuits
+  # before the second operand ever forces it.
+  assertions = [
+    {
+      assertion =
+        !config.custom.profiles.backup.enable
+        || !lib.any (
+          e: lib.hasPrefix e "/persistent/var/lib/git-annex/library"
+        ) config.services.restic.backups.daily.exclude;
+      message = "hosts/kelpy: a restic exclude now covers the Supernote document library replica (/persistent/var/lib/git-annex/library), but ADR-0031/#90 requires it backed up offsite. Do not widen the music exclusion to /var/lib/git-annex.";
+    }
+  ];
 
   # Persist the agent's home state across impermanence reboots: Claude Code
   # subscription credentials/config and the project checkouts the relay's sessions

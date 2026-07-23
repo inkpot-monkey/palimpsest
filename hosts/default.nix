@@ -182,6 +182,10 @@ in
         # The music library as a git-annex repo, replicated to kelpy so slskd can share it
         # (ADR-0028). rk1b-only: rk1a has no library.
         ./rk1/git-annex.nix
+        # The Supernote document library as a second git-annex repo (ADR-0031, #90):
+        # git-annex owns the corpus tree, replicated to kelpy and — unlike music — backed up
+        # offsite. Adds to the same services.git-annex enabled by git-annex.nix above.
+        ./rk1/library.nix
         self.users.inkpotmonkey.manifest
         (grant "inkpotmonkey" { workstation.enable = true; })
         ({ config, ... }: {

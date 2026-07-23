@@ -53,6 +53,32 @@
         }
       ];
     };
+
+    # A full replica of rk1b's Supernote document library (ADR-0031, palimpsest#90). Like the
+    # music replica it is unlocked + thin (real files hardlinked to the annex object, 1x disk),
+    # but UNLIKE music this tree IS backed up offsite: it is personal documents, not
+    # re-acquirable media — so it is deliberately NOT added to the restic `exclude` in
+    # hosts/kelpy/configuration.nix (the music-only exclusion must not be widened to cover it).
+    #
+    # Plain git-annex-owned (no `library` group here — nothing on kelpy reads the tree; the
+    # reconciler and Stump are rk1b-side), so it needs no sharing seam and no safe.directory.
+    repositories.library = {
+      path = "/var/lib/git-annex/library";
+      description = "kelpy-library";
+      unlock = true;
+      thin = true;
+      assistant = true;
+      group = "backup";
+      wanted = "standard";
+      # MagicDNS name (settings.tailnet), the mirror image of the rk1b remote in
+      # hosts/rk1/library.nix — not a bare hostname or a pinned IP.
+      remotes = [
+        {
+          name = "rk1b";
+          url = "git-annex@rk1b.${settings.tailnet}:/var/cache/library";
+        }
+      ];
+    };
   };
 
   environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
