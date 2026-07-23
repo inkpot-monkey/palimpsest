@@ -2,11 +2,14 @@
 #   nix build .#packages.<system>.<name>    e.g. .#packages.x86_64-linux.annas_opds
 # If meta.mainProgram is set, also: nix run .#<name>
 
-{ pkgs }: {
+{ pkgs, inputs }: {
   # stump: upstreamed to nixpkgs; use pkgs.stump directly
   # vocabsieve = pkgs.libsForQt5.callPackage ./vocabsieve.nix { }; # broken: its dep
   # gst_all_1.gst-vaapi was removed in GStreamer 1.28 (not an in-place upgrade); disabled
   # so it stops failing `nix flake check`. Re-enable once vocabsieve moves off gst-vaapi.
+  # supernote: the fork (github:inkpot-monkey/supernote), packaged from the
+  # `supernote` flake input; buildPythonApplication on python313. See pkgs/supernote.
+  supernote = pkgs.callPackage ./supernote { src = inputs.supernote; };
   finance-tools = pkgs.callPackage ./finance-tools { };
   kokoros = pkgs.callPackage ./kokoros { };
   annas_opds = pkgs.callPackage ./annas-opds { };

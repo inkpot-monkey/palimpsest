@@ -905,6 +905,7 @@
         "openclaw-nix": "openclaw-nix",
         "secrets": "secrets",
         "sops-nix": "sops-nix_2",
+        "supernote": "supernote",
         "treefmt-nix": "treefmt-nix_2",
         "vpsFree": "vpsFree"
       }
@@ -980,6 +981,23 @@
       "original": {
         "owner": "Mic92",
         "repo": "sops-nix",
+        "type": "github"
+      }
+    },
+    "supernote": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1784834798,
+        "narHash": "sha256-C/k1Y2v1jXvQEn+9rdYkl6d6KiZT+AoNN/NHXoerGX8=",
+        "owner": "inkpot-monkey",
+        "repo": "supernote",
+        "rev": "3d0809226ab6d94b055fc880ee306023b8e4bf59",
+        "type": "github"
+      },
+      "original": {
+        "owner": "inkpot-monkey",
+        "ref": "fix/device-schedule-group-all",
+        "repo": "supernote",
         "type": "github"
       }
     },

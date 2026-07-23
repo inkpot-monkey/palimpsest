@@ -5,6 +5,7 @@ let
     final: _prev:
     import (inputs.self + /pkgs/default.nix) {
       pkgs = final;
+      inherit inputs;
     };
 
   # 2. Modifications: Your overrides
