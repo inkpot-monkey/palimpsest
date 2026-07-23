@@ -42,6 +42,7 @@
     navidrome = ./navidrome.nix;
     music-assistant = ./music-assistant.nix;
     beets = ./beets.nix;
+    supernote = ./supernote.nix;
     backup = ./backup.nix;
     blocky = ./blocky.nix;
     # Flat keys so each matches its enable option 1:1 (custom.profiles.<key>), the same

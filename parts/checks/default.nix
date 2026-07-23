@@ -70,6 +70,12 @@
         backup_status = import ./backup-status {
           inherit pkgs self inputs;
         };
+        # Supernote fork Private Cloud server (ADR-0031, palimpsest#92): runs the real
+        # packaged server, drives a login/bootstrap end-to-end, and proves the MCP port is
+        # firewalled off the LAN while the sync port is reachable.
+        supernote = import ./supernote {
+          inherit pkgs self inputs;
+        };
       };
     };
 }

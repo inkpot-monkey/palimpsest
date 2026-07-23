@@ -231,6 +231,15 @@ in
           # navidrome `users` map. See modules/nixos/profiles/music-assistant.nix.
           custom.profiles.music-assistant.enable = true;
 
+          # Supernote fork Private Cloud server (ADR-0031, #92): the device sync endpoint the
+          # Nomad binds over plain HTTP on the home LAN (rk1b shares 192.168.1.0/24). Runs as a
+          # private `supernote` user with a persisted, rebuildable store (/var/lib/supernote), and
+          # bootstraps the single account from the shared credential secret (profiles/library.yaml).
+          # LAN-direct, so it is NOT in settings.services / not Caddy-fronted; the MCP port is
+          # firewalled off (v1). See modules/nixos/profiles/supernote.nix. The reconciler (#94)
+          # and Stump (#93) that turn this into a document library are separate tickets.
+          custom.profiles.supernote.enable = true;
+
           # Off-host uptime watcher (Gatus): rk1b is always-on and not kelpy, so it
           # can observe kelpy failing. Probes the fleet + alerts to #infra-alerts.
           # See ADR-0019 / modules/nixos/profiles/monitoring/watcher.nix.
