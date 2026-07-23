@@ -73,6 +73,19 @@ let
       duplicate_action: skip
       log: ${stateDir}/import.log
 
+    # Auto-file clearly-correct albums even in quiet mode. beets' default strong-match threshold
+    # (0.04) is tighter than the chroma fingerprinter's own noise floor: a correct album carrying
+    # an embedded MusicBrainz release ID still lands around distance 0.07 (tag drift between, say, a
+    # 2024 digital reissue and an original CD rip), which the default downgrades to a *medium* rec —
+    # so quiet mode skips it to review and nothing reaches Navidrome unattended. 0.10 promotes those
+    # unambiguously-right matches to strong so they auto-file. The safety net stays: beets' max_rec
+    # caps a match with missing/extra tracks at medium regardless of this, so a genuinely wrong or
+    # half-arrived album still falls through to the review sweep rather than mis-filing. (Verified
+    # live on rk1b: a full Daft Punk — Discovery rip matched at 0.067, skipped at 0.04, auto-filed
+    # at 0.10.)
+    match:
+      strong_rec_thresh: 0.10
+
     paths:
       default: $albumartist/$album%aunique{}/$track $title
       singleton: $artist/Non-Album/$title
@@ -89,10 +102,23 @@ let
       maxwidth: 1200
   '';
 
-  # The importer: import the inbox, prune the empty album dirs beets leaves after moving matched
-  # files out, then sweep whatever remains (unmatched / duplicates / low-confidence) into the
-  # review quarantine. Draining the inbox to empty is what re-arms the .path unit cleanly — a
+  # The importer: import each SETTLED album from the inbox into the library, prune the album dirs
+  # beets empties by moving matched tracks out, then sweep whatever it declined into the review
+  # quarantine. Draining the inbox to empty is what re-arms the .path unit cleanly — a
   # DirectoryNotEmpty watch would retrigger forever if we left the rejects sitting in the inbox.
+  #
+  # Two hazards, both learned from live bring-up:
+  #   * PARTIAL ALBUMS. music-sync rsyncs each track into the inbox as slskd finishes it (writing a
+  #     hidden .name.XXXXXX temp, then renaming), so mid-transfer the inbox holds half-arrived
+  #     albums. Tagging one makes beets reject it on track count and quarantine a fragment. So we
+  #     only touch an album dir that has SETTLED — no in-flight rsync temp and nothing modified for
+  #     QUIESCE_SECS — and leave the rest for the next trigger or the backstop timer. (A slow,
+  #     queued download whose files gap by more than the window can still be seen partial; beets'
+  #     max_rec caps a wrong-track-count match at medium, so it lands in review, not mis-filed.)
+  #   * QUARANTINE COLLISIONS. If beets declines an album whose name is already in review (a prior
+  #     fragment, or a re-download), a plain `mv` into review fails "Directory not empty", the
+  #     service exits non-zero, the inbox never drains, and the .path unit re-fires forever — a
+  #     real infinite loop seen in bring-up. So the sweep suffixes on any clash and ALWAYS drains.
   importer = pkgs.writeShellApplication {
     name = "beets-import";
     runtimeInputs = [
@@ -101,22 +127,47 @@ let
       pkgs.findutils
     ];
     text = ''
-      # -q makes this run unattended (no prompts); beet exits non-zero when it skips items in
-      # quiet mode, which is expected, so don't let `set -e` abort before we quarantine. Rejects
-      # staying in the inbox is a fail-safe outcome (a human sorts them) — far better than
-      # mis-filing into the shared library.
-      beet -c "$BEETS_CONFIG" import -q "${inbox}" || true
+      QUIESCE_SECS=120
 
-      # Remove album dirs beets emptied by moving their matched tracks into the library.
-      find "${inbox}" -mindepth 1 -type d -empty -delete
+      settled() {
+        # An in-flight rsync temp (.name.XXXX) means the album is still transferring.
+        [ -z "$(find "$1" -name '.*' -type f -print -quit)" ] || return 1
+        # Anything (the album dir entry itself, or its content) touched within the window means it
+        # is still arriving. rsync preserves source mtimes on files, but --omit-dir-times leaves the
+        # album dir's own mtime tracking real add/rename activity, so the dir entry is the signal.
+        local threshold
+        threshold=$(( $(date +%s) - QUIESCE_SECS ))
+        [ -z "$(find "$1" -newermt "@$threshold" -print -quit)" ] || return 1
+        return 0
+      }
 
-      # Anything still here is unmatched, a duplicate, or below the confidence threshold: it must
-      # not reach the library. Sweep it to the review quarantine, which also empties the inbox and
-      # lets the .path unit settle instead of re-firing.
-      if [ -n "$(find "${inbox}" -mindepth 1 -maxdepth 1 -print -quit)" ]; then
-        mkdir -p "${review}"
-        find "${inbox}" -mindepth 1 -maxdepth 1 -exec mv -t "${review}" {} +
-      fi
+      # -q runs unattended (no prompts); beet exits non-zero when it skips in quiet mode, which is
+      # expected, so `|| true` keeps `set -e` from aborting before we quarantine.
+      find "${inbox}" -mindepth 1 -maxdepth 1 -print0 | while IFS= read -r -d "" item; do
+        if ! settled "$item"; then
+          echo "deferring still-arriving item: $item"
+          continue
+        fi
+
+        beet -c "$BEETS_CONFIG" import -q "$item" || true
+
+        # Drop the album dir if beets emptied it by moving matched tracks into the library.
+        if [ -e "$item" ]; then
+          find "$item" -depth -type d -empty -delete 2>/dev/null || true
+        fi
+
+        # Anything still here was unmatched, a duplicate, or below the confidence threshold: sweep
+        # it to the review quarantine, collision-safe, which also drains the inbox so the .path
+        # unit settles instead of re-firing.
+        if [ -e "$item" ]; then
+          mkdir -p "${review}"
+          dest="${review}/$(basename "$item")"
+          if [ -e "$dest" ]; then
+            dest="$dest.$(date +%Y%m%dT%H%M%S)"
+          fi
+          mv "$item" "$dest"
+        fi
+      done
     '';
   };
 in
@@ -178,11 +229,31 @@ in
       pathConfig.DirectoryNotEmpty = inbox;
     };
 
+    # Backstop: the .path unit fires on the LAST file's arrival, but the importer's quiescence gate
+    # defers an album for QUIESCE_SECS after that — by which point no further inotify event will
+    # come to re-trigger it. This timer re-runs the importer so a fully-arrived, now-settled album
+    # is never stranded waiting for a trigger. Cheap when there's nothing to do (a couple of finds).
+    systemd.timers.beets-import = {
+      description = "Backstop trigger for the beets importer";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnCalendar = "*:0/5";
+        Persistent = true;
+      };
+    };
+
     systemd.services.beets-import = {
       description = "Import dropped files into the Navidrome library via beets";
       # Fingerprinting + MusicBrainz + cover-art all need the network.
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
+      # While an album transfers, music-sync's per-file rsync modifies the inbox repeatedly, so the
+      # .path unit fires the importer many times in quick succession (each run cheaply defers the
+      # still-arriving album). The default rate limit (5 starts / 10s) trips on that and marks the
+      # service failed, which stops the .path unit watching. Raise it generously — the importer is
+      # idempotent and mostly a no-op during transfer — while still capping a genuine crash-loop.
+      startLimitIntervalSec = 60;
+      startLimitBurst = 100;
       # Don't strand beets' DB/library on the tmpfs root if the NVMe isn't mounted.
       unitConfig.RequiresMountsFor = [ "/var/cache" ];
       environment = {
