@@ -106,7 +106,7 @@ let
   # quarantine. Draining the inbox to empty is what re-arms the .path unit cleanly — a
   # DirectoryNotEmpty watch would retrigger forever if we left the rejects sitting in the inbox.
   #
-  # Two hazards, both learned from live bring-up:
+  # Three hazards, all learned from live bring-up:
   #   * PARTIAL ALBUMS. music-sync rsyncs each track into the inbox as slskd finishes it (writing a
   #     hidden .name.XXXXXX temp, then renaming), so mid-transfer the inbox holds half-arrived
   #     albums. Tagging one makes beets reject it on track count and quarantine a fragment. So we
@@ -118,6 +118,11 @@ let
   #     fragment, or a re-download), a plain `mv` into review fails "Directory not empty", the
   #     service exits non-zero, the inbox never drains, and the .path unit re-fires forever — a
   #     real infinite loop seen in bring-up. So the sweep suffixes on any clash and ALWAYS drains.
+  #   * BUSY-LOOP WHILE ARRIVING. Deferring a still-arriving album leaves the inbox non-empty, and
+  #     DirectoryNotEmpty is level-triggered, so it re-fires this service the moment a defer-run
+  #     exits — a millisecond-fast spin that hit ~91 starts/second on a live download and tripped
+  #     start-limit-hit, failing the .path unit outright (backstop timer then did the import 4½ min
+  #     late). The COOLDOWN_SECS sleep below paces that loop; see its comment.
   importer = pkgs.writeShellApplication {
     name = "beets-import";
     runtimeInputs = [
@@ -127,6 +132,15 @@ let
     ];
     text = ''
       QUIESCE_SECS=120
+      # Cooldown when we defer a still-arriving album. The .path unit's DirectoryNotEmpty is
+      # LEVEL-triggered: while the inbox stays non-empty it re-activates this service the instant
+      # each run exits. A run that only defers exits in milliseconds, so without this the loop
+      # busy-spins — measured at ~91 starts in ONE second during a live download, which blew past
+      # startLimitBurst and left the .path unit itself `failed` (only the 5-min backstop timer then
+      # recovered the import). Sleeping before exit paces the re-trigger loop to ~1 run/COOLDOWN,
+      # far under the start limit, while the album quiesces. Only pay it when something deferred —
+      # a run that files/quarantines and drains the inbox exits promptly and stays responsive.
+      COOLDOWN_SECS=30
 
       settled() {
         # An in-flight rsync temp (.name.XXXX) means the album is still transferring.
@@ -140,11 +154,15 @@ let
         return 0
       }
 
+      # Process-substitution (not `find | while`) so the loop runs in THIS shell and `deferred`
+      # survives it — the pipe form would set it in a subshell and we'd lose the cooldown signal.
       # -q runs unattended (no prompts); beet exits non-zero when it skips in quiet mode, which is
       # expected, so `|| true` keeps `set -e` from aborting before we quarantine.
-      find "${inbox}" -mindepth 1 -maxdepth 1 -print0 | while IFS= read -r -d "" item; do
+      deferred=0
+      while IFS= read -r -d "" item; do
         if ! settled "$item"; then
           echo "deferring still-arriving item: $item"
+          deferred=1
           continue
         fi
 
@@ -166,7 +184,14 @@ let
           fi
           mv "$item" "$dest"
         fi
-      done
+      done < <(find "${inbox}" -mindepth 1 -maxdepth 1 -print0)
+
+      # Pace the level-triggered .path re-fire (see COOLDOWN_SECS above) only when an album is still
+      # arriving; the backstop timer is the real safety net if this run exits before it settles.
+      if [ "$deferred" -eq 1 ]; then
+        echo "album still arriving; cooling down ''${COOLDOWN_SECS}s to keep the .path unit from busy-looping"
+        sleep "$COOLDOWN_SECS"
+      fi
     '';
   };
 in
@@ -241,11 +266,12 @@ in
       # Fingerprinting + MusicBrainz + cover-art all need the network.
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
-      # While an album transfers, music-sync's per-file rsync modifies the inbox repeatedly, so the
-      # .path unit fires the importer many times in quick succession (each run cheaply defers the
-      # still-arriving album). The default rate limit (5 starts / 10s) trips on that and marks the
-      # service failed, which stops the .path unit watching. Raise it generously — the importer is
-      # idempotent and mostly a no-op during transfer — while still capping a genuine crash-loop.
+      # Belt-and-braces rate-limit ceiling. The importer's COOLDOWN_SECS sleep is the PRIMARY guard
+      # against the DirectoryNotEmpty busy-loop (see the importer) — it paces defer-runs to ~1 per
+      # 30s. This raised start limit is the backstop: the stock 5 starts / 10s trips on any brief
+      # burst (a settled multi-album drain, or the first fire before the cooldown engages) and marks
+      # the service failed, which would stop the .path unit watching. 100 / 60s is unreachable once
+      # the cooldown is in effect, while still capping a genuine crash-loop.
       startLimitIntervalSec = 60;
       startLimitBurst = 100;
       # Don't strand beets' DB/library on the tmpfs root if the NVMe isn't mounted.
