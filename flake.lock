@@ -424,11 +424,11 @@
         "sops-nix": "sops-nix"
       },
       "locked": {
-        "lastModified": 1784809928,
-        "narHash": "sha256-XEBgEOFzIfuleNeRvqsKIDZafdN/zMwWBi5N2ersonk=",
+        "lastModified": 1784834138,
+        "narHash": "sha256-t3+n6ANEGJRvhrPuLzjVpEw5EfoXmr+OYnVc99p+S30=",
         "owner": "palebluebytes",
         "repo": "jmap-matrix-bridge",
-        "rev": "1a13cbcbe6d5cc8996212b12bb6a29b3db22df17",
+        "rev": "47d4ca936e76d69601724395808fb53a88e0a5f1",
         "type": "github"
       },
       "original": {
