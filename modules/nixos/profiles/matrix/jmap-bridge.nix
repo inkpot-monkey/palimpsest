@@ -55,12 +55,13 @@ in
         as_token: ${config.sops.placeholder.email_as_token}
         hs_token: ${config.sops.placeholder.email_hs_token}
         sender_localpart: _jmap_bot
-        # Opt into ephemeral EDUs (read receipts) so the homeserver delivers
-        # m.read to the bridge — required for the outbound read-sync (Element
-        # read -> JMAP $seen via handle_receipt). Without this tuwunel never
-        # pushes receipts and that whole direction is silently dead. The bridge's
-        # own generate_registration sets this; the hand-rolled template must too.
-        de.matrix.org.msc2409.ephemeral: true
+        # Opt into ephemeral EDUs (read receipts) so tuwunel delivers m.read to
+        # the bridge — required for the outbound read-sync (Element read -> JMAP
+        # $seen via handle_receipt). Without it tuwunel never pushes receipts and
+        # that whole direction is silently dead. tuwunel (ruma-based) reads the
+        # `receive_ephemeral` key; the MSC2409 `de.matrix.org...` spelling is
+        # ignored — verified by the read/unread VM check in the bridge repo.
+        receive_ephemeral: true
         namespaces:
           users:
           - exclusive: true
