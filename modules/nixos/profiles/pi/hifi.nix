@@ -16,19 +16,44 @@ let
   # the phone can't be let through. Mirrors the old spotifyd 5354 choice.
   spotifyZeroconfPort = 5354;
 
+  # The stream-switcher arbiter (auto-follow the active source) and the volume master.
+  # See snapcast-stream-switcher.py and the `--volume-ctrl fixed` note below. (#96)
+  streamSwitcher = ./snapcast-stream-switcher.py;
+
   # Spotify becomes a snapserver `librespot` stream instead of a standalone daemon
   # (spotifyd can't feed snapserver — no pipe backend; snapserver runs `librespot
   # --backend pipe` itself, the clean path Volumio uses). Zeroconf mode: no stored
   # credentials, the phone hands off the session. `devicename` is what shows in the
   # Spotify app; `name` is the snapcast stream/tab name. `params` passes raw args through
-  # to librespot — here the pinned zeroconf port. (ADR-0031)
+  # to librespot. (ADR-0031, #96)
+  #
+  # VOLUME MODEL B — snapclient's hardware "Digital" mixer is the *single* master (#96).
+  # `--volume-ctrl fixed` pins librespot's own softvol out of the way so the Spotify
+  # stream is full-scale and never adds a second, hidden gain stage — the root of the old
+  # "on full but quiet after switching" drift (two independent gains: librespot's baked-in
+  # digital volume vs the snapclient per-client volume MA drives). With librespot at unity,
+  # snapclient is the one knob everything shares (MA already drives it; snapweb/HA can too).
+  #
+  # We do NOT bridge the Spotify app slider onto the snapclient volume (the issue's
+  # preferred "model A"): librespot 0.8.0's Connect layer (spirc.rs `set_volume`)
+  # *unconditionally* applies the app's volume to its softvol AND emits the volume event —
+  # there is no report-without-attenuate for the pipe backend, so a bridge would
+  # double-attenuate. Model A is therefore architecturally unavailable here; the app slider
+  # is not the master (volume via MA / snapweb / HA). See #96 for the full analysis.
   librespotSource = lib.concatStrings [
     "librespot:///${lib.getExe pkgs.librespot}"
     "?name=Spotify"
     "&devicename=porcupineFish"
     "&bitrate=320"
     "&normalize=true"
-    "&params=--zeroconf-port ${toString spotifyZeroconfPort}"
+    # `volume=` becomes librespot's `--initial-volume`; set it to 100 *explicitly* (rather
+    # than leaning on snapcast's implicit default) so the pipe starts at full scale — with
+    # `--volume-ctrl fixed` librespot then holds it there (initial-volume is applied to the
+    # softvol mixer at startup for every ctrl type; fixed keeps it pinned).
+    "&volume=100"
+    # snapcast forbids `--onevent` in &params (use &onevent) but passes everything else
+    # through verbatim. Keep the pinned zeroconf port so the firewall can open exactly it.
+    "&params=--volume-ctrl fixed --zeroconf-port ${toString spotifyZeroconfPort}"
   ];
 in
 {
@@ -150,6 +175,50 @@ in
         CPUSchedulingPriority = 5;
         LimitRTPRIO = 50;
         LimitRTTIME = "infinity";
+      };
+    };
+
+    # --- STREAM-SWITCHER (auto-follow the active source) ---
+    # snapclient plays whichever stream its group is bound to, and snapcast 0.34 does NOT
+    # auto-follow: hit play in the *other* source and the group stays put → silence (#96).
+    # This watcher subscribes to snapserver's control API (Stream.OnUpdate) and, on a
+    # debounced idle→playing edge, Group.SetStream's the connected client's group to the
+    # stream that just started — so playing in either the Spotify app or Music Assistant
+    # "just works" with no manual switch. Event-driven off stream *status* (not PCM
+    # sniffing) and debounced so a between-tracks idle dip never flaps the output.
+    systemd.services.snapcast-stream-switcher = {
+      description = "Auto-follow the active Snapcast stream (Volumio-style arbiter)";
+      wantedBy = [ "multi-user.target" ];
+      after = [ "snapserver.service" ];
+      wants = [ "snapserver.service" ];
+      serviceConfig = {
+        # It only speaks to snapserver over loopback :1705 and drives no hardware, so run it
+        # locked-down as its own dynamic, unprivileged user.
+        ExecStart = "${lib.getExe pkgs.python3} ${streamSwitcher}";
+        Restart = "always";
+        RestartSec = 5;
+        DynamicUser = true;
+        # Reach snapserver over the loopback control port only; no other network, no devices.
+        RestrictAddressFamilies = [
+          "AF_INET"
+          "AF_INET6"
+          "AF_UNIX"
+        ];
+        IPAddressAllow = "localhost";
+        IPAddressDeny = "any";
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        NoNewPrivileges = true;
+        PrivateDevices = true;
+      };
+      environment = {
+        SNAPCAST_HOST = "127.0.0.1";
+        SNAPCAST_PORT = "1705";
+        # The snapclient --hostID; its group is the one we route.
+        SWITCHER_CLIENT_ID = "porcupineFish";
+        SWITCHER_DEBOUNCE_SEC = "5";
+        # Tie-break only (startup / both playing at once); last-activated-wins otherwise.
+        SWITCHER_PRIORITY = "Spotify";
       };
     };
 
