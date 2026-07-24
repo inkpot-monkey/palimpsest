@@ -21,8 +21,13 @@ Design (copied from how Volumio arbitrates output; see the issue):
   * When the *focused* stream goes sustained-idle and another stream is still playing,
     follow it (so pausing MA hands the speaker to a still-playing Spotify, and vice versa).
 
-Volume is deliberately out of scope here: snapclient's hardware "Digital" mixer is the
-single master (volume model B) and this arbiter never touches it — it only routes audio.
+Volume — one place the arbiter *does* touch it. Spotify's volume lives in librespot's own
+(app-slider) control, so the shared snapclient hardware mixer must be *out of the way* while
+Spotify plays — otherwise Spotify inherits whatever low level Music Assistant last left on
+that mixer and the phone app can't recover it. So whenever the arbiter routes output to the
+reference stream (Spotify), it pins the snapclient hardware volume to a fixed reference (100%),
+leaving the Spotify app as the only thing that moves. Other streams (MA) manage the hardware
+mixer themselves and the arbiter never touches their volume. (#96)
 
 Config via env (set from the systemd unit):
   SNAPCAST_HOST / SNAPCAST_PORT   snapserver control endpoint (default 127.0.0.1:1705)
@@ -30,6 +35,10 @@ Config via env (set from the systemd unit):
   SWITCHER_DEBOUNCE_SEC           sustained-idle threshold, seconds (default 5)
   SWITCHER_PRIORITY               comma-separated stream-id substrings, highest first,
                                   used only to break ties (default "Spotify")
+  SWITCHER_REFERENCE_STREAM       stream whose volume is app-controlled, so the hardware mixer
+                                  is pinned to a reference on switch to it (default "Spotify";
+                                  empty disables the pin)
+  SWITCHER_REFERENCE_PERCENT      the hardware reference level to pin (default 100)
 
 Resilience: a dropped control connection (snapserver restart, transient blip) is caught
 and reconnected internally with a fresh seed — no systemd churn. `Restart=always` in the
@@ -53,6 +62,8 @@ PRIORITY = [
     for p in os.environ.get("SWITCHER_PRIORITY", "Spotify").split(",")
     if p.strip()
 ]
+REFERENCE_STREAM = os.environ.get("SWITCHER_REFERENCE_STREAM", "Spotify")
+REFERENCE_PERCENT = int(os.environ.get("SWITCHER_REFERENCE_PERCENT", "100"))
 
 
 def log(msg):
@@ -149,11 +160,27 @@ class Switcher:
             log(f"cannot switch to {stream_id!r}: client {CLIENT_ID!r} not connected")
             return
         self.adopt_group(group)
-        if self.focused == stream_id:
+        if self.focused != stream_id:
+            self.send("Group.SetStream", {"id": group["id"], "stream_id": stream_id})
+            log(
+                f"switched output {self.focused!r} -> {stream_id!r} (group {group['id']})"
+            )
+            self.focused = stream_id
+        self.pin_reference(stream_id)
+
+    def pin_reference(self, stream_id):
+        """If `stream_id` is the app-controlled stream (Spotify), pin the shared hardware
+        mixer to the reference level so its own (librespot/app) volume is the only gain that
+        varies — never the low level MA may have left on the mixer."""
+        if not REFERENCE_STREAM or stream_id != REFERENCE_STREAM:
             return
-        self.send("Group.SetStream", {"id": group["id"], "stream_id": stream_id})
-        log(f"switched output {self.focused!r} -> {stream_id!r} (group {group['id']})")
-        self.focused = stream_id
+        self.send(
+            "Client.SetVolume",
+            {"id": CLIENT_ID, "volume": {"muted": False, "percent": REFERENCE_PERCENT}},
+        )
+        log(
+            f"pinned {CLIENT_ID!r} hardware volume to {REFERENCE_PERCENT}% for {stream_id!r}"
+        )
 
     def refresh_group(self):
         """Re-read which group holds our client and what it's bound to (cheap, no switch)."""

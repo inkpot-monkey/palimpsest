@@ -174,14 +174,18 @@ on porcupineFish (`modules/nixos/profiles/pi/hifi.nix` + `snapcast-stream-switch
   last-activated-wins with a fixed priority tiebreak; it also hands the speaker to a
   still-playing source when the focused one is paused. No manual `Group.SetStream` anywhere.
 
-- **Volume model B, not A (single hardware master).** snapclient's HiFiBerry "Digital" hardware
-  mixer is the single gain stage; MA drives it, and librespot is pinned full-scale with
-  `--volume-ctrl fixed` so the Spotify stream never adds a second, hidden gain (the old
-  "on full but quiet after switching" drift). **Model A — bridging the Spotify app slider onto
-  the hardware mixer at full fidelity — was ruled out as architecturally unavailable, not merely
-  fiddly:** librespot 0.8.0's Connect layer (`spirc.rs` `set_volume`) *unconditionally* applies
-  the app's volume to its softvol mixer **and** emits the volume event; there is no
-  report-without-attenuate for the pipe backend (verified against the v0.8.0 source), so an
-  `--onevent` bridge would double-attenuate. Consequence: the Spotify **app** slider is not the
-  master — volume is set via MA / snapweb / Home Assistant. This is the fallback the issue
-  sanctioned ("ship B rather than block").
+- **Volume — the Spotify app slider is the Spotify control; per-source, not one shared master.**
+  The requirement that won out (on live feedback) was that the **Spotify phone app slider must
+  change the volume**. That forces librespot's *own* volume to be Spotify's control
+  (`--volume-ctrl cubic`, a natural full-range curve the app drives directly) — because
+  librespot 0.8.0's Connect layer (`spirc.rs` `set_volume`) *unconditionally* applies the app's
+  volume to its softvol mixer **and** emits the event, so there is no report-without-attenuate on
+  the pipe backend and bridging the slider onto the shared hardware mixer would **double-attenuate**
+  (verified against the v0.8.0 source). The trade-off, accepted deliberately: Spotify's gain is now
+  digital (academic for a lossy 320k source) and **independent** of MA's volume, rather than one
+  shared hardware master. To stop Spotify inheriting the low level MA may have left on the shared
+  snapclient mixer, **the arbiter pins that mixer to a reference (100%) on every switch to the
+  Spotify stream** (`SWITCHER_REFERENCE_*`), so the app slider is then the only gain that varies.
+  MA keeps driving the hardware mixer for its own volume. (An earlier iteration shipped a single
+  shared hardware master with `--volume-ctrl fixed` and an inert app slider — "model B" — but that
+  failed the app-slider requirement and left Spotify stuck at whatever level MA last set.)

@@ -16,9 +16,15 @@ let
   # the phone can't be let through. Mirrors the old spotifyd 5354 choice.
   spotifyZeroconfPort = 5354;
 
-  # The stream-switcher arbiter (auto-follow the active source) and the volume master.
-  # See snapcast-stream-switcher.py and the `--volume-ctrl fixed` note below. (#96)
+  # The stream-switcher arbiter (auto-follow the active source + volume reference). See
+  # snapcast-stream-switcher.py and the `--volume-ctrl` note below. (#96)
   streamSwitcher = ./snapcast-stream-switcher.py;
+
+  # The stream name the Spotify librespot source registers under, and the snapclient hostID.
+  # Shared between the librespot source and the switcher's reference-volume config so the two
+  # agree on which stream is app-controlled.
+  spotifyStream = "Spotify";
+  snapclientId = "porcupineFish";
 
   # Spotify becomes a snapserver `librespot` stream instead of a standalone daemon
   # (spotifyd can't feed snapserver — no pipe backend; snapserver runs `librespot
@@ -27,33 +33,28 @@ let
   # Spotify app; `name` is the snapcast stream/tab name. `params` passes raw args through
   # to librespot. (ADR-0031, #96)
   #
-  # VOLUME MODEL B — snapclient's hardware "Digital" mixer is the *single* master (#96).
-  # `--volume-ctrl fixed` pins librespot's own softvol out of the way so the Spotify
-  # stream is full-scale and never adds a second, hidden gain stage — the root of the old
-  # "on full but quiet after switching" drift (two independent gains: librespot's baked-in
-  # digital volume vs the snapclient per-client volume MA drives). With librespot at unity,
-  # snapclient is the one knob everything shares (MA already drives it; snapweb/HA can too).
-  #
-  # We do NOT bridge the Spotify app slider onto the snapclient volume (the issue's
-  # preferred "model A"): librespot 0.8.0's Connect layer (spirc.rs `set_volume`)
-  # *unconditionally* applies the app's volume to its softvol AND emits the volume event —
-  # there is no report-without-attenuate for the pipe backend, so a bridge would
-  # double-attenuate. Model A is therefore architecturally unavailable here; the app slider
-  # is not the master (volume via MA / snapweb / HA). See #96 for the full analysis.
+  # VOLUME — the Spotify APP slider must work, so librespot's *own* volume is Spotify's
+  # control: `--volume-ctrl cubic` gives a natural, full-range curve that the phone slider
+  # drives directly (librespot 0.8's pipe backend can't report the app's volume *without*
+  # also attenuating, so bridging the slider onto the shared hardware mixer would
+  # double-attenuate — verified in spirc.rs `set_volume`; see #96). The cost: Spotify's gain
+  # is now digital (academic for a lossy 320k source) and independent of MA's volume, rather
+  # than one shared hardware master. To stop Spotify inheriting the low level MA may have left
+  # on the shared snapclient mixer, the switcher pins that mixer to a reference (100%) on every
+  # switch to this stream (SWITCHER_REFERENCE_* below) — so the app slider is the only gain
+  # that then varies. `--initial-volume` is librespot's startup/fallback level (it caches the
+  # app's last value); the app slider overrides it live.
   librespotSource = lib.concatStrings [
     "librespot:///${lib.getExe pkgs.librespot}"
-    "?name=Spotify"
+    "?name=${spotifyStream}"
     "&devicename=porcupineFish"
     "&bitrate=320"
     "&normalize=true"
-    # `volume=` becomes librespot's `--initial-volume`; set it to 100 *explicitly* (rather
-    # than leaning on snapcast's implicit default) so the pipe starts at full scale — with
-    # `--volume-ctrl fixed` librespot then holds it there (initial-volume is applied to the
-    # softvol mixer at startup for every ctrl type; fixed keeps it pinned).
+    # `volume=` becomes librespot's `--initial-volume` — the startup/fallback level.
     "&volume=100"
     # snapcast forbids `--onevent` in &params (use &onevent) but passes everything else
     # through verbatim. Keep the pinned zeroconf port so the firewall can open exactly it.
-    "&params=--volume-ctrl fixed --zeroconf-port ${toString spotifyZeroconfPort}"
+    "&params=--volume-ctrl cubic --zeroconf-port ${toString spotifyZeroconfPort}"
   ];
 in
 {
@@ -159,7 +160,7 @@ in
           "--player alsa"
           "--soundcard ${soundcard}"
           "--mixer hardware:Digital"
-          "--hostID porcupineFish"
+          "--hostID ${snapclientId}"
           "--logsink system"
           "tcp://127.0.0.1:1704"
         ];
@@ -185,7 +186,9 @@ in
     # debounced idle→playing edge, Group.SetStream's the connected client's group to the
     # stream that just started — so playing in either the Spotify app or Music Assistant
     # "just works" with no manual switch. Event-driven off stream *status* (not PCM
-    # sniffing) and debounced so a between-tracks idle dip never flaps the output.
+    # sniffing) and debounced so a between-tracks idle dip never flaps the output. It also
+    # pins the shared hardware mixer to a reference on switch to Spotify, whose volume lives
+    # in the app slider (SWITCHER_REFERENCE_* below) — see the librespot volume note above.
     systemd.services.snapcast-stream-switcher = {
       description = "Auto-follow the active Snapcast stream (Volumio-style arbiter)";
       wantedBy = [ "multi-user.target" ];
@@ -215,10 +218,15 @@ in
         SNAPCAST_HOST = "127.0.0.1";
         SNAPCAST_PORT = "1705";
         # The snapclient --hostID; its group is the one we route.
-        SWITCHER_CLIENT_ID = "porcupineFish";
+        SWITCHER_CLIENT_ID = snapclientId;
         SWITCHER_DEBOUNCE_SEC = "5";
         # Tie-break only (startup / both playing at once); last-activated-wins otherwise.
-        SWITCHER_PRIORITY = "Spotify";
+        SWITCHER_PRIORITY = spotifyStream;
+        # Spotify's volume is the app slider (librespot's own control), so pin the shared
+        # hardware mixer to full whenever we route to it — otherwise Spotify inherits the low
+        # level MA last left on that mixer and the app slider can't recover it (#96).
+        SWITCHER_REFERENCE_STREAM = spotifyStream;
+        SWITCHER_REFERENCE_PERCENT = "100";
       };
     };
 
