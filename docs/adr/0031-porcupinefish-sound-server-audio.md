@@ -159,3 +159,29 @@ themselves.
 - **Deploy ordering:** the Pi (snapserver reachable on 1705 over tailscale) should be up
   before MA's provisioning oneshot on rk1b runs, or the snapcast-provider save will fail its
   first connection (the oneshot is idempotent, so a re-run recovers).
+
+## Follow-up — auto-follow switcher + unified volume (#96, implemented 2026-07-24)
+
+The base design left two gaps that made switching sources manual/broken; both are now closed
+on porcupineFish (`modules/nixos/profiles/pi/hifi.nix` + `snapcast-stream-switcher.py`).
+
+- **Auto-follow arbiter (A).** snapcast 0.34 does not auto-follow the active stream, so playing
+  in the *other* source left the group bound to the old stream → silence. A small systemd
+  watcher (`snapcast-stream-switcher.service`) subscribes to the control API and, on a
+  **debounced `idle → playing` edge**, `Group.SetStream`s the connected client's group to the
+  stream that just started — Volumio's volatile-state model (event-driven off stream *status*,
+  not PCM-silence sniffing). Debounced so a between-tracks idle dip never flaps output;
+  last-activated-wins with a fixed priority tiebreak; it also hands the speaker to a
+  still-playing source when the focused one is paused. No manual `Group.SetStream` anywhere.
+
+- **Volume model B, not A (single hardware master).** snapclient's HiFiBerry "Digital" hardware
+  mixer is the single gain stage; MA drives it, and librespot is pinned full-scale with
+  `--volume-ctrl fixed` so the Spotify stream never adds a second, hidden gain (the old
+  "on full but quiet after switching" drift). **Model A — bridging the Spotify app slider onto
+  the hardware mixer at full fidelity — was ruled out as architecturally unavailable, not merely
+  fiddly:** librespot 0.8.0's Connect layer (`spirc.rs` `set_volume`) *unconditionally* applies
+  the app's volume to its softvol mixer **and** emits the volume event; there is no
+  report-without-attenuate for the pipe backend (verified against the v0.8.0 source), so an
+  `--onevent` bridge would double-attenuate. Consequence: the Spotify **app** slider is not the
+  master — volume is set via MA / snapweb / Home Assistant. This is the fallback the issue
+  sanctioned ("ship B rather than block").

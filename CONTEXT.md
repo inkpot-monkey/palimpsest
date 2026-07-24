@@ -262,3 +262,11 @@ _Avoid_: listener, user (overloaded — reserve **User** for the host↔user bun
 **Control plane** (audio):
 Which app drives which source to the **audio host**. Two, kept separate by design: the **Spotify plane** (native Spotify app → the Pi's librespot Connect stream) and the **library plane** (Home Assistant / Music Assistant → the Navidrome library). Each source keeps its best remote; they are not unified into one app.
 _Avoid_: remote, controller (reserve for a specific process).
+
+**Stream-switcher** (the arbiter):
+The watcher on the **audio host** that makes play-in-either-source "just work". Each source feeds `snapserver` as a *separate* stream, and snapcast does not auto-follow the active one; the switcher subscribes to the control API and, on a debounced `idle → playing` edge, binds the **device owner**'s group to the stream that just started. Event-driven off stream *status* (not silence-sniffing) and debounced so a between-tracks idle dip never flaps the output — last-activated-wins ([#96](docs/adr/0031-porcupinefish-sound-server-audio.md)).
+_Avoid_: router, mixer (it routes *which* stream plays, it does not mix or set volume).
+
+**Volume master**:
+The single gain stage for the speaker: `snapclient`'s **hardware "Digital" mixer** on the DAC. Music Assistant drives it directly, and librespot is pinned full-scale (`--volume-ctrl fixed`) so the Spotify stream never adds a second, hidden gain — the fix for the old "on full but quiet after switching" drift. Consequence: the Spotify *app* slider is not the master (volume via MA / snapweb / HA); librespot 0.8's pipe backend can't report volume without also applying it, so bridging the app slider was ruled out (#96).
+_Avoid_: software volume (the point is that it's the DAC's hardware mixer, at full bit-depth).
