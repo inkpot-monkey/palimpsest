@@ -95,12 +95,14 @@ in
             unit = "{{ unit }}";
             level = "{{ level }}";
           };
-          # Vector 0.49+ refuses fully-dynamic label templates (no static prefix)
-          # unless this opt-out is set, to guard against label-cardinality/injection
-          # from untrusted event fields. Here every label comes from our own
-          # parse_journal transform (hostname, systemd unit, job, derived level) —
-          # trusted internal values — and a static prefix would corrupt the label
-          # values that dashboards/queries expect verbatim. So opt out explicitly.
+          # Vector 0.57+ rejects fully-dynamic label templates (no static prefix) at startup
+          # unless this opt-out is set, guarding against label-cardinality/injection from
+          # untrusted event fields. Here every label comes from our own parse_journal transform
+          # (hostname, systemd unit, job, derived level) — trusted internal values — and a static
+          # prefix would corrupt the label values dashboards/queries expect verbatim. So opt out
+          # explicitly. Fleet-uniform: the field landed in 0.57, and porcupineFish (whose
+          # nixos-raspberrypi nixpkgs otherwise lags at 0.52) pins Vector to the fleet 0.57 in its
+          # host config precisely so this shared sink config validates everywhere without gating.
           dangerously_allow_unconfined_template_resolution = true;
         };
       };
