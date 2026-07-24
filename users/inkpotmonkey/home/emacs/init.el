@@ -60,6 +60,12 @@ Overridden by the Nix-generated `my-site-config.el'.")
  (setq select-enable-clipboard t)
  (setq select-enable-primary t)
 
+ ;; `M-y' (`consult-yank-pop') presents the kill ring rotated to the yank
+ ;; pointer by default (`yank-from-kill-ring-rotate' = t), so the newest kill
+ ;; is not on top and the order shifts to whatever you last picked.  Nil keeps
+ ;; the menu newest-first and stable; `C-y' (`yank') was always correct.
+ (setq yank-from-kill-ring-rotate nil)
+
  (setq treesit-extra-load-path
        (delq nil (list my-site/treesit-load-path)))
 
@@ -840,6 +846,63 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
     (when (eq op 'set)
       (with-current-buffer (or where (current-buffer))
         (setq-local ghostel--copy-mode-active (eq newval 'copy)))))))
+
+;; --- Snippet expansion inside the Claude/ghostel TUI ------------------------
+;; ghostel forwards every keystroke straight to the child process (Claude's
+;; full-screen alt-screen TUI), which echoes it — so the text you type lives in
+;; the terminal grid, not in an editable Emacs buffer.  That puts it out of
+;; reach of abbrev/tempel/corfu.  To still get "type a trigger, press TAB, it
+;; expands", override TAB in ghostel's input keymap: the handler reads the word
+;; immediately left of the terminal cursor out of the grid
+;; (`ghostel--cursor-row-text' + the COL of `ghostel--cursor-pos'), and if it is
+;; a known trigger, deletes that word in the TUI (one backspace per char) and
+;; pastes the expansion; otherwise it forwards a real TAB so Claude's own TAB
+;; (file autocomplete, mode cycling) still works.  These grid/cursor internals
+;; are version-coupled to ghostel like the copy-mode shim above — revisit on a
+;; ghostel bump.  Snippets only fire while typing (semi-char/char input mode).
+;;
+;; The triggers live in an abbrev table (like `gptel-mode-abbrev-table' above),
+;; reused purely as the store: we look them up with `abbrev-expansion', NOT
+;; `expand-abbrev' — abbrev's own expansion rewrites buffer text, which does not
+;; exist here (the input is echoed into the terminal grid by Claude).
+(define-abbrev-table 'my/claude-snippets-abbrev-table
+  '(("yr" "go with your recommendations" nil :count 0)
+    ("wdyt" "what do you think?" nil :count 0)
+    ("cts" "continue to the next step" nil :count 0))
+  "Triggers expanded by TAB in a Claude/ghostel buffer.")
+
+(defun my/ghostel-tab-expand ()
+  "Expand the snippet trigger typed before the terminal cursor, else send TAB.
+Read the trailing word off the cursor row of the ghostel grid; when it is an
+abbrev in `my/claude-snippets-abbrev-table', delete that word in the TUI and
+paste its expansion.  On no match, forward a real TAB to the child process."
+  (interactive)
+  (let* ((row (or (ghostel--cursor-row-text) ""))
+         (col
+          (and (consp ghostel--cursor-pos) (car ghostel--cursor-pos)))
+         (left
+          (if (and col (<= col (length row)))
+              (substring row 0 col)
+            row))
+         (trigger
+          (and (string-match "\\([[:alnum:]-]+\\)\\'" left)
+               (match-string 1 left)))
+         (expansion
+          (and trigger
+               (abbrev-expansion trigger
+                                 my/claude-snippets-abbrev-table))))
+    (if expansion
+        (progn
+          (dotimes (_ (length trigger))
+            (ghostel-send-key "backspace"))
+          (ghostel-paste-string expansion))
+      (ghostel-send-key "tab"))))
+
+(with-eval-after-load 'ghostel
+  (define-key
+   ghostel-semi-char-mode-map (kbd "TAB") #'my/ghostel-tab-expand)
+  (define-key
+   ghostel-semi-char-mode-map (kbd "<tab>") #'my/ghostel-tab-expand))
 
 ;; stevemolitor/claude-code.el — Claude Code as a full-window coding agent.
 ;; Multiple named sessions per project: claude-code (C-c c c), a second agent
