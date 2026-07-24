@@ -220,6 +220,13 @@ in
           # navidrome user so filed tracks are library-owned. See modules/nixos/profiles/beets.nix.
           custom.profiles.beets.enable = true;
 
+          # Music Assistant — the library-plane brain (ADR-0031). Reads Navidrome (over loopback,
+          # co-located here) and pushes audio to porcupineFish's snapserver in external-server mode,
+          # so the Navidrome library plays out the Pi's speakers, controlled from Home Assistant on
+          # rk1a. State on the NVMe /var/cache/music-assistant; providers provisioned from the sops
+          # navidrome `users` map. See modules/nixos/profiles/music-assistant.nix.
+          custom.profiles.music-assistant.enable = true;
+
           # Off-host uptime watcher (Gatus): rk1b is always-on and not kelpy, so it
           # can observe kelpy failing. Probes the fleet + alerts to #infra-alerts.
           # See ADR-0019 / modules/nixos/profiles/monitoring/watcher.nix.

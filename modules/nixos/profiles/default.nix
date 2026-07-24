@@ -40,6 +40,7 @@
     claude-relay = ./claude-relay.nix;
     homeassistant = ./homeassistant.nix;
     navidrome = ./navidrome.nix;
+    music-assistant = ./music-assistant.nix;
     beets = ./beets.nix;
     backup = ./backup.nix;
     blocky = ./blocky.nix;

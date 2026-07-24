@@ -929,11 +929,11 @@
     "secrets": {
       "flake": false,
       "locked": {
-        "lastModified": 1784723121,
-        "narHash": "sha256-Fenrs8AfsNGhfqITfaLxfeYjQs/oEe1WknhKoNYNLYI=",
+        "lastModified": 1784812963,
+        "narHash": "sha256-/Li8hYZgSma0fmxFGtsFJSibHSiYmFQhfNL2gSiT2/Y=",
         "ref": "refs/heads/main",
-        "rev": "919433fe0191da84d8c06352826a3d7b487ae74c",
-        "revCount": 65,
+        "rev": "5b0c8296b6b9f978f476812ee0c6b7f230c8fe76",
+        "revCount": 66,
         "type": "git",
         "url": "ssh://git@github.com/inkpot-monkey/stash.git"
       },
