@@ -841,6 +841,56 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
       (with-current-buffer (or where (current-buffer))
         (setq-local ghostel--copy-mode-active (eq newval 'copy)))))))
 
+;; --- Snippet expansion inside the Claude/ghostel TUI ------------------------
+;; ghostel forwards every keystroke straight to the child process (Claude's
+;; full-screen alt-screen TUI), which echoes it — so the text you type lives in
+;; the terminal grid, not in an editable Emacs buffer.  That puts it out of
+;; reach of abbrev/tempel/corfu.  To still get "type a trigger, press TAB, it
+;; expands", override TAB in ghostel's input keymap: the handler reads the word
+;; immediately left of the terminal cursor out of the grid
+;; (`ghostel--cursor-row-text' + the COL of `ghostel--cursor-pos'), and if it is
+;; a known trigger, deletes that word in the TUI (one backspace per char) and
+;; pastes the expansion; otherwise it forwards a real TAB so Claude's own TAB
+;; (file autocomplete, mode cycling) still works.  These grid/cursor internals
+;; are version-coupled to ghostel like the copy-mode shim above — revisit on a
+;; ghostel bump.  Snippets only fire while typing (semi-char/char input mode).
+(defvar my/claude-snippets
+  '(("yr" . "go with your recommendations")
+    ("wdyt" . "what do you think?")
+    ("cts" . "continue to the next step"))
+  "Alist of TRIGGER -> EXPANSION expanded by TAB in a Claude/ghostel buffer.")
+
+(defun my/ghostel-tab-expand ()
+  "Expand the snippet trigger typed before the terminal cursor, else send TAB.
+Read the trailing word off the cursor row of the ghostel grid; when it is a key
+in `my/claude-snippets', delete that word in the TUI and paste its expansion.
+On no match, forward a real TAB to the child process."
+  (interactive)
+  (let* ((row (or (ghostel--cursor-row-text) ""))
+         (col
+          (and (consp ghostel--cursor-pos) (car ghostel--cursor-pos)))
+         (left
+          (if (and col (<= col (length row)))
+              (substring row 0 col)
+            row))
+         (trigger
+          (and (string-match "\\([[:alnum:]-]+\\)\\'" left)
+               (match-string 1 left)))
+         (expansion
+          (and trigger (cdr (assoc trigger my/claude-snippets)))))
+    (if expansion
+        (progn
+          (dotimes (_ (length trigger))
+            (ghostel-send-key "backspace"))
+          (ghostel-paste-string expansion))
+      (ghostel-send-key "tab"))))
+
+(with-eval-after-load 'ghostel
+  (define-key
+   ghostel-semi-char-mode-map (kbd "TAB") #'my/ghostel-tab-expand)
+  (define-key
+   ghostel-semi-char-mode-map (kbd "<tab>") #'my/ghostel-tab-expand))
+
 ;; stevemolitor/claude-code.el — Claude Code as a full-window coding agent.
 ;; Multiple named sessions per project: claude-code (C-c c c), a second agent
 ;; with claude-code-new-instance, or claude-code-start-in-directory; switch
