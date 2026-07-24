@@ -854,17 +854,22 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
 ;; (file autocomplete, mode cycling) still works.  These grid/cursor internals
 ;; are version-coupled to ghostel like the copy-mode shim above — revisit on a
 ;; ghostel bump.  Snippets only fire while typing (semi-char/char input mode).
-(defvar my/claude-snippets
-  '(("yr" . "go with your recommendations")
-    ("wdyt" . "what do you think?")
-    ("cts" . "continue to the next step"))
-  "Alist of TRIGGER -> EXPANSION expanded by TAB in a Claude/ghostel buffer.")
+;;
+;; The triggers live in an abbrev table (like `gptel-mode-abbrev-table' above),
+;; reused purely as the store: we look them up with `abbrev-expansion', NOT
+;; `expand-abbrev' — abbrev's own expansion rewrites buffer text, which does not
+;; exist here (the input is echoed into the terminal grid by Claude).
+(define-abbrev-table 'my/claude-snippets-abbrev-table
+  '(("yr" "go with your recommendations" nil :count 0)
+    ("wdyt" "what do you think?" nil :count 0)
+    ("cts" "continue to the next step" nil :count 0))
+  "Triggers expanded by TAB in a Claude/ghostel buffer.")
 
 (defun my/ghostel-tab-expand ()
   "Expand the snippet trigger typed before the terminal cursor, else send TAB.
-Read the trailing word off the cursor row of the ghostel grid; when it is a key
-in `my/claude-snippets', delete that word in the TUI and paste its expansion.
-On no match, forward a real TAB to the child process."
+Read the trailing word off the cursor row of the ghostel grid; when it is an
+abbrev in `my/claude-snippets-abbrev-table', delete that word in the TUI and
+paste its expansion.  On no match, forward a real TAB to the child process."
   (interactive)
   (let* ((row (or (ghostel--cursor-row-text) ""))
          (col
@@ -877,7 +882,9 @@ On no match, forward a real TAB to the child process."
           (and (string-match "\\([[:alnum:]-]+\\)\\'" left)
                (match-string 1 left)))
          (expansion
-          (and trigger (cdr (assoc trigger my/claude-snippets)))))
+          (and trigger
+               (abbrev-expansion trigger
+                                 my/claude-snippets-abbrev-table))))
     (if expansion
         (progn
           (dotimes (_ (length trigger))
