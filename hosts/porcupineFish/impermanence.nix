@@ -90,7 +90,8 @@
     ];
   };
 
-  # Deliberately NOT persisted: /var/cache/spotifyd (spotifyd re-advertises over
-  # zeroconf and re-authenticates on connect, so its cache is safe to lose) and the
-  # node-exporter textfiles / watchdog counter (regenerated on the next event).
+  # Deliberately NOT persisted: Snapcast/librespot state — snapserver + snapclient are
+  # stateless and the librespot Spotify stream re-advertises over zeroconf on every boot
+  # (no stored credentials), so its audio cache is safe to lose — and the node-exporter
+  # textfiles (regenerated on the next event). See ADR-0031.
 }
