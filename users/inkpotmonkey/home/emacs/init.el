@@ -60,6 +60,12 @@ Overridden by the Nix-generated `my-site-config.el'.")
  (setq select-enable-clipboard t)
  (setq select-enable-primary t)
 
+ ;; `M-y' (`consult-yank-pop') presents the kill ring rotated to the yank
+ ;; pointer by default (`yank-from-kill-ring-rotate' = t), so the newest kill
+ ;; is not on top and the order shifts to whatever you last picked.  Nil keeps
+ ;; the menu newest-first and stable; `C-y' (`yank') was always correct.
+ (setq yank-from-kill-ring-rotate nil)
+
  (setq treesit-extra-load-path
        (delq nil (list my-site/treesit-load-path)))
 
