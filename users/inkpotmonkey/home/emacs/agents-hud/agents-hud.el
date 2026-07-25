@@ -24,16 +24,20 @@
 ;;
 ;; STATUS MODEL (per buffer), four states:
 ;;
-;;   ⧗ working — the terminal is churning: either ghostel's own OSC-133
+;;   🤔 working — the terminal is churning: either ghostel's own OSC-133
 ;;               `ghostel--command-running' flag is set (a shell command is
 ;;               running) or a redraw fired within `agents-hud-idle-seconds'.
-;;   ! waiting — Claude finished its turn and wants you.  Claude's only clean
+;;               A redraw caused purely by you (a focus event from looking at
+;;               the buffer, or a keystroke echo) is discounted — see
+;;               `agents-hud-interaction-grace'.
+;;   🙋 waiting — Claude finished its turn and wants you.  Claude's only clean
 ;;               "done" event is the terminal BELL; we read it two ways (either
 ;;               suffices): membership in `proc-notify--pending' (proc-notify
 ;;               already captures the bell) and a best-effort `:after' advice on
 ;;               `claude-code--notify' that stamps a bell time on the buffer.
-;;   ○ idle    — a live process, quiet past the cutoff, not waiting.
-;;   ✕ dead    — no live process (only visible if the buffer lingers;
+;;   🫡 ready   — a live process, quiet past the cutoff and not pinging you:
+;;               standing by, ready for input (typically a shell at its prompt).
+;;   💀 dead    — no live process (only visible if the buffer lingers;
 ;;               `ghostel-kill-buffer-on-exit' defaults to t, so exited
 ;;               terminals usually vanish rather than show here).
 ;;
@@ -79,14 +83,27 @@
   :prefix "agents-hud-")
 
 (defcustom agents-hud-idle-seconds 3.0
-  "Seconds of terminal quiet after which a working buffer is called idle.
-A redraw within this window counts the buffer as ⧗ working; once redraws stop
-for this long (and no shell command is running) it drops to ○ idle."
+  "Seconds of terminal quiet after which a working buffer stops counting as busy.
+A redraw within this window counts the buffer as 🤔 working; once redraws stop
+for this long (and no shell command is running) it drops to 🫡 ready."
   :type 'number)
 
 (defcustom agents-hud-refresh-interval 1.0
   "Seconds between automatic sidebar re-renders while the panel is visible.
-The tick also advances the displayed durations and flips working→idle."
+The tick also advances the displayed durations and flips working→ready."
+  :type 'number)
+
+(defcustom agents-hud-interaction-grace 0.4
+  "Seconds after a user interaction during which a redraw is not counted as work.
+A terminal redraw can be caused by you rather than by Claude: switching into or
+out of a buffer makes ghostel send a focus event (DEC mode 1004) that a
+focus-reporting TUI repaints in response, and typing echoes each keystroke back.
+Both are ordinary redraws indistinguishable from real output.  A redraw on an
+otherwise-quiet buffer within this window of an interaction — a focus change
+\(on EITHER side, as its repaint can fire just before or just after the focus
+hook) or a keystroke — is ignored, so merely looking at or typing into a parked
+session no longer flips it to 🤔 working.  A buffer that is already active keeps
+stamping normally, so genuine work is never suppressed.  Set to 0 to disable."
   :type 'number)
 
 (defcustom agents-hud-avy-keys-style 'letters
@@ -107,20 +124,20 @@ the first key."
   "Width in columns of the sidebar window."
   :type 'integer)
 
-(defcustom agents-hud-working-icon "⧗"
-  "Icon for the ⧗ working state."
+(defcustom agents-hud-working-icon "🤔"
+  "Icon for the 🤔 working state."
   :type 'string)
 
-(defcustom agents-hud-waiting-icon "!"
-  "Icon for the ! waiting-on-you state."
+(defcustom agents-hud-waiting-icon "🙋"
+  "Icon for the 🙋 waiting-on-you state."
   :type 'string)
 
-(defcustom agents-hud-idle-icon "○"
-  "Icon for the ○ idle state."
+(defcustom agents-hud-ready-icon "🫡"
+  "Icon for the 🫡 ready state (live, quiet, standing by for input)."
   :type 'string)
 
-(defcustom agents-hud-dead-icon "✕"
-  "Icon for the ✕ dead state."
+(defcustom agents-hud-dead-icon "💀"
+  "Icon for the 💀 dead state."
   :type 'string)
 
 (defcustom agents-hud-claude-glyph "◆"
@@ -144,19 +161,22 @@ Rendered with `nerd-icons-faicon'."
   :type 'string)
 
 (defcustom agents-hud-show-state-label nil
-  "When non-nil, spell out the state word (working/idle/…) in the sidebar.
-Off by default: the leading state icon (⧗ ! ○ ✕) carries the status and the
+  "When non-nil, spell out the state word (working/ready/…) in the sidebar.
+Off by default: the leading state icon (🤔 🙋 🫡 💀) carries the status and the
 row stays compact.  A dead buffer's exit code is shown either way."
   :type 'boolean)
 
 (defface agents-hud-working-face '((t :inherit warning))
   "Face for the working state icon and status text.")
 
-(defface agents-hud-waiting-face '((t :inherit error :weight bold))
-  "Face for the waiting-on-you state icon and status text.")
+(defface agents-hud-waiting-face '((t :inherit success :weight bold))
+  "Face for the waiting-on-you state icon and status text.
+Green (via `success') rather than red: a session ready for you is an
+invitation, not an error.  Colour emoji ignore this `:foreground', so the
+green only tints the accompanying label text — the 🙋 glyph keeps its own hue.")
 
-(defface agents-hud-idle-face '((t :inherit shadow))
-  "Face for the idle state icon and status text.")
+(defface agents-hud-ready-face '((t :inherit shadow))
+  "Face for the ready state icon and status text.")
 
 (defface agents-hud-dead-face '((t :inherit font-lock-comment-face))
   "Face for the dead state icon and status text.")
@@ -172,6 +192,11 @@ row stays compact.  A dead buffer's exit code is shown either way."
 (defvar-local agents-hud--activity nil
   "`float-time' of this buffer's last terminal redraw, or nil.")
 
+(defvar-local agents-hud--activity-prev nil
+  "The `agents-hud--activity' value from before the most recent stamp.
+Kept so `agents-hud--note-focus-change' can roll back a display/focus repaint
+that stamped a quiet buffer a few milliseconds before the focus hook fired.")
+
 (defvar-local agents-hud--working-since nil
   "`float-time' the current active burst began, for the working duration.")
 
@@ -181,22 +206,119 @@ row stays compact.  A dead buffer's exit code is shown either way."
 (defvar-local agents-hud--exit nil
   "Exit code recorded when this buffer's terminal process exited, or nil.")
 
+(defvar-local agents-hud--input-time nil
+  "`float-time' of the last explicit user keystroke into this buffer, or nil.
+Stamped by `agents-hud--note-input' (advising `ghostel--on-user-input'); lets
+`agents-hud--note-activity' discount the echo repaint typing produces so a
+session you are replying to is not mistaken for one that is working.")
+
+(defvar agents-hud--focus-change-time nil
+  "`float-time' of the most recent terminal focus change (any buffer), or nil.
+Global, not buffer-local: `ghostel--focus-change' fires for whichever buffers
+just gained or lost focus, so a single stamp covers the repaint that follows on
+each of them.  Read by `agents-hud--interaction-suppressed-p'.")
+
+(defun agents-hud--latest-time (&rest times)
+  "Return the largest non-nil `float-time' in TIMES, or nil when all are nil."
+  (let ((ts (delq nil times)))
+    (and ts (apply #'max ts))))
+
+(defun agents-hud--interaction-suppressed-p
+    (now interaction-time activity grace cutoff)
+  "Non-nil when a redraw at NOW should be ignored as a user-interaction repaint.
+INTERACTION-TIME is the last focus change or keystroke; ACTIVITY the buffer's
+last redraw; GRACE the interaction window (`agents-hud-interaction-grace');
+CUTOFF the quiet threshold (`agents-hud-idle-seconds').  Swallowed only when an
+interaction landed within GRACE AND the buffer was quiet (no ACTIVITY within
+CUTOFF) — i.e. this lone redraw (a focus repaint, or a keystroke echo) would
+spuriously flip a parked session to working.  An already-active buffer (fresh
+ACTIVITY) is never suppressed, so genuine work is never starved."
+  (and interaction-time
+       grace
+       (> grace 0)
+       (< (- now interaction-time) grace)
+       (or (null activity) (>= (- now activity) cutoff))))
+
+(defun agents-hud--focus-rollback-p
+    (now activity activity-prev grace cutoff)
+  "Non-nil when ACTIVITY is a focus-repaint stamp to undo after a focus change.
+The repaint that paints a newly-shown buffer can land a few milliseconds BEFORE
+`ghostel--focus-change' updates the focus stamp, so the forward guard
+\(`agents-hud--interaction-suppressed-p') misses it.  On the focus change,
+undo the stamp if the buffer's last redraw landed within GRACE of NOW AND it was
+a quiet→active flip (ACTIVITY-PREV absent or older than CUTOFF before it).  A
+genuinely working buffer re-stamps on its next redraw, so a wrong rollback
+self-heals in one frame; a lone focus repaint stays rolled back."
+  (and activity
+       grace (> grace 0) (< (- now activity) grace)
+       (or (null activity-prev)
+           (>= (- activity activity-prev) cutoff))))
+
 (defun agents-hud--note-activity (buffer)
   "Stamp BUFFER's last-activity time on a redraw; never inhibit the redraw.
 For `ghostel-inhibit-redraw-functions' (called with BUFFER current before each
 redraw): returns nil so the redraw always proceeds.  When activity resumes
 after a quiet spell it also restarts `agents-hud--working-since' so the working
-duration measures the current burst, not the whole session."
+duration measures the current burst, not the whole session.
+
+A redraw that is merely a user-interaction repaint on a quiet buffer is ignored,
+so looking at or typing into a parked session does not flash it as working — see
+`agents-hud-interaction-grace'.  The focus case is bracketed: a focus change
+just BEFORE the redraw suppresses it here
+\(`agents-hud--interaction-suppressed-p'); one just AFTER rolls it back
+\(`agents-hud--note-focus-change'), which is why the prior activity is kept in
+`agents-hud--activity-prev'.  A keystroke is stamped before its echo, so the
+forward guard alone covers typing."
   (with-demoted-errors "agents-hud activity: %S"
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
         (let ((now (float-time)))
-          (when (or (null agents-hud--activity)
-                    (>= (- now agents-hud--activity)
-                        agents-hud-idle-seconds))
-            (setq agents-hud--working-since now))
-          (setq agents-hud--activity now)))))
+          (unless (agents-hud--interaction-suppressed-p
+                   now
+                   (agents-hud--latest-time
+                    agents-hud--focus-change-time
+                    agents-hud--input-time)
+                   agents-hud--activity
+                   agents-hud-interaction-grace
+                   agents-hud-idle-seconds)
+            (when (or (null agents-hud--activity)
+                      (>= (- now agents-hud--activity)
+                          agents-hud-idle-seconds))
+              (setq agents-hud--working-since now))
+            (setq agents-hud--activity-prev agents-hud--activity)
+            (setq agents-hud--activity now))))))
   nil)
+
+(defun agents-hud--note-focus-change (&rest _)
+  "Record a terminal focus change and undo any repaint it triggered just before.
+For `:after' advice on `ghostel--focus-change' (which sends the DEC mode 1004
+focus events).  Stamps `agents-hud--focus-change-time', so a repaint landing
+just AFTER is discounted by `agents-hud--note-activity'.  Then rolls back any
+quiet buffer whose last redraw landed just BEFORE this hook: the repaint that
+paints a newly-shown buffer fires a few ms ahead of the focus hook, which the
+forward guard cannot catch (`agents-hud--focus-rollback-p')."
+  (with-demoted-errors "agents-hud focus: %S"
+    (let ((now (float-time)))
+      (setq agents-hud--focus-change-time now)
+      (dolist (b (agents-hud--buffers))
+        (with-current-buffer b
+          (when (agents-hud--focus-rollback-p
+                 now
+                 agents-hud--activity
+                 agents-hud--activity-prev
+                 agents-hud-interaction-grace
+                 agents-hud-idle-seconds)
+            (setq agents-hud--activity
+                  agents-hud--activity-prev)))))))
+
+(defun agents-hud--note-input (&rest _)
+  "Stamp `agents-hud--input-time' when the user sends a keystroke to a terminal.
+For `:before' advice on `ghostel--on-user-input', which runs in the terminal
+buffer just before the key reaches the PTY — hence before the echo repaint, so
+`agents-hud--note-activity' discounts that repaint and typing a reply does not
+read as Claude working."
+  (with-demoted-errors "agents-hud input: %S"
+    (setq agents-hud--input-time (float-time))))
 
 (defun agents-hud--note-bell (&rest _)
   "Stamp a finished-turn bell time on the current (Claude) buffer.
@@ -237,7 +359,19 @@ available."
     (with-eval-after-load 'ghostel
       (add-hook
        'ghostel-inhibit-redraw-functions #'agents-hud--note-activity)
-      (add-hook 'ghostel-exit-functions #'agents-hud--note-exit))
+      (add-hook 'ghostel-exit-functions #'agents-hud--note-exit)
+      ;; Discount redraws you cause rather than Claude: the repaint a
+      ;; focus-reporting TUI makes on focus in/out, and the echo of your own
+      ;; keystrokes, so looking at or typing into a parked session does not
+      ;; flash it as working (see `agents-hud-interaction-grace').
+      (when (fboundp 'ghostel--focus-change)
+        (advice-add
+         'ghostel--focus-change
+         :after #'agents-hud--note-focus-change))
+      (when (fboundp 'ghostel--on-user-input)
+        (advice-add
+         'ghostel--on-user-input
+         :before #'agents-hud--note-input)))
     (with-eval-after-load 'claude-code
       (advice-add
        'claude-code--notify
@@ -441,7 +575,7 @@ NOW/CUTOFF omitted, PENDING is trusted unconditionally (back-compat)."
  "Resolve a buffer's status symbol from its signals.
 LIVE — has a live process.  CMD-RUNNING — ghostel's OSC-133 flag.  WAITING —
 already-resolved waiting-on-you flag.  ACTIVITY — last redraw `float-time'.
-Priority: dead → waiting → working → idle."
+Priority: dead → waiting → working → ready."
  (cond
   ((not live)
    'dead)
@@ -452,7 +586,7 @@ Priority: dead → waiting → working → idle."
   ((and activity (< (- now activity) cutoff))
    'working)
   (t
-   'idle)))
+   'ready)))
 
 (defun agents-hud--buffer-pending-p (buffer)
   "Non-nil when BUFFER is in proc-notify's pending set (if proc-notify loaded)."
@@ -489,7 +623,7 @@ Priority: dead → waiting → working → idle."
           (pcase state
             ('waiting (or bell now))
             ('working (or working-since activity now))
-            ('idle (or activity now))
+            ('ready (or activity now))
             (_ nil)))
          (project (agents-hud--buffer-project buffer)))
     (agents-hud-entry--create
@@ -514,7 +648,7 @@ Priority: dead → waiting → working → idle."
 ;;; ── Sorting & grouping (pure) ────────────────────────────────────────────────
 
 (defconst agents-hud--state-priority
-  '((waiting . 0) (working . 1) (idle . 2) (dead . 3))
+  '((waiting . 0) (working . 1) (ready . 2) (dead . 3))
   "Sort rank per state — lower floats to the top (attention first).")
 
 (defun agents-hud--entry-priority (entry)
@@ -564,7 +698,7 @@ leads with that tag and omits the repo; otherwise it is repo-qualified
   (or (agents-hud-entry-project entry) (agents-hud-entry-path entry)))
 
 ;; Stable ordering for the sidebar.  Rows must NOT reshuffle when a session
-;; flips working↔idle↔waiting — position is tied to identity, not state.  Each
+;; flips working↔ready↔waiting — position is tied to identity, not state.  Each
 ;; buffer gets a monotonically increasing "first-seen" sequence the first time
 ;; it is rendered; rows and groups are ordered by it, so a row keeps its slot
 ;; for life and only earlier removals shift it up.  (The transient consult
@@ -628,7 +762,7 @@ removed shifts it.  A group's position is set by its earliest member."
   (pcase state
     ('working agents-hud-working-icon)
     ('waiting agents-hud-waiting-icon)
-    ('idle agents-hud-idle-icon)
+    ('ready agents-hud-ready-icon)
     ('dead agents-hud-dead-icon)
     (_ "?")))
 
@@ -637,7 +771,7 @@ removed shifts it.  A group's position is set by its earliest member."
   (pcase state
     ('working 'agents-hud-working-face)
     ('waiting 'agents-hud-waiting-face)
-    ('idle 'agents-hud-idle-face)
+    ('ready 'agents-hud-ready-face)
     ('dead 'agents-hud-dead-face)
     (_ 'default)))
 

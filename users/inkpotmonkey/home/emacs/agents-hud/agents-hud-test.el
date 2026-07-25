@@ -50,6 +50,57 @@ With no now/cutoff it is trusted unconditionally (back-compat)."
   "No pending and no bell is never waiting."
   (should-not (agents-hud--waiting-p nil nil 100.0)))
 
+;;; --- interaction-repaint suppression -----------------------------------------
+
+(ert-deftest agents-hud-test-latest-time ()
+  "`agents-hud--latest-time' returns the largest non-nil stamp, else nil."
+  (should (= 5.0 (agents-hud--latest-time 3.0 5.0 1.0)))
+  (should (= 5.0 (agents-hud--latest-time nil 5.0 nil)))
+  (should (= 5.0 (agents-hud--latest-time 5.0)))
+  (should (null (agents-hud--latest-time nil nil)))
+  (should (null (agents-hud--latest-time))))
+
+(ert-deftest agents-hud-test-interaction-suppressed ()
+  "An interaction-window redraw on a quiet buffer is swallowed; an active one not.
+The interaction time is a focus change or a keystroke (the caller passes the
+later of the two).  Args: NOW INTERACTION ACTIVITY GRACE CUTOFF (0.4, 3.0)."
+  ;; interaction 0.1s ago, buffer quiet (last activity 10s ago) -> suppress
+  (should
+   (agents-hud--interaction-suppressed-p 100.0 99.9 90.0 0.4 3.0))
+  ;; interaction 0.1s ago, buffer quiet, never had activity -> suppress
+  (should
+   (agents-hud--interaction-suppressed-p 100.0 99.9 nil 0.4 3.0))
+  ;; interaction 0.1s ago BUT buffer already active (0.2s ago) -> do NOT suppress
+  (should-not
+   (agents-hud--interaction-suppressed-p 100.0 99.9 99.8 0.4 3.0))
+  ;; quiet buffer but interaction was long ago (1s > grace) -> do NOT suppress
+  (should-not
+   (agents-hud--interaction-suppressed-p 100.0 99.0 90.0 0.4 3.0))
+  ;; no interaction recorded -> never suppress
+  (should-not
+   (agents-hud--interaction-suppressed-p 100.0 nil 90.0 0.4 3.0))
+  ;; grace disabled (0) -> never suppress
+  (should-not
+   (agents-hud--interaction-suppressed-p 100.0 99.9 90.0 0 3.0)))
+
+(ert-deftest agents-hud-test-focus-rollback ()
+  "A repaint stamp that landed just before a focus change is rolled back.
+Args: NOW ACTIVITY ACTIVITY-PREV GRACE CUTOFF (grace 0.4, cutoff 3.0).  Models
+the display repaint firing ~ms before `ghostel--focus-change'."
+  ;; stamped 0.02s ago, was quiet before (prev 90s back) -> roll back
+  (should (agents-hud--focus-rollback-p 100.0 99.98 10.0 0.4 3.0))
+  ;; stamped 0.02s ago, never had prior activity -> roll back
+  (should (agents-hud--focus-rollback-p 100.0 99.98 nil 0.4 3.0))
+  ;; stamped 0.02s ago BUT was already active before (prev 0.1s earlier) -> keep
+  (should-not
+   (agents-hud--focus-rollback-p 100.0 99.98 99.88 0.4 3.0))
+  ;; last stamp is old (1s > grace) -> nothing recent to undo
+  (should-not (agents-hud--focus-rollback-p 100.0 99.0 10.0 0.4 3.0))
+  ;; no activity at all -> nothing to undo
+  (should-not (agents-hud--focus-rollback-p 100.0 nil nil 0.4 3.0))
+  ;; grace disabled (0) -> never roll back
+  (should-not (agents-hud--focus-rollback-p 100.0 99.98 10.0 0 3.0)))
+
 ;;; --- state resolver ----------------------------------------------------------
 
 (ert-deftest agents-hud-test-state-dead ()
@@ -101,11 +152,11 @@ With no now/cutoff it is trusted unconditionally (back-compat)."
      :now 100.0
      :cutoff 3.0))))
 
-(ert-deftest agents-hud-test-state-idle ()
-  "Live but quiet past the cutoff, not waiting, is idle."
+(ert-deftest agents-hud-test-state-ready ()
+  "Live but quiet past the cutoff, not waiting, is ready."
   (should
    (eq
-    'idle
+    'ready
     (agents-hud--compute-state
      :live t
      :activity 90.0
@@ -113,7 +164,7 @@ With no now/cutoff it is trusted unconditionally (back-compat)."
      :cutoff 3.0)))
   (should
    (eq
-    'idle
+    'ready
     (agents-hud--compute-state :live t :activity nil :now 100.0))))
 
 ;;; --- helpers to build entries ------------------------------------------------
@@ -125,9 +176,9 @@ With no now/cutoff it is trusted unconditionally (back-compat)."
 ;;; --- attention-first sort ----------------------------------------------------
 
 (ert-deftest agents-hud-test-sort-priority ()
-  "Sort floats waiting above working above idle above dead."
-  (let* ((idle
-          (agents-hud-test--entry :state 'idle :project "/p/aaa"))
+  "Sort floats waiting above working above ready above dead."
+  (let* ((ready
+          (agents-hud-test--entry :state 'ready :project "/p/aaa"))
          (dead
           (agents-hud-test--entry :state 'dead :project "/p/bbb"))
          (wait
@@ -135,16 +186,18 @@ With no now/cutoff it is trusted unconditionally (back-compat)."
          (work
           (agents-hud-test--entry :state 'working :project "/p/ddd"))
          (sorted
-          (agents-hud--sort-entries (list idle dead wait work))))
+          (agents-hud--sort-entries (list ready dead wait work))))
     (should
      (equal
       (mapcar #'agents-hud-entry-state sorted)
-      '(waiting working idle dead)))))
+      '(waiting working ready dead)))))
 
 (ert-deftest agents-hud-test-sort-label-tiebreak ()
   "Same state sorts alphabetically by label."
-  (let* ((b (agents-hud-test--entry :state 'idle :project "/p/zebra"))
-         (a (agents-hud-test--entry :state 'idle :project "/p/alpha"))
+  (let* ((b
+          (agents-hud-test--entry :state 'ready :project "/p/zebra"))
+         (a
+          (agents-hud-test--entry :state 'ready :project "/p/alpha"))
          (sorted (agents-hud--sort-entries (list b a))))
     (should
      (equal
@@ -219,7 +272,7 @@ With no now/cutoff it is trusted unconditionally (back-compat)."
               ((e1
                 (agents-hud-test--entry
                  :buffer b1
-                 :state 'idle
+                 :state 'ready
                  :project "/p/nixos"))
                (e2
                 (agents-hud-test--entry
@@ -238,7 +291,7 @@ With no now/cutoff it is trusted unconditionally (back-compat)."
             ;; group order follows the earliest member: nixos (b1) before music (b2)
             (should
              (equal '("/p/nixos" "/p/music") (mapcar #'car groups)))
-            ;; within nixos: creation order b1 then b3 — NOT working-above-idle
+            ;; within nixos: creation order b1 then b3 — NOT working-above-ready
             (should
              (equal
               (list b1 b3)
@@ -263,7 +316,7 @@ With no now/cutoff it is trusted unconditionally (back-compat)."
   "A project-less entry groups under its path."
   (let* ((e
           (agents-hud-test--entry
-           :state 'idle
+           :state 'ready
            :project nil
            :path "/var/logs"))
          (groups (agents-hud--group-by-project (list e))))
@@ -285,9 +338,9 @@ With no now/cutoff it is trusted unconditionally (back-compat)."
      (agents-hud-test--entry :state 'waiting))))
   (should
    (equal
-    "idle"
+    "ready"
     (agents-hud--status-label
-     (agents-hud-test--entry :state 'idle)))))
+     (agents-hud-test--entry :state 'ready)))))
 
 (ert-deftest agents-hud-test-status-label-dead-exit ()
   "A dead entry's label carries its exit code when known, else a bare word."
@@ -321,7 +374,7 @@ With no now/cutoff it is trusted unconditionally (back-compat)."
      (equal
       ""
       (agents-hud--sidebar-status
-       (agents-hud-test--entry :state 'idle))))
+       (agents-hud-test--entry :state 'ready))))
     ;; a dead exit code is still surfaced (no icon conveys it)
     (should
      (equal
@@ -384,8 +437,8 @@ With no now/cutoff it is trusted unconditionally (back-compat)."
 (ert-deftest agents-hud-test-entry-positions ()
   "One position is collected per session row, at the row's start."
   (with-temp-buffer
-    (let ((ea (agents-hud-test--entry :state 'idle :project "/p/a"))
-          (eb (agents-hud-test--entry :state 'idle :project "/p/b")))
+    (let ((ea (agents-hud-test--entry :state 'ready :project "/p/a"))
+          (eb (agents-hud-test--entry :state 'ready :project "/p/b")))
       (insert "── heading\n")
       (let ((s1 (point)))
         (insert "  row-a\n     path\n")
@@ -420,7 +473,7 @@ With no now/cutoff it is trusted unconditionally (back-compat)."
 (ert-deftest agents-hud-test-avy-action-jumps ()
   "The avy action reads the entry at PT in the HUD buffer and jumps to it."
   (let* ((target (generate-new-buffer " agents-hud-target"))
-         (entry (agents-hud-test--entry :state 'idle :buffer target))
+         (entry (agents-hud-test--entry :state 'ready :buffer target))
          (hud (get-buffer-create agents-hud--buffer-name))
          (jumped nil))
     (unwind-protect
@@ -480,7 +533,8 @@ With no now/cutoff it is trusted unconditionally (back-compat)."
    (equal agents-hud-working-icon (agents-hud--state-icon 'working)))
   (should
    (equal agents-hud-waiting-icon (agents-hud--state-icon 'waiting)))
-  (should (equal agents-hud-idle-icon (agents-hud--state-icon 'idle)))
+  (should
+   (equal agents-hud-ready-icon (agents-hud--state-icon 'ready)))
   (should (equal agents-hud-dead-icon (agents-hud--state-icon 'dead)))
   (should
    (eq 'agents-hud-waiting-face (agents-hud--state-face 'waiting)))
