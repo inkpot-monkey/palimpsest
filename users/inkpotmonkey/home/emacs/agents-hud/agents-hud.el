@@ -714,6 +714,12 @@ either way, since no icon can convey it."
 (defvar agents-hud--timer nil
   "Repeating refresh timer, live only while the sidebar is shown.")
 
+(defvar agents-hud--inhibit-render nil
+  "When non-nil, the refresh tick skips re-rendering the sidebar.
+Bound while `agents-hud-avy' waits for a keypress: the tick's `erase-buffer'
+would otherwise wipe avy's label overlays mid-selection, so the hints vanish
+after one interval even though the positions (and the jump) survive.")
+
 (defvar-keymap agents-hud-mode-map
   :doc
   "Keymap for `agents-hud-mode'."
@@ -845,9 +851,12 @@ Clears the worktree→repo cache so an explicit refresh re-resolves grouping."
   (agents-hud--render))
 
 (defun agents-hud--tick ()
-  "Timer callback: re-render while the sidebar is visible, else stop."
+  "Timer callback: re-render while the sidebar is visible, else stop.
+Skips the render while `agents-hud--inhibit-render' is set (avy selection), so
+its `erase-buffer' cannot wipe avy's label overlays out from under a keypress."
   (if (get-buffer-window agents-hud--buffer-name)
-      (agents-hud--render)
+      (unless agents-hud--inhibit-render
+        (agents-hud--render))
     (agents-hud--stop-timer)))
 
 (defun agents-hud--start-timer ()
@@ -988,12 +997,17 @@ Works from any window while the sidebar is open — no need to focus it first."
       ;; 3 …) top-down rather than avy's scattered home-row default, and keep
       ;; avy off the de-bruijn style, which would reorder the labels.  No
       ;; `avy-with' macro is used, so there is no compile-time dependency on avy.
-      (let ((avy-action #'agents-hud--avy-action)
-            (avy-keys (agents-hud--avy-keys))
-            (avy-style
-             (if (eq avy-style 'de-bruijn)
-                 'pre
-               avy-style)))
+      (let
+          ((avy-action #'agents-hud--avy-action)
+           (avy-keys (agents-hud--avy-keys))
+           (avy-style
+            (if (eq avy-style 'de-bruijn)
+                'pre
+              avy-style))
+           ;; Freeze the refresh tick while avy blocks on a keypress; its
+           ;; `erase-buffer' would otherwise delete the label overlays after
+           ;; one interval, leaving invisible-but-still-live targets.
+           (agents-hud--inhibit-render t))
         (avy-process cands)))))
 
 (defun agents-hud-kill ()
