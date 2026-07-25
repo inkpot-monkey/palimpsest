@@ -21,6 +21,53 @@ fell back to a manual native-WebDAV leg. That was then superseded once a **fork*
 fixed both blockers, restoring the original dream of a fully-automatic two-way sync
 at the cost of two reconcilers bridging the fork's blob store to Stump.
 
+## Revision — 2026-07-25: lean into the fork's 2-way sync; `library/ereader/` mirrors the store (supersedes the outbound-only stance)
+
+Deploying the outbound-only push (below) surfaced a design fault the amendment glossed:
+**it fights the fork's own bidirectional sync instead of leaning on it.** Observed on the real
+Nomad — delete a book on the device and it comes straight back. The mechanism is a tug-of-war
+between two syncs over three planes:
+
+```
+  DEVICE  ◀── fork Private Cloud sync (2-way, works) ──▶  FORK STORE  ◀── ereader push (1-way, up) ──  library/ereader/
+  read/delete here                                        blobs+VFS, rebuildable, NOT backed up          real files, backed up, Stump-indexable
+```
+
+The fork sync only spans **device ⟷ store**; the device delete *did* propagate to the store.
+But the ereader push re-runs every sync and re-uploads anything in `library/ereader/` the device
+lacks — with no memory of what it already sent and no awareness of intent, it cannot tell "user
+deleted this" from "device is missing this," so `library/ereader/` (still holding the file) wins
+and the delete is undone. A continuously-enforced one-way mirror *into* a store that a 2-way sync
+also writes is structurally a conflict.
+
+**Decision: flip the authority.** The device + fork store are authoritative for what is on the
+device; **`library/ereader/` becomes a downward mirror of the store, not a source that pushes up.**
+
+- **Store → `library/ereader/` (new inbound mirror).** On each device-initiated sync, reconcile
+  the store's `ereader/` folder *down* into the git-annex tree: download files the tree lacks, and
+  **remove files the device deleted** — so a device delete propagates device → store → `library/`
+  and *stays gone*. This materialisation is also exactly what Stump (#93) needs (real files, not
+  blobs), so it does double duty.
+- **Sending is one-shot, not enforced.** Publishing a new book becomes a deliberate one-shot inject
+  into the store (an outbox folder that uploads-once-then-clears, or a `supernote-send` command),
+  replacing the continuously-re-applied push. After it lands, the fork owns its device lifecycle and
+  the downward mirror reflects it back into `library/ereader/` for backup + browse.
+- **The one required sliver of state: a last-synced baseline.** The delete direction hinges on one
+  ambiguity — a file present in `library/` but absent from the store is *either* a fresh local add
+  *or* a device-side delete. The reconciler distinguishes them by remembering the previous sync's
+  store snapshot (md5 set): "was in the baseline, now gone" = a real delete → remove from `library/`;
+  otherwise leave it. A **store-loss guard** (never delete from the backed-up tree when the store is
+  empty/unreachable and no device sync has completed) keeps a wiped, rebuildable store from nuking the
+  backup. This is the minimal state the original "no state DB" goal traded away, and it is the honest
+  price of durable deletes.
+
+**Consequence for scope:** this **un-defers the inbound half** the 2026-07-24 amendment shelved — but
+narrowed to the `ereader/` round-trip (mirror-down + one-shot send + durable deletes), *not* yet the
+full-corpus reconciler (`.note` → PDF conversion, `_originals/`, `library/{books,papers,notebooks}`
+classification, annotations materialisation), which remains future work built on this same
+store → `library/` mirror. The shipped outbound push (#94) is superseded by the one-shot send + mirror;
+its sync-coupled journal trigger carries over. Tracked as **palimpsest#107**.
+
 ## Amendment — 2026-07-24: v1 ships outbound-only (palimpsest#94)
 
 The bidirectional reconciler below is the decided *architecture*; the first shipped
