@@ -21,6 +21,29 @@ fell back to a manual native-WebDAV leg. That was then superseded once a **fork*
 fixed both blockers, restoring the original dream of a fully-automatic two-way sync
 at the cost of two reconcilers bridging the fork's blob store to Stump.
 
+## Amendment — 2026-07-24: v1 ships outbound-only (palimpsest#94)
+
+The bidirectional reconciler below is the decided *architecture*; the first shipped
+increment is deliberately **narrower**. The two-way reconciler's complexity lives almost
+entirely in the **inbound** half (blob-store → tree materialisation, `.note` → PDF
+conversion, `_originals/` ledger, classification into `library/{books,papers,notebooks}`).
+Dropping that removes ~80% of the code and risk for ~80% of the value — "put books on my
+Supernote, browse in Stump, keep them backed up" — so v1 builds just the **outbound** half:
+
+- A dedicated **`library/ereader/`** folder whose contents are pushed onto the device
+  (`upload_content` to `/DOCUMENT/Document/ereader/<rel>`), md5-idempotent, never deleting or
+  pulling. Same fork client, same shared credential, same never-touch-the-FS-store rule.
+- The trigger is **sync-coupled, not a timer**: a unit follows the fork server's journal and
+  fires the push on the device's `synchronous/start` (a device-initiated sync). The book
+  appears on the device on the **next** sync (the fork's realtime channel is connect-only).
+
+**Deferred, not cancelled:** annotations-back (device → `library/`), server-side `.note` → PDF
+conversion, `_originals/`, and the timer-driven bidirectional reconciler are a future ticket
+(ADR-0031 v2). The device still uploads its annotations to the raw fork store (Private Cloud
+is 2-way) — they are simply not materialised into the backed-up `library/` yet. Everything
+below this amendment describes that eventual full round-trip; read it as the target, with the
+outbound `ereader` push as the shipped first slice.
+
 ## Decision
 
 **Adopt the `inkpot-monkey/supernote` fork as the transport, let the device's native
