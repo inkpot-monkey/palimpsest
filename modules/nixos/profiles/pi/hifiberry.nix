@@ -57,8 +57,8 @@ in
     hardware.i2c.enable = true;
 
     # Save/restore the DAC's hardware mixer state (e.g. the "Digital" level
-    # spotifyd drives) across reboots. This is a hardware-audio concern, so it
-    # lives with the card profile rather than the spotifyd profile.
+    # snapclient's hardware mixer drives) across reboots. This is a hardware-audio
+    # concern, so it lives with the card profile rather than the audio (hifi) profile.
     hardware.alsa.enablePersistence = true;
 
     # Explicitly load necessary modules (Safeguard)

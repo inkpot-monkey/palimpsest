@@ -240,3 +240,34 @@ _Avoid_: fallback channel (too vague), secondary Matrix.
 **Push relay**:
 The self-hosted, ntfy-compatible **web-push** service that realizes the **Out-of-band channel** — hosted off-site (a Cloudflare Worker today) so it survives `kelpy` being down, it accepts a publish from the **watcher** and delivers a browser push notification to the operator's installed phone PWA. Deliberately *ntfy-shaped* so the **watcher** drives it through Gatus's stock `ntfy` alerter and any ntfy client can target it. Chosen over the public ntfy.sh (paid) and a self-hosted ntfy on home hardware (wrong failure domain).
 _Avoid_: ntfy (the relay is ntfy-*compatible*, not ntfy), push server.
+
+### Audio & music
+
+**Audio host**:
+`porcupineFish`, the Raspberry Pi 4 + HiFiBerry DAC that drives the speakers. An **always-on host** whose whole job is owning its audio device — treated as a self-contained appliance, so audio decisions (Spotify, playback) live on it rather than depending on another host.
+_Avoid_: media host (reserve for `rk1b`, which serves the *library*), audio server.
+
+**Device owner**:
+The single process that holds the DAC's ALSA hardware device (`hw:sndrpihifiberry`) — which only one process may open at a time. As of [ADR-0031](docs/adr/0031-porcupinefish-sound-server-audio.md) this is **`snapclient`**, held open 24/7 so the I²S clock never churns (the wedge cure); every source feeds `snapserver` rather than opening the card itself. Previously it was `spotifyd` directly.
+_Avoid_: sink, output (too generic — this is specifically the exclusive ALSA holder).
+
+**Communal speaker**:
+The model for the **audio host** as *a place, not a person*: all playback through its speakers is one **listening identity**, not attributed per-human. Per-person stats still accrue when someone plays on their *own* device as themselves; attributing *speaker* plays per-person is a deliberately-deferred future improvement (ADR-0031).
+_Avoid_: shared speaker (ambiguous — this is about identity, not access), multi-user speaker.
+
+**Listening identity**:
+Who a play is attributed to for stats. On the **communal speaker** the identity is the dedicated `music-assistant` Navidrome account (Navidrome native counts) and a single **ListenBrainz** account (the unified cross-source history for Spotify + Navidrome). Distinct from the human who pressed play, which this model does not track for speaker plays.
+_Avoid_: listener, user (overloaded — reserve **User** for the host↔user bundle).
+
+**Control plane** (audio):
+Which app drives which source to the **audio host**. Two, kept separate by design: the **Spotify plane** (native Spotify app → the Pi's librespot Connect stream) and the **library plane** (Home Assistant / Music Assistant → the Navidrome library). Each source keeps its best remote; they are not unified into one app.
+_Avoid_: remote, controller (reserve for a specific process).
+
+**Stream-switcher** (the arbiter):
+The watcher on the **audio host** that makes play-in-either-source "just work". Each source feeds `snapserver` as a *separate* stream, and snapcast does not auto-follow the active one; the switcher subscribes to the control API and, on a debounced `idle → playing` edge, binds the **device owner**'s group to the stream that just started. Event-driven off stream *status* (not silence-sniffing) and debounced so a between-tracks idle dip never flaps the output — last-activated-wins ([#96](docs/adr/0031-porcupinefish-sound-server-audio.md)).
+_Avoid_: router, mixer (it routes *which* stream plays, it does not mix or set volume).
+
+**Volume reference**:
+How volume is controlled on the speaker, per source (not one shared number). **Music Assistant** drives `snapclient`'s **hardware "Digital" mixer** directly for its own volume. **Spotify** is controlled by the **phone app slider**, which drives librespot's own volume (`--volume-ctrl cubic`) — librespot 0.8's pipe backend can't report volume without also applying it, so the app slider *can't* drive the hardware mixer without double-attenuating. To keep Spotify from inheriting the low level MA may have left on the shared mixer, the **stream-switcher** pins the hardware mixer to a reference (100%) whenever it routes to Spotify, leaving the app slider as the only gain that varies (#96).
+_Avoid_: "single master" (deliberately abandoned — the app-slider requirement forced per-source volume), software volume (only Spotify's is digital; MA's is the hardware mixer).
+_Avoid_: software volume (the point is that it's the DAC's hardware mixer, at full bit-depth).

@@ -62,7 +62,7 @@
       dockerfile-language-server
 
       # Media & Docs
-      texlive.combined.scheme-medium
+      texliveMedium
     ];
   };
 }

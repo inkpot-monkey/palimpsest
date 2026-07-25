@@ -9,6 +9,8 @@ let
   gaLib = import ../../shared/git-annex/lib.nix { inherit lib; };
 in
 {
+  imports = [ ./alert.nix ];
+
   options.services.git-annex = {
     enable = lib.mkEnableOption "git-annex";
 
@@ -169,6 +171,43 @@ in
           List of paths to git repositories that the git-annex assistant should watch.
           These will be written to ~/.config/git-annex/autostart.
         '';
+      };
+    };
+
+    metrics = {
+      enable = lib.mkEnableOption ''
+        publishing per-repository health metrics (`git_annex_*`) to the node-exporter
+        textfile collector, so a workstation's home-manager annex is as visible on the
+        fleet monitoring as a host repo (it emits the same schema — see
+        modules/shared/git-annex/metrics.nix).
+
+        OFF by default, and deliberately: the writer runs as this user yet must publish
+        into a directory owned by the `node-exporter` group, so it only works where the
+        host runs the monitoring exporters AND has added this user to that group. Home
+        Manager cannot arrange either, so the NixOS side opts this in together with the
+        group grant and an assertion (see hosts/default.nix). Enabled without that
+        plumbing the check just logs a skip and does nothing — it never fails the session
+      '';
+
+      metricsDir = lib.mkOption {
+        type = lib.types.str;
+        default = "/var/lib/prometheus-node-exporter-text-files";
+        description = ''
+          node-exporter textfile collector directory. Host-owned (node-exporter:node-exporter
+          0775); this user must be in the node-exporter group to write it.
+        '';
+      };
+
+      interval = lib.mkOption {
+        type = lib.types.str;
+        default = "5min";
+        description = "How often to re-check each repository (a systemd `OnUnitActiveSec` spec).";
+      };
+
+      probeTimeout = lib.mkOption {
+        type = lib.types.str;
+        default = "20s";
+        description = "Bound on each remote `ls-remote` probe (a coreutils `timeout` spec).";
       };
     };
   };
@@ -366,6 +405,75 @@ in
           );
         in
         initFiles // assistantFiles // autostartFile;
+    })
+
+    # Health metrics (palimpsest#60), user-run counterpart of the NixOS service's
+    # metrics.nix. Same textfile schema, built from the same shared body; the only
+    # differences are that this runs AS the user (no privilege drop) and probes the
+    # single shared `--user` assistant service rather than a per-repo system unit.
+    (lib.mkIf (cfg.enable && cfg.metrics.enable) {
+      xdg.configFile =
+        let
+          gaMetrics = import ../../shared/git-annex/metrics.nix { inherit lib pkgs; };
+          # git resolves by full store path; only its ssh child needs PATH, so bake a
+          # fixed one into the run-as prefix (mirrors the host writer, which must because
+          # runuser resets PATH — here it is simply self-contained).
+          probePath = lib.makeBinPath [
+            pkgs.coreutils
+            pkgs.git
+            pkgs.openssh
+          ];
+          mkMetrics =
+            name: repo:
+            let
+              script = pkgs.writeShellScript "git-annex-metrics-${name}" (
+                gaMetrics.mkMetricsBody {
+                  inherit name repo;
+                  inherit (cfg.metrics) metricsDir probeTimeout;
+                  userLabel = config.home.username;
+                  # Namespace the published file by user so a workstation repo cannot
+                  # collide on disk with a same-named system repo written by the root
+                  # exporter into the shared textfile dir.
+                  fileTag = "${config.home.username}-${name}";
+                  asRepoPrefix = "${pkgs.coreutils}/bin/env GIT_TERMINAL_PROMPT=0 PATH=${probePath}";
+                  # The home assistant is one `--autostart` service shared by every
+                  # watched repo, not one unit per repo.
+                  assistantCheck = "${pkgs.systemd}/bin/systemctl --user is-active --quiet git-annex-assistant.service";
+                }
+              );
+              serviceUnit = pkgs.writeText "git-annex-metrics-${name}.service" ''
+                [Unit]
+                Description=Publish health metrics for git-annex repository ${name} (palimpsest#60)
+                After=git-annex-init-${name}.service
+
+                [Service]
+                Type=oneshot
+                ExecStart=${script}
+              '';
+              # A user timer: OnActiveSec is relative to the timer starting with the user
+              # manager (there is no "boot" for a --user instance), then every interval.
+              timerUnit = pkgs.writeText "git-annex-metrics-${name}.timer" ''
+                [Unit]
+                Description=Periodic health check for git-annex repository ${name}
+
+                [Timer]
+                OnActiveSec=1min
+                OnUnitActiveSec=${cfg.metrics.interval}
+                AccuracySec=10s
+
+                [Install]
+                WantedBy=timers.target
+              '';
+            in
+            {
+              "systemd/user/git-annex-metrics-${name}.service".source = serviceUnit;
+              "systemd/user/git-annex-metrics-${name}.timer".source = timerUnit;
+              "systemd/user/timers.target.wants/git-annex-metrics-${name}.timer".source = timerUnit;
+            };
+        in
+        lib.foldl' (acc: name: acc // mkMetrics name cfg.repositories.${name}) { } (
+          lib.attrNames cfg.repositories
+        );
     })
   ];
 }

@@ -13,6 +13,12 @@
 # metric, the same idiom the DMARC/TLSRPT/secret-expiry checks use on a
 # collection-only stack.
 #
+# Every series carries a `user` label (the repo's owning user), and each repo also
+# emits a constant-1 `git_annex_repo_info` inventory series — together they let one set
+# of panels split git-annex usage across both hosts AND users (a home-manager repo on a
+# workstation reports through the same schema; see modules/shared/git-annex/metrics.nix,
+# which owns the body both callers share).
+#
 # ## What is a health signal here, and what only looks like one
 #
 # `remote_reachable` and `assistant_up` are the health signals. Both are independent
@@ -50,19 +56,15 @@ let
   cfg = config.services.git-annex;
   mCfg = cfg.metrics;
 
-  # Escape a string for use as a Prometheus label VALUE. Repo and remote names are
-  # Nix attribute names and free-text-ish; a stray quote would corrupt the exposition
-  # format for every series in the file.
-  promLabel = lib.replaceStrings [ "\\" "\"" "\n" ] [ "\\\\" "\\\"" " " ];
-
-  # A remote has a git URL to probe whenever `url` is set — including hybrid remotes,
-  # which are a git remote AND a special remote under one entry (cf. shared/lib.nix).
-  gitRemotes = repo: lib.filter (r: r.url != null) repo.remotes;
+  # The series and labels are built once, in the shared body builder, so a host repo
+  # and a home-manager (user) repo report identically. This module supplies only the
+  # host-specific halves: a root→repo-user privilege drop and a system-unit assistant
+  # probe (see mkMetricsBody's parameter docs).
+  gaMetrics = import ../../../shared/git-annex/metrics.nix { inherit lib pkgs; };
 
   mkScript =
     name: repo:
     let
-      repoLabel = promLabel name;
       # `runuser` (util-linux), not `sudo`: no PAM stack, no sudoers dependency, and
       # it is what a root-owned unit should use to drop privileges.
       #
@@ -86,77 +88,19 @@ let
         }"
       ];
     in
-    pkgs.writeShellScript "git-annex-metrics-${name}" ''
-      set -u
-
-      metrics_dir=${lib.escapeShellArg mCfg.metricsDir}
-      if [ ! -d "$metrics_dir" ]; then
-        # Best-effort, mirroring secret-expiry: the monitoring-exporters profile owns
-        # this directory, and a git-annex host without it simply has nowhere to publish.
-        # Never fail the oneshot over it.
-        echo "git-annex-metrics: metrics dir $metrics_dir absent — skipping ${name}" >&2
-        exit 0
-      fi
-
-      tmp="$(${pkgs.coreutils}/bin/mktemp "$metrics_dir/.git-annex-${name}.XXXXXX")"
-      trap '${pkgs.coreutils}/bin/rm -f "$tmp"' EXIT
-
-      emit() { printf '%s\n' "$1" >> "$tmp"; }
-
-      # `timeout` lives INSIDE the privilege drop, not outside it: timeout execs a
-      # binary, so it cannot run a shell wrapper around runuser at all.
-      as_repo() { ${asRepoUser} "$@"; }
-      as_repo_bounded() { as_repo ${pkgs.coreutils}/bin/timeout ${mCfg.probeTimeout} "$@"; }
-
-      ${lib.optionalString repo.assistant ''
-        emit '# HELP git_annex_assistant_up Whether the git-annex assistant for this repository is running (1) or not (0).'
-        emit '# TYPE git_annex_assistant_up gauge'
-        if ${pkgs.systemd}/bin/systemctl is-active --quiet git-annex-assistant-${name}.service; then
-          emit 'git_annex_assistant_up{repo="${repoLabel}"} 1'
-        else
-          emit 'git_annex_assistant_up{repo="${repoLabel}"} 0'
-        fi
-      ''}
-
-      ${lib.optionalString (gitRemotes repo != [ ]) ''
-        emit '# HELP git_annex_remote_reachable Whether the repository could reach this git remote (1) or not (0).'
-        emit '# TYPE git_annex_remote_reachable gauge'
-      ''}
-      ${lib.concatMapStringsSep "\n" (remote: ''
-        # ls-remote, not fetch: it is read-only, cheap, and touches nothing in the repo,
-        # yet it still exercises the full outbound path a sync depends on.
-        if as_repo_bounded ${pkgs.git}/bin/git -c credential.helper= \
-             -C ${lib.escapeShellArg repo.path} \
-             ls-remote --quiet ${lib.escapeShellArg remote.name} HEAD >/dev/null 2>&1; then
-          emit 'git_annex_remote_reachable{repo="${repoLabel}",remote="${promLabel remote.name}"} 1'
-        else
-          emit 'git_annex_remote_reachable{repo="${repoLabel}",remote="${promLabel remote.name}"} 0'
-        fi
-      '') (gitRemotes repo)}
-
-      # Newest commit on ANY ref, so it tracks the annex branches the assistant writes
-      # (synced/*, git-annex) and not just whatever HEAD happens to be — on an unlocked
-      # repo HEAD is an adjusted branch that need not move on a sync at all.
-      last_commit="$(as_repo ${pkgs.git}/bin/git -C ${lib.escapeShellArg repo.path} \
-        for-each-ref --sort=-committerdate --count=1 --format='%(committerdate:unix)' 2>/dev/null || true)"
-      if [ -n "$last_commit" ]; then
-        emit '# HELP git_annex_last_commit_timestamp_seconds Unix time of the newest commit on any ref. Context, NOT liveness — a healthy idle repo goes stale by design (see the module header).'
-        emit '# TYPE git_annex_last_commit_timestamp_seconds gauge'
-        emit "git_annex_last_commit_timestamp_seconds{repo=\"${repoLabel}\"} $last_commit"
-      fi
-
-      # The exporter's own heartbeat: without it a dead check is indistinguishable from
-      # a healthy repo, because the last-published file just sits there reading 1.
-      emit '# HELP git_annex_check_timestamp_seconds Unix time this repository health check last completed.'
-      emit '# TYPE git_annex_check_timestamp_seconds gauge'
-      emit "git_annex_check_timestamp_seconds{repo=\"${repoLabel}\"} $(${pkgs.coreutils}/bin/date +%s)"
-
-      # mktemp makes the file 0600; node-exporter runs as its own user and must READ it.
-      # Skip this and the metric is published but never scraped — the panel shows "No
-      # data" and nothing anywhere says why.
-      ${pkgs.coreutils}/bin/chmod 0644 "$tmp"
-      ${pkgs.coreutils}/bin/mv -f "$tmp" "$metrics_dir/git-annex-${name}.prom"
-    '';
+    pkgs.writeShellScript "git-annex-metrics-${name}" (
+      gaMetrics.mkMetricsBody {
+        inherit name repo;
+        inherit (mCfg) metricsDir;
+        inherit (mCfg) probeTimeout;
+        # A NixOS repo is owned by its `user` (default `git-annex`); label the series
+        # with it so host and home usage share one schema.
+        userLabel = repo.user;
+        fileTag = name;
+        asRepoPrefix = asRepoUser;
+        assistantCheck = "${pkgs.systemd}/bin/systemctl is-active --quiet git-annex-assistant-${name}.service";
+      }
+    );
 in
 {
   options.services.git-annex.metrics = {

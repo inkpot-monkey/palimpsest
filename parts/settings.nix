@@ -102,6 +102,16 @@ let
         port = 4533;
         origin = "rk1b";
       };
+      # Music Assistant — the library-plane brain + Party guest queue (ADR-0031). Same edge/origin
+      # split as Navidrome: it RUNS on rk1b (media node), fronted by kelpy's Caddy at ma.<domain>
+      # with TLS + the internal_only tailnet guard. This is the HOST's control UI (login the MA
+      # admin `provisioner`); the Party *guest* QR uses MA's own access mechanism, not this vhost.
+      # The profile that runs it is custom.profiles.music-assistant; port is MA's web/API port.
+      ma = {
+        edge = "kelpy";
+        port = 8095;
+        origin = "rk1b";
+      };
       # slskd — the Soulseek client that seeds the shared music library outward
       # (ADR-0028). It RUNS on kelpy (where the git-annex `music` replica lives),
       # inside the ProtonVPN container's netns, with its web UI published to loopback;

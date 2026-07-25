@@ -218,6 +218,25 @@ rec {
       '';
     };
 
+  # Live status view + switcher for Claude/ghostel buffers: one collector,
+  # rendered as a toggle-able side panel and a consult group.  Depends only on
+  # built-ins; claude-code / ghostel / consult / proc-notify are all SOFT
+  # (declare-function + fboundp guards) so the package — and its ERT suite —
+  # loads with nothing else present.  Tests run against the pure core.
+  agents-hud = epkgs.melpaBuild {
+    pname = "agents-hud";
+    version = "0.1";
+    src = ./agents-hud;
+    doCheck = true;
+    checkPhase = ''
+      runHook preCheck
+      ${epkgs.emacs}/bin/emacs --batch -L "$src" -l ert \
+        -l "$src/agents-hud-test.el" \
+        -f ert-run-tests-batch-and-exit
+      runHook postCheck
+    '';
+  };
+
   ement-glue = epkgs.melpaBuild {
     pname = "ement-glue";
     version = "0.1";

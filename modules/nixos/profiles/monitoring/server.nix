@@ -71,6 +71,12 @@ let
     # log error-rate (Vector→VictoriaLogs) — as a status grid + latency/cert + error
     # panels. Graduated from map #30's fog (#38).
     ln -s ${./dashboards/per-service-health.json} $out/per-service-health.json
+    # Backups: the fleet backup story in one place (palimpsest#60). A fixed-layout
+    # topology of on-fleet git-annex replication (inkpotmonkey's ~/Pictures + rk1b's
+    # music → kelpy, live/green) and restic off-site to rsync.net (disabled/grey today),
+    # plus the git-annex inventory ACROSS HOSTS AND USERS (git_annex_repo_info + health
+    # gauges) and the off-site status table (backup_restic_enabled, off ≠ missing).
+    ln -s ${./dashboards/backups.json} $out/backups.json
   '';
 
   # "Advanced" folder: deep-dive boards kept available but off the primary nav. The

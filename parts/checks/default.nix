@@ -58,6 +58,30 @@
         host_fleet_coherence = import ./host-user-contract-matrix {
           inherit pkgs self;
         };
+        # Presence-aware git-annex replication alerting (palimpsest#60): on-demand hosts
+        # suppress stale/absent metrics (a closed laptop lid must not page) and alert
+        # only on fresh faults, while always-on hosts keep the strict staleness check.
+        git_annex_alert = import ./git-annex-alert {
+          inherit pkgs self inputs;
+        };
+        # Restic backup status metrics (Workstream D): a disabled-but-owned off-site job
+        # still publishes backup_restic_enabled=0 so the Backups board shows it off, not
+        # missing.
+        backup_status = import ./backup-status {
+          inherit pkgs self inputs;
+        };
+        # Supernote fork Private Cloud server (ADR-0031, palimpsest#92): runs the real
+        # packaged server, drives a login/bootstrap end-to-end, and proves the MCP port is
+        # firewalled off the LAN while the sync port is reachable.
+        supernote = import ./supernote {
+          inherit pkgs self inputs;
+        };
+        # The outbound ereader push (ADR-0031, palimpsest#94): plants a file in library/ereader/,
+        # drives a device-initiated sync, and proves the file lands reachable to the device and
+        # that a re-run transfers nothing (md5-idempotent).
+        supernote_ereader = import ./supernote/ereader.nix {
+          inherit pkgs self inputs;
+        };
       };
     };
 }

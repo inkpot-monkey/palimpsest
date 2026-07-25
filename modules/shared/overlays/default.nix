@@ -5,10 +5,30 @@ let
     final: _prev:
     import (inputs.self + /pkgs/default.nix) {
       pkgs = final;
+      inherit inputs;
     };
 
   # 2. Modifications: Your overrides
   modifications = {
+    # Pin snapcast to 0.34.0 fleet-wide (only porcupineFish actually pulls it into a
+    # closure). Music Assistant 2.9.x drives an *external* snapserver and is developed +
+    # tested against snapserver 0.34.0 (its Dockerfile.base sets SNAPCAST_VERSION=0.34.0);
+    # nixpkgs' 0.35.0 is one minor ahead of that, unverified, and changes the dynamic
+    # Stream.RemoveStream teardown path MA relies on (0.30 was broken, 0.32 broke MA per
+    # snapcast#1410). Hold the tested pairing until a bump is verified on the box.
+    # See docs/adr/0031-porcupinefish-sound-server-audio.md.
+    snapcast = final: prev: {
+      snapcast = prev.snapcast.overrideAttrs (_old: {
+        version = "0.34.0";
+        src = final.fetchFromGitHub {
+          owner = "badaix";
+          repo = "snapcast";
+          rev = "v0.34.0";
+          hash = "sha256-BPsAGFLWUfONuyQ1pzsJzGV/Jlxv+4TkVT1KG7j8H0s=";
+        };
+      });
+    };
+
     tree-sitter = final: prev: {
       tree-sitter-grammars = prev.tree-sitter-grammars // {
         tree-sitter-quint = final.tree-sitter.buildGrammar {
@@ -67,6 +87,7 @@ in
   default = inputs.nixpkgs.lib.composeManyExtensions [
     additions
     modifications.tree-sitter
+    modifications.snapcast
     # modifications.antigravity
     flexget
   ];

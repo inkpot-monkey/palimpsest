@@ -122,6 +122,16 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # The Supernote toolkit fork (self-hosted Private Cloud Sync server + client),
+    # tracked on its round-trip branch. `flake = false`: it is a plain Python repo,
+    # not a flake — we package it here as `pkgs.supernote` (pkgs/supernote) with
+    # nixpkgs `buildPythonApplication`, so rk1b (aarch64) substitutes the heavy deps
+    # from cache.nixos.org rather than compiling. Bump with `nix flake update supernote`.
+    supernote = {
+      url = "github:inkpot-monkey/supernote/fix/device-schedule-group-all";
+      flake = false;
+    };
+
   };
 
   outputs =
@@ -162,7 +172,7 @@
         {
           _module.args.pkgs = self.lib.mkPkgs system;
           packages = import ./pkgs {
-            inherit pkgs;
+            inherit pkgs inputs;
           };
         };
     };

@@ -67,9 +67,33 @@ in
         # server in hosts/kelpy/git-annex.nix). Opt-in per host; the client decrypts
         # git-annex.yaml through the user's own home sops (the admin key), so no host
         # re-key is needed on this workstation.
-        {
-          home-manager.users.inkpotmonkey.custom.home.profiles.git-annex.enable = true;
-        }
+        #
+        # metrics.enable makes that sync visible on the fleet Backups board. The three
+        # lines below travel together and only make sense together: the home writer runs
+        # as inkpotmonkey but publishes into the node-exporter-owned textfile dir, so the
+        # user needs node-exporter group write, and that dir only exists where the
+        # monitoring exporters run — asserted, so a mis-wiring fails the build loudly
+        # rather than silently publishing nowhere.
+        (
+          { config, ... }:
+          {
+            home-manager.users.inkpotmonkey.custom.home.profiles.git-annex = {
+              enable = true;
+              metrics.enable = true;
+              # User-level replication alert (option C): pages #infra-alerts when the sync
+              # breaks while the laptop is in use. Its webhook secret is the user's own
+              # sops (admin key already here) — no host re-key, no host secret.
+              alert.enable = true;
+            };
+            users.users.inkpotmonkey.extraGroups = [ "node-exporter" ];
+            assertions = [
+              {
+                assertion = config.custom.profiles.monitoring-exporters.enable;
+                message = "sawtoothShark enables the home git-annex metrics writer, which publishes into the node-exporter textfile dir — enable custom.profiles.monitoring-exporters (via monitoring-client) or drop metrics.enable.";
+              }
+            ];
+          }
+        )
       ];
     };
 
@@ -158,6 +182,10 @@ in
         # The music library as a git-annex repo, replicated to kelpy so slskd can share it
         # (ADR-0028). rk1b-only: rk1a has no library.
         ./rk1/git-annex.nix
+        # The Supernote document library as a second git-annex repo (ADR-0031, #90):
+        # git-annex owns the corpus tree, replicated to kelpy and — unlike music — backed up
+        # offsite. Adds to the same services.git-annex enabled by git-annex.nix above.
+        ./rk1/library.nix
         self.users.inkpotmonkey.manifest
         (grant "inkpotmonkey" { workstation.enable = true; })
         ({ config, ... }: {
@@ -196,6 +224,27 @@ in
           # navidrome user so filed tracks are library-owned. See modules/nixos/profiles/beets.nix.
           custom.profiles.beets.enable = true;
 
+          # Music Assistant — the library-plane brain (ADR-0031). Reads Navidrome (over loopback,
+          # co-located here) and pushes audio to porcupineFish's snapserver in external-server mode,
+          # so the Navidrome library plays out the Pi's speakers, controlled from Home Assistant on
+          # rk1a. State on the NVMe /var/cache/music-assistant; providers provisioned from the sops
+          # navidrome `users` map. See modules/nixos/profiles/music-assistant.nix.
+          custom.profiles.music-assistant.enable = true;
+
+          # Supernote fork Private Cloud server (ADR-0031, #92): the device sync endpoint the
+          # Nomad binds over plain HTTP on the home LAN (rk1b shares 192.168.1.0/24). Runs as a
+          # private `supernote` user with a persisted, rebuildable store (/var/lib/supernote), and
+          # bootstraps the single account from the shared credential secret (profiles/library.yaml).
+          # LAN-direct, so it is NOT in settings.services / not Caddy-fronted; the MCP port is
+          # firewalled off (v1). See modules/nixos/profiles/supernote.nix. Stump (#93) that turns
+          # this into a browsable document library is a separate ticket.
+          custom.profiles.supernote.enable = true;
+          # The outbound ereader push (#94): drop a PDF/EPUB into the git-annex library's
+          # `ereader/` folder (/var/cache/library/ereader) and it is uploaded to the device on the
+          # next device-initiated sync. Couples to the library tree (hosts/rk1/library.nix), which
+          # is why it lives behind its own flag — see modules/nixos/profiles/supernote.nix.
+          custom.profiles.supernote.ereader.enable = true;
+
           # Off-host uptime watcher (Gatus): rk1b is always-on and not kelpy, so it
           # can observe kelpy failing. Probes the fleet + alerts to #infra-alerts.
           # See ADR-0019 / modules/nixos/profiles/monitoring/watcher.nix.
@@ -204,7 +253,10 @@ in
           # dirs redirect to /var/cache (NVMe) via BindPaths. See ADR-0021.
           custom.profiles.monitoring-server.enable = true;
           custom.profiles.monitoring-client.enable = true;
-          custom.profiles.backup.monitoringTelemetry.enable = true;
+          # Off while rsync.net is unreachable fleet-wide (meant to return); reportJobs
+          # keeps the telemetry backup visible on the Backups board as a disabled edge.
+          custom.profiles.backup.monitoringTelemetry.enable = false;
+          custom.profiles.backup.reportJobs = [ "telemetry" ];
 
           # DMARC aggregate-report metrics. Co-located with the monitoring server so
           # it's scraped over loopback; polls the `dmarc` mailbox on kelpy's Stalwart
