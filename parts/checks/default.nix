@@ -76,6 +76,12 @@
         supernote = import ./supernote {
           inherit pkgs self inputs;
         };
+        # The outbound ereader push (ADR-0031, palimpsest#94): plants a file in library/ereader/,
+        # drives a device-initiated sync, and proves the file lands reachable to the device and
+        # that a re-run transfers nothing (md5-idempotent).
+        supernote_ereader = import ./supernote/ereader.nix {
+          inherit pkgs self inputs;
+        };
       };
     };
 }
