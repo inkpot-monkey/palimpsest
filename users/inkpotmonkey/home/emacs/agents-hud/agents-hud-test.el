@@ -397,6 +397,16 @@
           (get-text-property
            (nth 1 positions) 'agents-hud-entry)))))))
 
+(ert-deftest agents-hud-test-avy-keys-style ()
+  "Key list runs in order: a b c … by default, 1 2 3 … 0 when numbers."
+  (let ((agents-hud-avy-keys-style 'letters))
+    (should (equal '(?a ?b ?c) (seq-take (agents-hud--avy-keys) 3)))
+    (should (= 26 (length (agents-hud--avy-keys)))))
+  (let ((agents-hud-avy-keys-style 'numbers))
+    (should (equal '(?1 ?2 ?3) (seq-take (agents-hud--avy-keys) 3)))
+    ;; 1-9 then 0 as the tenth label
+    (should (equal '(?9 ?0) (last (agents-hud--avy-keys) 2)))))
+
 (ert-deftest agents-hud-test-avy-action-jumps ()
   "The avy action reads the entry at PT in the HUD buffer and jumps to it."
   (let* ((target (generate-new-buffer " agents-hud-target"))

@@ -68,6 +68,8 @@
 (declare-function avy-process "avy"
                   (candidates &optional overlay-fn cleanup-fn))
 (defvar avy-action)
+(defvar avy-keys)
+(defvar avy-style)
 
 ;;; ── Customization ────────────────────────────────────────────────────────────
 
@@ -86,6 +88,16 @@ for this long (and no shell command is running) it drops to ○ idle."
   "Seconds between automatic sidebar re-renders while the panel is visible.
 The tick also advances the displayed durations and flips working→idle."
   :type 'number)
+
+(defcustom agents-hud-avy-keys-style 'letters
+  "Which keys `agents-hud-avy' labels session rows with, top to bottom.
+`letters' walks a, b, c … z (the default); `numbers' walks 1, 2, 3 … 9, 0.
+Either way the labels run in row order, so the first visible session is always
+the first key."
+  :type
+  '(choice
+    (const :tag "Letters (a b c …)" letters)
+    (const :tag "Numbers (1 2 3 …)" numbers)))
 
 (defcustom agents-hud-side 'right
   "Side of the frame the sidebar window opens on."
@@ -936,6 +948,14 @@ is correct whether called from the panel (RET) or from a code window (avy)."
           (push pos result)))
       (nreverse result))))
 
+(defun agents-hud--avy-keys ()
+  "Return the ordered avy key list per `agents-hud-avy-keys-style'.
+A flat, in-order list so `avy-process' labels rows a, b, c … (or 1, 2, 3 …)
+from the top down instead of avy's scattered home-row default."
+  (pcase agents-hud-avy-keys-style
+    ('numbers (append (number-sequence ?1 ?9) (list ?0)))
+    (_ (number-sequence ?a ?z))))
+
 (defun agents-hud--avy-action (pt)
   "avy action: jump to the session whose row starts at PT in the sidebar.
 PT is a position in the HUD buffer, so the entry is read there directly —
@@ -963,10 +983,17 @@ Works from any window while the sidebar is open — no need to focus it first."
             (agents-hud--entry-positions (window-buffer win)))))
       (unless cands
         (user-error "agents-hud: no sessions to pick"))
-      ;; Bind avy-action to our jumper (avy-process reads it); avy-keys keep
-      ;; their global default, so no `avy-with' macro (hence no compile-time
-      ;; dependency on avy) is needed.
-      (let ((avy-action #'agents-hud--avy-action))
+      ;; Bind avy-action to our jumper (avy-process reads it).  Override
+      ;; avy-keys with a flat in-order list so rows label a, b, c … (or 1, 2,
+      ;; 3 …) top-down rather than avy's scattered home-row default, and keep
+      ;; avy off the de-bruijn style, which would reorder the labels.  No
+      ;; `avy-with' macro is used, so there is no compile-time dependency on avy.
+      (let ((avy-action #'agents-hud--avy-action)
+            (avy-keys (agents-hud--avy-keys))
+            (avy-style
+             (if (eq avy-style 'de-bruijn)
+                 'pre
+               avy-style)))
         (avy-process cands)))))
 
 (defun agents-hud-kill ()
