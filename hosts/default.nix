@@ -236,9 +236,14 @@ in
           # private `supernote` user with a persisted, rebuildable store (/var/lib/supernote), and
           # bootstraps the single account from the shared credential secret (profiles/library.yaml).
           # LAN-direct, so it is NOT in settings.services / not Caddy-fronted; the MCP port is
-          # firewalled off (v1). See modules/nixos/profiles/supernote.nix. The reconciler (#94)
-          # and Stump (#93) that turn this into a document library are separate tickets.
+          # firewalled off (v1). See modules/nixos/profiles/supernote.nix. Stump (#93) that turns
+          # this into a browsable document library is a separate ticket.
           custom.profiles.supernote.enable = true;
+          # The outbound ereader push (#94): drop a PDF/EPUB into the git-annex library's
+          # `ereader/` folder (/var/cache/library/ereader) and it is uploaded to the device on the
+          # next device-initiated sync. Couples to the library tree (hosts/rk1/library.nix), which
+          # is why it lives behind its own flag — see modules/nixos/profiles/supernote.nix.
+          custom.profiles.supernote.ereader.enable = true;
 
           # Off-host uptime watcher (Gatus): rk1b is always-on and not kelpy, so it
           # can observe kelpy failing. Probes the fleet + alerts to #infra-alerts.
