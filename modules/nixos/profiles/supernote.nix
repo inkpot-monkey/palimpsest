@@ -6,7 +6,7 @@
 # Plain HTTP on the LAN — no TLS, no Caddy edge, no tailnet. The device is a locked-down
 # Android tablet that can't run Tailscale, so it reaches rk1b directly on the LAN; that is
 # why this service is NOT in `settings.services` (which is the Caddy-fronted, uptime-probed
-# registry) and gets no vhost/monitor entry. The reconciler (#94) reaches the store over
+# registry) and gets no vhost/monitor entry. The reconciler (#107) reaches the store over
 # this same HTTP API, never the filesystem, so the store below stays private.
 #
 # The fork ALSO starts an MCP server (its LLM surface) on a second port — LLM features are
@@ -23,7 +23,7 @@
 # and NO offsite backup, and nothing here adds it to a restic path (restic is off fleet-wide
 # on rk1b anyway; only the telemetry job is declared). Recovery if the store is lost:
 #   • device intact  → re-pair the Nomad to the server and let Private Cloud Sync re-seed it;
-#   • device gone     → the importer (#94 outbound pass) re-pushes from `library/`.
+#   • device gone     → re-send the books from `library/ereader/` via the one-shot outbox (#107).
 # Before a `nix flake update supernote` (which can alembic-migrate the DB), take a local
 # `sqlite3 .backup` of /var/lib/supernote/system/supernote.db first (ADR-0031 consequence).
 #
@@ -37,7 +37,7 @@
 # `nix flake update secrets` here BEFORE deploy or activation fails (AGENTS.md gotcha).
 #
 # Lives in the shared `profiles/library.yaml` (this stack's secret bundle, shared with the
-# reconciler/#94) under a `supernote` sub-map:
+# reconciler/#107) under a `supernote` sub-map:
 #   supernote:
 #     user: you@example.com        # the Supernote account — MUST be a valid email (the fork
 #     password: your-password      # validates EMAIL_REGEX on register)
@@ -62,28 +62,37 @@ let
   stateDir = "/var/lib/supernote";
   localUrl = "http://127.0.0.1:${toString port}";
   # The credential lives in the shared library-stack bundle (profiles/library.yaml), under a
-  # `supernote` sub-map — see the header. Shared with the reconciler (#94).
+  # `supernote` sub-map — see the header. Shared with the reconciler (#107).
   secretsFile = self.lib.getSecretFile "library";
 
-  # ── The ereader push (#94) ────────────────────────────────────────────────────────────────
+  # ── The ereader round-trip (#107, superseding #94) ────────────────────────────────────────
   ecfg = cfg.ereader;
-  # The folder pushed onto the device, and where it lands on the device VFS. The device shows
-  # documents under /DOCUMENT/Document (the firmware's two-level doc root, seeded per-account by
-  # the fork — supernote/server/services/user.py); the trailing `ereader/` is auto-created by the
-  # server on first upload. A constant, not an option — the device's doc root is fixed firmware.
+  # `library/ereader/` is the DOWNWARD MIRROR of the store's ereader folder; `library/ereader-outbox/`
+  # is the one-shot send inbox (drop a book there to publish it once). The device shows documents
+  # under /DOCUMENT/Document (the firmware's two-level doc root, seeded per-account by the fork —
+  # supernote/server/services/user.py); the trailing `ereader/` is auto-created by the server on
+  # first upload. A constant, not an option — the device's doc root is fixed firmware.
   ereaderLocalDir = "${ecfg.libraryPath}/ereader";
+  ereaderOutboxDir = "${ecfg.libraryPath}/ereader-outbox";
   ereaderRemoteDir = "/DOCUMENT/Document/ereader";
+  # The last-synced baseline (previous store snapshot, `{rel: md5}`) — the minimal state that lets
+  # the reconciler tell a device-side delete from a fresh local add. It lives INSIDE the fork store
+  # dir on purpose: the store is rebuildable and un-backed-up, so co-locating the baseline makes it
+  # share the store's fate — a wiped store loses the baseline too, which is exactly the signal the
+  # store-loss guard needs (empty store + no baseline = "no sync completed" → never delete).
+  ereaderBaseline = "${stateDir}/reconcile/ereader-baseline.json";
 
   # A python interpreter with the `supernote` LIBRARY importable (the package is a
-  # buildPythonApplication, so `toPythonModule` re-exposes its modules to withPackages). The push
-  # script drives `supernote.client` directly — client HTTP API only, never the fork's FS store.
-  pushPython = pkgs.python313.withPackages (ps: [ (ps.toPythonModule pkgs.supernote) ]);
+  # buildPythonApplication, so `toPythonModule` re-exposes its modules to withPackages). The
+  # reconciler drives `supernote.client` directly — client HTTP API only, never the fork's FS store.
+  reconcilePython = pkgs.python313.withPackages (ps: [ (ps.toPythonModule pkgs.supernote) ]);
 
-  # Shared systemd hardening for the supernote units (server + ereader push) — one source so the
-  # two can't drift. Both only need outbound TCP + loopback, and both keep their writable state
+  # Shared systemd hardening for the supernote units (server + ereader reconcile) — one source so
+  # the two can't drift. Both only need outbound TCP + loopback, and both keep their writable state
   # under a systemd-managed dir (StateDirectory / RuntimeDirectory), so ProtectSystem=strict (whole
   # hierarchy read-only, reads intact) and ProtectHome (each unit's HOME is under /var/lib or /run,
-  # never /home or /root) are both safe.
+  # never /home or /root) are both safe. The reconcile unit additionally opens `library/ereader{,-outbox}/`
+  # via ReadWritePaths (it now writes the mirror, not just reads it).
   hardening = {
     NoNewPrivileges = true;
     ProtectSystem = "strict";
@@ -106,18 +115,19 @@ in
   options.custom.profiles.supernote = {
     enable = lib.mkEnableOption "the Supernote fork Private Cloud server (device sync endpoint, ADR-0031)";
 
-    # The outbound `ereader` push (ADR-0031, palimpsest#94) — off by default because it couples
+    # The `ereader` round-trip (ADR-0031 v2, palimpsest#107) — off by default because it couples
     # to the git-annex `library` tree, which only exists on the media node (rk1b). The base server
     # profile above stays host-agnostic; a host with the library turns this on.
     ereader = {
-      enable = lib.mkEnableOption "the outbound ereader push — send library/ereader/ files to the device on each device-initiated sync (ADR-0031, palimpsest#94)";
+      enable = lib.mkEnableOption "the ereader round-trip — mirror the store's ereader folder down into library/ereader/ (durable device deletes) and one-shot send library/ereader-outbox/ up, on each device-initiated sync (ADR-0031 v2, palimpsest#107)";
 
       libraryPath = lib.mkOption {
         type = lib.types.str;
         default = "/var/cache/library";
         description = ''
-          Root of the git-annex library tree (hosts/rk1/library.nix). Its `ereader/` subfolder is
-          what gets pushed onto the device — drop a PDF/EPUB there to queue it for the Supernote.
+          Root of the git-annex library tree (hosts/rk1/library.nix). Its `ereader/` subfolder is a
+          downward mirror of the device (what the device holds, backed up + Stump-indexed); drop a
+          PDF/EPUB into the sibling `ereader-outbox/` to publish it once onto the Supernote.
         '';
       };
 
@@ -126,7 +136,8 @@ in
         default = "library";
         description = ''
           Group owning the library tree (setgid, so drops stay group-readable). The `supernote`
-          user joins it to read `ereader/`, and the folder is created owned by this group.
+          user joins it to read/write `ereader/` and `ereader-outbox/`, which are created owned by
+          this group.
         '';
       };
     };
@@ -146,9 +157,9 @@ in
           uid = 982;
           home = stateDir;
           description = "Supernote Private Cloud server";
-          # When the ereader push is on, join the library group so the push (which runs as this user)
-          # can read library/ereader/ (setgid'd to `group`). Empty otherwise — the base server never
-          # touches the library tree.
+          # When the ereader round-trip is on, join the library group so the reconciler (which runs
+          # as this user) can read AND write library/ereader{,-outbox}/ (setgid'd to `group`). Empty
+          # otherwise — the base server never touches the library tree.
           extraGroups = lib.optional ecfg.enable ecfg.group;
         };
         users.groups.supernote.gid = 982;
@@ -156,7 +167,7 @@ in
         # The one shared credential, split into two scalar sops secrets from the `supernote` sub-map
         # of profiles/library.yaml (sops extracts scalars, not maps; the `a/b` key path descends
         # into the map). Owned by `supernote` so the service user — which runs both this server's
-        # bootstrap oneshot and, later, the reconciler (#94) — can read them.
+        # bootstrap oneshot and, later, the reconciler (#107) — can read them.
         sops.secrets."supernote/user" = {
           sopsFile = secretsFile;
           key = "supernote/user";
@@ -331,74 +342,100 @@ in
           ];
       }
 
-      # ── The outbound ereader push (ADR-0031, palimpsest#94) ─────────────────────────────────
+      # ── The ereader round-trip (ADR-0031 v2, palimpsest#107) ────────────────────────────────
       (lib.mkIf ecfg.enable {
-        # Make library/ereader/ exist (AC #1): group-readable + setgid, owned by the tree owner
-        # (git-annex, like the rest of the library) so drops the user/git-annex place there stay
-        # readable to the push. A oneshot rather than a tmpfiles rule so it can wait for the
-        # /var/cache NVMe mount — the git-annex module avoids a plain tmpfiles rule here for exactly
-        # that mount-race reason. `install -d` is idempotent and applies the same owner/group/mode
-        # git-annex would, so ordering against git-annex-init is immaterial (both converge).
+        # Make library/ereader/ (the mirror) and library/ereader-outbox/ (the one-shot send inbox)
+        # exist: group-writable + setgid, owned by the tree owner (git-annex, like the rest of the
+        # library) so both the reconciler (supernote user, via the library group) and manual drops
+        # stay readable/writable. 2770 not 2775 — the tree is not world-readable. A oneshot rather
+        # than a tmpfiles rule so it can wait for the /var/cache NVMe mount — the git-annex module
+        # avoids a plain tmpfiles rule here for exactly that mount-race reason. `install -d` is
+        # idempotent and applies the same owner/group/mode git-annex would, so ordering against
+        # git-annex-init is immaterial (both converge).
         systemd.services.supernote-ereader-dir = {
-          description = "Ensure the library ereader/ folder exists (group-readable, setgid)";
+          description = "Ensure the library ereader/ + ereader-outbox/ folders exist (group-writable, setgid)";
           wantedBy = [ "multi-user.target" ];
           unitConfig.RequiresMountsFor = [ ecfg.libraryPath ];
           serviceConfig = {
             Type = "oneshot";
             RemainAfterExit = true;
-            ExecStart = "${pkgs.coreutils}/bin/install -d -o git-annex -g ${ecfg.group} -m 2770 ${ereaderLocalDir}";
+            ExecStart = "${pkgs.coreutils}/bin/install -d -o git-annex -g ${ecfg.group} -m 2770 ${ereaderLocalDir} ${ereaderOutboxDir}";
           };
         };
 
-        # The push oneshot — fired by the watcher on each device-initiated sync, never on a timer.
-        # Logs in with the shared credential and md5-idempotently uploads new ereader/ files to the
-        # device VFS (client HTTP API only; never deletes, never pulls — enforced by the script).
-        # Trigger-only: no wantedBy, so it runs solely when the watcher `systemctl start`s it.
-        systemd.services.supernote-ereader-push = {
-          description = "Push library/ereader/ files onto the Supernote (outbound, palimpsest#94)";
+        # The reconcile oneshot — fired by the watcher on each device-initiated sync, never on a
+        # timer. Logs in with the shared credential, one-shot-sends the outbox up, then mirrors the
+        # store's ereader folder down into library/ereader/ (durable device-side deletes via the
+        # baseline). Client HTTP API only; never touches the fork's FS store. Trigger-only: no
+        # wantedBy, so it runs solely when the watcher `systemctl start`s it.
+        systemd.services.supernote-ereader-reconcile = {
+          description = "Reconcile the Supernote store with library/ereader/ (mirror down + one-shot send, palimpsest#107)";
           after = [
             "supernote-server.service"
             "supernote-ereader-dir.service"
           ];
-          requires = [ "supernote-server.service" ];
+          requires = [
+            "supernote-server.service"
+            "supernote-ereader-dir.service"
+          ];
+          # Wait for the NVMe library mount too — ReadWritePaths below binds paths under it, which
+          # fails the namespace setup if the mount is not yet up.
+          unitConfig.RequiresMountsFor = [ ecfg.libraryPath ];
           environment = {
             SUPERNOTE_URL = localUrl;
             EREADER_LOCAL_DIR = ereaderLocalDir;
+            EREADER_OUTBOX_DIR = ereaderOutboxDir;
             EREADER_REMOTE_DIR = ereaderRemoteDir;
+            EREADER_BASELINE = ereaderBaseline;
             # A writable HOME under the unit's private runtime dir (some libs consult $HOME); the
-            # push itself caches nothing — it logs in fresh each run.
-            HOME = "/run/supernote-ereader-push";
+            # reconciler itself caches nothing else — it logs in fresh each run.
+            HOME = "/run/supernote-ereader-reconcile";
           };
           serviceConfig = {
             Type = "oneshot";
             User = "supernote";
             Group = "supernote";
-            RuntimeDirectory = "supernote-ereader-push";
+            RuntimeDirectory = "supernote-ereader-reconcile";
             RuntimeDirectoryMode = "0700";
+            # The reconciler now WRITES the tree (downloads into ereader/, clears the outbox), so it
+            # needs those two paths writable under ProtectSystem=strict; everything else stays RO.
+            ReadWritePaths = [
+              ereaderLocalDir
+              ereaderOutboxDir
+            ];
+            # The baseline lives inside the fork store dir (see the header). StateDirectory=supernote
+            # is shared with the server (same static user, same dir) — it makes /var/lib/supernote
+            # writable under the sandbox and ensures it exists; 0700 to not loosen the server's mode.
+            StateDirectory = "supernote";
+            StateDirectoryMode = "0700";
+            # New tree files must be group-writable (0664) so git-annex (in the library group) can
+            # manage/replicate/drop them — the same reach beets has into the music tree (ADR-0028).
+            UMask = "0002";
             # Credentials land in a private tmpfs (CREDENTIALS_DIRECTORY), never argv/environ — same
             # shape as the server bootstrap; the same one account, no second auth surface.
             LoadCredential = [
               "user:${config.sops.secrets."supernote/user".path}"
               "password:${config.sops.secrets."supernote/password".path}"
             ];
-            ExecStart = pkgs.writeShellScript "supernote-ereader-push-start" ''
+            ExecStart = pkgs.writeShellScript "supernote-ereader-reconcile-start" ''
               set -euo pipefail
               export SUPERNOTE_USER_FILE="$CREDENTIALS_DIRECTORY/user"
               export SUPERNOTE_PASSWORD_FILE="$CREDENTIALS_DIRECTORY/password"
-              exec ${pushPython}/bin/python ${./supernote-ereader-push.py}
+              exec ${reconcilePython}/bin/python ${./supernote-ereader-reconcile.py}
             '';
           }
           // hardening;
         };
 
-        # The sync-coupled trigger (AC #3): NOT a timer and NOT a file-watcher (the owner
-        # constraint). It follows the fork server's journal and fires the push the moment the device
-        # opens a sync — POST /api/file/2/files/synchronous/start, which the server's aiohttp access
-        # log records (%r request line). Debounced so a burst of starts coalesces into one push.
-        # Runs as root: it reads the server unit's journal and `systemctl start`s the push. On
-        # restart it follows from the tail (-n0), so historical sync lines are never replayed.
+        # The sync-coupled trigger: NOT a timer and NOT a file-watcher (the owner constraint,
+        # carried over from #94). It follows the fork server's journal and fires the reconcile the
+        # moment the device opens a sync — POST /api/file/2/files/synchronous/start, which the
+        # server's aiohttp access log records (%r request line). Debounced so a burst of starts
+        # coalesces into one reconcile. Runs as root: it reads the server unit's journal and
+        # `systemctl start`s the reconcile. On restart it follows from the tail (-n0), so historical
+        # sync lines are never replayed.
         systemd.services.supernote-ereader-watch = {
-          description = "Fire the ereader push when the Supernote starts a sync (palimpsest#94)";
+          description = "Fire the ereader reconcile when the Supernote starts a sync (palimpsest#107)";
           wantedBy = [ "multi-user.target" ];
           after = [ "supernote-server.service" ];
           wants = [ "supernote-server.service" ];
@@ -416,10 +453,10 @@ in
                         now=$(${pkgs.coreutils}/bin/date +%s)
                         if [ $((now - last)) -ge "$debounce" ]; then
                           last=$now
-                          echo "ereader watch: device sync detected, firing push"
+                          echo "ereader watch: device sync detected, firing reconcile"
                           # Keep the follower alive even if the enqueue momentarily fails (set -e
                           # would otherwise tear down the pipeline and bounce the whole watcher).
-                          ${pkgs.systemd}/bin/systemctl start --no-block supernote-ereader-push.service || true
+                          ${pkgs.systemd}/bin/systemctl start --no-block supernote-ereader-reconcile.service || true
                         fi
                         ;;
                     esac
