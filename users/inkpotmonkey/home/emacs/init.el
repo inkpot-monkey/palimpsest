@@ -993,9 +993,6 @@ paste its expansion.  On no match, forward a real TAB to the child process."
     (when (and buffer-file-name
                (string-suffix-p ".llm" buffer-file-name))
       (gptel-mode 1))))
- ;; Ensure abbrevs work in gptel-mode
- (gptel-mode
-  . (lambda () (setq local-abbrev-table gptel-mode-abbrev-table)))
 
  :config (require 'gptel-integrations)
 
@@ -1007,11 +1004,6 @@ paste its expansion.  On no match, forward a real TAB to the child process."
 
  ;; Default mode for NEW buffers
  (setq gptel-default-mode 'org-mode)
-
- ;; Custom Abbrevs
- (define-abbrev-table
-   'gptel-mode-abbrev-table
-   '(("eyt" "explain your thinking step by step" nil :count 0)))
 
  :bind
  (("C-c RET" . gptel-send)
