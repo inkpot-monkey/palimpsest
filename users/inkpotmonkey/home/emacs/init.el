@@ -939,7 +939,17 @@ paste its expansion.  On no match, forward a real TAB to the child process."
  :config
  (add-to-list
   'display-buffer-alist
-  '("\\`\\*claude:" (display-buffer-same-window))))
+  '("\\`\\*claude:" (display-buffer-same-window)))
+ ;; Reapply direnv in the session buffer. envrc-global-mode enables
+ ;; envrc-mode in the ghostel/claude buffer, but at creation time its
+ ;; default-directory hasn't settled on the project yet, so envrc caches
+ ;; "nothing to apply" and never sets the buffer-local process-environment.
+ ;; The buffer then still runs async-shell-command / M-& (chelys-galactica-run)
+ ;; with the bare Emacs-daemon env — no devshell, so `just`/`nh`/etc. are
+ ;; "command not found". claude-code-start-hook runs in the session buffer with
+ ;; default-directory already bound to the project, so re-running direnv here
+ ;; injects the flake devshell for every subprocess spawned from the buffer.
+ (add-hook 'claude-code-start-hook #'envrc-reload))
 
 ;; project-agent.el — agent workspace management on top of project.el.
 ;; Provides the C-c a transient menu (project-agent-menu) and the ?a entry in
