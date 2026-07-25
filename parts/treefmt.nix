@@ -63,6 +63,11 @@
           # SOPS-encrypted — reformatting would corrupt the ciphertext layout.
           "**/secrets.yaml"
           "**/secrets.yaml.example"
+          # The web-starter scaffold owns its OWN quality gate (prettier
+          # `useTabs`, prettier-plugin-astro, its own stylelint/eslint). The
+          # fleet formatter (nixfmt/deadnix/statix/prettier/mdformat) must not
+          # touch it or it clobbers those conventions. See parts/templates.nix.
+          "templates/web-starter/**"
           # Jinja2 templates: prettier would mangle the {% %} tags.
           "**/templates/*.html"
           # Binary / data / generated.

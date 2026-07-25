@@ -148,6 +148,7 @@
         ./parts/shells.nix
         ./parts/treefmt.nix
         ./parts/git-hooks.nix
+        ./parts/templates.nix
         ./parts/apps
         ./parts/checks
         ./lib
