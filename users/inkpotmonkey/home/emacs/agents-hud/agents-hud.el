@@ -407,13 +407,27 @@ ghostel buffers it is the title portion of `*ghostel: TITLE*'."
  since
  exit)
 
-(defun agents-hud--waiting-p (pending bell activity)
+(defun agents-hud--waiting-p
+    (pending bell activity &optional now cutoff)
   "Non-nil when a buffer counts as waiting-on-you.
 PENDING is whether it is in proc-notify's pending set; BELL/ACTIVITY are its
-last bell and last redraw times.  A bell with no output since it means Claude
-finished and is parked; PENDING covers the same via proc-notify."
-  (or (and pending t)
-      (and bell (or (null activity) (<= activity bell)))))
+last bell and last redraw times; NOW/CUTOFF (optional) bound what counts as
+\"recent\".
+
+A BELL with no output since it means Claude finished its turn and is parked;
+because it carries a timestamp it self-clears the moment newer ACTIVITY arrives.
+PENDING carries NO timestamp — proc-notify only drops it when you actually visit
+the buffer — so it is trusted only while the terminal is quiet (ACTIVITY absent
+or older than CUTOFF).  A session still streaming output is working, not parked,
+even when proc-notify never got a \"you looked\" event to clear the flag.  With
+NOW/CUTOFF omitted, PENDING is trusted unconditionally (back-compat)."
+  (let ((quiet
+         (or (null activity)
+             (null now)
+             (null cutoff)
+             (>= (- now activity) cutoff))))
+    (or (and pending quiet t)
+        (and bell (or (null activity) (<= activity bell))))))
 
 (cl-defun
  agents-hud--compute-state
@@ -460,8 +474,10 @@ Priority: dead → waiting → working → idle."
           (and (boundp 'ghostel--command-running)
                (buffer-local-value 'ghostel--command-running buffer)))
          (waiting
-          (agents-hud--waiting-p
-           (agents-hud--buffer-pending-p buffer) bell activity))
+          (agents-hud--waiting-p (agents-hud--buffer-pending-p
+                                  buffer)
+                                 bell activity
+                                 now agents-hud-idle-seconds))
          (state
           (agents-hud--compute-state
            :live live

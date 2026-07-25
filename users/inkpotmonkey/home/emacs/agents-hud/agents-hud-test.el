@@ -23,9 +23,19 @@
 ;;; --- waiting predicate -------------------------------------------------------
 
 (ert-deftest agents-hud-test-waiting-from-pending ()
-  "A pending buffer is waiting regardless of bell/activity."
+  "A quiet pending buffer is waiting; one still streaming output is not.
+proc-notify's pending flag has no timestamp and only clears when you visit the
+buffer, so it is trusted only while the terminal is quiet (past the cutoff).
+With no now/cutoff it is trusted unconditionally (back-compat)."
   (should (agents-hud--waiting-p t nil nil))
-  (should (agents-hud--waiting-p t 100.0 200.0)))
+  (should (agents-hud--waiting-p t 100.0 200.0))
+  ;; quiet past the cutoff (10s idle, cutoff 3s): pending -> waiting
+  (should (agents-hud--waiting-p t nil 100.0 110.0 3.0))
+  ;; fresh activity within the cutoff, stale/no bell: streaming, NOT waiting
+  (should-not (agents-hud--waiting-p t nil 100.0 100.5 3.0))
+  (should-not (agents-hud--waiting-p t 50.0 100.0 100.5 3.0))
+  ;; a bell with nothing produced since it still wins, even within the cutoff
+  (should (agents-hud--waiting-p t 100.0 100.0 100.5 3.0)))
 
 (ert-deftest agents-hud-test-waiting-from-bell ()
   "A bell with no output since it means waiting; later output clears it."
