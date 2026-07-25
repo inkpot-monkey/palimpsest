@@ -1,0 +1,26 @@
+---
+import Layout from '@/layouts/Layout.astro';
+import { site } from '@/lib/site';
+---
+
+<Layout title={`About — ${site.title}`}>
+	<main class="wrapper">
+		<h1>About</h1>
+		<p>
+			Replace this page with your own content. It reuses the same layout and tokens as the home
+			page.
+		</p>
+		<p><a href="/">← Home</a></p>
+	</main>
+</Layout>
+
+<style>
+	.wrapper {
+		max-width: 42rem;
+		margin-inline: auto;
+		padding: var(--space-xl) var(--space-m);
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-s);
+	}
+</style>

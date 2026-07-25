@@ -1,0 +1,55 @@
+---
+import Layout from '@/layouts/Layout.astro';
+import { site } from '@/lib/site';
+---
+
+<Layout title={site.title} description={site.description}>
+	<main class="wrapper">
+		<h1>{site.title}</h1>
+		<p class="lede">{site.description}</p>
+		<nav aria-label="Primary">
+			<ul>
+				{
+					site.nav.map((item) => (
+						<li>
+							<a href={item.href}>{item.label}</a>
+						</li>
+					))
+				}
+			</ul>
+		</nav>
+	</main>
+</Layout>
+
+<style>
+	.wrapper {
+		max-width: 42rem;
+		margin-inline: auto;
+		padding: var(--space-xl) var(--space-m);
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-s);
+	}
+
+	.lede {
+		font-size: var(--step-1);
+		color: var(--color-muted);
+	}
+
+	/* Mobile-first: the nav stacks by default, then becomes a row once there's
+	   room. Enhance upward with min-width — never max-width. */
+	nav ul {
+		list-style: none;
+		padding: 0;
+		display: flex;
+		flex-direction: column;
+		gap: var(--space-2xs);
+	}
+
+	@media (min-width: 40em) {
+		nav ul {
+			flex-direction: row;
+			gap: var(--space-m);
+		}
+	}
+</style>

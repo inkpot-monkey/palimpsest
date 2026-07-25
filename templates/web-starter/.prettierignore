@@ -1,0 +1,6 @@
+# Generated / vendored — Prettier should not touch these.
+pnpm-lock.yaml
+dist/
+.astro/
+node_modules/
+.direnv/

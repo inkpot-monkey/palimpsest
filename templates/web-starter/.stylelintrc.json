@@ -1,0 +1,16 @@
+{
+	"extends": ["stylelint-config-standard"],
+	"overrides": [
+		{
+			"files": ["**/*.astro"],
+			"customSyntax": "postcss-html"
+		}
+	],
+	"rules": {
+		"custom-property-empty-line-before": null,
+		"declaration-empty-line-before": null,
+		"custom-property-pattern": null,
+		"property-no-vendor-prefix": null,
+		"media-feature-range-notation": "prefix"
+	}
+}

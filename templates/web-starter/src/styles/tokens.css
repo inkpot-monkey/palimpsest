@@ -1,0 +1,70 @@
+/*
+ * Design tokens — the single vocabulary the whole site styles from. Three
+ * families: fluid TYPE, fluid SPACE, and named COLOUR. Components reference the
+ * *semantic* tokens (--color-fg, --step-1, --space-m), never raw values, so a
+ * theme change is a one-line edit here.
+ *
+ * The type/space clamps are Utopia (https://utopia.fyi) fluid scales that
+ * interpolate between a 320px and a 1240px viewport. Regenerate with the Utopia
+ * calculator if you change the endpoints; keep the two scales in step.
+ */
+
+:root {
+	/* ---- Fluid type scale (base 18→20px, ratio 1.2→1.25) ---- */
+	--step--2: clamp(0.7813rem, 0.7747rem + 0.0326vw, 0.8rem);
+	--step--1: clamp(0.9375rem, 0.9158rem + 0.1087vw, 1rem);
+	--step-0: clamp(1.125rem, 1.0815rem + 0.2174vw, 1.25rem);
+	--step-1: clamp(1.35rem, 1.2761rem + 0.3696vw, 1.5625rem);
+	--step-2: clamp(1.62rem, 1.5041rem + 0.5793vw, 1.9531rem);
+	--step-3: clamp(1.944rem, 1.771rem + 0.865vw, 2.4414rem);
+	--step-4: clamp(2.3328rem, 2.0828rem + 1.2503vw, 3.0518rem);
+	--step-5: clamp(2.7994rem, 2.4463rem + 1.7657vw, 3.8147rem);
+
+	/* ---- Fluid space scale ---- */
+	--space-3xs: clamp(0.2813rem, 0.2704rem + 0.0543vw, 0.3125rem);
+	--space-2xs: clamp(0.5625rem, 0.5408rem + 0.1087vw, 0.625rem);
+	--space-xs: clamp(0.8438rem, 0.8111rem + 0.163vw, 0.9375rem);
+	--space-s: clamp(1.125rem, 1.0815rem + 0.2174vw, 1.25rem);
+	--space-m: clamp(1.6875rem, 1.6223rem + 0.3261vw, 1.875rem);
+	--space-l: clamp(2.25rem, 2.163rem + 0.4348vw, 2.5rem);
+	--space-xl: clamp(3.375rem, 3.2446rem + 0.6522vw, 3.75rem);
+	--space-2xl: clamp(4.5rem, 4.3261rem + 0.8696vw, 5rem);
+	--space-3xl: clamp(6.75rem, 6.4891rem + 1.3043vw, 7.5rem);
+
+	/* ---- Named colour palette (raw values — do not use directly) ---- */
+	--color-ink-950: #0b0e14;
+	--color-ink-900: #0d1117;
+	--color-ink-700: #2b333f;
+	--color-ink-400: #7d8590;
+	--color-ink-100: #f4f6fb;
+	--color-ink-50: #fbfcfe;
+	--color-accent-400: #60a5fa;
+	--color-accent-500: #3b82f6;
+	--color-accent-600: #2563eb;
+
+	/* ---- Semantic tokens (use THESE) — light theme ---- */
+	--color-bg: var(--color-ink-50);
+	--color-surface: var(--color-ink-100);
+	--color-fg: var(--color-ink-900);
+	--color-muted: var(--color-ink-700);
+	--color-border: color-mix(in srgb, var(--color-ink-400) 40%, transparent);
+	--color-accent: var(--color-accent-600);
+
+	/* ---- Font role tokens (self-hosted variable fonts, see Layout.astro) ---- */
+	--font-body: 'Inter Variable', system-ui, sans-serif;
+	--font-display: 'Fraunces Variable', 'Georgia', 'Times New Roman', serif;
+	--font-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Code', monospace;
+
+	color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+	:root {
+		--color-bg: var(--color-ink-950);
+		--color-surface: var(--color-ink-900);
+		--color-fg: var(--color-ink-100);
+		--color-muted: var(--color-ink-400);
+		--color-border: color-mix(in srgb, var(--color-ink-400) 30%, transparent);
+		--color-accent: var(--color-accent-400);
+	}
+}

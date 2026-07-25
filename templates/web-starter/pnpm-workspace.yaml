@@ -1,0 +1,10 @@
+# pnpm 10+ no longer runs dependency build scripts by default (supply-chain
+# safety) and treats a skipped build as a hard error. This site needs none of
+# them at build time — esbuild and sharp ship prebuilt binaries via their
+# platform packages — so we acknowledge the skip rather than fail the install.
+#
+# If you add a dependency that genuinely needs its own build/postinstall to run,
+# allow just that one by name under `onlyBuiltDependencies` (do NOT reach for
+# `dangerouslyAllowAllBuilds`).
+strictDepBuilds: false
+onlyBuiltDependencies: []

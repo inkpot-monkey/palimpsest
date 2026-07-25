@@ -1,0 +1,35 @@
+---
+// Self-hosted variable fonts. The @fontsource-variable packages register their
+// own @font-face rules (served from your own origin — no third-party requests)
+// and ship the woff2 files; Vite emits & fingerprints them at build time.
+import '@fontsource-variable/inter';
+import '@fontsource-variable/fraunces';
+import '@/styles/global.css';
+
+// Preload the above-the-fold body font. Resolve the package's own woff2 to a
+// hashed URL with `?url` rather than hand-writing a path. Add a matching line
+// per font you need painted immediately (e.g. the display font on a hero).
+import interWoff2 from '@fontsource-variable/inter/files/inter-latin-wght-normal.woff2?url';
+
+interface Props {
+	title: string;
+	description?: string;
+}
+
+const { title, description = 'A static-first Astro site.' } = Astro.props;
+---
+
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="description" content={description} />
+		<link rel="preload" href={interWoff2} as="font" type="font/woff2" crossorigin />
+		<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+		<title>{title}</title>
+	</head>
+	<body>
+		<slot />
+	</body>
+</html>

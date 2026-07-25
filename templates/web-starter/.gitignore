@@ -1,0 +1,24 @@
+# Build output
+dist/
+.astro/
+
+# Dependencies
+node_modules/
+
+# Nix / direnv
+.direnv/
+result
+result-*
+
+# Cloudflare / Wrangler
+.wrangler/
+
+# Playwright
+test-results/
+playwright-report/
+
+# Logs & env
+*.log
+.env
+.env.*
+!.env.example
