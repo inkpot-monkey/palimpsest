@@ -93,6 +93,14 @@
 (defvar claude-code-notification-function)
 (declare-function claude-code--pulse-modeline "claude-code")
 
+;; claude-session owns the live status of Claude/ghostel sessions.  A session it
+;; screen-detects as blocked on a selection prompt (state \\='waiting) is folded
+;; into the awaiting set below — the claude-code bell only pings once per turn
+;; and misses a mid-turn permission/plan prompt.  Soft: fboundp-guarded.
+(declare-function claude-session-buffers "claude-session")
+(declare-function claude-session-status "claude-session"
+                  (buffer &optional now))
+
 ;; consult is a soft dependency of the pull-side `proc-notify-consult' command,
 ;; `require'd lazily when it runs.  Declared here only to quiet the compiler.
 (declare-function consult--read "consult")
@@ -723,28 +731,39 @@ modeline pulse when available."
 ;; attention so you can triage several at once from inside Emacs.
 
 (defun proc-notify--awaiting-buffers ()
-  "Live buffers wanting attention: pending pings ∪ comint buffers at a prompt.
+  "Live buffers wanting attention: pending pings ∪ comint buffers at a prompt ∪
+Claude sessions blocked on a selection prompt.
 Buffers you are already watching are excluded; dead buffers are pruned."
   (setq proc-notify--pending
         (seq-filter #'buffer-live-p proc-notify--pending))
-  (let ((parked
-         (seq-filter
-          (lambda (buf)
-            (with-current-buffer buf
-              (and (derived-mode-p 'comint-mode)
-                   (let ((proc (get-buffer-process buf)))
-                     (and proc (process-live-p proc)))
-                   (proc-notify--looks-like-prompt-p))))
-          (buffer-list))))
+  (let
+      ((parked
+        (seq-filter
+         (lambda (buf)
+           (with-current-buffer buf
+             (and (derived-mode-p 'comint-mode)
+                  (let ((proc (get-buffer-process buf)))
+                    (and proc (process-live-p proc)))
+                  (proc-notify--looks-like-prompt-p))))
+         (buffer-list)))
+       ;; Claude sessions the HUD screen-detects as blocked on your choice.
+       ;; claude-session is optional (fboundp-guarded), so proc-notify's
+       ;; pull-side list still works without it.
+       (blocked
+        (when (fboundp 'claude-session-buffers)
+          (seq-filter
+           (lambda (buf)
+             (eq (claude-session-status buf) 'waiting))
+           (claude-session-buffers)))))
     (seq-remove
      #'proc-notify--watching-p
-     (seq-uniq (append proc-notify--pending parked)))))
+     (seq-uniq (append proc-notify--pending parked blocked)))))
 
 ;;;###autoload
 (defun proc-notify-consult ()
   "Pick a buffer that is waiting for input and jump to it.
-Candidates are `proc-notify--awaiting-buffers': buffers that pinged plus any
-comint process currently parked at a prompt."
+Candidates are `proc-notify--awaiting-buffers': buffers that pinged, any comint
+process parked at a prompt, plus Claude sessions blocked on a selection prompt."
   (interactive)
   (require 'consult)
   (let ((buffers (proc-notify--awaiting-buffers)))

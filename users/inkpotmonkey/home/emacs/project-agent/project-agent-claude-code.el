@@ -21,6 +21,9 @@
 (require 'cl-generic)
 (require 'project-agent)
 (require 'claude-code)
+;; claude-session owns *claude: discovery and the live status model; this
+;; backend reads them rather than re-deriving buffer liveness itself.
+(require 'claude-session)
 
 ;;; ── Backend struct ──────────────────────────────────────────────────────────
 
@@ -36,10 +39,7 @@
 
 (defun project-agent-claude-code--live-buffers ()
   "Return currently live *claude:…* buffers."
-  (cl-remove-if-not
-   (lambda (b)
-     (string-prefix-p "*claude:" (buffer-name b)))
-   (buffer-list)))
+  (cl-remove-if-not #'claude-session-claude-buffer-p (buffer-list)))
 
 (defun project-agent-claude-code--find-by-run-id (run-id)
   "Return the live buffer whose `project-agent--run-id' equals RUN-ID, or nil."
@@ -114,10 +114,14 @@ Batch: hidden buffer; PROMPT injected via process-send-string after 3 s."
 
 (cl-defmethod project-agent-session-status
     ((backend project-agent-claude-code) session-id)
-  "Return \\='running if a live buffer holds SESSION-ID, else \\='finished."
-  (if (project-agent-claude-code--find-by-run-id session-id)
-      'running
-    'finished))
+  "Return \\='running if a live, non-dead session holds SESSION-ID, else \\='finished.
+Liveness is read through `claude-session-status', so a buffer that lingers after
+its process exited (`claude-session' state \\='dead) correctly reads \\='finished."
+  (ignore backend)
+  (let ((buf (project-agent-claude-code--find-by-run-id session-id)))
+    (if (and buf (not (eq (claude-session-status buf) 'dead)))
+        'running
+      'finished)))
 
 (provide 'project-agent-claude-code)
 ;;; project-agent-claude-code.el ends here

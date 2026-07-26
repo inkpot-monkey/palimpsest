@@ -199,11 +199,14 @@ rec {
       version = "0.1";
       src = ./proc-notify;
       # alert is the notification router/delivery layer. consult is a soft,
-      # lazily-required dependency (the pull-side `proc-notify-consult' command);
-      # listed so both are on the load-path.
+      # lazily-required dependency (the pull-side `proc-notify-consult' command).
+      # claude-session is soft too (fboundp-guarded): the pull-side list folds in
+      # Claude sessions blocked on a selection prompt.  All listed so they are on
+      # the load-path.
       packageRequires = [
         epkgs.alert
         epkgs.consult
+        claude-session
       ];
       # Run the ERT suite at build time. `proc-notify-test.el' is auto-excluded
       # from the installed package by MELPA's default `:files' recipe (it matches
@@ -326,6 +329,7 @@ rec {
       packageRequires = [
         epkgs.transient
         claude-code # project-agent-claude-code.el depends on it at load time
+        claude-session # …and reads the live session status through it
       ];
       doCheck = true;
       checkPhase = ''
