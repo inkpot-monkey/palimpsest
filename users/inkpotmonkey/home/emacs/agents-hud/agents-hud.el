@@ -12,11 +12,13 @@
 ;; (claude-code drives the ghostel backend), so one collector covers them.
 ;;
 ;;   * `agents-hud-toggle-sidebar' (C-x C-a) — a persistent right-side panel,
-;;     grouped by project, that live-updates on a timer.  Rows carry a status
-;;     icon, the project + working directory, the instance name, and how long
-;;     the current state has held.  WAITING rows float to the top of their
-;;     group and groups with a waiting/working session sort first, so what
-;;     needs you is always near the top.
+;;     grouped by project, that live-updates on a timer.  Each row leads with a
+;;     status icon and then stacks three aligned lines: the session name, its
+;;     git branch, and its working directory.  WAITING rows float to the top of
+;;     their group and groups with a waiting/working session sort first, so what
+;;     needs you is always near the top.  A project heading folds shut with TAB
+;;     (or RET on the heading); a folded group still shows its count and its
+;;     ‹needs you› marker.
 ;;
 ;;   * `agents-hud-consult-source' / `agents-hud-picker' (C-c c b) — the same
 ;;     buffers as a narrowable consult group (folded into `consult-buffer', or
@@ -24,29 +26,33 @@
 ;;
 ;; STATUS MODEL (per buffer), four states:
 ;;
-;;   🤔 working — the terminal is churning: either ghostel's own OSC-133
+;;   -\|/ working — the terminal is churning: either ghostel's own OSC-133
 ;;               `ghostel--command-running' flag is set (a shell command is
 ;;               running) or a redraw fired within `agents-hud-idle-seconds'.
-;;               A redraw caused purely by you (a focus event from looking at
-;;               the buffer, or a keystroke echo) is discounted — see
-;;               `agents-hud-interaction-grace'.
-;;   🙋 waiting — Claude finished its turn and wants you.  Claude's only clean
-;;               "done" event is the terminal BELL; we read it two ways (either
-;;               suffices): membership in `proc-notify--pending' (proc-notify
-;;               already captures the bell) and a best-effort `:after' advice on
-;;               `claude-code--notify' that stamps a bell time on the buffer.
-;;   🫡 ready   — a live process, quiet past the cutoff and not pinging you:
-;;               standing by, ready for input (typically a shell at its prompt).
+;;               Shown as a spinner (`agents-hud-working-frames') that advances
+;;               one frame per refresh.  A redraw caused purely by you (a focus
+;;               event from looking at the buffer, or a keystroke echo) is
+;;               discounted — see `agents-hud-interaction-grace'.
+;;   🙋 waiting — Claude is BLOCKED on a selection prompt and needs you to
+;;               choose: a permission dialog, plan approval, the shift-tab mode
+;;               menu.  Detected from the live screen (see
+;;               `agents-hud--selection-prompt-p') — the numbered-option picker
+;;               with its `❯ N.' caret and `Enter to select …' footer — NOT the
+;;               end-of-turn bell, which fires every turn and would flag every
+;;               finished session as needing you.
+;;   🫡 ready   — a live process, not working and not at a selection prompt:
+;;               standing by for input.  A Claude session that finished its turn
+;;               and a shell idling at its prompt both land here.
 ;;   💀 dead    — no live process (only visible if the buffer lingers;
 ;;               `ghostel-kill-buffer-on-exit' defaults to t, so exited
 ;;               terminals usually vanish rather than show here).
 ;;
-;; The state-tracking side effects (activity stamp, bell stamp, exit code) are
-;; installed by `agents-hud-setup', which is idempotent and degrades quietly
-;; when claude-code / ghostel / proc-notify are absent.  Everything the two
-;; front-ends render is derived from those buffer-local stamps by pure
+;; The state-tracking side effects (activity stamp, exit code) are installed by
+;; `agents-hud-setup', which is idempotent and degrades quietly when ghostel /
+;; claude-code are absent.  What the two front-ends render is derived by pure
 ;; functions (`agents-hud--compute-state', `--sort-entries',
-;; `--group-by-project', `--format-…'), which is what the ERT suite exercises.
+;; `--group-by-project', `--format-…') from those stamps plus a live read of the
+;; screen for the waiting prompt — which is what the ERT suite exercises.
 
 ;;; Code:
 
@@ -57,10 +63,8 @@
 ;; Soft dependencies — never `require'd, so the package (and its ERT suite)
 ;; loads with only built-ins present.  Guarded at every call site with
 ;; `fboundp' / `bound-and-true-p'.
-(defvar proc-notify--pending)
 (defvar consult-buffer-sources)
 (declare-function claude-code "claude-code" (&optional arg))
-(declare-function claude-code--notify "claude-code" (terminal))
 (declare-function ghostel "ghostel" (&optional arg))
 (declare-function ghostel-project "ghostel" (&optional arg))
 (declare-function consult--buffer-state "consult" ())
@@ -84,14 +88,32 @@
 
 (defcustom agents-hud-idle-seconds 3.0
   "Seconds of terminal quiet after which a working buffer stops counting as busy.
-A redraw within this window counts the buffer as 🤔 working; once redraws stop
-for this long (and no shell command is running) it drops to 🫡 ready."
+A redraw within this window counts the buffer as working (the spinner); once
+redraws stop for this long (and no shell command is running) it drops to 🫡
+ready."
   :type 'number)
 
 (defcustom agents-hud-refresh-interval 1.0
   "Seconds between automatic sidebar re-renders while the panel is visible.
 The tick also advances the displayed durations and flips working→ready."
   :type 'number)
+
+(defcustom agents-hud-selection-prompt-regexp
+  "Enter to select\\|Tab/Arrow keys to navigate\\|❯ *[0-9]+\\."
+  "Regexp marking a Claude Code selection prompt on a terminal's live screen.
+When it matches the bottom of a session (the last
+`agents-hud-selection-scan-lines' lines) the session is 🙋 waiting — Claude is
+blocked on a choice you must make.  The default matches the picker's `Enter to
+select …' / `Tab/Arrow keys to navigate' footer and its `❯ N.' selected-option
+caret (the idle input box shows `❯' followed by placeholder text, never a
+number, so it does not match).  Retune if the CLI's prompt UI changes."
+  :type 'regexp)
+
+(defcustom agents-hud-selection-scan-lines 20
+  "How many trailing lines of a terminal to scan for a selection prompt.
+Kept small so only the live screen is searched: a prompt you already answered,
+scrolled up into scrollback, does not linger as a false 🙋 waiting."
+  :type 'integer)
 
 (defcustom agents-hud-interaction-grace 0.4
   "Seconds after a user interaction during which a redraw is not counted as work.
@@ -102,8 +124,9 @@ Both are ordinary redraws indistinguishable from real output.  A redraw on an
 otherwise-quiet buffer within this window of an interaction — a focus change
 \(on EITHER side, as its repaint can fire just before or just after the focus
 hook) or a keystroke — is ignored, so merely looking at or typing into a parked
-session no longer flips it to 🤔 working.  A buffer that is already active keeps
-stamping normally, so genuine work is never suppressed.  Set to 0 to disable."
+session no longer flips it to the working spinner.  A buffer that is already
+active keeps stamping normally, so genuine work is never suppressed.  Set to 0
+to disable."
   :type 'number)
 
 (defcustom agents-hud-avy-keys-style 'letters
@@ -124,8 +147,17 @@ the first key."
   "Width in columns of the sidebar window."
   :type 'integer)
 
+(defcustom agents-hud-working-frames '("-" "\\" "|" "/")
+  "Frames cycled for the working indicator, one advanced per sidebar refresh.
+The default is Emacs's own indeterminate-progress spinner (the characters
+`progress-reporter' pulses through).  Any list of strings works — e.g. the clock
+faces \\='(\"🕐\" \"🕑\" …) or moon phases — and each row pads its icon to a fixed
+width, so frames of any width stay aligned.  Set to nil for a static
+`agents-hud-working-icon' instead."
+  :type '(repeat string))
+
 (defcustom agents-hud-working-icon "🤔"
-  "Icon for the 🤔 working state."
+  "Static icon for the working state, used when `agents-hud-working-frames' is nil."
   :type 'string)
 
 (defcustom agents-hud-waiting-icon "🙋"
@@ -140,12 +172,12 @@ the first key."
   "Icon for the 💀 dead state."
   :type 'string)
 
-(defcustom agents-hud-claude-glyph "◆"
-  "Subtle leading glyph marking a Claude agent buffer."
+(defcustom agents-hud-expanded-icon "▾"
+  "Leading glyph on an expanded (open) project group heading."
   :type 'string)
 
-(defcustom agents-hud-shell-glyph "$"
-  "Subtle leading glyph marking a plain ghostel shell buffer."
+(defcustom agents-hud-collapsed-icon "▸"
+  "Leading glyph on a collapsed (folded) project group heading."
   :type 'string)
 
 (defcustom agents-hud-claude-icon "nf-md-creation"
@@ -162,8 +194,8 @@ Rendered with `nerd-icons-faicon'."
 
 (defcustom agents-hud-show-state-label nil
   "When non-nil, spell out the state word (working/ready/…) in the sidebar.
-Off by default: the leading state icon (🤔 🙋 🫡 💀) carries the status and the
-row stays compact.  A dead buffer's exit code is shown either way."
+Off by default: the leading state icon (spinner, 🙋, 🫡, 💀) carries the status
+and the row stays compact.  A dead buffer's exit code is shown either way."
   :type 'boolean)
 
 (defface agents-hud-working-face '((t :inherit warning))
@@ -187,6 +219,11 @@ green only tints the accompanying label text — the 🙋 glyph keeps its own hu
 (defface agents-hud-path-face '((t :inherit font-lock-comment-face))
   "Face for the working-directory path in a row.")
 
+(defface agents-hud-branch-face '((t :inherit font-lock-string-face))
+  "Face for the git-branch line in a row.
+Distinct from `agents-hud-path-face' so the branch and the working directory,
+stacked under the session name, read as two different things at a glance.")
+
 ;;; ── State tracking (buffer-local stamps) ─────────────────────────────────────
 
 (defvar-local agents-hud--activity nil
@@ -199,9 +236,6 @@ that stamped a quiet buffer a few milliseconds before the focus hook fired.")
 
 (defvar-local agents-hud--working-since nil
   "`float-time' the current active burst began, for the working duration.")
-
-(defvar-local agents-hud--bell nil
-  "`float-time' of the last claude-code finished-turn bell in this buffer.")
 
 (defvar-local agents-hud--exit nil
   "Exit code recorded when this buffer's terminal process exited, or nil.")
@@ -320,15 +354,6 @@ read as Claude working."
   (with-demoted-errors "agents-hud input: %S"
     (setq agents-hud--input-time (float-time))))
 
-(defun agents-hud--note-bell (&rest _)
-  "Stamp a finished-turn bell time on the current (Claude) buffer.
-For `:after' advice on `claude-code--notify', which runs in the Claude terminal
-buffer.  Best-effort: `proc-notify--pending' is the primary waiting signal, so
-this only has to work when proc-notify is absent or the buffer is being
-watched (which proc-notify suppresses)."
-  (with-demoted-errors "agents-hud bell: %S"
-    (setq agents-hud--bell (float-time))))
-
 (defun agents-hud--note-exit (buffer event)
   "Record BUFFER's process exit code parsed from EVENT.
 For `ghostel-exit-functions', which fires before the buffer may be killed."
@@ -350,10 +375,11 @@ For `ghostel-exit-functions', which fires before the buffer may be killed."
 ;;;###autoload
 (defun agents-hud-setup ()
   "Install the state-tracking hooks and advice (idempotent).
-Wires redraw-activity stamping and exit recording on ghostel, a best-effort bell
-stamp on claude-code, and per-type completion icons on nerd-icons.  Safe to call
-when those packages are not yet loaded; the pieces attach as they become
-available."
+Wires redraw-activity stamping and exit recording on ghostel, the
+focus/keystroke interaction guards, and per-type completion icons on
+nerd-icons.  Safe to call when those packages are not yet loaded; the pieces
+attach as they become available.  Waiting is read from the live screen at
+render time (`agents-hud--selection-prompt-p'), so it needs no hook here."
   (interactive)
   (unless agents-hud--setup-done
     (with-eval-after-load 'ghostel
@@ -372,10 +398,6 @@ available."
         (advice-add
          'ghostel--on-user-input
          :before #'agents-hud--note-input)))
-    (with-eval-after-load 'claude-code
-      (advice-add
-       'claude-code--notify
-       :after #'agents-hud--note-bell))
     (with-eval-after-load 'nerd-icons
       (advice-add
        'nerd-icons-icon-for-buffer
@@ -501,6 +523,29 @@ this is what keeps their rows tellable apart."
           (puthash key (or tag 'none) agents-hud--worktree-cache)
           tag)))))
 
+(defvar agents-hud--branch-cache (make-hash-table :test 'equal)
+  "Memoises `agents-hud--branch' per directory (\\='none = detached/no branch).
+Cleared with the other git caches on `agents-hud-refresh'.")
+
+(defun agents-hud--branch (dir)
+  "Return the git branch checked out in DIR's worktree, or nil.
+Unlike `agents-hud--worktree-tag' this is the real branch for EVERY worktree,
+not the directory basename of a linked one.  A detached HEAD yields nil."
+  (when (and dir (file-directory-p dir))
+    (let* ((key (directory-file-name (expand-file-name dir)))
+           (cached (gethash key agents-hud--branch-cache 'miss)))
+      (if (not (eq cached 'miss))
+          (unless (eq cached 'none)
+            cached)
+        (let* ((br
+                (agents-hud--git key
+                                 "rev-parse"
+                                 "--abbrev-ref"
+                                 "HEAD"))
+               (val (and br (not (string= br "HEAD")) br)))
+          (puthash key (or val 'none) agents-hud--branch-cache)
+          val)))))
+
 (defun agents-hud--buffer-project (buffer)
   "Return BUFFER's project root, collapsing git worktrees onto their repo.
 Falls back to `project-current' when the buffer is in a non-git project, and
@@ -535,33 +580,31 @@ ghostel buffers it is the title portion of `*ghostel: TITLE*'."
  type
  project
  worktree
+ branch
  path
  instance
  state
  since
  exit)
 
-(defun agents-hud--waiting-p
-    (pending bell activity &optional now cutoff)
-  "Non-nil when a buffer counts as waiting-on-you.
-PENDING is whether it is in proc-notify's pending set; BELL/ACTIVITY are its
-last bell and last redraw times; NOW/CUTOFF (optional) bound what counts as
-\"recent\".
-
-A BELL with no output since it means Claude finished its turn and is parked;
-because it carries a timestamp it self-clears the moment newer ACTIVITY arrives.
-PENDING carries NO timestamp — proc-notify only drops it when you actually visit
-the buffer — so it is trusted only while the terminal is quiet (ACTIVITY absent
-or older than CUTOFF).  A session still streaming output is working, not parked,
-even when proc-notify never got a \"you looked\" event to clear the flag.  With
-NOW/CUTOFF omitted, PENDING is trusted unconditionally (back-compat)."
-  (let ((quiet
-         (or (null activity)
-             (null now)
-             (null cutoff)
-             (>= (- now activity) cutoff))))
-    (or (and pending quiet t)
-        (and bell (or (null activity) (<= activity bell))))))
+(defun agents-hud--selection-prompt-p (buffer)
+  "Non-nil when BUFFER's live screen shows a Claude Code selection prompt.
+The picker Claude Code puts up when it is blocked on your choice — a permission
+dialog, plan approval, the shift-tab mode menu — renders numbered options with a
+`❯' caret and an `Enter to select …' footer.  That, not the end-of-turn bell, is
+what 🙋 waiting means: the bell fires every turn and would flag every finished
+session.  Only the last `agents-hud-selection-scan-lines' lines (the live
+screen) are searched, so a prompt already answered and scrolled up into history
+does not count."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (save-excursion
+        (goto-char (point-max))
+        (forward-line (- agents-hud-selection-scan-lines))
+        (and (re-search-forward agents-hud-selection-prompt-regexp
+                                nil
+                                t)
+             t)))))
 
 (cl-defun
  agents-hud--compute-state
@@ -574,8 +617,8 @@ NOW/CUTOFF omitted, PENDING is trusted unconditionally (back-compat)."
   (cutoff agents-hud-idle-seconds))
  "Resolve a buffer's status symbol from its signals.
 LIVE — has a live process.  CMD-RUNNING — ghostel's OSC-133 flag.  WAITING —
-already-resolved waiting-on-you flag.  ACTIVITY — last redraw `float-time'.
-Priority: dead → waiting → working → ready."
+a selection prompt is on screen (Claude blocked on your choice).  ACTIVITY —
+last redraw `float-time'.  Priority: dead → waiting → working → ready."
  (cond
   ((not live)
    'dead)
@@ -588,12 +631,6 @@ Priority: dead → waiting → working → ready."
   (t
    'ready)))
 
-(defun agents-hud--buffer-pending-p (buffer)
-  "Non-nil when BUFFER is in proc-notify's pending set (if proc-notify loaded)."
-  (and (bound-and-true-p proc-notify--pending)
-       (memq buffer proc-notify--pending)
-       t))
-
 (defun agents-hud--entry (buffer &optional now)
   "Build a `agents-hud-entry' snapshot for BUFFER at time NOW."
   (let* ((now (or now (float-time)))
@@ -603,15 +640,10 @@ Priority: dead → waiting → working → ready."
          (activity (buffer-local-value 'agents-hud--activity buffer))
          (working-since
           (buffer-local-value 'agents-hud--working-since buffer))
-         (bell (buffer-local-value 'agents-hud--bell buffer))
          (cmd-running
           (and (boundp 'ghostel--command-running)
                (buffer-local-value 'ghostel--command-running buffer)))
-         (waiting
-          (agents-hud--waiting-p (agents-hud--buffer-pending-p
-                                  buffer)
-                                 bell activity
-                                 now agents-hud-idle-seconds))
+         (waiting (agents-hud--selection-prompt-p buffer))
          (state
           (agents-hud--compute-state
            :live live
@@ -621,7 +653,7 @@ Priority: dead → waiting → working → ready."
            :now now))
          (since
           (pcase state
-            ('waiting (or bell now))
+            ('waiting (or activity now))
             ('working (or working-since activity now))
             ('ready (or activity now))
             (_ nil)))
@@ -633,6 +665,7 @@ Priority: dead → waiting → working → ready."
      :worktree
      (agents-hud--worktree-tag
       (agents-hud--buffer-dir buffer) project)
+     :branch (agents-hud--branch (agents-hud--buffer-dir buffer))
      :path (agents-hud--buffer-path buffer)
      :instance (agents-hud--buffer-instance buffer type)
      :state state
@@ -757,10 +790,24 @@ removed shifts it.  A group's position is set by its earliest member."
 
 ;;; ── Formatting (pure) ────────────────────────────────────────────────────────
 
+(defvar agents-hud--spinner-index 0
+  "Counter advanced once per render to pick the working spinner frame.")
+
+(defun agents-hud--working-icon ()
+  "Return the working icon: the current spinner frame, else the static icon.
+Frames come from `agents-hud-working-frames', advanced by
+`agents-hud--spinner-index'; with no frames, `agents-hud-working-icon'."
+  (if agents-hud-working-frames
+      (nth
+       (mod
+        agents-hud--spinner-index (length agents-hud-working-frames))
+       agents-hud-working-frames)
+    agents-hud-working-icon))
+
 (defun agents-hud--state-icon (state)
   "Return the icon string for STATE."
   (pcase state
-    ('working agents-hud-working-icon)
+    ('working (agents-hud--working-icon))
     ('waiting agents-hud-waiting-icon)
     ('ready agents-hud-ready-icon)
     ('dead agents-hud-dead-icon)
@@ -775,30 +822,6 @@ removed shifts it.  A group's position is set by its earliest member."
     ('dead 'agents-hud-dead-face)
     (_ 'default)))
 
-(defun agents-hud--type-glyph (type)
-  "Return the subtle plain-text leading glyph for buffer TYPE."
-  (if (eq type 'claude)
-      agents-hud-claude-glyph
-    agents-hud-shell-glyph))
-
-(defun agents-hud--type-icon (type)
-  "Return a rich type icon for TYPE: a sparkle for Claude, a terminal for a shell.
-Uses nerd-icons when available (matching the rest of the config), falling back
-to the plain `agents-hud--type-glyph' when it is not, or if the glyph lookup
-fails."
-  (or (ignore-errors
-        (pcase type
-          ('claude
-           (when (fboundp 'nerd-icons-mdicon)
-             (nerd-icons-mdicon
-              agents-hud-claude-icon
-              :face 'nerd-icons-lpurple)))
-          (_
-           (when (fboundp 'nerd-icons-faicon)
-             (nerd-icons-faicon
-              agents-hud-shell-icon
-              :face 'nerd-icons-green)))))
-      (agents-hud--type-glyph type)))
 
 (defun agents-hud--nerd-icon-for-buffer (orig &rest args)
   "Around advice for `nerd-icons-icon-for-buffer'.
@@ -875,6 +898,10 @@ after one interval even though the positions (and the jump) survive.")
   "Keymap for `agents-hud-mode'."
   "RET"
   #'agents-hud-jump
+  "TAB"
+  #'agents-hud-toggle-collapse
+  "<tab>"
+  #'agents-hud-toggle-collapse
   "SPC"
   #'agents-hud-peek
   "k"
@@ -912,36 +939,72 @@ after one interval even though the positions (and the jump) survive.")
         (agents-hud-mode)))
     buf))
 
+(defun agents-hud--entry-name (entry)
+  "Return the row's display name for ENTRY: its instance, else a sensible fallback.
+For a Claude session this is the `:name' suffix (email, review, …); for a plain
+shell its title.  Falls back to the worktree/branch, the repo, or the path's
+basename so a nameless session still labels itself."
+  (or (agents-hud-entry-instance entry)
+      (agents-hud-entry-worktree entry)
+      (agents-hud-entry-branch entry)
+      (when-let ((p (agents-hud-entry-project entry)))
+        (file-name-nondirectory p))
+      (when-let ((p (agents-hud-entry-path entry)))
+        (file-name-nondirectory p))
+      "session"))
+
 (defun agents-hud--insert-entry (entry _now)
-  "Insert one row for ENTRY, tagged with the entry for actions.
-The leading state icon carries the status; the type icon (robot/terminal)
-distinguishes a Claude session from a plain shell.  The status word only
-appears when `agents-hud-show-state-label' is on (a dead exit code always does)."
-  (let* ((state (agents-hud-entry-state entry))
-         (face (agents-hud--state-face state))
-         (icon (agents-hud--state-icon state))
-         (tyicon
-          (agents-hud--type-icon (agents-hud-entry-type entry)))
-         (label (agents-hud--entry-label entry t))
-         (status (agents-hud--sidebar-status entry))
-         (path (agents-hud-entry-path entry))
-         (start (point)))
+  "Insert one row for ENTRY as three aligned lines: name, branch, working dir.
+The leading state icon carries the status; the name, branch and pwd stack
+vertically aligned beneath each other, the continuation lines indented to the
+display width of the icon prefix so they line up with the name whatever the
+icon's width.  The branch and pwd lines are omitted individually when unknown;
+the status word only appears when `agents-hud-show-state-label' is on (a dead
+exit code always does)."
+  (let*
+      ((state (agents-hud-entry-state entry))
+       (face (agents-hud--state-face state))
+       ;; Pad the icon to a fixed two columns so rows align whatever the
+       ;; glyph's width — an emoji (2), or a single-width spinner frame.
+       (icon
+        (truncate-string-to-width
+         (agents-hud--state-icon state) 2 0 ?\s))
+       (name (agents-hud--entry-name entry))
+       (branch (agents-hud-entry-branch entry))
+       (status (agents-hud--sidebar-status entry))
+       (path (agents-hud-entry-path entry))
+       (indent
+        (make-string (string-width (concat "  " icon " ")) ?\s))
+       (start (point)))
     (insert
      "  "
      (propertize icon 'face face)
      " "
-     tyicon
-     " "
-     (propertize label 'face face))
+     (propertize name 'face face))
     (unless (string-empty-p status)
       (insert "  " (propertize status 'face face)))
-    (insert
-     "\n      " (propertize path 'face 'agents-hud-path-face) "\n")
+    (insert "\n")
+    (when branch
+      (insert
+       indent (propertize branch 'face 'agents-hud-branch-face) "\n"))
+    (when path
+      (insert
+       indent (propertize path 'face 'agents-hud-path-face) "\n"))
     (put-text-property start (point) 'agents-hud-entry entry)))
+
+(defvar agents-hud--collapsed (make-hash-table :test 'equal)
+  "Set of project-group keys currently folded shut in the sidebar.
+A key is the group's project root (else its path); presence = collapsed.
+Global so the fold survives the timer's re-renders.")
+
+(defun agents-hud--group-collapsed-p (key)
+  "Non-nil when the project group KEY is folded shut."
+  (and key (gethash key agents-hud--collapsed) t))
 
 (defun agents-hud--render ()
   "Re-render the sidebar buffer from a fresh entry snapshot."
   (with-demoted-errors "agents-hud render: %S"
+    (cl-incf agents-hud--spinner-index)
     (let ((buf (get-buffer agents-hud--buffer-name)))
       (when (buffer-live-p buf)
         (with-current-buffer buf
@@ -953,9 +1016,7 @@ appears when `agents-hud-show-state-label' is on (a dead exit code always does).
                  (inhibit-read-only t))
             (erase-buffer)
             (insert
-             (propertize "Agents & terminals\n"
-                         'face
-                         'agents-hud-heading-face))
+             (propertize "🤖 Agents\n" 'face 'agents-hud-heading-face))
             (insert
              (make-string (max 1 (- agents-hud-width 2)) ?─) "\n")
             (if (null groups)
@@ -968,6 +1029,7 @@ appears when `agents-hud-show-state-label' is on (a dead exit code always does).
                           (file-name-nondirectory
                            (directory-file-name key))
                         "No project"))
+                     (collapsed (agents-hud--group-collapsed-p key))
                      ;; Rows keep stable order, so scan the whole group: it
                      ;; earns the ‹needs you› marker when ANY member is a
                      ;; genuine waiting session (priority 0).
@@ -978,15 +1040,26 @@ appears when `agents-hud-show-state-label' is on (a dead exit code always does).
                        (cdr g))))
                   (insert
                    "\n"
-                   (propertize (format "── %s%s"
+                   (propertize (format "%s %s%s%s"
+                                       (if collapsed
+                                           agents-hud-collapsed-icon
+                                         agents-hud-expanded-icon)
                                        heading
+                                       (if collapsed
+                                           (format "  (%d)"
+                                                   (length (cdr g)))
+                                         "")
                                        (if needs
                                            "  ‹needs you›"
                                          ""))
-                               'face 'agents-hud-heading-face)
+                               'face
+                               'agents-hud-heading-face
+                               'agents-hud-group
+                               key)
                    "\n")
-                  (dolist (e (cdr g))
-                    (agents-hud--insert-entry e now)))))
+                  (unless collapsed
+                    (dolist (e (cdr g))
+                      (agents-hud--insert-entry e now))))))
             (goto-char (point-min))
             (forward-line (1- line))))))))
 
@@ -997,6 +1070,7 @@ Clears the worktree→repo cache so an explicit refresh re-resolves grouping."
   (interactive)
   (clrhash agents-hud--repo-root-cache)
   (clrhash agents-hud--worktree-cache)
+  (clrhash agents-hud--branch-cache)
   (agents-hud--get-buffer)
   (agents-hud--render))
 
@@ -1050,6 +1124,27 @@ its `erase-buffer' cannot wipe avy's label overlays out from under a keypress."
   "Return the entry on the current sidebar line, or nil."
   (get-text-property (point) 'agents-hud-entry))
 
+(defun agents-hud--heading-group-at-point ()
+  "Return the group key of the heading on the current line, or nil.
+Read at the line start so it works from anywhere on the heading line, not only
+where the `agents-hud-group' text property happens to sit."
+  (get-text-property (line-beginning-position) 'agents-hud-group))
+
+(defun agents-hud--group-at-point ()
+  "Return the project-group key at point: a heading's, else the entry's group."
+  (or (agents-hud--heading-group-at-point)
+      (when-let ((entry (agents-hud--entry-at-point)))
+        (agents-hud--group-key entry))))
+
+(defun agents-hud-toggle-collapse ()
+  "Fold or unfold the project group at point (its heading or any of its rows)."
+  (interactive)
+  (when-let ((key (agents-hud--group-at-point)))
+    (if (gethash key agents-hud--collapsed)
+        (remhash key agents-hud--collapsed)
+      (puthash key t agents-hud--collapsed))
+    (agents-hud--render)))
+
 (defun agents-hud--main-window ()
   "Return the widest window to show a buffer in — never a side window.
 Explicitly excludes the HUD sidebar and any other `window-side' window, so it
@@ -1076,10 +1171,13 @@ is correct whether called from the panel (RET) or from a code window (avy)."
     (message "agents-hud: buffer no longer live")))
 
 (defun agents-hud-jump ()
-  "Switch to the buffer on the current line in the main window; keep the panel."
+  "Switch to the buffer on the current line; on a group heading, fold it instead.
+Keeps the panel open."
   (interactive)
-  (when-let* ((entry (agents-hud--entry-at-point)))
-    (agents-hud--goto-buffer (agents-hud-entry-buffer entry))))
+  (if-let* ((entry (agents-hud--entry-at-point)))
+      (agents-hud--goto-buffer (agents-hud-entry-buffer entry))
+    (when (agents-hud--heading-group-at-point)
+      (agents-hud-toggle-collapse))))
 
 (defun agents-hud-peek ()
   "Show the current line's buffer in the main window without leaving the panel."

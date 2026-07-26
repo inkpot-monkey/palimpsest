@@ -20,35 +20,41 @@
 (require 'cl-lib)
 (require 'agents-hud)
 
-;;; --- waiting predicate -------------------------------------------------------
+;;; --- waiting = selection prompt on screen ------------------------------------
 
-(ert-deftest agents-hud-test-waiting-from-pending ()
-  "A quiet pending buffer is waiting; one still streaming output is not.
-proc-notify's pending flag has no timestamp and only clears when you visit the
-buffer, so it is trusted only while the terminal is quiet (past the cutoff).
-With no now/cutoff it is trusted unconditionally (back-compat)."
-  (should (agents-hud--waiting-p t nil nil))
-  (should (agents-hud--waiting-p t 100.0 200.0))
-  ;; quiet past the cutoff (10s idle, cutoff 3s): pending -> waiting
-  (should (agents-hud--waiting-p t nil 100.0 110.0 3.0))
-  ;; fresh activity within the cutoff, stale/no bell: streaming, NOT waiting
-  (should-not (agents-hud--waiting-p t nil 100.0 100.5 3.0))
-  (should-not (agents-hud--waiting-p t 50.0 100.0 100.5 3.0))
-  ;; a bell with nothing produced since it still wins, even within the cutoff
-  (should (agents-hud--waiting-p t 100.0 100.0 100.5 3.0)))
+(ert-deftest agents-hud-test-selection-prompt ()
+  "The live-screen scan matches a Claude Code picker, not the idle input box."
+  (with-temp-buffer
+    ;; idle input box: `❯' followed by placeholder text, mode footer -> no
+    (insert
+     "some earlier output\n"
+     "❯ Try \"refactor init.el\"\n"
+     "  ⏵⏵ auto mode on (shift+tab to cycle)\n")
+    (should-not (agents-hud--selection-prompt-p (current-buffer)))
+    ;; a live selection prompt at the bottom -> yes (caret on a number + footer)
+    (erase-buffer)
+    (insert
+     "What should I do with the file?\n"
+     "❯ 1. Discard it (Recommended)\n"
+     "  2. Keep & fix in place\n"
+     "  3. Leave it for now\n"
+     "Enter to select · Tab/Arrow keys to navigate · Esc to cancel\n")
+    (should (agents-hud--selection-prompt-p (current-buffer)))))
 
-(ert-deftest agents-hud-test-waiting-from-bell ()
-  "A bell with no output since it means waiting; later output clears it."
-  ;; bell rang, no activity at all -> waiting
-  (should (agents-hud--waiting-p nil 100.0 nil))
-  ;; last activity was before the bell -> waiting
-  (should (agents-hud--waiting-p nil 100.0 90.0))
-  ;; activity after the bell (a new turn started) -> not waiting
-  (should-not (agents-hud--waiting-p nil 100.0 110.0)))
-
-(ert-deftest agents-hud-test-waiting-none ()
-  "No pending and no bell is never waiting."
-  (should-not (agents-hud--waiting-p nil nil 100.0)))
+(ert-deftest agents-hud-test-selection-prompt-scrollback ()
+  "A prompt scrolled up out of the live screen is not counted as waiting."
+  (with-temp-buffer
+    (let ((agents-hud-selection-scan-lines 10))
+      (insert
+       "❯ 1. An option you already chose\n"
+       "Enter to select · Esc to cancel\n")
+      ;; push it above the scan window with plain output, end at an idle box
+      (dotimes (i 20)
+        (insert (format "idle output line %d\n" i)))
+      (insert
+       "❯ Try \"something\"\n  ⏸ manual mode on · ? for shortcuts\n")
+      (should-not
+       (agents-hud--selection-prompt-p (current-buffer))))))
 
 ;;; --- interaction-repaint suppression -----------------------------------------
 
@@ -254,6 +260,33 @@ the display repaint firing ~ms before `ghostel--focus-change'."
     (should
      (equal "feat/backups-board" (agents-hud--entry-label e t)))))
 
+(ert-deftest agents-hud-test-entry-name ()
+  "The row name is the instance, else worktree, else repo, else path basename."
+  ;; instance wins
+  (should
+   (equal
+    "email"
+    (agents-hud--entry-name
+     (agents-hud-test--entry :instance "email" :worktree "feat/x"))))
+  ;; no instance -> worktree tag
+  (should
+   (equal
+    "feat/x"
+    (agents-hud--entry-name
+     (agents-hud-test--entry :worktree "feat/x" :branch "feat/x"))))
+  ;; no instance/worktree -> repo basename
+  (should
+   (equal
+    "nixos"
+    (agents-hud--entry-name
+     (agents-hud-test--entry :project "/home/me/code/nixos"))))
+  ;; nothing but a path -> its basename
+  (should
+   (equal
+    "logs"
+    (agents-hud--entry-name
+     (agents-hud-test--entry :path "/var/logs")))))
+
 ;;; --- grouping ----------------------------------------------------------------
 
 (ert-deftest agents-hud-test-group-stable-order ()
@@ -321,6 +354,15 @@ the display repaint firing ~ms before `ghostel--focus-change'."
            :path "/var/logs"))
          (groups (agents-hud--group-by-project (list e))))
     (should (equal "/var/logs" (car (car groups))))))
+
+(ert-deftest agents-hud-test-group-collapsed ()
+  "A group key reads collapsed only while present in the fold set."
+  (let ((agents-hud--collapsed (make-hash-table :test 'equal)))
+    (should-not (agents-hud--group-collapsed-p "/p/nixos"))
+    (should-not (agents-hud--group-collapsed-p nil))
+    (puthash "/p/nixos" t agents-hud--collapsed)
+    (should (agents-hud--group-collapsed-p "/p/nixos"))
+    (should-not (agents-hud--group-collapsed-p "/p/other"))))
 
 ;;; --- status label (no timing) ------------------------------------------------
 
@@ -402,14 +444,6 @@ the display repaint firing ~ms before `ghostel--focus-change'."
        (agents-hud-test--entry :state 'dead :exit 1))))))
 
 ;;; --- picker candidate decoration / recovery ----------------------------------
-
-(ert-deftest agents-hud-test-type-icon-fallback ()
-  "Without nerd-icons the type icon falls back to the plain glyph."
-  ;; nerd-icons is not loaded in the test image, so fboundp is nil.
-  (should
-   (equal agents-hud-claude-glyph (agents-hud--type-icon 'claude)))
-  (should
-   (equal agents-hud-shell-glyph (agents-hud--type-icon 'shell))))
 
 (ert-deftest agents-hud-test-consult-candidates ()
   "Consult candidates are the live buffers' plain names (attention-sorted)."
@@ -530,8 +564,6 @@ the display repaint firing ~ms before `ghostel--focus-change'."
 (ert-deftest agents-hud-test-state-icon-face ()
   "Each state maps to its configured icon and a distinct face."
   (should
-   (equal agents-hud-working-icon (agents-hud--state-icon 'working)))
-  (should
    (equal agents-hud-waiting-icon (agents-hud--state-icon 'waiting)))
   (should
    (equal agents-hud-ready-icon (agents-hud--state-icon 'ready)))
@@ -540,6 +572,22 @@ the display repaint firing ~ms before `ghostel--focus-change'."
    (eq 'agents-hud-waiting-face (agents-hud--state-face 'waiting)))
   (should
    (eq 'agents-hud-working-face (agents-hud--state-face 'working))))
+
+(ert-deftest agents-hud-test-working-spinner ()
+  "Working shows the current spinner frame, or the static icon with no frames."
+  ;; frames advance with the index (modulo the frame count)
+  (let ((agents-hud-working-frames '("a" "b" "c")))
+    (let ((agents-hud--spinner-index 0))
+      (should (equal "a" (agents-hud--state-icon 'working))))
+    (let ((agents-hud--spinner-index 1))
+      (should (equal "b" (agents-hud--state-icon 'working))))
+    (let ((agents-hud--spinner-index 4)) ; wraps: 4 mod 3 = 1
+      (should (equal "b" (agents-hud--state-icon 'working)))))
+  ;; no frames -> the static working icon
+  (let ((agents-hud-working-frames nil))
+    (should
+     (equal
+      agents-hud-working-icon (agents-hud--state-icon 'working)))))
 
 ;;; --- buffer-name parsing -----------------------------------------------------
 
