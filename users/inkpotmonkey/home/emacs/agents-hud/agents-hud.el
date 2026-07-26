@@ -76,6 +76,7 @@
                   (&rest args))
 (declare-function avy-process "avy"
                   (candidates &optional overlay-fn cleanup-fn))
+(declare-function file-notify-valid-p "filenotify" (descriptor))
 (defvar avy-action)
 (defvar avy-keys)
 (defvar avy-style)
@@ -572,6 +573,73 @@ not the directory basename of a linked one.  A detached HEAD yields nil."
           (puthash key (or val 'none) agents-hud--branch-cache)
           val)))))
 
+;; A branch switch made outside Emacs (a shell `git checkout') leaves the branch
+;; cache stale until the next explicit `agents-hud-refresh'.  No in-Emacs hook
+;; sees an external switch, but the filesystem does: a switch rewrites the git
+;; dir's HEAD symref (a plain commit does NOT — it moves refs/heads/…, HEAD stays
+;; put), so a `file-notify' watch on the git dir catches switches with no noise.
+;; When HEAD changes we drop the branch/worktree caches; the next render
+;; re-resolves.  Watching the DIRECTORY (not the HEAD file) survives git's
+;; atomic HEAD.lock→HEAD rename.
+
+(defvar agents-hud--gitdir-cache (make-hash-table :test 'equal)
+  "Memoises a directory's absolute git dir (\\='none = not a repo).")
+
+(defun agents-hud--gitdir (dir)
+  "Return the absolute git dir governing DIR (the linked worktree's own), or nil."
+  (when (and dir (file-directory-p dir))
+    (let* ((key (directory-file-name (expand-file-name dir)))
+           (cached (gethash key agents-hud--gitdir-cache 'miss)))
+      (if (not (eq cached 'miss))
+          (unless (eq cached 'none)
+            cached)
+        (let* ((gd
+                (agents-hud--git key
+                                 "rev-parse"
+                                 "--absolute-git-dir"))
+               (val (and gd (file-directory-p gd) gd)))
+          (puthash key (or val 'none) agents-hud--gitdir-cache)
+          val)))))
+
+(defvar agents-hud--head-watches (make-hash-table :test 'equal)
+  "Maps a watched git dir to its `file-notify' descriptor (or \\='failed).")
+
+(defun agents-hud--on-head-change (event)
+  "`file-notify' callback: drop the branch/worktree caches when a HEAD changes.
+EVENT is (DESCRIPTOR ACTION FILE …).  Only a change to a file named HEAD counts
+\(a branch switch); the git dir's other churn — index, logs, ref locks — is
+ignored.  git's atomic HEAD.lock→HEAD rename can then stop this watch;
+`agents-hud--watch-head' re-arms a stopped watch on the next render."
+  (with-demoted-errors "agents-hud head-watch: %S"
+    (when (and (memq (nth 1 event) '(changed created renamed))
+               (equal
+                (file-name-nondirectory (or (nth 2 event) ""))
+                "HEAD"))
+      (clrhash agents-hud--branch-cache)
+      (clrhash agents-hud--worktree-cache))))
+
+(defun agents-hud--watch-head (dir)
+  "Ensure a live `file-notify' watch on DIR's git dir so switches self-refresh.
+Re-arms if the prior watch is gone or was stopped (`file-notify-valid-p') —
+git's HEAD rewrite can stop it — so each render (≤1s) keeps it armed.  Cheap
+once set up (a cached git-dir lookup, then a validity check); silently does
+nothing without `file-notify' or outside a repo."
+  (when (fboundp 'file-notify-add-watch)
+    (when-let ((gitdir (agents-hud--gitdir dir)))
+      (let ((cur (gethash gitdir agents-hud--head-watches)))
+        (unless (and cur
+                     (not (eq cur 'failed))
+                     (ignore-errors
+                       (file-notify-valid-p cur)))
+          (puthash
+           gitdir
+           (condition-case nil
+               (file-notify-add-watch
+                gitdir '(change) #'agents-hud--on-head-change)
+             (error
+              'failed))
+           agents-hud--head-watches))))))
+
 (defun agents-hud--buffer-project (buffer)
   "Return BUFFER's project root, collapsing git worktrees onto their repo.
 Falls back to `project-current' when the buffer is in a non-git project, and
@@ -683,20 +751,24 @@ last redraw `float-time'.  Priority: dead → waiting → working → ready."
             ('working (or working-since activity now))
             ('ready (or activity now))
             (_ nil)))
+         (dir (agents-hud--buffer-dir buffer))
          (project (agents-hud--buffer-project buffer)))
+    ;; Watch this repo's HEAD so an external branch switch re-resolves on its
+    ;; own (idempotent per git dir — see `agents-hud--watch-head').
+    (agents-hud--watch-head dir)
     (agents-hud-entry--create
      :buffer buffer
      :type type
      :project project
-     :worktree
-     (agents-hud--worktree-tag
-      (agents-hud--buffer-dir buffer) project)
-     :branch (agents-hud--branch (agents-hud--buffer-dir buffer))
+     :worktree (agents-hud--worktree-tag dir project)
+     :branch (agents-hud--branch dir)
      :path (agents-hud--buffer-path buffer)
-     :instance (agents-hud--buffer-instance buffer type)
+     :instance
+     (agents-hud--buffer-instance buffer type)
      :state state
      :since since
-     :exit (buffer-local-value 'agents-hud--exit buffer))))
+     :exit
+     (buffer-local-value 'agents-hud--exit buffer))))
 
 (defun agents-hud--entries (&optional now)
   "Return `agents-hud-entry' snapshots for all live Claude/ghostel buffers."

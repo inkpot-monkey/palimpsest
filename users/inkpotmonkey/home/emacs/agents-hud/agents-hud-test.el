@@ -364,6 +364,20 @@ the display repaint firing ~ms before `ghostel--focus-change'."
     (should (agents-hud--group-collapsed-p "/p/nixos"))
     (should-not (agents-hud--group-collapsed-p "/p/other"))))
 
+(ert-deftest agents-hud-test-head-change ()
+  "A HEAD change drops the branch/worktree caches; other git churn does not."
+  (let ((agents-hud--branch-cache (make-hash-table :test 'equal))
+        (agents-hud--worktree-cache (make-hash-table :test 'equal)))
+    (puthash "/p" "main" agents-hud--branch-cache)
+    (puthash "/p" "main" agents-hud--worktree-cache)
+    ;; churn on a non-HEAD file (the index, a ref lock) — caches untouched
+    (agents-hud--on-head-change '(desc changed "/repo/.git/index"))
+    (should (= 1 (hash-table-count agents-hud--branch-cache)))
+    ;; a HEAD rewrite (a branch switch) — both caches cleared
+    (agents-hud--on-head-change '(desc changed "/repo/.git/HEAD"))
+    (should (= 0 (hash-table-count agents-hud--branch-cache)))
+    (should (= 0 (hash-table-count agents-hud--worktree-cache)))))
+
 ;;; --- status label (no timing) ------------------------------------------------
 
 (ert-deftest agents-hud-test-status-label ()
