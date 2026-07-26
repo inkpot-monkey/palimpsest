@@ -34,17 +34,17 @@
 ;;               caused purely by you (a focus event from looking at the buffer,
 ;;               or a keystroke echo) is discounted — see
 ;;               `agents-hud-interaction-grace'.
-;;   🙋 waiting — Claude is BLOCKED on a selection prompt and needs you to
+;;   ◆ waiting — Claude is BLOCKED on a selection prompt and needs you to
 ;;               choose: a permission dialog, plan approval, the shift-tab mode
 ;;               menu.  Detected from the live screen (see
 ;;               `agents-hud--selection-prompt-p') — the numbered-option picker
 ;;               with its `❯ N.' caret and `Enter to select …' footer — NOT the
 ;;               end-of-turn bell, which fires every turn and would flag every
 ;;               finished session as needing you.
-;;   🫡 ready   — a live process, not working and not at a selection prompt:
+;;   ● ready   — a live process, not working and not at a selection prompt:
 ;;               standing by for input.  A Claude session that finished its turn
 ;;               and a shell idling at its prompt both land here.
-;;   💀 dead    — no live process (only visible if the buffer lingers;
+;;   ✕ dead    — no live process (only visible if the buffer lingers;
 ;;               `ghostel-kill-buffer-on-exit' defaults to t, so exited
 ;;               terminals usually vanish rather than show here).
 ;;
@@ -90,7 +90,7 @@
 (defcustom agents-hud-idle-seconds 3.0
   "Seconds of terminal quiet after which a working buffer stops counting as busy.
 A redraw within this window counts the buffer as working (the spinner); once
-redraws stop for this long (and no shell command is running) it drops to 🫡
+redraws stop for this long (and no shell command is running) it drops to ●
 ready."
   :type 'number)
 
@@ -109,7 +109,7 @@ glyph in place, so the animation is smooth without re-rendering the buffer."
   "Enter to select\\|Tab/Arrow keys to navigate\\|❯ *[0-9]+\\."
   "Regexp marking a Claude Code selection prompt on a terminal's live screen.
 When it matches the bottom of a session (the last
-`agents-hud-selection-scan-lines' lines) the session is 🙋 waiting — Claude is
+`agents-hud-selection-scan-lines' lines) the session is ◆ waiting — Claude is
 blocked on a choice you must make.  The default matches the picker's `Enter to
 select …' / `Tab/Arrow keys to navigate' footer and its `❯ N.' selected-option
 caret (the idle input box shows `❯' followed by placeholder text, never a
@@ -119,7 +119,7 @@ number, so it does not match).  Retune if the CLI's prompt UI changes."
 (defcustom agents-hud-selection-scan-lines 20
   "How many trailing lines of a terminal to scan for a selection prompt.
 Kept small so only the live screen is searched: a prompt you already answered,
-scrolled up into scrollback, does not linger as a false 🙋 waiting."
+scrolled up into scrollback, does not linger as a false ◆ waiting."
   :type 'integer)
 
 (defcustom agents-hud-interaction-grace 0.4
@@ -168,16 +168,23 @@ width, so frames of any width stay aligned.  Set to nil for a static
   "Static icon for the working state, used when `agents-hud-working-frames' is nil."
   :type 'string)
 
-(defcustom agents-hud-waiting-icon "🙋"
-  "Icon for the 🙋 waiting-on-you state."
+(defcustom agents-hud-waiting-icon "◆"
+  "Icon for the ◆ waiting-on-you state.
+A single-width diamond tinted amber by `agents-hud-waiting-face' — the attention
+mark in the same mono-glyph family as the ● ready dot and the working spinner."
   :type 'string)
 
-(defcustom agents-hud-ready-icon "🫡"
-  "Icon for the 🫡 ready state (live, quiet, standing by for input)."
+(defcustom agents-hud-ready-icon "●"
+  "Icon for the ● ready state (live, quiet, standing by for input).
+A plain text circle tinted green by `agents-hud-ready-face' — the same
+mono-glyph-coloured-by-face style as the working spinner, and the universal
+\"online / available\" green dot."
   :type 'string)
 
-(defcustom agents-hud-dead-icon "💀"
-  "Icon for the 💀 dead state."
+(defcustom agents-hud-dead-icon "✕"
+  "Icon for the ✕ dead state.
+A single-width cross tinted grey by `agents-hud-dead-face', in the same
+mono-glyph family as the other state icons."
   :type 'string)
 
 (defcustom agents-hud-expanded-icon "▾"
@@ -202,24 +209,35 @@ Rendered with `nerd-icons-faicon'."
 
 (defcustom agents-hud-show-state-label nil
   "When non-nil, spell out the state word (working/ready/…) in the sidebar.
-Off by default: the leading state icon (spinner, 🙋, 🫡, 💀) carries the status
+Off by default: the leading state icon (spinner, ◆, ●, ✕) carries the status
 and the row stays compact.  A dead buffer's exit code is shown either way."
   :type 'boolean)
 
-(defface agents-hud-working-face '((t :inherit warning))
-  "Face for the working state icon and status text.")
+;; The four state faces make a distinct blue/amber/green/grey palette.  They
+;; inherit standard semantic faces (`link'/`warning'/`success'/`shadow'), so the
+;; colours come from whatever theme is active — no theme-specific wiring — and
+;; follow along automatically when you switch themes.
 
-(defface agents-hud-waiting-face '((t :inherit success :weight bold))
+(defface agents-hud-working-face
+  '((t :inherit link :underline nil :weight normal))
+  "Face for the working spinner icon and status text.
+Blue (via `link', underline stripped) — \"in progress\", distinct from the amber
+attention state.  Tints the monochrome spinner glyph.")
+
+(defface agents-hud-waiting-face '((t :inherit warning :weight bold))
   "Face for the waiting-on-you state icon and status text.
-Green (via `success') rather than red: a session ready for you is an
-invitation, not an error.  Colour emoji ignore this `:foreground', so the
-green only tints the accompanying label text — the 🙋 glyph keeps its own hue.")
+Amber (via `warning') and bold: the attention state — Claude is blocked on a
+choice you must make — warm and prominent against the calm green ready dot.
+Tints the ◆ glyph, which carries no colour of its own.")
 
-(defface agents-hud-ready-face '((t :inherit shadow))
-  "Face for the ready state icon and status text.")
+(defface agents-hud-ready-face '((t :inherit success))
+  "Face for the ready state icon and status text.
+Green (via `success'): a session standing by, ready for input — the \"online /
+available\" dot.  Tints the ● glyph, which carries no colour of its own.")
 
-(defface agents-hud-dead-face '((t :inherit font-lock-comment-face))
-  "Face for the dead state icon and status text.")
+(defface agents-hud-dead-face '((t :inherit shadow))
+  "Face for the dead state icon and status text.
+Dimmed grey (via `shadow'): an exited process, faded out.  Tints the ✕ glyph.")
 
 (defface agents-hud-heading-face '((t :inherit bold))
   "Face for project group headings in the sidebar.")
@@ -384,10 +402,10 @@ For `ghostel-exit-functions', which fires before the buffer may be killed."
 (defun agents-hud-setup ()
   "Install the state-tracking hooks and advice (idempotent).
 Wires redraw-activity stamping and exit recording on ghostel, the
-focus/keystroke interaction guards, and per-type completion icons on
-nerd-icons.  Safe to call when those packages are not yet loaded; the pieces
-attach as they become available.  Waiting is read from the live screen at
-render time (`agents-hud--selection-prompt-p'), so it needs no hook here."
+focus/keystroke interaction guards, and per-type completion icons on nerd-icons.
+Safe to call when those packages are not yet loaded; the pieces attach as they
+load.  Waiting is read from the live screen at render time
+\(`agents-hud--selection-prompt-p'), so it needs no hook here."
   (interactive)
   (unless agents-hud--setup-done
     (with-eval-after-load 'ghostel
@@ -600,7 +618,7 @@ ghostel buffers it is the title portion of `*ghostel: TITLE*'."
 The picker Claude Code puts up when it is blocked on your choice — a permission
 dialog, plan approval, the shift-tab mode menu — renders numbered options with a
 `❯' caret and an `Enter to select …' footer.  That, not the end-of-turn bell, is
-what 🙋 waiting means: the bell fires every turn and would flag every finished
+what ◆ waiting means: the bell fires every turn and would flag every finished
 session.  Only the last `agents-hud-selection-scan-lines' lines (the live
 screen) are searched, so a prompt already answered and scrolled up into history
 does not count."
