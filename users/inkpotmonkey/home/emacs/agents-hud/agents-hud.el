@@ -26,13 +26,14 @@
 ;;
 ;; STATUS MODEL (per buffer), four states:
 ;;
-;;   -\|/ working — the terminal is churning: either ghostel's own OSC-133
+;;   ⠋ working — the terminal is churning: either ghostel's own OSC-133
 ;;               `ghostel--command-running' flag is set (a shell command is
 ;;               running) or a redraw fired within `agents-hud-idle-seconds'.
-;;               Shown as a spinner (`agents-hud-working-frames') that advances
-;;               one frame per refresh.  A redraw caused purely by you (a focus
-;;               event from looking at the buffer, or a keystroke echo) is
-;;               discounted — see `agents-hud-interaction-grace'.
+;;               Shown as a spinner (`agents-hud-working-frames') animated in
+;;               place by a fast timer (`agents-hud-spinner-interval').  A redraw
+;;               caused purely by you (a focus event from looking at the buffer,
+;;               or a keystroke echo) is discounted — see
+;;               `agents-hud-interaction-grace'.
 ;;   🙋 waiting — Claude is BLOCKED on a selection prompt and needs you to
 ;;               choose: a permission dialog, plan approval, the shift-tab mode
 ;;               menu.  Detected from the live screen (see
@@ -98,6 +99,12 @@ ready."
 The tick also advances the displayed durations and flips working→ready."
   :type 'number)
 
+(defcustom agents-hud-spinner-interval 0.1
+  "Seconds between working-spinner frames while the panel is visible.
+A faster, lighter timer than the full re-render: it rewrites only the spinner
+glyph in place, so the animation is smooth without re-rendering the buffer."
+  :type 'number)
+
 (defcustom agents-hud-selection-prompt-regexp
   "Enter to select\\|Tab/Arrow keys to navigate\\|❯ *[0-9]+\\."
   "Regexp marking a Claude Code selection prompt on a terminal's live screen.
@@ -147,11 +154,12 @@ the first key."
   "Width in columns of the sidebar window."
   :type 'integer)
 
-(defcustom agents-hud-working-frames '("-" "\\" "|" "/")
-  "Frames cycled for the working indicator, one advanced per sidebar refresh.
-The default is Emacs's own indeterminate-progress spinner (the characters
-`progress-reporter' pulses through).  Any list of strings works — e.g. the clock
-faces \\='(\"🕐\" \"🕑\" …) or moon phases — and each row pads its icon to a fixed
+(defcustom agents-hud-working-frames
+  '("⠋" "⠙" "⠹" "⠸" "⠼" "⠴" "⠦" "⠧" "⠇" "⠏")
+  "Frames cycled for the working spinner (see `agents-hud-spinner-interval').
+The default is the braille-dot spinner familiar from modern CLIs.  Any list of
+strings works — the `progress-reporter' pulse \\='(\"-\" \"\\\\\" \"|\" \"/\"), clock
+faces \\='(\"🕐\" \"🕑\" …), moon phases — and each row pads its icon to a fixed
 width, so frames of any width stay aligned.  Set to nil for a static
 `agents-hud-working-icon' instead."
   :type '(repeat string))
@@ -887,6 +895,9 @@ either way, since no icon can convey it."
 (defvar agents-hud--timer nil
   "Repeating refresh timer, live only while the sidebar is shown.")
 
+(defvar agents-hud--spinner-timer nil
+  "Fast repeating timer that animates the working spinner, live with the panel.")
+
 (defvar agents-hud--inhibit-render nil
   "When non-nil, the refresh tick skips re-rendering the sidebar.
 Bound while `agents-hud-avy' waits for a keypress: the tick's `erase-buffer'
@@ -978,9 +989,13 @@ exit code always does)."
        (start (point)))
     (insert
      "  "
-     (propertize icon 'face face)
-     " "
-     (propertize name 'face face))
+     ;; Tag a working icon so `agents-hud--spin' can animate it in place.
+     (propertize icon
+                 'face
+                 face
+                 'agents-hud-spinner
+                 (eq state 'working))
+     " " (propertize name 'face face))
     (unless (string-empty-p status)
       (insert "  " (propertize status 'face face)))
     (insert "\n")
@@ -1004,7 +1019,6 @@ Global so the fold survives the timer's re-renders.")
 (defun agents-hud--render ()
   "Re-render the sidebar buffer from a fresh entry snapshot."
   (with-demoted-errors "agents-hud render: %S"
-    (cl-incf agents-hud--spinner-index)
     (let ((buf (get-buffer agents-hud--buffer-name)))
       (when (buffer-live-p buf)
         (with-current-buffer buf
@@ -1083,20 +1097,59 @@ its `erase-buffer' cannot wipe avy's label overlays out from under a keypress."
         (agents-hud--render))
     (agents-hud--stop-timer)))
 
+(defun agents-hud--spin ()
+  "Advance the working spinner in place, without a full re-render.
+Rewrites only the marked icon cells (see `agents-hud--insert-entry') via a
+`display' overlay property, so the animation is smooth — no `erase-buffer'
+flicker — and row positions and their entry properties are untouched.  A no-op
+with no visible panel or no working rows; the refresh tick stops it with the
+panel."
+  (with-demoted-errors "agents-hud spin: %S"
+    (let ((buf (get-buffer agents-hud--buffer-name)))
+      (when (and buf
+                 (get-buffer-window buf)
+                 agents-hud-working-frames)
+        (with-current-buffer buf
+          (cl-incf agents-hud--spinner-index)
+          (let ((glyph
+                 (propertize (truncate-string-to-width
+                              (agents-hud--working-icon) 2 0 ?\s)
+                             'face 'agents-hud-working-face))
+                (inhibit-read-only t)
+                (pos (point-min)))
+            (while (setq pos
+                         (text-property-not-all
+                          pos (point-max) 'agents-hud-spinner nil))
+              (let ((end
+                     (or (next-single-property-change
+                          pos 'agents-hud-spinner)
+                         (point-max))))
+                (put-text-property pos end 'display glyph)
+                (setq pos end)))))))))
+
 (defun agents-hud--start-timer ()
-  "Start the repeating refresh timer if not already running."
+  "Start the refresh and spinner timers if not already running."
   (unless (timerp agents-hud--timer)
     (setq agents-hud--timer
           (run-at-time
            agents-hud-refresh-interval
            agents-hud-refresh-interval
-           #'agents-hud--tick))))
+           #'agents-hud--tick)))
+  (unless (timerp agents-hud--spinner-timer)
+    (setq agents-hud--spinner-timer
+          (run-at-time
+           agents-hud-spinner-interval
+           agents-hud-spinner-interval
+           #'agents-hud--spin))))
 
 (defun agents-hud--stop-timer ()
-  "Stop the repeating refresh timer."
+  "Stop the refresh and spinner timers."
   (when (timerp agents-hud--timer)
     (cancel-timer agents-hud--timer))
-  (setq agents-hud--timer nil))
+  (setq agents-hud--timer nil)
+  (when (timerp agents-hud--spinner-timer)
+    (cancel-timer agents-hud--spinner-timer))
+  (setq agents-hud--spinner-timer nil))
 
 ;;;###autoload
 (defun agents-hud-toggle-sidebar ()
