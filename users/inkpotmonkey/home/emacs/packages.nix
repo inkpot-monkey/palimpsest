@@ -218,24 +218,53 @@ rec {
       '';
     };
 
-  # Live status view + switcher for Claude/ghostel buffers: one collector,
-  # rendered as a toggle-able side panel and a consult group.  Depends only on
-  # built-ins; claude-code / ghostel / consult / proc-notify are all SOFT
-  # (declare-function + fboundp guards) so the package — and its ERT suite —
-  # loads with nothing else present.  Tests run against the pure core.
-  agents-hud = epkgs.melpaBuild {
-    pname = "agents-hud";
+  # The live Claude/ghostel session as one concept: discovery, the
+  # *claude:DIR:name* name parse, and the four-state status model
+  # (working/waiting/ready/dead) with its ghostel signal-collection adapter.
+  # agents-hud, project-agent and proc-notify read status from here instead of
+  # each re-deriving it.  Depends only on built-ins; ghostel is SOFT
+  # (declare-function + boundp guards) so the package — and its ERT suite — loads
+  # with nothing else present.  Tests run against the pure core.
+  claude-session = epkgs.melpaBuild {
+    pname = "claude-session";
     version = "0.1";
-    src = ./agents-hud;
+    src = ./claude-session;
     doCheck = true;
     checkPhase = ''
       runHook preCheck
       ${epkgs.emacs}/bin/emacs --batch -L "$src" -l ert \
-        -l "$src/agents-hud-test.el" \
+        -l "$src/claude-session-test.el" \
         -f ert-run-tests-batch-and-exit
       runHook postCheck
     '';
   };
+
+  # Live status view + switcher for Claude/ghostel buffers, rendered as a
+  # toggle-able side panel and a consult group.  Owns only the rendering side —
+  # sort, grouping, sidebar/consult decoration, git worktree/branch labels; the
+  # session status model it displays comes from claude-session.  claude-code /
+  # ghostel / consult are SOFT (declare-function + fboundp guards) so the package
+  # — and its ERT suite — loads with nothing but claude-session present.
+  agents-hud =
+    let
+      # agents-hud `(require 'claude-session)'; the ERT wrapper (a bare `emacs')
+      # needs it on the load-path, like proc-notify's alert/consult wrapper.
+      testEmacs = epkgs.emacsWithPackages (_: [ claude-session ]);
+    in
+    epkgs.melpaBuild {
+      pname = "agents-hud";
+      version = "0.1";
+      src = ./agents-hud;
+      packageRequires = [ claude-session ];
+      doCheck = true;
+      checkPhase = ''
+        runHook preCheck
+        ${testEmacs}/bin/emacs --batch -L "$src" -l ert \
+          -l "$src/agents-hud-test.el" \
+          -f ert-run-tests-batch-and-exit
+        runHook postCheck
+      '';
+    };
 
   ement-glue = epkgs.melpaBuild {
     pname = "ement-glue";

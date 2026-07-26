@@ -2,12 +2,14 @@
 
 ;;; Commentary:
 
-;; ERT tests for the pure / heuristic core of agents-hud: the waiting
-;; predicate, the state resolver, the attention-first sort, project grouping,
-;; duration formatting, status text (including dead-with-exit-code), and the
-;; buffer-name parsers.  The live front-ends (sidebar window, consult source)
-;; and the terminal hooks are NOT exercised here — they need ghostel / consult /
-;; a graphical frame; the logic they render is all covered below.
+;; ERT tests for agents-hud's rendering-side logic: the attention-first sort,
+;; project grouping (stable first-seen order), entry labels, status text
+;; (including dead-with-exit-code), the sidebar/consult decoration, avy
+;; quick-select, and the git HEAD-watch cache.  The session status model itself
+;; (waiting predicate, state resolver, name parsers) lives in claude-session and
+;; is tested in claude-session-test.el.  The live front-ends (sidebar window,
+;; consult source) are NOT exercised here — they need ghostel / consult / a
+;; graphical frame; the logic they render is all covered below.
 ;;
 ;; Run standalone:
 ;;   emacs --batch -L . -l ert -l agents-hud-test.el \
@@ -20,158 +22,11 @@
 (require 'cl-lib)
 (require 'agents-hud)
 
-;;; --- waiting = selection prompt on screen ------------------------------------
-
-(ert-deftest agents-hud-test-selection-prompt ()
-  "The live-screen scan matches a Claude Code picker, not the idle input box."
-  (with-temp-buffer
-    ;; idle input box: `❯' followed by placeholder text, mode footer -> no
-    (insert
-     "some earlier output\n"
-     "❯ Try \"refactor init.el\"\n"
-     "  ⏵⏵ auto mode on (shift+tab to cycle)\n")
-    (should-not (agents-hud--selection-prompt-p (current-buffer)))
-    ;; a live selection prompt at the bottom -> yes (caret on a number + footer)
-    (erase-buffer)
-    (insert
-     "What should I do with the file?\n"
-     "❯ 1. Discard it (Recommended)\n"
-     "  2. Keep & fix in place\n"
-     "  3. Leave it for now\n"
-     "Enter to select · Tab/Arrow keys to navigate · Esc to cancel\n")
-    (should (agents-hud--selection-prompt-p (current-buffer)))))
-
-(ert-deftest agents-hud-test-selection-prompt-scrollback ()
-  "A prompt scrolled up out of the live screen is not counted as waiting."
-  (with-temp-buffer
-    (let ((agents-hud-selection-scan-lines 10))
-      (insert
-       "❯ 1. An option you already chose\n"
-       "Enter to select · Esc to cancel\n")
-      ;; push it above the scan window with plain output, end at an idle box
-      (dotimes (i 20)
-        (insert (format "idle output line %d\n" i)))
-      (insert
-       "❯ Try \"something\"\n  ⏸ manual mode on · ? for shortcuts\n")
-      (should-not
-       (agents-hud--selection-prompt-p (current-buffer))))))
-
-;;; --- interaction-repaint suppression -----------------------------------------
-
-(ert-deftest agents-hud-test-latest-time ()
-  "`agents-hud--latest-time' returns the largest non-nil stamp, else nil."
-  (should (= 5.0 (agents-hud--latest-time 3.0 5.0 1.0)))
-  (should (= 5.0 (agents-hud--latest-time nil 5.0 nil)))
-  (should (= 5.0 (agents-hud--latest-time 5.0)))
-  (should (null (agents-hud--latest-time nil nil)))
-  (should (null (agents-hud--latest-time))))
-
-(ert-deftest agents-hud-test-interaction-suppressed ()
-  "An interaction-window redraw on a quiet buffer is swallowed; an active one not.
-The interaction time is a focus change or a keystroke (the caller passes the
-later of the two).  Args: NOW INTERACTION ACTIVITY GRACE CUTOFF (0.4, 3.0)."
-  ;; interaction 0.1s ago, buffer quiet (last activity 10s ago) -> suppress
-  (should
-   (agents-hud--interaction-suppressed-p 100.0 99.9 90.0 0.4 3.0))
-  ;; interaction 0.1s ago, buffer quiet, never had activity -> suppress
-  (should
-   (agents-hud--interaction-suppressed-p 100.0 99.9 nil 0.4 3.0))
-  ;; interaction 0.1s ago BUT buffer already active (0.2s ago) -> do NOT suppress
-  (should-not
-   (agents-hud--interaction-suppressed-p 100.0 99.9 99.8 0.4 3.0))
-  ;; quiet buffer but interaction was long ago (1s > grace) -> do NOT suppress
-  (should-not
-   (agents-hud--interaction-suppressed-p 100.0 99.0 90.0 0.4 3.0))
-  ;; no interaction recorded -> never suppress
-  (should-not
-   (agents-hud--interaction-suppressed-p 100.0 nil 90.0 0.4 3.0))
-  ;; grace disabled (0) -> never suppress
-  (should-not
-   (agents-hud--interaction-suppressed-p 100.0 99.9 90.0 0 3.0)))
-
-(ert-deftest agents-hud-test-focus-rollback ()
-  "A repaint stamp that landed just before a focus change is rolled back.
-Args: NOW ACTIVITY ACTIVITY-PREV GRACE CUTOFF (grace 0.4, cutoff 3.0).  Models
-the display repaint firing ~ms before `ghostel--focus-change'."
-  ;; stamped 0.02s ago, was quiet before (prev 90s back) -> roll back
-  (should (agents-hud--focus-rollback-p 100.0 99.98 10.0 0.4 3.0))
-  ;; stamped 0.02s ago, never had prior activity -> roll back
-  (should (agents-hud--focus-rollback-p 100.0 99.98 nil 0.4 3.0))
-  ;; stamped 0.02s ago BUT was already active before (prev 0.1s earlier) -> keep
-  (should-not
-   (agents-hud--focus-rollback-p 100.0 99.98 99.88 0.4 3.0))
-  ;; last stamp is old (1s > grace) -> nothing recent to undo
-  (should-not (agents-hud--focus-rollback-p 100.0 99.0 10.0 0.4 3.0))
-  ;; no activity at all -> nothing to undo
-  (should-not (agents-hud--focus-rollback-p 100.0 nil nil 0.4 3.0))
-  ;; grace disabled (0) -> never roll back
-  (should-not (agents-hud--focus-rollback-p 100.0 99.98 10.0 0 3.0)))
-
-;;; --- state resolver ----------------------------------------------------------
-
-(ert-deftest agents-hud-test-state-dead ()
-  "A buffer with no live process is dead, whatever else is set."
-  (should
-   (eq
-    'dead
-    (agents-hud--compute-state
-     :live nil
-     :waiting t
-     :activity 100.0
-     :now 100.0)))
-  (should
-   (eq
-    'dead
-    (agents-hud--compute-state :live nil :cmd-running t :now 100.0))))
-
-(ert-deftest agents-hud-test-state-waiting-beats-working ()
-  "Waiting outranks working even with fresh activity."
-  (should
-   (eq
-    'waiting
-    (agents-hud--compute-state
-     :live t
-     :waiting t
-     :activity 100.0
-     :now 100.5
-     :cutoff 3.0))))
-
-(ert-deftest agents-hud-test-state-working-from-cmd ()
-  "The OSC-133 command-running flag makes a buffer working."
-  (should
-   (eq
-    'working
-    (agents-hud--compute-state
-     :live t
-     :cmd-running t
-     :activity nil
-     :now 100.0))))
-
-(ert-deftest agents-hud-test-state-working-from-activity ()
-  "Recent redraw activity (within cutoff) is working."
-  (should
-   (eq
-    'working
-    (agents-hud--compute-state
-     :live t
-     :activity 99.0
-     :now 100.0
-     :cutoff 3.0))))
-
-(ert-deftest agents-hud-test-state-ready ()
-  "Live but quiet past the cutoff, not waiting, is ready."
-  (should
-   (eq
-    'ready
-    (agents-hud--compute-state
-     :live t
-     :activity 90.0
-     :now 100.0
-     :cutoff 3.0)))
-  (should
-   (eq
-    'ready
-    (agents-hud--compute-state :live t :activity nil :now 100.0))))
+;; The waiting predicate, interaction-repaint guards, state resolver and
+;; buffer-name parsers moved to claude-session; their tests live in
+;; claude-session-test.el.  What remains here exercises agents-hud's own
+;; rendering-side logic: sort, grouping, labels, status text, the sidebar/consult
+;; decoration, avy, and the git HEAD-watch cache.
 
 ;;; --- helpers to build entries ------------------------------------------------
 
@@ -602,38 +457,6 @@ the display repaint firing ~ms before `ghostel--focus-change'."
     (should
      (equal
       agents-hud-working-icon (agents-hud--state-icon 'working)))))
-
-;;; --- buffer-name parsing -----------------------------------------------------
-
-(ert-deftest agents-hud-test-instance-claude ()
-  "The instance name is parsed from a claude buffer name suffix."
-  (with-temp-buffer
-    (rename-buffer "*claude:/home/me/code/nixos/:review*" t)
-    (should
-     (equal
-      "review"
-      (agents-hud--buffer-instance (current-buffer) 'claude))))
-  (with-temp-buffer
-    (rename-buffer "*claude:/home/me/code/nixos/*" t)
-    (should
-     (null (agents-hud--buffer-instance (current-buffer) 'claude)))))
-
-(ert-deftest agents-hud-test-instance-ghostel ()
-  "The title is parsed from a plain ghostel buffer name."
-  (with-temp-buffer
-    (rename-buffer "*ghostel: rk1b*" t)
-    (should
-     (equal
-      "rk1b" (agents-hud--buffer-instance (current-buffer) 'shell)))))
-
-(ert-deftest agents-hud-test-buffer-type ()
-  "Buffer type is claude for *claude:* names, shell otherwise."
-  (with-temp-buffer
-    (rename-buffer "*claude:/x/*" t)
-    (should (eq 'claude (agents-hud--buffer-type (current-buffer)))))
-  (with-temp-buffer
-    (rename-buffer "*ghostel: sh*" t)
-    (should (eq 'shell (agents-hud--buffer-type (current-buffer))))))
 
 (provide 'agents-hud-test)
 ;;; agents-hud-test.el ends here

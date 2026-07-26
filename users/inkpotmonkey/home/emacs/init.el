@@ -1336,6 +1336,14 @@ paste its expansion.  On no match, forward a real TAB to the child process."
    (add-to-list 'consult-buffer-sources 'proc-notify-consult-source
                 'append)))
 
+;; claude-session — the single owner of "a live Claude/ghostel session and what
+;; it is doing": discovery, `*claude:DIR:name*' parsing, and the four-state
+;; status model (working/waiting/ready/dead) with its ghostel signal-collection
+;; adapter.  `:demand t' + `claude-session-setup' wires the redraw/focus/keystroke
+;; hooks at daemon startup so the status is live before any reader (agents-hud
+;; sidebar, and — later — project-agent / proc-notify) asks for it.
+(use-package claude-session :demand t :config (claude-session-setup))
+
 ;; agents-hud — live status view + switcher for the terminal/agent buffers you
 ;; run: every claude-code session and every plain ghostel terminal.  One
 ;; collector (redraw-activity / bell / OSC-133 stamps → ⧗ working / ! waiting /

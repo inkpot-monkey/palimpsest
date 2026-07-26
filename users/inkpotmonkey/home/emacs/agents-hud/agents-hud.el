@@ -24,42 +24,26 @@
 ;;     buffers as a narrowable consult group (folded into `consult-buffer', or
 ;;     opened directly), attention-sorted, with `SPC' preview.
 ;;
-;; STATUS MODEL (per buffer), four states:
+;; STATUS MODEL (per buffer), four states — working / ◆ waiting / ● ready /
+;; ✕ dead — is owned by `claude-session' (which also owns discovery and the
+;; `*claude:DIR:name*' name parse); agents-hud reads it through
+;; `claude-session-at'.  See that module for how each state is detected.  The
+;; sidebar animates ⠋ working as a spinner (`agents-hud-working-frames') and
+;; floats ◆ waiting to the top; a ✕ dead row shows its exit code.
 ;;
-;;   ⠋ working — the terminal is churning: either ghostel's own OSC-133
-;;               `ghostel--command-running' flag is set (a shell command is
-;;               running) or a redraw fired within `agents-hud-idle-seconds'.
-;;               Shown as a spinner (`agents-hud-working-frames') animated in
-;;               place by a fast timer (`agents-hud-spinner-interval').  A redraw
-;;               caused purely by you (a focus event from looking at the buffer,
-;;               or a keystroke echo) is discounted — see
-;;               `agents-hud-interaction-grace'.
-;;   ◆ waiting — Claude is BLOCKED on a selection prompt and needs you to
-;;               choose: a permission dialog, plan approval, the shift-tab mode
-;;               menu.  Detected from the live screen (see
-;;               `agents-hud--selection-prompt-p') — the numbered-option picker
-;;               with its `❯ N.' caret and `Enter to select …' footer — NOT the
-;;               end-of-turn bell, which fires every turn and would flag every
-;;               finished session as needing you.
-;;   ● ready   — a live process, not working and not at a selection prompt:
-;;               standing by for input.  A Claude session that finished its turn
-;;               and a shell idling at its prompt both land here.
-;;   ✕ dead    — no live process (only visible if the buffer lingers;
-;;               `ghostel-kill-buffer-on-exit' defaults to t, so exited
-;;               terminals usually vanish rather than show here).
-;;
-;; The state-tracking side effects (activity stamp, exit code) are installed by
-;; `agents-hud-setup', which is idempotent and degrades quietly when ghostel /
-;; claude-code are absent.  What the two front-ends render is derived by pure
-;; functions (`agents-hud--compute-state', `--sort-entries',
-;; `--group-by-project', `--format-…') from those stamps plus a live read of the
-;; screen for the waiting prompt — which is what the ERT suite exercises.
+;; What the two front-ends render is derived by pure functions
+;; (`agents-hud--sort-entries', `--group-by-project', `--format-…') over the
+;; `claude-session' snapshots plus agents-hud's git decoration — which is what
+;; the ERT suite exercises.
 
 ;;; Code:
 
 (require 'cl-lib)
 (require 'subr-x)
 (require 'project)
+;; The session concept — discovery, `*claude:DIR:name*' parsing, and the status
+;; model — is owned by claude-session; agents-hud renders it.
+(require 'claude-session)
 
 ;; Soft dependencies — never `require'd, so the package (and its ERT suite)
 ;; loads with only built-ins present.  Guarded at every call site with
@@ -88,13 +72,6 @@
   :group 'convenience
   :prefix "agents-hud-")
 
-(defcustom agents-hud-idle-seconds 3.0
-  "Seconds of terminal quiet after which a working buffer stops counting as busy.
-A redraw within this window counts the buffer as working (the spinner); once
-redraws stop for this long (and no shell command is running) it drops to ●
-ready."
-  :type 'number)
-
 (defcustom agents-hud-refresh-interval 1.0
   "Seconds between automatic sidebar re-renders while the panel is visible.
 The tick also advances the displayed durations and flips working→ready."
@@ -104,37 +81,6 @@ The tick also advances the displayed durations and flips working→ready."
   "Seconds between working-spinner frames while the panel is visible.
 A faster, lighter timer than the full re-render: it rewrites only the spinner
 glyph in place, so the animation is smooth without re-rendering the buffer."
-  :type 'number)
-
-(defcustom agents-hud-selection-prompt-regexp
-  "Enter to select\\|Tab/Arrow keys to navigate\\|❯ *[0-9]+\\."
-  "Regexp marking a Claude Code selection prompt on a terminal's live screen.
-When it matches the bottom of a session (the last
-`agents-hud-selection-scan-lines' lines) the session is ◆ waiting — Claude is
-blocked on a choice you must make.  The default matches the picker's `Enter to
-select …' / `Tab/Arrow keys to navigate' footer and its `❯ N.' selected-option
-caret (the idle input box shows `❯' followed by placeholder text, never a
-number, so it does not match).  Retune if the CLI's prompt UI changes."
-  :type 'regexp)
-
-(defcustom agents-hud-selection-scan-lines 20
-  "How many trailing lines of a terminal to scan for a selection prompt.
-Kept small so only the live screen is searched: a prompt you already answered,
-scrolled up into scrollback, does not linger as a false ◆ waiting."
-  :type 'integer)
-
-(defcustom agents-hud-interaction-grace 0.4
-  "Seconds after a user interaction during which a redraw is not counted as work.
-A terminal redraw can be caused by you rather than by Claude: switching into or
-out of a buffer makes ghostel send a focus event (DEC mode 1004) that a
-focus-reporting TUI repaints in response, and typing echoes each keystroke back.
-Both are ordinary redraws indistinguishable from real output.  A redraw on an
-otherwise-quiet buffer within this window of an interaction — a focus change
-\(on EITHER side, as its repaint can fire just before or just after the focus
-hook) or a keystroke — is ignored, so merely looking at or typing into a parked
-session no longer flips it to the working spinner.  A buffer that is already
-active keeps stamping normally, so genuine work is never suppressed.  Set to 0
-to disable."
   :type 'number)
 
 (defcustom agents-hud-avy-keys-style 'letters
@@ -251,211 +197,41 @@ Dimmed grey (via `shadow'): an exited process, faded out.  Tints the ✕ glyph."
 Distinct from `agents-hud-path-face' so the branch and the working directory,
 stacked under the session name, read as two different things at a glance.")
 
-;;; ── State tracking (buffer-local stamps) ─────────────────────────────────────
+;;; ── State tracking ───────────────────────────────────────────────────────────
 
-(defvar-local agents-hud--activity nil
-  "`float-time' of this buffer's last terminal redraw, or nil.")
-
-(defvar-local agents-hud--activity-prev nil
-  "The `agents-hud--activity' value from before the most recent stamp.
-Kept so `agents-hud--note-focus-change' can roll back a display/focus repaint
-that stamped a quiet buffer a few milliseconds before the focus hook fired.")
-
-(defvar-local agents-hud--working-since nil
-  "`float-time' the current active burst began, for the working duration.")
-
-(defvar-local agents-hud--exit nil
-  "Exit code recorded when this buffer's terminal process exited, or nil.")
-
-(defvar-local agents-hud--input-time nil
-  "`float-time' of the last explicit user keystroke into this buffer, or nil.
-Stamped by `agents-hud--note-input' (advising `ghostel--on-user-input'); lets
-`agents-hud--note-activity' discount the echo repaint typing produces so a
-session you are replying to is not mistaken for one that is working.")
-
-(defvar agents-hud--focus-change-time nil
-  "`float-time' of the most recent terminal focus change (any buffer), or nil.
-Global, not buffer-local: `ghostel--focus-change' fires for whichever buffers
-just gained or lost focus, so a single stamp covers the repaint that follows on
-each of them.  Read by `agents-hud--interaction-suppressed-p'.")
-
-(defun agents-hud--latest-time (&rest times)
-  "Return the largest non-nil `float-time' in TIMES, or nil when all are nil."
-  (let ((ts (delq nil times)))
-    (and ts (apply #'max ts))))
-
-(defun agents-hud--interaction-suppressed-p
-    (now interaction-time activity grace cutoff)
-  "Non-nil when a redraw at NOW should be ignored as a user-interaction repaint.
-INTERACTION-TIME is the last focus change or keystroke; ACTIVITY the buffer's
-last redraw; GRACE the interaction window (`agents-hud-interaction-grace');
-CUTOFF the quiet threshold (`agents-hud-idle-seconds').  Swallowed only when an
-interaction landed within GRACE AND the buffer was quiet (no ACTIVITY within
-CUTOFF) — i.e. this lone redraw (a focus repaint, or a keystroke echo) would
-spuriously flip a parked session to working.  An already-active buffer (fresh
-ACTIVITY) is never suppressed, so genuine work is never starved."
-  (and interaction-time
-       grace
-       (> grace 0)
-       (< (- now interaction-time) grace)
-       (or (null activity) (>= (- now activity) cutoff))))
-
-(defun agents-hud--focus-rollback-p
-    (now activity activity-prev grace cutoff)
-  "Non-nil when ACTIVITY is a focus-repaint stamp to undo after a focus change.
-The repaint that paints a newly-shown buffer can land a few milliseconds BEFORE
-`ghostel--focus-change' updates the focus stamp, so the forward guard
-\(`agents-hud--interaction-suppressed-p') misses it.  On the focus change,
-undo the stamp if the buffer's last redraw landed within GRACE of NOW AND it was
-a quiet→active flip (ACTIVITY-PREV absent or older than CUTOFF before it).  A
-genuinely working buffer re-stamps on its next redraw, so a wrong rollback
-self-heals in one frame; a lone focus repaint stays rolled back."
-  (and activity
-       grace (> grace 0) (< (- now activity) grace)
-       (or (null activity-prev)
-           (>= (- activity activity-prev) cutoff))))
-
-(defun agents-hud--note-activity (buffer)
-  "Stamp BUFFER's last-activity time on a redraw; never inhibit the redraw.
-For `ghostel-inhibit-redraw-functions' (called with BUFFER current before each
-redraw): returns nil so the redraw always proceeds.  When activity resumes
-after a quiet spell it also restarts `agents-hud--working-since' so the working
-duration measures the current burst, not the whole session.
-
-A redraw that is merely a user-interaction repaint on a quiet buffer is ignored,
-so looking at or typing into a parked session does not flash it as working — see
-`agents-hud-interaction-grace'.  The focus case is bracketed: a focus change
-just BEFORE the redraw suppresses it here
-\(`agents-hud--interaction-suppressed-p'); one just AFTER rolls it back
-\(`agents-hud--note-focus-change'), which is why the prior activity is kept in
-`agents-hud--activity-prev'.  A keystroke is stamped before its echo, so the
-forward guard alone covers typing."
-  (with-demoted-errors "agents-hud activity: %S"
-    (when (buffer-live-p buffer)
-      (with-current-buffer buffer
-        (let ((now (float-time)))
-          (unless (agents-hud--interaction-suppressed-p
-                   now
-                   (agents-hud--latest-time
-                    agents-hud--focus-change-time
-                    agents-hud--input-time)
-                   agents-hud--activity
-                   agents-hud-interaction-grace
-                   agents-hud-idle-seconds)
-            (when (or (null agents-hud--activity)
-                      (>= (- now agents-hud--activity)
-                          agents-hud-idle-seconds))
-              (setq agents-hud--working-since now))
-            (setq agents-hud--activity-prev agents-hud--activity)
-            (setq agents-hud--activity now))))))
-  nil)
-
-(defun agents-hud--note-focus-change (&rest _)
-  "Record a terminal focus change and undo any repaint it triggered just before.
-For `:after' advice on `ghostel--focus-change' (which sends the DEC mode 1004
-focus events).  Stamps `agents-hud--focus-change-time', so a repaint landing
-just AFTER is discounted by `agents-hud--note-activity'.  Then rolls back any
-quiet buffer whose last redraw landed just BEFORE this hook: the repaint that
-paints a newly-shown buffer fires a few ms ahead of the focus hook, which the
-forward guard cannot catch (`agents-hud--focus-rollback-p')."
-  (with-demoted-errors "agents-hud focus: %S"
-    (let ((now (float-time)))
-      (setq agents-hud--focus-change-time now)
-      (dolist (b (agents-hud--buffers))
-        (with-current-buffer b
-          (when (agents-hud--focus-rollback-p
-                 now
-                 agents-hud--activity
-                 agents-hud--activity-prev
-                 agents-hud-interaction-grace
-                 agents-hud-idle-seconds)
-            (setq agents-hud--activity
-                  agents-hud--activity-prev)))))))
-
-(defun agents-hud--note-input (&rest _)
-  "Stamp `agents-hud--input-time' when the user sends a keystroke to a terminal.
-For `:before' advice on `ghostel--on-user-input', which runs in the terminal
-buffer just before the key reaches the PTY — hence before the echo repaint, so
-`agents-hud--note-activity' discounts that repaint and typing a reply does not
-read as Claude working."
-  (with-demoted-errors "agents-hud input: %S"
-    (setq agents-hud--input-time (float-time))))
-
-(defun agents-hud--note-exit (buffer event)
-  "Record BUFFER's process exit code parsed from EVENT.
-For `ghostel-exit-functions', which fires before the buffer may be killed."
-  (with-demoted-errors "agents-hud exit: %S"
-    (when (buffer-live-p buffer)
-      (with-current-buffer buffer
-        (setq agents-hud--exit
-              (cond
-               ((string-match "code \\([0-9]+\\)" event)
-                (string-to-number (match-string 1 event)))
-               ((string-match-p "finished" event)
-                0)
-               (t
-                nil)))))))
+;; The redraw/focus/keystroke stamps, the interaction-repaint guards, the exit
+;; recorder and the state resolver now live in `claude-session' (which owns the
+;; ghostel signal-collection adapter).  agents-hud reads a session's resolved
+;; status through `claude-session-at' / `claude-session-list' below.
 
 (defvar agents-hud--setup-done nil
   "Non-nil once `agents-hud-setup' has installed its hooks/advice.")
 
 ;;;###autoload
 (defun agents-hud-setup ()
-  "Install the state-tracking hooks and advice (idempotent).
-Wires redraw-activity stamping and exit recording on ghostel, the
-focus/keystroke interaction guards, and per-type completion icons on nerd-icons.
-Safe to call when those packages are not yet loaded; the pieces attach as they
-load.  Waiting is read from the live screen at render time
-\(`agents-hud--selection-prompt-p'), so it needs no hook here."
+  "Install agents-hud's rendering-side hooks (idempotent).
+Ensures the session signal-collection is wired (`claude-session-setup') and adds
+per-type completion icons on nerd-icons.  Safe to call when those packages are
+not yet loaded; the pieces attach as they load.  Waiting is read from the live
+screen at render time (`claude-session--selection-prompt-p'), so it needs no
+hook here."
   (interactive)
+  ;; The status signals (redraw/focus/keystroke/exit) are collected by
+  ;; claude-session; make sure they are wired regardless of load order.
+  (claude-session-setup)
   (unless agents-hud--setup-done
-    (with-eval-after-load 'ghostel
-      (add-hook
-       'ghostel-inhibit-redraw-functions #'agents-hud--note-activity)
-      (add-hook 'ghostel-exit-functions #'agents-hud--note-exit)
-      ;; Discount redraws you cause rather than Claude: the repaint a
-      ;; focus-reporting TUI makes on focus in/out, and the echo of your own
-      ;; keystrokes, so looking at or typing into a parked session does not
-      ;; flash it as working (see `agents-hud-interaction-grace').
-      (when (fboundp 'ghostel--focus-change)
-        (advice-add
-         'ghostel--focus-change
-         :after #'agents-hud--note-focus-change))
-      (when (fboundp 'ghostel--on-user-input)
-        (advice-add
-         'ghostel--on-user-input
-         :before #'agents-hud--note-input)))
     (with-eval-after-load 'nerd-icons
       (advice-add
        'nerd-icons-icon-for-buffer
        :around #'agents-hud--nerd-icon-for-buffer))
     (setq agents-hud--setup-done t)))
 
-;;; ── Discovery ────────────────────────────────────────────────────────────────
+;;; ── Git topology (project grouping, sidebar decoration) ──────────────────────
 
-(defun agents-hud--claude-buffer-p (buffer)
-  "Non-nil when BUFFER is a claude-code session buffer."
-  (string-prefix-p "*claude:" (buffer-name buffer)))
-
-(defun agents-hud--ghostel-mode-p (buffer)
-  "Non-nil when BUFFER is a ghostel-mode buffer (claude or plain shell)."
-  (provided-mode-derived-p (buffer-local-value 'major-mode buffer)
-                           'ghostel-mode))
-
-(defun agents-hud--buffers ()
-  "Return live Claude/ghostel buffers to display."
-  (seq-filter
-   (lambda (b)
-     (and (buffer-live-p b)
-          (or (agents-hud--ghostel-mode-p b)
-              (agents-hud--claude-buffer-p b))))
-   (buffer-list)))
-
-(defun agents-hud--buffer-type (buffer)
-  "Return \\='claude or \\='shell for BUFFER."
-  (if (agents-hud--claude-buffer-p buffer)
-      'claude
-    'shell))
+;; Session discovery, `*claude:DIR:name*' parsing and the live working directory
+;; are `claude-session-buffers' / `claude-session-buffer-dir' etc.  What remains
+;; here is agents-hud's own display concern: collapsing git worktrees onto their
+;; repo for grouping, and the branch/worktree labels the sidebar rows show.
 
 (defun agents-hud--git (dir &rest args)
   "Run git with ARGS in DIR; return trimmed stdout, or nil on failure."
@@ -470,17 +246,10 @@ load.  Waiting is read from the live screen at render time
             (unless (string-empty-p s)
               s)))))))
 
-(defun agents-hud--buffer-dir (buffer)
-  "Return BUFFER's live working directory (OSC-7 cwd if tracked)."
-  (with-current-buffer buffer
-    (or (and (boundp 'ghostel--last-directory)
-             ghostel--last-directory)
-        default-directory)))
-
 (defun agents-hud--buffer-path (buffer)
   "Return BUFFER's live working directory, abbreviated for display."
   (abbreviate-file-name
-   (directory-file-name (or (agents-hud--buffer-dir buffer) "~"))))
+   (directory-file-name (or (claude-session-buffer-dir buffer) "~"))))
 
 (defvar agents-hud--repo-root-cache (make-hash-table :test 'equal)
   "Memoises `agents-hud--repo-root' per directory.
@@ -640,33 +409,18 @@ nothing without `file-notify' or outside a repo."
               'failed))
            agents-hud--head-watches))))))
 
-(defun agents-hud--buffer-project (buffer)
-  "Return BUFFER's project root, collapsing git worktrees onto their repo.
+(defun agents-hud--buffer-project (buffer dir)
+  "Return BUFFER's project root for DIR, collapsing git worktrees onto their repo.
 Falls back to `project-current' when the buffer is in a non-git project, and
 nil when it is in no project at all."
-  (let ((dir (agents-hud--buffer-dir buffer)))
-    (or (agents-hud--repo-root dir)
-        (with-current-buffer buffer
-          (when-let ((proj
-                      (ignore-errors
-                        (project-current nil))))
-            (directory-file-name (project-root proj)))))))
+  (or (agents-hud--repo-root dir)
+      (with-current-buffer buffer
+        (when-let ((proj
+                    (ignore-errors
+                      (project-current nil))))
+          (directory-file-name (project-root proj))))))
 
-(defun agents-hud--buffer-instance (buffer type)
-  "Return the instance/session name for BUFFER of TYPE, or nil.
-For claude buffers this is the `:name' suffix (`*claude:DIR:name*'); for plain
-ghostel buffers it is the title portion of `*ghostel: TITLE*'."
-  (let ((name (buffer-name buffer)))
-    (pcase type
-      ('claude
-       (when (string-match
-              "\\`\\*claude:[^:]+:\\([^*]+\\)\\*\\'" name)
-         (match-string 1 name)))
-      (_
-       (when (string-match "\\`\\*ghostel:? *\\(.+?\\) *\\*\\'" name)
-         (match-string 1 name))))))
-
-;;; ── State computation (pure) ─────────────────────────────────────────────────
+;;; ── Entry snapshot (session + git decoration) ────────────────────────────────
 
 (cl-defstruct
  (agents-hud-entry (:constructor agents-hud-entry--create))
@@ -681,100 +435,35 @@ ghostel buffers it is the title portion of `*ghostel: TITLE*'."
  since
  exit)
 
-(defun agents-hud--selection-prompt-p (buffer)
-  "Non-nil when BUFFER's live screen shows a Claude Code selection prompt.
-The picker Claude Code puts up when it is blocked on your choice — a permission
-dialog, plan approval, the shift-tab mode menu — renders numbered options with a
-`❯' caret and an `Enter to select …' footer.  That, not the end-of-turn bell, is
-what ◆ waiting means: the bell fires every turn and would flag every finished
-session.  Only the last `agents-hud-selection-scan-lines' lines (the live
-screen) are searched, so a prompt already answered and scrolled up into history
-does not count."
-  (when (buffer-live-p buffer)
-    (with-current-buffer buffer
-      (save-excursion
-        (goto-char (point-max))
-        (forward-line (- agents-hud-selection-scan-lines))
-        (and (re-search-forward agents-hud-selection-prompt-regexp
-                                nil
-                                t)
-             t)))))
-
-(cl-defun
- agents-hud--compute-state
- (&key
-  live
-  cmd-running
-  waiting
-  activity
-  (now (float-time))
-  (cutoff agents-hud-idle-seconds))
- "Resolve a buffer's status symbol from its signals.
-LIVE — has a live process.  CMD-RUNNING — ghostel's OSC-133 flag.  WAITING —
-a selection prompt is on screen (Claude blocked on your choice).  ACTIVITY —
-last redraw `float-time'.  Priority: dead → waiting → working → ready."
- (cond
-  ((not live)
-   'dead)
-  (waiting
-   'waiting)
-  (cmd-running
-   'working)
-  ((and activity (< (- now activity) cutoff))
-   'working)
-  (t
-   'ready)))
-
 (defun agents-hud--entry (buffer &optional now)
-  "Build a `agents-hud-entry' snapshot for BUFFER at time NOW."
-  (let* ((now (or now (float-time)))
-         (type (agents-hud--buffer-type buffer))
-         (proc (get-buffer-process buffer))
-         (live (and proc (process-live-p proc)))
-         (activity (buffer-local-value 'agents-hud--activity buffer))
-         (working-since
-          (buffer-local-value 'agents-hud--working-since buffer))
-         (cmd-running
-          (and (boundp 'ghostel--command-running)
-               (buffer-local-value 'ghostel--command-running buffer)))
-         (waiting (agents-hud--selection-prompt-p buffer))
-         (state
-          (agents-hud--compute-state
-           :live live
-           :cmd-running cmd-running
-           :waiting waiting
-           :activity activity
-           :now now))
-         (since
-          (pcase state
-            ('waiting (or activity now))
-            ('working (or working-since activity now))
-            ('ready (or activity now))
-            (_ nil)))
-         (dir (agents-hud--buffer-dir buffer))
-         (project (agents-hud--buffer-project buffer)))
+  "Build a `agents-hud-entry' snapshot for BUFFER at time NOW.
+Wraps the session's resolved status (`claude-session-at' — identity, name and
+the working/waiting/ready/dead state) with agents-hud's own git decoration:
+project grouping and the worktree/branch labels the sidebar rows show."
+  (let* ((session (claude-session-at buffer now))
+         (dir (claude-session-dir session))
+         (project (agents-hud--buffer-project buffer dir)))
     ;; Watch this repo's HEAD so an external branch switch re-resolves on its
     ;; own (idempotent per git dir — see `agents-hud--watch-head').
     (agents-hud--watch-head dir)
     (agents-hud-entry--create
      :buffer buffer
-     :type type
+     :type (claude-session-type session)
      :project project
      :worktree (agents-hud--worktree-tag dir project)
      :branch (agents-hud--branch dir)
      :path (agents-hud--buffer-path buffer)
-     :instance
-     (agents-hud--buffer-instance buffer type)
-     :state state
-     :since since
-     :exit
-     (buffer-local-value 'agents-hud--exit buffer))))
+     :instance (claude-session-name session)
+     :state (claude-session-state session)
+     :since (claude-session-since session)
+     :exit (claude-session-exit session))))
 
 (defun agents-hud--entries (&optional now)
   "Return `agents-hud-entry' snapshots for all live Claude/ghostel buffers."
   (let ((now (or now (float-time))))
     (mapcar
-     (lambda (b) (agents-hud--entry b now)) (agents-hud--buffers))))
+     (lambda (b) (agents-hud--entry b now))
+     (claude-session-buffers))))
 
 ;;; ── Sorting & grouping (pure) ────────────────────────────────────────────────
 
@@ -928,7 +617,7 @@ the shell glyph — so completion UIs (consult-buffer, the picker, ibuffer …) 
 Claude sessions from shells apart, which they cannot do from the shared
 `ghostel-mode' alone.  Every other buffer falls through to ORIG unchanged."
   (cond
-   ((string-prefix-p "*claude:" (buffer-name))
+   ((claude-session-claude-buffer-p (current-buffer))
     (or (ignore-errors
           (apply #'nerd-icons-mdicon
                  agents-hud-claude-icon
