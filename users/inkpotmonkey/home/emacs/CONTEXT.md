@@ -132,3 +132,24 @@ once. **waiting** is a *state* — Claude blocked on an on-screen selection prom
 that `claude-session` screen-detects and both the HUD and the attention set
 surface for as long as it holds. A ping is not a state; a state is not an event.
 _Avoid_: conflating the bell (event) with the selection prompt (state).
+
+## Non-goals
+
+Refactors considered and deliberately **not** done, recorded so a future
+architecture pass does not re-suggest them.
+
+**Unifying the "three process-exit sentinels".** At a glance `proc-notify`,
+`whisperx`, and `chelys-galactica` look like three copies of one sentinel shape
+("on exit, check status, act"). They are not: `proc-notify` advises the _single
+shared_ `shell-command-sentinel` chokepoint (already good composition, not its
+own sentinel); `whisperx--sentinel` is a domain **process supervisor** for a
+serial job queue (revert the dired buffer, open the result, chain the next job),
+which must not be folded into a notifier; and `chelys-galactica` has no sentinel
+at all (it delegates to recall + Emacs). A shared "buffer → command" naming
+helper — the one genuinely duplicated bit (`proc-notify--summary`'s
+`async-shell-history--command` probe vs `chelys-galactica--command`'s
+rename-persistence tag) — would be a ~3-line `or` that **fails the deletion
+test** (relocating, not concentrating, complexity) and whose two callers want
+different things. The serial-job-queue in `whisperx` has exactly one user, so
+extracting it is speculative generality (one adapter is a hypothetical seam, not
+a real one). Left as-is.
