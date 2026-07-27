@@ -269,6 +269,26 @@ rec {
       '';
     };
 
+  # Make claude-code's ghostel TUI behave in this config: the TAB snippet
+  # expander (reads the terminal grid to expand a trigger) and the
+  # claude-code<->ghostel 0.31 copy-mode compat shim.  Lifted out of init.el so
+  # the ghostel version-coupling lives in one module with an ERT suite over the
+  # pure grid->trigger core.  ghostel is SOFT (declare-function/defvar guards),
+  # so the package — and its ERT suite — loads with nothing else present.
+  claude-tui = epkgs.melpaBuild {
+    pname = "claude-tui";
+    version = "0.1";
+    src = ./claude-tui;
+    doCheck = true;
+    checkPhase = ''
+      runHook preCheck
+      ${epkgs.emacs}/bin/emacs --batch -L "$src" -l ert \
+        -l "$src/claude-tui-test.el" \
+        -f ert-run-tests-batch-and-exit
+      runHook postCheck
+    '';
+  };
+
   ement-glue = epkgs.melpaBuild {
     pname = "ement-glue";
     version = "0.1";
