@@ -312,6 +312,29 @@
       (agents-hud--sidebar-status
        (agents-hud-test--entry :state 'dead :exit 1))))))
 
+;;; --- running-shell badge -----------------------------------------------------
+
+(ert-deftest agents-hud-test-shell-badge ()
+  "The shell badge is the glyph + count when shells>0, empty otherwise."
+  (let ((agents-hud-shell-badge-icon "$"))
+    (should
+     (equal
+      "$2"
+      (agents-hud--shell-badge (agents-hud-test--entry :shells 2))))
+    (should
+     (equal
+      "$1"
+      (agents-hud--shell-badge (agents-hud-test--entry :shells 1))))
+    (should
+     (equal
+      ""
+      (agents-hud--shell-badge (agents-hud-test--entry :shells 0))))
+    (should
+     (equal
+      ""
+      (agents-hud--shell-badge
+       (agents-hud-test--entry :shells nil))))))
+
 ;;; --- picker candidate decoration / recovery ----------------------------------
 
 (ert-deftest agents-hud-test-consult-candidates ()

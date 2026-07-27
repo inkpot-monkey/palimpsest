@@ -217,5 +217,47 @@ the display repaint firing ~ms before `ghostel--focus-change'."
     (should
      (eq 'shell (claude-session--buffer-type (current-buffer))))))
 
+;;; --- background shell count --------------------------------------------------
+
+(ert-deftest claude-session-test-shell-count-footer ()
+  "The input footer's `· N shell ·' reports the running count."
+  (should
+   (= 1
+      (claude-session--shell-count
+       "  ⏵⏵ auto mode on · 1 shell · ← 2 agents · ↓ to manage"))))
+
+(ert-deftest claude-session-test-shell-count-worked-line ()
+  "The `N shell(s) still running' worked-status line reports the count."
+  (should
+   (= 1
+      (claude-session--shell-count
+       "✻ Worked for 57s · 1 shell still running")))
+  (should
+   (= 3
+      (claude-session--shell-count
+       "✻ Worked for 12s · 3 shells still running"))))
+
+(ert-deftest claude-session-test-shell-count-excludes-past-tense ()
+  "The past-tense `Ran N shell command' in scrollback is not a running shell."
+  (should
+   (= 0 (claude-session--shell-count "  Ran 1 shell command "))))
+
+(ert-deftest claude-session-test-shell-count-none ()
+  "Text with no shell indicator reports 0."
+  (should
+   (= 0
+      (claude-session--shell-count
+       "some claude output, no shells here")))
+  (should (= 0 (claude-session--shell-count ""))))
+
+(ert-deftest claude-session-test-shell-count-current-footer-wins ()
+  "With a stale worked line above the live footer, the last (footer) match wins."
+  (should
+   (= 2
+      (claude-session--shell-count
+       (concat
+        "✻ Worked for 9s · 3 shells still running\n"
+        "  ⏵⏵ auto mode on · 2 shells · ← 1 agent · ↓ to manage")))))
+
 (provide 'claude-session-test)
 ;;; claude-session-test.el ends here

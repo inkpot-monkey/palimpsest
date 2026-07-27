@@ -104,6 +104,20 @@ Kept small so only the live screen is searched: a prompt you already answered,
 scrolled up into scrollback, does not linger as a false waiting."
   :type 'integer)
 
+(defcustom claude-session-shell-regexp
+  "\\([0-9]+\\) shells?\\(?: still running\\| *·\\)"
+  "Regexp matching Claude Code's running background-shell count on the live screen.
+Group 1 is the count.  Matches the input footer (`· N shell ·') and the
+worked-status line (`N shell(s) still running'), but deliberately NOT the
+past-tense `Ran N shell command' in scrollback.  Retune if the CLI's UI changes."
+  :type 'regexp)
+
+(defcustom claude-session-shell-scan-lines 20
+  "How many trailing lines of a terminal to scan for the background-shell count.
+Kept small so only the live screen (the footer + worked line) is searched, not a
+stale figure scrolled up into history."
+  :type 'integer)
+
 ;;; ── The session ──────────────────────────────────────────────────────────────
 
 (cl-defstruct
@@ -115,7 +129,8 @@ scrolled up into scrollback, does not linger as a false waiting."
  name ; instance/session name, or nil
  state ; `working / `waiting / `ready / `dead
  since ; float-time the current state began
- exit) ; exit code once dead, else nil
+ exit ; exit code once dead, else nil
+ shells) ; count of running background shells (Claude sessions), else 0
 
 ;;; ── Discovery & name parsing (the former `*claude:' seam) ────────────────────
 
@@ -356,6 +371,32 @@ last redraw `float-time'.  Priority: dead → waiting → working → ready."
   (t
    'ready)))
 
+(defun claude-session--shell-count (text)
+  "Return the number of running background shells reported in TEXT, or 0.
+Scans TEXT for `claude-session-shell-regexp' and returns the count from the LAST
+match, so the current footer wins over any earlier figure.  Orthogonal to the
+state: a session can be `ready' (idle) while a background shell keeps running."
+  (let ((n 0)
+        (start 0))
+    (while (string-match claude-session-shell-regexp text start)
+      (setq
+       n (string-to-number (match-string 1 text))
+       start (match-end 0)))
+    n))
+
+(defun claude-session--shells (buffer)
+  "Return the number of running background shells on BUFFER's live screen.
+Reads the last `claude-session-shell-scan-lines' lines and applies
+`claude-session--shell-count'.  0 for a plain shell or a session with none."
+  (if (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (save-excursion
+          (goto-char (point-max))
+          (forward-line (- claude-session-shell-scan-lines))
+          (claude-session--shell-count
+           (buffer-substring-no-properties (point) (point-max)))))
+    0))
+
 ;;; ── Snapshots (the public interface) ─────────────────────────────────────────
 
 (defun claude-session-at (buffer &optional now)
@@ -396,7 +437,8 @@ live screen; resolves the state through `claude-session--compute-state'."
      :state state
      :since since
      :exit
-     (buffer-local-value 'claude-session--exit buffer))))
+     (buffer-local-value 'claude-session--exit buffer)
+     :shells (claude-session--shells buffer))))
 
 (defun claude-session-list (&optional now)
   "Return a `claude-session' snapshot for every live Claude/ghostel session."

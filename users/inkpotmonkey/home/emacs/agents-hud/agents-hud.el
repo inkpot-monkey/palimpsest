@@ -134,6 +134,13 @@ A single-width cross tinted grey by `agents-hud-dead-face', in the same
 mono-glyph family as the other state icons."
   :type 'string)
 
+(defcustom agents-hud-shell-badge-icon "$"
+  "Leading glyph of the running-background-shell badge.
+Rendered as ICON followed by the count (e.g. \"$2\") in the trailing status
+column of a row whose session has background shells running, tinted by
+`agents-hud-shell-badge-face'.  A mono glyph, like the state icons."
+  :type 'string)
+
 (defcustom agents-hud-expanded-icon "▾"
   "Leading glyph on an expanded (open) project group heading."
   :type 'string)
@@ -185,6 +192,12 @@ available\" dot.  Tints the ● glyph, which carries no colour of its own.")
 (defface agents-hud-dead-face '((t :inherit shadow))
   "Face for the dead state icon and status text.
 Dimmed grey (via `shadow'): an exited process, faded out.  Tints the ✕ glyph.")
+
+(defface agents-hud-shell-badge-face
+  '((t :inherit font-lock-builtin-face))
+  "Face for the running-background-shell badge (glyph + count).
+Distinct from the four state faces: a session's shell count is orthogonal to its
+working/waiting/ready/dead state, so the badge carries its own colour.")
 
 (defface agents-hud-heading-face '((t :inherit bold))
   "Face for project group headings in the sidebar.")
@@ -433,7 +446,8 @@ nil when it is in no project at all."
  instance
  state
  since
- exit)
+ exit
+ shells)
 
 (defun agents-hud--entry (buffer &optional now)
   "Build a `agents-hud-entry' snapshot for BUFFER at time NOW.
@@ -456,7 +470,8 @@ project grouping and the worktree/branch labels the sidebar rows show."
      :instance (claude-session-name session)
      :state (claude-session-state session)
      :since (claude-session-since session)
-     :exit (claude-session-exit session))))
+     :exit (claude-session-exit session)
+     :shells (claude-session-shells session))))
 
 (defun agents-hud--entries (&optional now)
   "Return `agents-hud-entry' snapshots for all live Claude/ghostel buffers."
@@ -666,6 +681,15 @@ either way, since no icon can convey it."
      (t
       ""))))
 
+(defun agents-hud--shell-badge (entry)
+  "Return ENTRY's running-background-shell badge (glyph + count), or \"\".
+Empty unless the session has one or more background shells running; orthogonal
+to the state, so it can accompany a `ready' row (see `claude-session-shells')."
+  (let ((n (agents-hud-entry-shells entry)))
+    (if (and n (> n 0))
+        (format "%s%d" agents-hud-shell-badge-icon n)
+      "")))
+
 ;;; ── Sidebar ──────────────────────────────────────────────────────────────────
 
 (defconst agents-hud--buffer-name "*agents-hud*"
@@ -762,6 +786,7 @@ exit code always does)."
        (name (agents-hud--entry-name entry))
        (branch (agents-hud-entry-branch entry))
        (status (agents-hud--sidebar-status entry))
+       (badge (agents-hud--shell-badge entry))
        (path (agents-hud-entry-path entry))
        (indent
         (make-string (string-width (concat "  " icon " ")) ?\s))
@@ -777,6 +802,9 @@ exit code always does)."
      " " (propertize name 'face face))
     (unless (string-empty-p status)
       (insert "  " (propertize status 'face face)))
+    (unless (string-empty-p badge)
+      (insert
+       "  " (propertize badge 'face 'agents-hud-shell-badge-face)))
     (insert "\n")
     (when branch
       (insert
