@@ -97,6 +97,21 @@ agent-agnostic; the claude-code implementation lives in
 unlike `claude-session`, which is deliberately concrete to claude-code/ghostel.
 _Avoid_: driver, provider.
 
+**Claude TUI glue** (`claude-tui`):
+The module that makes claude-code's full-screen ghostel TUI behave in this
+config, concentrating the two things a ghostel bump would break. (1) The
+**snippet expander**: because ghostel forwards keystrokes straight to Claude's
+alt-screen TUI (the text lives in the terminal grid, out of reach of
+abbrev/tempel/corfu), TAB is overridden to read the word left of the cursor off
+the grid and, if it is a **trigger** in `claude-tui-snippets` (a
+`(trigger . expansion)` alist), replace it — the grid→trigger step is the pure,
+tested `claude-tui--trigger-at`. (2) The **copy-mode shim**: a compatibility
+bridge for claude-code.el expecting ghostel's pre-0.31 `ghostel--copy-mode-active`
+API. `claude-tui-setup` wires both.
+_Avoid_: abbrev (the store is a plain alist, not an abbrev table — the trigger
+lookup only ever *read* the old table, never expanded it); keybinding (the
+expander is grid manipulation, not an Emacs-buffer edit).
+
 ### Attention & notification
 
 **Attention set** (proc-notify's awaiting-buffers):
