@@ -60,6 +60,18 @@ _Avoid_: running/finished as the *model* (that is project-agent's coarser
 two-value **run status**, derived from this: `dead` → finished, else running);
 busy/idle.
 
+**Background shells** (the `shells` count):
+How many `run_in_background` shells a Claude session has running, a signal
+**orthogonal to the state** (a session can be `ready` yet have a shell running).
+Read by `claude-session` from the live screen — Claude's TUI reports it in the
+input footer (`· N shell ·`) and the worked line (`N shell(s) still running`),
+which `claude-session--shell-count` matches while excluding the past-tense
+`Ran N shell command` in scrollback. The HUD renders it as a mono-glyph **shell
+badge** (`$N`) in a row's trailing status column, in the same family as the
+state icons.
+_Avoid_: folding it into a state (it is a count, not a state — a session's state
+and its shell count vary independently).
+
 **Signal collection** (the ghostel adapter):
 The ghostel-coupled side of the status model: the buffer-local redraw/focus/
 keystroke/exit stamps and the interaction-repaint guards (which discount a redraw
