@@ -54,11 +54,11 @@
         "nixpkgs": "nixpkgs"
       },
       "locked": {
-        "lastModified": 1784112833,
-        "narHash": "sha256-X1APKp5QbPpFg5IYphxnepy4noc7bQXv5U4hPA9kpGc=",
+        "lastModified": 1785112098,
+        "narHash": "sha256-aQCqeL8Ulhf+SFF2K+juiTkq7UiT0CywdOQCMZfBy3o=",
         "owner": "johnzfitch",
         "repo": "claude-cowork-linux",
-        "rev": "c2872861da2a54158fdd1f3d6ed659f7fca5548a",
+        "rev": "1555beb5b43cf72dfd3822ae27d59ce42ed6810c",
         "type": "github"
       },
       "original": {
