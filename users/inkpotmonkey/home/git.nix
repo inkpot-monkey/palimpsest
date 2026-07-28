@@ -55,6 +55,10 @@ let
     # works. SSH remotes (git@github.com) bypass this entirely.
     credential."https://github.com".helper =
       ''!f() { test "$1" = get && { echo username=x-access-token; echo "password=$(cat /run/secrets/github_token)"; }; }; f'';
+    # GitHub username for ghub/Forge. ghub reads this to identify the account and
+    # to build its auth-source login (`<user>^forge`); without it Forge fails with
+    # "Cannot determine username". The token itself comes from auth-source-sops.
+    github.user = "inkpot-monkey";
   };
 in
 {

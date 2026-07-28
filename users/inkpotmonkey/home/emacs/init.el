@@ -1114,6 +1114,13 @@ With a prefix ARG, save it to the kill ring instead of inserting it."
   ("s-m l" . magit-log-buffer-file)
   ("s-m b" . magit-blame)))
 
+;; GitHub/GitLab issues and pull requests as sections inside `magit-status'.
+;; `alwaysEnsure' (default.nix) pulls forge from epkgs. The API token is read
+;; via auth-source-sops: machine `api.github.com', login `USERNAME^forge' in
+;; `my-site/secrets-file'. In magit-status: `N f f' pulls topics for the repo,
+;; then Issues/Pull Requests sections appear; `N' is the full forge dispatch.
+(use-package forge :after magit)
+
 (use-package git-modes :mode ("/\\.dockerignore\\'" . gitignore-mode))
 
 (use-package
