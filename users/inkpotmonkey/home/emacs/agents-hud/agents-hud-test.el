@@ -220,18 +220,34 @@
     (should-not (agents-hud--group-collapsed-p "/p/other"))))
 
 (ert-deftest agents-hud-test-head-change ()
-  "A HEAD change drops the branch/worktree caches; other git churn does not."
+  "A HEAD change drops the branch/worktree caches; other git churn does not.
+The switch event mirrors what git actually emits — a `renamed' of `HEAD.lock'
+onto `HEAD', where the destination (nth 3), not the source (nth 2), is the file
+named HEAD.  Matching only the source is the bug this guards against."
   (let ((agents-hud--branch-cache (make-hash-table :test 'equal))
         (agents-hud--worktree-cache (make-hash-table :test 'equal)))
-    (puthash "/p" "main" agents-hud--branch-cache)
-    (puthash "/p" "main" agents-hud--worktree-cache)
-    ;; churn on a non-HEAD file (the index, a ref lock) — caches untouched
-    (agents-hud--on-head-change '(desc changed "/repo/.git/index"))
-    (should (= 1 (hash-table-count agents-hud--branch-cache)))
-    ;; a HEAD rewrite (a branch switch) — both caches cleared
-    (agents-hud--on-head-change '(desc changed "/repo/.git/HEAD"))
-    (should (= 0 (hash-table-count agents-hud--branch-cache)))
-    (should (= 0 (hash-table-count agents-hud--worktree-cache)))))
+    (cl-flet
+     ((reset
+       ()
+       (puthash "/p" "main" agents-hud--branch-cache)
+       (puthash "/p" "main" agents-hud--worktree-cache)))
+     (reset)
+     ;; churn on a non-HEAD file (the index, a ref lock) — caches untouched
+     (agents-hud--on-head-change '(desc changed "/repo/.git/index"))
+     (should (= 1 (hash-table-count agents-hud--branch-cache)))
+     ;; the lockfile stage of the switch is not yet HEAD — untouched
+     (agents-hud--on-head-change
+      '(desc created "/repo/.git/HEAD.lock"))
+     (should (= 1 (hash-table-count agents-hud--branch-cache)))
+     ;; the real switch: HEAD.lock renamed onto HEAD — both caches cleared
+     (agents-hud--on-head-change
+      '(desc renamed "/repo/.git/HEAD.lock" "/repo/.git/HEAD"))
+     (should (= 0 (hash-table-count agents-hud--branch-cache)))
+     (should (= 0 (hash-table-count agents-hud--worktree-cache)))
+     ;; a bare change to HEAD (some git paths / older versions) also counts
+     (reset)
+     (agents-hud--on-head-change '(desc changed "/repo/.git/HEAD"))
+     (should (= 0 (hash-table-count agents-hud--branch-cache))))))
 
 ;;; --- status label (no timing) ------------------------------------------------
 
@@ -342,7 +358,9 @@
   (let (bufs)
     (unwind-protect
         (progn
-          ;; the collector recognises buffers by ghostel-mode or a *claude:* name
+          ;; the collector recognises a *claude:* buffer unconditionally and a
+          ;; plain ghostel shell only while it runs an agent command (the
+          ;; `claude-session--agent-shell' flag) — so flag the shell here.
           (unless (fboundp 'ghostel-mode)
             (define-derived-mode
              ghostel-mode fundamental-mode "Ghostel"))
@@ -350,7 +368,8 @@
             (let ((b (get-buffer-create n)))
               (with-current-buffer b
                 (ghostel-mode)
-                (setq default-directory "/tmp/"))
+                (setq default-directory "/tmp/")
+                (setq claude-session--agent-shell t))
               (push b bufs)))
           (let ((cands (agents-hud--consult-candidates)))
             (should (= 2 (length cands)))

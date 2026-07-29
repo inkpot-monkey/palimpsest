@@ -362,7 +362,12 @@ not the directory basename of a linked one.  A detached HEAD yields nil."
 ;; put), so a `file-notify' watch on the git dir catches switches with no noise.
 ;; When HEAD changes we drop the branch/worktree caches; the next render
 ;; re-resolves.  Watching the DIRECTORY (not the HEAD file) survives git's
-;; atomic HEAD.lock→HEAD rename.
+;; atomic HEAD.lock→HEAD rename — but that rename is the ONLY event a switch
+;; emits: git writes `HEAD.lock', then renames it onto `HEAD'.  file-notify
+;; reports that as a single `renamed' event whose SOURCE (nth 2) is `HEAD.lock'
+;; and whose DESTINATION (nth 3) is `HEAD'; there is no standalone change to
+;; `HEAD' itself.  So the match must look at the rename destination, not only the
+;; source, or every switch slips past (which it did — the branch stuck forever).
 
 (defvar agents-hud--gitdir-cache (make-hash-table :test 'equal)
   "Memoises a directory's absolute git dir (\\='none = not a repo).")
@@ -388,15 +393,23 @@ not the directory basename of a linked one.  A detached HEAD yields nil."
 
 (defun agents-hud--on-head-change (event)
   "`file-notify' callback: drop the branch/worktree caches when a HEAD changes.
-EVENT is (DESCRIPTOR ACTION FILE …).  Only a change to a file named HEAD counts
-\(a branch switch); the git dir's other churn — index, logs, ref locks — is
-ignored.  git's atomic HEAD.lock→HEAD rename can then stop this watch;
-`agents-hud--watch-head' re-arms a stopped watch on the next render."
+EVENT is (DESCRIPTOR ACTION FILE [FILE1]).  Only a touch of a file named HEAD
+counts (a branch switch); the git dir's other churn — index, logs, ref locks —
+is ignored.  A switch reaches us as a `renamed' of `HEAD.lock' → `HEAD', so the
+destination FILE1 (nth 3) is checked as well as the source FILE (nth 2) — the
+new name is the one that is `HEAD', and matching only the source misses every
+switch.  git's atomic rename can then stop this watch; `agents-hud--watch-head'
+re-arms a stopped watch on the next render."
   (with-demoted-errors "agents-hud head-watch: %S"
     (when (and (memq (nth 1 event) '(changed created renamed))
-               (equal
-                (file-name-nondirectory (or (nth 2 event) ""))
-                "HEAD"))
+               (or (equal
+                    (file-name-nondirectory
+                     (or (nth 2 event) ""))
+                    "HEAD")
+                   (equal
+                    (file-name-nondirectory
+                     (or (nth 3 event) ""))
+                    "HEAD")))
       (clrhash agents-hud--branch-cache)
       (clrhash agents-hud--worktree-cache))))
 
