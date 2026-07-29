@@ -122,6 +122,19 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # The operator's fleet users as their OWN external MULTI-USER home-manager flake (repo-split
+    # capstone, issue #1) — `inkpotmonkey`, `eyeofalligator`, … each a confined ADR-0007 home,
+    # consumed via the contract's pre-built binding (bindContractPackage, ADR-0016). Currently only
+    # bound by the `prebuilt_bind_external` integration check — NOT yet by any production host (that
+    # cutover waits for the full homes to migrate). `contract` follows the fleet's so there is ONE
+    # contract/lib eval and the repo's own relative `path:` contract input is bypassed.
+    # DEV: local `path:`; flips to `github:palebluebytes/users` at T7 — a URL change.
+    users = {
+      url = "path:/home/inkpotmonkey/code/users";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.contract.follows = "contract";
+    };
+
     # The Supernote toolkit fork (self-hosted Private Cloud Sync server + client),
     # tracked on its round-trip branch. `flake = false`: it is a plain Python repo,
     # not a flake — we package it here as `pkgs.supernote` (pkgs/supernote) with

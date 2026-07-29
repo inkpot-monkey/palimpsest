@@ -36,6 +36,20 @@
         matrix_dm_provision = import ./dm-provision {
           inherit pkgs self;
         };
+        # Repo-split capstone (contract issue #1, T4): the fleet binds the REAL external
+        # `users` flake via bindContractPackage (ADR-0016) on synthetic exposed + trusted seats —
+        # proving the pre-built loop without touching any production host.
+        #
+        # CUTOVER ORDER (issue #1 runbook Stage 8): this check is GREEN only once BOTH the contract
+        # (carrying the `runuser -l` activation fix) and the `users` flake are PUBLISHED and this
+        # repo's flake.lock is bumped to them. Until then it needs the dev overrides
+        #   --override-input contract path:/…/host-user-contract --override-input users path:/…/users
+        # because the committed lock pins an OLDER contract rev (pre-runuser-fix → activation times
+        # out) and `users` is a local `path:` absent in CI. Do NOT "fix" a red here by loosening the
+        # check — publish + bump the lock in the ordered sequence first.
+        prebuilt_bind_external = import ./prebuilt-bind-external {
+          inherit pkgs inputs system;
+        };
         # jmap_bridge VM check moved to the bridge's own repo
         # (inputs.jmap-bridge.checks); its CI owns the round-trip test now.
         # The contract's OWN conformance suite (contract ADR-0004 Q5), surfaced from the contract
