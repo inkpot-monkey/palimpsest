@@ -7,9 +7,12 @@
 ;;; Commentary:
 
 ;; The single owner of "a live Claude/ghostel session and what it is doing".
-;; A session is a live `*claude:…*' claude-code buffer or a plain `*ghostel:…*'
-;; terminal (both are `ghostel-mode' buffers, claude-code driving the ghostel
-;; backend).  Before this module, three consumers each re-derived the same three
+;; A session is a live `*claude:…*' claude-code buffer, or a plain `*ghostel:…*'
+;; terminal WHILE it is running an agent command (cursor-agent — see
+;; `claude-session-agent-command-regexp'); an ordinary interactive shell is not a
+;; session and stays out of the agent views.  Both kinds are `ghostel-mode'
+;; buffers (claude-code drives the ghostel backend).  Before this module, three
+;; consumers each re-derived the same three
 ;; things three incompatible ways: buffer discovery (`*claude:' prefix), the
 ;; `*claude:DIR:name*' name parse, and a status verdict.  This module owns all
 ;; three so `agents-hud' (sidebar), `project-agent' (its run/home view) and
@@ -24,19 +27,30 @@
 ;;                           (idempotent; degrades quietly without ghostel).
 ;;   plus the discovery predicates (`claude-session-claude-buffer-p',
 ;;   `claude-session-buffers', `claude-session-buffer-dir') that were the
-;;   copy-pasted `*claude:' seam, now named in one place.
+;;   copy-pasted `*claude:' seam, now named in one place.  `claude-session-buffers'
+;;   also gates plain shells on `claude-session--agent-shell-p', so a `*ghostel:'
+;;   terminal appears only while it runs an agent command.
 ;;
 ;; STATUS MODEL (per session), four states, priority dead → waiting → working →
 ;; ready:
 ;;
-;;   working — the terminal is churning: ghostel's OSC-133
-;;             `ghostel--command-running' flag is set, or a redraw fired within
+;;   working — the terminal is CHURNING: a redraw fired within
 ;;             `claude-session-idle-seconds'.  A redraw caused purely by you (a
 ;;             focus repaint, a keystroke echo) is discounted — see
-;;             `claude-session-interaction-grace'.
+;;             `claude-session-interaction-grace'.  Note this is redraw activity,
+;;             NOT ghostel's OSC-133 `ghostel--command-running' flag: a plain
+;;             shell running a long-lived foreground agent (cursor-agent, or any
+;;             interactive TUI) keeps that flag set for the program's whole life,
+;;             so honouring it pinned such a session to working even while it sat
+;;             idle waiting on you.  Output churn is what "working" means; an idle
+;;             program falls to ready like any other quiet session.
 ;;   waiting — Claude is BLOCKED on a selection prompt and needs a choice from
 ;;             you: read from the live screen (`claude-session--selection-prompt-p'),
-;;             NOT the end-of-turn bell, which fires every turn.
+;;             NOT the end-of-turn bell, which fires every turn.  The screen is
+;;             read from ghostel's native grid, so a prompt on a BACKGROUND
+;;             session (not shown in any window) is still seen — ghostel only
+;;             mirrors its grid into the Emacs buffer text while the buffer is
+;;             displayed, so a buffer-text scan would miss it until you switched.
 ;;   ready   — a live process, not working and not at a prompt: standing by.
 ;;   dead    — no live process.
 ;;
@@ -54,12 +68,19 @@
 ;; Soft dependency on ghostel — never `require'd, so this package (and its ERT
 ;; suite) loads with only built-ins present.  Every use is `boundp'/`fboundp'
 ;; guarded.
-(defvar ghostel--command-running)
 (defvar ghostel--last-directory)
+(defvar ghostel--term)
 (defvar ghostel-inhibit-redraw-functions)
 (defvar ghostel-exit-functions)
+(defvar ghostel-command-start-functions)
+(defvar ghostel-command-finish-functions)
 (declare-function ghostel--focus-change "ghostel" (&rest args))
 (declare-function ghostel--on-user-input "ghostel" (&rest args))
+;; Native grid dump: the full terminal text straight from libghostty, current
+;; even when the buffer is not shown in any window (ghostel only mirrors its grid
+;; into the Emacs buffer text while the buffer is displayed).  Used to read the
+;; live screen for a background session — see `claude-session--live-screen-tail'.
+(declare-function ghostel--copy-all-text "ghostel-module" (term))
 
 ;;; ── Customization ────────────────────────────────────────────────────────────
 
@@ -73,6 +94,24 @@
 A redraw within this window counts the session as working; once redraws stop for
 this long (and no shell command is running) it drops to ready."
   :type 'number)
+
+(defcustom claude-session-agent-command-regexp "\\bcursor-agent\\b"
+  "Regexp for a shell command that turns a plain ghostel shell into a session.
+A `*ghostel:' shell is NOT a session on its own — it joins the agent views only
+while it is running a command matching this, detected at the OSC-133
+command-start marker and cleared when the command finishes (so an ordinary
+interactive shell never clutters the views).  The default matches
+`cursor-agent'; widen it to track other terminal agents, e.g.
+\"\\\\b\\\\(cursor-agent\\\\|aider\\\\|codex\\\\)\\\\b\".  A `*claude:' buffer is
+a session unconditionally and does not consult this."
+  :type 'regexp)
+
+(defcustom claude-session-agent-command-scan-lines 3
+  "Trailing screen lines read for the launching command at command-start.
+Small: at the OSC-133 command-start marker the just-typed command line is the
+last non-empty line on screen, so only a few lines are needed and older
+scrollback is not searched (which could match a command mentioned earlier)."
+  :type 'integer)
 
 (defcustom claude-session-interaction-grace 0.4
   "Seconds after a user interaction in which a redraw is not counted as work.
@@ -143,13 +182,40 @@ stale figure scrolled up into history."
   (provided-mode-derived-p (buffer-local-value 'major-mode buffer)
                            'ghostel-mode))
 
+;; A plain ghostel shell is a session only while it runs an agent command.  The
+;; flag is set at the OSC-133 command-start of a command matching
+;; `claude-session-agent-command-regexp' and cleared when it finishes (see the
+;; command-start/finish handlers below), so an idle interactive shell stays out
+;; of the agent views.  Irrelevant for `*claude:' buffers, which always count.
+(defvar-local claude-session--agent-shell nil
+  "Non-nil when this plain ghostel shell is currently running an agent command.")
+
+(defun claude-session--agent-command-line-p (text)
+  "Non-nil when command-line TEXT launches an agent per the regexp.
+Pure: matches `claude-session-agent-command-regexp' against TEXT (the trailing
+screen lines read at command-start).  nil TEXT never matches."
+  (and text
+       (string-match-p claude-session-agent-command-regexp text)
+       t))
+
+(defun claude-session--agent-shell-p (buffer)
+  "Non-nil when BUFFER is a plain ghostel shell currently running an agent."
+  (and (buffer-live-p buffer)
+       (buffer-local-value 'claude-session--agent-shell buffer)))
+
 (defun claude-session-buffers ()
-  "Return live Claude/ghostel session buffers."
+  "Return live Claude/ghostel session buffers.
+Every claude-code session (a `*claude:' buffer) counts.  A plain ghostel shell
+counts only while it is running an agent command
+\(`claude-session--agent-shell-p' — set when a command matching
+`claude-session-agent-command-regexp', e.g. cursor-agent, launches and cleared
+when it finishes), so an ordinary interactive shell does not clutter the views."
   (seq-filter
    (lambda (b)
      (and (buffer-live-p b)
-          (or (claude-session--ghostel-mode-p b)
-              (claude-session-claude-buffer-p b))))
+          (or (claude-session-claude-buffer-p b)
+              (and (claude-session--ghostel-mode-p b)
+                   (claude-session--agent-shell-p b)))))
    (buffer-list)))
 
 (defun claude-session--buffer-type (buffer)
@@ -325,6 +391,62 @@ For `ghostel-exit-functions', which fires before the buffer may be killed."
                (t
                 nil)))))))
 
+;;; ── Live-screen read (off-screen safe) ───────────────────────────────────────
+
+(defun claude-session--last-lines (text n)
+  "Return the last N lines of TEXT as a string."
+  (with-temp-buffer
+    (insert text)
+    (goto-char (point-max))
+    (forward-line (- n))
+    (buffer-substring-no-properties (point) (point-max))))
+
+(defun claude-session--live-screen-tail (buffer lines)
+  "Return the last LINES lines of BUFFER's live terminal screen, or nil.
+Prefers ghostel's native grid dump (`ghostel--copy-all-text'), which reflects
+the CURRENT screen even when BUFFER is shown in no window — ghostel writes its
+grid into the Emacs buffer text only while the buffer is displayed, so a plain
+buffer-text scan of a background session goes stale (a mid-turn prompt would be
+missed until you switched to it, the whole reason waiting was invisible before a
+switch).  Falls back to the buffer text when the native dump is unavailable (no
+ghostel, or the ERT suite's plain temp buffers)."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (let ((text
+             (or (and (boundp 'ghostel--term)
+                      ghostel--term (fboundp 'ghostel--copy-all-text)
+                      (ignore-errors
+                        (ghostel--copy-all-text ghostel--term)))
+                 (buffer-substring-no-properties
+                  (point-min) (point-max)))))
+        (and text (claude-session--last-lines text lines))))))
+
+;;; ── Agent-command detection (ghostel adapter) ───────────────────────────────
+
+(defun claude-session--note-command-start (buffer)
+  "Flag BUFFER as an agent shell when the launching command matches.
+For `ghostel-command-start-functions' (OSC-133 `C', fired from the shell's
+preexec just before the command runs, so the typed command line is on the live
+screen).  Reads the last `claude-session-agent-command-scan-lines' lines — the
+prompt line plus the command — and sets `claude-session--agent-shell' when they
+match `claude-session-agent-command-regexp' (see `claude-session-buffers')."
+  (with-demoted-errors "claude-session command-start: %S"
+    (when (and (buffer-live-p buffer)
+               (claude-session--agent-command-line-p
+                (claude-session--live-screen-tail
+                 buffer claude-session-agent-command-scan-lines)))
+      (with-current-buffer buffer
+        (setq claude-session--agent-shell t)))))
+
+(defun claude-session--note-command-finish (buffer &optional _exit)
+  "Clear BUFFER's agent-shell flag when its command finishes.
+For `ghostel-command-finish-functions' (OSC-133 `D'): the agent command has
+returned, so the shell drops back out of the agent views."
+  (with-demoted-errors "claude-session command-finish: %S"
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (setq claude-session--agent-shell nil)))))
+
 ;;; ── State computation (pure) ─────────────────────────────────────────────────
 
 (defun claude-session--selection-prompt-p (buffer)
@@ -335,37 +457,33 @@ dialog, plan approval, the shift-tab mode menu — renders numbered options with
 what waiting means: the bell fires every turn and would flag every finished
 session.  Only the last `claude-session-selection-scan-lines' lines (the live
 screen) are searched, so a prompt already answered and scrolled up into history
-does not count."
-  (when (buffer-live-p buffer)
-    (with-current-buffer buffer
-      (save-excursion
-        (goto-char (point-max))
-        (forward-line (- claude-session-selection-scan-lines))
-        (and (re-search-forward claude-session-selection-prompt-regexp
-                                nil
-                                t)
-             t)))))
+does not count.  The screen is read via `claude-session--live-screen-tail', so a
+prompt on a background (unshown) session is seen too."
+  (when-let ((text
+              (claude-session--live-screen-tail
+               buffer claude-session-selection-scan-lines)))
+    (and (string-match-p claude-session-selection-prompt-regexp text)
+         t)))
 
 (cl-defun
  claude-session--compute-state
  (&key
   live
-  cmd-running
   waiting
   activity
   (now (float-time))
   (cutoff claude-session-idle-seconds))
  "Resolve a session's status symbol from its signals.
-LIVE — has a live process.  CMD-RUNNING — ghostel's OSC-133 flag.  WAITING —
-a selection prompt is on screen (Claude blocked on your choice).  ACTIVITY —
-last redraw `float-time'.  Priority: dead → waiting → working → ready."
+LIVE — has a live process.  WAITING — a selection prompt is on screen (Claude
+blocked on your choice).  ACTIVITY — last redraw `float-time'; a session is
+working only while redraws are recent (within CUTOFF), so a long-lived
+foreground program that has fallen quiet reads as ready rather than perpetually
+working.  Priority: dead → waiting → working → ready."
  (cond
   ((not live)
    'dead)
   (waiting
    'waiting)
-  (cmd-running
-   'working)
   ((and activity (< (- now activity) cutoff))
    'working)
   (t
@@ -386,16 +504,14 @@ state: a session can be `ready' (idle) while a background shell keeps running."
 
 (defun claude-session--shells (buffer)
   "Return the number of running background shells on BUFFER's live screen.
-Reads the last `claude-session-shell-scan-lines' lines and applies
-`claude-session--shell-count'.  0 for a plain shell or a session with none."
-  (if (buffer-live-p buffer)
-      (with-current-buffer buffer
-        (save-excursion
-          (goto-char (point-max))
-          (forward-line (- claude-session-shell-scan-lines))
-          (claude-session--shell-count
-           (buffer-substring-no-properties (point) (point-max)))))
-    0))
+Reads the last `claude-session-shell-scan-lines' lines (via
+`claude-session--live-screen-tail', so a background session counts too) and
+applies `claude-session--shell-count'.  0 for a plain shell or a session with
+none."
+  (claude-session--shell-count
+   (or (claude-session--live-screen-tail
+        buffer claude-session-shell-scan-lines)
+       "")))
 
 ;;; ── Snapshots (the public interface) ─────────────────────────────────────────
 
@@ -411,14 +527,10 @@ live screen; resolves the state through `claude-session--compute-state'."
           (buffer-local-value 'claude-session--activity buffer))
          (working-since
           (buffer-local-value 'claude-session--working-since buffer))
-         (cmd-running
-          (and (boundp 'ghostel--command-running)
-               (buffer-local-value 'ghostel--command-running buffer)))
          (waiting (claude-session--selection-prompt-p buffer))
          (state
           (claude-session--compute-state
            :live live
-           :cmd-running cmd-running
            :waiting waiting
            :activity activity
            :now now))
@@ -461,10 +573,12 @@ The convenience seam for readers that want the verdict, not the whole snapshot:
 ;;;###autoload
 (defun claude-session-setup ()
   "Install the ghostel signal-collection hooks and advice (idempotent).
-Wires redraw-activity stamping and exit recording on ghostel, and the
-focus/keystroke interaction guards.  Safe to call when ghostel is not yet
-loaded; the pieces attach as it loads.  Waiting is read from the live screen at
-query time (`claude-session--selection-prompt-p'), so it needs no hook here."
+Wires redraw-activity stamping and exit recording on ghostel, the
+focus/keystroke interaction guards, and the OSC-133 command-start/finish hooks
+that mark a plain shell as an agent session while it runs cursor-agent.  Safe to
+call when ghostel is not yet loaded; the pieces attach as it loads.  Waiting is
+read from the live screen at query time (`claude-session--selection-prompt-p'),
+so it needs no hook here."
   (interactive)
   (unless claude-session--setup-done
     (with-eval-after-load 'ghostel
@@ -472,6 +586,14 @@ query time (`claude-session--selection-prompt-p'), so it needs no hook here."
        'ghostel-inhibit-redraw-functions
        #'claude-session--note-activity)
       (add-hook 'ghostel-exit-functions #'claude-session--note-exit)
+      ;; A plain ghostel shell is a session only while it runs an agent command:
+      ;; flag it at command-start when the command matches, clear it at finish.
+      (add-hook
+       'ghostel-command-start-functions
+       #'claude-session--note-command-start)
+      (add-hook
+       'ghostel-command-finish-functions
+       #'claude-session--note-command-finish)
       ;; Discount redraws you cause rather than Claude: the repaint a
       ;; focus-reporting TUI makes on focus in/out, and the echo of your own
       ;; keystrokes, so looking at or typing into a parked session does not

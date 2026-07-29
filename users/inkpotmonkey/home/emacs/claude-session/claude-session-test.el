@@ -122,12 +122,7 @@ the display repaint firing ~ms before `ghostel--focus-change'."
      :activity 100.0
      :now 100.0)))
   (should
-   (eq
-    'dead
-    (claude-session--compute-state
-     :live nil
-     :cmd-running t
-     :now 100.0))))
+   (eq 'dead (claude-session--compute-state :live nil :now 100.0))))
 
 (ert-deftest claude-session-test-state-waiting-beats-working ()
   "Waiting outranks working even with fresh activity."
@@ -141,16 +136,20 @@ the display repaint firing ~ms before `ghostel--focus-change'."
      :now 100.5
      :cutoff 3.0))))
 
-(ert-deftest claude-session-test-state-working-from-cmd ()
-  "The OSC-133 command-running flag makes a buffer working."
+(ert-deftest claude-session-test-state-quiet-command-is-ready ()
+  "A live session quiet past the cutoff is ready, not working.
+Regression for a long-lived foreground program (e.g. cursor-agent in a shell)
+that ghostel's OSC-133 flag marks command-running for its whole life: idle output
+must fall to ready, never stick on working.  Working is driven by redraw
+activity, which a quiet program does not produce."
   (should
    (eq
-    'working
+    'ready
     (claude-session--compute-state
      :live t
-     :cmd-running t
-     :activity nil
-     :now 100.0))))
+     :activity 90.0
+     :now 100.0
+     :cutoff 3.0))))
 
 (ert-deftest claude-session-test-state-working-from-activity ()
   "Recent redraw activity (within cutoff) is working."
@@ -180,6 +179,33 @@ the display repaint firing ~ms before `ghostel--focus-change'."
      :live t
      :activity nil
      :now 100.0))))
+
+;;; --- agent-command detection (plain-shell gate) ------------------------------
+
+(ert-deftest claude-session-test-agent-command-line ()
+  "The launching-command matcher fires on cursor-agent, not an ordinary command.
+This is what promotes a plain ghostel shell into a tracked session."
+  ;; the command line the shell echoes at command-start
+  (should
+   (claude-session--agent-command-line-p
+    "~/code/nixos/secrets $ cursor-agent chat"))
+  ;; a bare prompt / unrelated command -> not a session
+  (should-not
+   (claude-session--agent-command-line-p
+    "~/code/nixos/secrets $ ls -la"))
+  (should-not
+   (claude-session--agent-command-line-p "~/code/nixos/secrets $ "))
+  ;; nil screen read (no ghostel / empty) -> never matches
+  (should-not (claude-session--agent-command-line-p nil)))
+
+(ert-deftest claude-session-test-agent-command-regexp-widened ()
+  "Widening `claude-session-agent-command-regexp' tracks other agents too."
+  (let ((claude-session-agent-command-regexp
+         "\\b\\(cursor-agent\\|aider\\)\\b"))
+    (should
+     (claude-session--agent-command-line-p "$ aider --model x"))
+    (should-not
+     (claude-session--agent-command-line-p "$ git commit -m done"))))
 
 ;;; --- buffer-name parsing -----------------------------------------------------
 
