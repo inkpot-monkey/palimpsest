@@ -95,7 +95,29 @@
     # makes home share the system pkgs, so it must land at system level) and the Claude
     # Desktop electron permit. Both are applied here, where inkpotmonkey-gui is granted.
     (lib.mkIf config.custom.users.inkpotmonkey.granted.gui.enable {
-      nixpkgs.overlays = [ inputs.emacs-overlay.overlays.default ];
+      nixpkgs.overlays = [
+        inputs.emacs-overlay.overlays.default
+        # Fix nixpkgs' mis-built `tsx' tree-sitter grammar. Its `parser' is a
+        # byte-for-byte copy of the `typescript' grammar and exports
+        # `tree_sitter_typescript', so Emacs — which looks up `tree_sitter_tsx'
+        # from the language name — fails to load it ("undefined symbol:
+        # tree_sitter_tsx", `tsx-ts-mode' never activates). Root cause: the
+        # grammar builder chooses the monorepo subdir via a jq `env.language'
+        # lookup that is empty under `__structuredAttrs', so it falls back to
+        # the first grammar in tree-sitter.json (typescript). Point the build at
+        # the `tsx/' subdir; it then compiles the real TSX parser (exports
+        # `tree_sitter_tsx', larger, parses JSX). `allGrammars' reads from the
+        # scope, so `treesit-grammars.with-all-grammars' picks up the fix.
+        (_final: prev: {
+          tree-sitter-grammars = prev.tree-sitter-grammars.overrideScope (
+            _tsFinal: tsPrev: {
+              tree-sitter-tsx = tsPrev.tree-sitter-tsx.overrideAttrs (_: {
+                setSourceRoot = "sourceRoot=$(echo */tsx)";
+              });
+            }
+          );
+        })
+      ];
       # inkpotmonkey's gui home runs Claude Desktop (electron). The permit is inkpotmonkey's
       # app choice, contributed through the contract's mergeable insecure-packages aggregator
       # (not a contract gui effect — thermo-nuclear review).
