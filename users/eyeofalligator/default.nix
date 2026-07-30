@@ -1,9 +1,10 @@
 { ... }:
 {
   imports = [ ./bundle.nix ];
-  # eyeofalligator logs into an X11 session — this is feature *configuration*
-  # (user-owned), unioned with other gui users' sessions by the realization (contract ADR-0003).
-  # The gui *grant* is host-owned: weedySeadragon grants it in the fleet grant matrix
-  # (hosts/default.nix). The user never self-grants (contract ADR-0002, slice 16).
-  custom.users.eyeofalligator.gui.session = "x11";
+  # eyeofalligator names the DESKTOP it logs into — "plasma" (ADR-0018: a user declares a desktop,
+  # never a raw session type; the session type is DERIVED from the desktop by the seat). No host
+  # maps it to x11, so it degrades to the wayland default — the fleet runs wayland everywhere now
+  # (its old x11 preference was legacy). The gui *grant* stays host-owned (weedySeadragon grants it
+  # in hosts/default.nix); the user never self-grants (contract ADR-0002, slice 16).
+  custom.users.eyeofalligator.gui.desktop = "plasma";
 }

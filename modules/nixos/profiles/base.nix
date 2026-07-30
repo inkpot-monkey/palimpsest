@@ -10,10 +10,10 @@ in
 {
   imports = [
     ../../../users/identity.nix
-    # The host's display binding for the contract's gui-session decision (contract ADR-0005
-    # review): the contract decides which sessions to offer, this renders them with
-    # SDDM + Plasma 6. Swap this module to change desktop environment; the contract is
-    # unchanged. Self-gated on custom.gui.surface, so it's inert on non-gui hosts.
+    # The host's display binding. The contract is display-server-agnostic (contract ADR-0021):
+    # it only says a gui surface is needed (custom.gui.surface.enabled); this host renders a
+    # WAYLAND SDDM + Plasma 6 seat. Swap this module to change desktop environment / session type;
+    # the contract is unchanged. Self-gated on custom.gui.surface.enabled, so inert on non-gui hosts.
     ./gui-desktop.nix
   ];
 

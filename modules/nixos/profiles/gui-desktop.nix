@@ -29,24 +29,19 @@ in
     # (thermo-nuclear review). Fire on the same condition the contract feature used to.
     hardware.uinput.enable = true;
 
-    # The display backend rendering the session-union decision. Set ONCE so any number
-    # of gui users share it instead of each imposing a (conflicting) display server.
+    # The display backend. Set ONCE so any number of gui users share it. This seat is WAYLAND:
+    # the contract is display-server-agnostic (contract ADR-0021), so the host owns the session
+    # type outright — the fleet runs wayland everywhere and never offers X11.
     services = {
       displayManager.sddm.enable = lib.mkDefault true;
+      displayManager.sddm.wayland.enable = lib.mkDefault true;
       displayManager.defaultSession = lib.mkDefault "plasma";
       desktopManager.plasma6.enable = lib.mkDefault true;
-      # Offer X11 iff some granted gui user wants it.
-      xserver.enable = lib.mkDefault surface.x11;
-      # Host keyboard layout for the gui seat (used by Wayland compositors too).
+      # X11 stays off (default). Host keyboard layout for the gui seat (used by Wayland too).
       xserver.xkb = {
         layout = lib.mkDefault "gb";
         variant = lib.mkDefault "";
       };
-      # plasma6 defaults the Wayland greeter on (mkDefault true). Keep that when the
-      # union includes a Wayland user; override it off (above mkDefault, below a host
-      # mkForce) when the union is X11-only — two mkDefaults of differing values would
-      # conflict, hence the explicit priority (contract ADR-0003).
-      displayManager.sddm.wayland.enable = lib.mkIf (!surface.wayland) (lib.mkOverride 900 false);
     };
   };
 }
