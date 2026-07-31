@@ -30,24 +30,12 @@ let
   # seat plants it so sops-nix can decrypt the dummy signing key headlessly (guards nothing real).
   testKey = userHome + "/test-keys/id_ed25519";
 
-  # Common seat scaffold (mirrors conformance/prebuilt-bind-vm.nix): tmpfs root, no bootloader, and a
-  # stub HOST platform seam (orthogonal to the user's own home sops). The user's LINGER — needed so
-  # the pre-built home's sd-switch/sops-nix user services have a running user systemd instance — is
-  # NOT set here: bindContractPackage now lingers the bound user itself, and the testScript asserts
-  # it, so this rig proves the binding enforces linger (it is no longer a per-seat responsibility).
-  seatBase = {
-    system.stateVersion = "25.11";
-    nixpkgs.hostPlatform = system;
-    boot.loader.grub.enable = false;
-    fileSystems."/" = {
-      device = "tmpfs";
-      fsType = "tmpfs";
-    };
-    custom.platform = {
-      secretFile = _: builtins.toFile "stub-secret" "";
-      secretPath = _: builtins.toFile "stub-secret" "";
-    };
-  };
+  # Common seat scaffold (./seat-base.nix, shared with the eval sibling gui-eval.nix). The user's
+  # LINGER — needed so the pre-built home's sd-switch/sops-nix user services have a running user
+  # systemd instance — is NOT set here: bindContractPackage now lingers the bound user itself, and
+  # the testScript asserts it, so this rig proves the binding enforces linger (it is no longer a
+  # per-seat responsibility).
+  seatBase = import ./seat-base.nix { inherit system; };
 in
 pkgs.testers.runNixOSTest {
   name = "prebuilt-bind-external";

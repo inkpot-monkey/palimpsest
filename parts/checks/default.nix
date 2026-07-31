@@ -50,6 +50,13 @@
         prebuilt_bind_external = import ./prebuilt-bind-external {
           inherit pkgs inputs system;
         };
+        # Pure-eval sibling of the rig (issue #1, post-Phase-2 step #3): proves bindContractPackage
+        # ACCEPTS the full gui-granted variant of the external home (the grant/variant coupling
+        # assert passes for gui+signing+workstation over the gui-baked contractPackage) — no VM boot.
+        # Same dev overrides as prebuilt_bind_external until the cutover publishes + bumps the lock.
+        prebuilt_bind_external_gui_eval = import ./prebuilt-bind-external/gui-eval.nix {
+          inherit pkgs inputs system;
+        };
         # jmap_bridge VM check moved to the bridge's own repo
         # (inputs.jmap-bridge.checks); its CI owns the round-trip test now.
         # The contract's OWN conformance suite (contract ADR-0004 Q5), surfaced from the contract
