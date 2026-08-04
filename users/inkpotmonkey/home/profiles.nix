@@ -13,14 +13,8 @@ in
   #
   # We branch on the restricted `hostFacts` projection (contract ADR-0002, slice 12) rather
   # than this module's own `config` (which would recurse, since imports determine
-  # config) or raw `osConfig` (which exposes the whole system tree). `signing.nix`/
-  # `git-annex.nix` carry no version-specific options and stay importable everywhere
-  # (opt-in per host via their own enable option).
-  imports = [
-    ./signing.nix
-    ./git-annex.nix
-  ]
-  ++ lib.optionals isGui [
+  # config) or raw `osConfig` (which exposes the whole system tree).
+  imports = lib.optionals isGui [
     ./gui.nix
     ./dev.nix
     ./ai/default.nix

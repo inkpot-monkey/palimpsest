@@ -34,11 +34,6 @@
 
       users.users.inkpotmonkey.shell = pkgs.bash;
 
-      # inkpotmonkey's dedicated commit-signing key rides the `signing` grant: the key is
-      # provisioned in the user's home (home/signing.nix, via home sops) and home/git.nix
-      # keys off hostFacts.granted.signing — not a hostName gate. The contract just carries
-      # the `signing` feature; hosts grant it as data (contract ADR-0002, slice 13).
-
       # =========================================
       # Home Manager Configuration
       # =========================================
@@ -74,10 +69,6 @@
             custom.home.profiles = {
               cli.enable = true;
               gui.enable = hostFacts.granted.gui.enable;
-              # signing key rides the user's home sops, gated on the signing grant
-              # (contract ADR-0002, slice 13). Headless/exposed hosts can't decrypt home sops,
-              # so they simply don't grant it.
-              signing.enable = hostFacts.granted.signing.enable;
             };
           };
       };
