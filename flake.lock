@@ -129,11 +129,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1785852162,
-        "narHash": "sha256-Nw2h8eUz1KzgnVq8KBN4etI+wFI31kM7Y5OeLWpemq8=",
+        "lastModified": 1785874975,
+        "narHash": "sha256-ck2NhmSTDaiYcpX7XqsNc+cEOx/VC+arA7FZa8PdShA=",
         "owner": "palebluebytes",
         "repo": "host-user-contract",
-        "rev": "09096f8f5dbf6ed96c9faec826887040a13bbf22",
+        "rev": "b1c2c12eae9f4c3521b642122aaaa3323ef65628",
         "type": "github"
       },
       "original": {
@@ -1349,8 +1349,8 @@
         "sops-nix": "sops-nix_3"
       },
       "locked": {
-        "lastModified": 1785865374,
-        "narHash": "sha256-f8him3QZhm7yVoHn2BsmXsQLi/99bliM1tCrygrvyj0=",
+        "lastModified": 1785883536,
+        "narHash": "sha256-/kQWtGVr5m/ef7n3+gw/pwG3bA04Aq9+Q2RCZ3LSKfs=",
         "path": "/home/inkpotmonkey/code/users",
         "type": "path"
       },

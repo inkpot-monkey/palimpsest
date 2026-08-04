@@ -5,14 +5,10 @@
 # else now lives in the contract flake; this file is pure host glue.
 {
   inputs,
-  self,
   ...
 }:
 {
   imports = [ inputs.contract.nixosModules.default ];
-
-  # The platform binding — the single place the system names its secrets backend, so a
-  # feature resolves secrets host-agnostically. The contract ships only the interface;
-  # the binding is shared with the home side via self.lib.platformBinding (contract ADR-0004 Q7).
-  config.custom.platform = self.lib.platformBinding;
+  # The platform seam is home-side only now (secrets are a home concern) — declared + bound in
+  # modules/homeManager/options.nix. The system no longer sets custom.platform (nothing read it).
 }

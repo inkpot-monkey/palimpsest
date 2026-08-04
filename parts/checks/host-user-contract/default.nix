@@ -48,18 +48,6 @@ let
   # the contract is display-server-agnostic (contract ADR-0021), so there is no per-session-type
   # surface to assert. The remaining gui checks below test grant→display-manager on a wayland seat.
 
-  # Slice 03 — the exposed-host assertion. signing is secret-bearing (contract
-  # featureMeta), so an exposed host granting it must raise a failing assertion;
-  # a normal host granting the same feature must not.
-  exposedSigning = evalHost {
-    custom.host.exposed = true;
-    custom.users.inkpotmonkey.granted.signing.enable = true;
-  };
-  normalSigning = evalHost {
-    custom.users.inkpotmonkey.granted.signing.enable = true;
-  };
-  failing = cfg: builtins.filter (a: !a.assertion) cfg.assertions;
-
   # Slice 04 — the privileged-group clamp. A privileged group named in a user's
   # own identity is untrusted: it is dropped unless a grant confers it.
   # The manifest base grants nothing, so "no grant" is just the absence of a grant.
@@ -97,18 +85,6 @@ let
     # (inputs.contract.checks.<system>.conformance, contract ADR-0004 Q5). What remains here is
     # INTEGRATION: the host bindings (display rendering, the emacs glue, the platform
     # resolver) realizing the contract as wired into THIS fleet, on the real manifest.
-    {
-      name = "system platform resolves a secret source to an existing file";
-      ok = builtins.pathExists (denied.custom.platform.secretFile "example");
-    }
-    {
-      name = "exposed host granting a secret-bearing feature fails an assertion";
-      ok = lib.any (a: lib.hasInfix "signing" a.message) (failing exposedSigning);
-    }
-    {
-      name = "non-exposed host granting the same feature raises no exposed-host failure";
-      ok = !(lib.any (a: lib.hasInfix "exposed host" a.message) (failing normalSigning));
-    }
     {
       name = "clamp: a privileged group declared in identity is dropped without a grant";
       ok = !(lib.elem "docker" (groupsOf clampNoGrant));
