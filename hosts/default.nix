@@ -123,11 +123,35 @@ in
 
       modules = [
         ./kelpy/configuration.nix
-        self.users.inkpotmonkey.manifest
-        # kelpy is exposed: it gets workstation (docker/podman/wheel) but no
-        # secret-bearing feature. Now that the grant is explicit here, dropping it is a
-        # one-line change (see the exposed-host note in contract/realization.nix).
-        (grant "inkpotmonkey" { workstation.enable = true; })
+
+        # kelpy binds inkpotmonkey's home from the external `users` flake — its
+        # inkpotmonkey-contractPackage (base variant) — via the contract's
+        # bindContractPackage, instead of building the home inline via home-manager.
+        # Identity is read from the users repo's identity.json; the workstation grant
+        # is passed as host data. Rollback = drop this block, restore the two
+        # commented lines below.
+        (inputs.contract.lib.bindContractPackage {
+          contractPackage = inputs.users.packages.x86_64-linux.inkpotmonkey-contractPackage;
+          identity = inputs.contract.lib.loadIdentity "${inputs.users}/users/inkpotmonkey/identity.json";
+          grants = {
+            workstation.enable = true;
+          };
+        })
+        (
+          { pkgs, ... }:
+          {
+            # Host glue not carried by the contractPackage.
+            users.users.inkpotmonkey.shell = pkgs.bash;
+            environment.pathsToLink = [
+              "/share/xdg-desktop-portal"
+              "/share/applications"
+            ];
+          }
+        )
+
+        # ── rollback (inline bind) — restore these two and drop the block above: ──
+        # self.users.inkpotmonkey.manifest
+        # (grant "inkpotmonkey" { workstation.enable = true; })
       ];
     };
 
