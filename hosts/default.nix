@@ -9,6 +9,31 @@ let
   # next to where it binds the user — never by importing a self-granting variant. This
   # is the fleet's grant matrix; `granted.*` is host-write-only, the user never sets it.
   grant = user: features: { custom.users.${user}.granted = features; };
+
+  # Bind inkpotmonkey's home from the external `users` flake via the contract's
+  # bindContractPackage — the base contractPackage, arch-selected from the host's platform —
+  # instead of building the home inline via home-manager. For workstation-only (base) hosts.
+  # Identity comes from the users repo's identity.json; the host glue the package doesn't
+  # carry (login shell, XDG-portal path links) is added here.
+  bindInkpotmonkeyBase =
+    { pkgs, ... }:
+    {
+      imports = [
+        (inputs.contract.lib.bindContractPackage {
+          contractPackage =
+            inputs.users.packages.${pkgs.stdenv.hostPlatform.system}.inkpotmonkey-contractPackage;
+          identity = inputs.contract.lib.loadIdentity "${inputs.users}/users/inkpotmonkey/identity.json";
+          grants = {
+            workstation.enable = true;
+          };
+        })
+      ];
+      users.users.inkpotmonkey.shell = pkgs.bash;
+      environment.pathsToLink = [
+        "/share/xdg-desktop-portal"
+        "/share/applications"
+      ];
+    };
 in
 {
   flake.nixosConfigurations = {
@@ -74,8 +99,10 @@ in
       };
       modules = [
         ./porcupineFish/configuration.nix
-        self.users.inkpotmonkey.manifest
-        (grant "inkpotmonkey" { workstation.enable = true; })
+        # Pre-built bind (bindInkpotmonkeyBase): the contractPackage is a pre-built activate
+        # script, home-manager-version-agnostic, so the Pi's separate home-manager-25_11 pin
+        # (specialArgs above) is now irrelevant for inkpotmonkey.
+        bindInkpotmonkeyBase
         # blocky removed here (ADR-0023) — the Pi-only module swap it needed went with it.
       ];
     };
@@ -89,35 +116,10 @@ in
 
       modules = [
         ./kelpy/configuration.nix
-
-        # kelpy binds inkpotmonkey's home from the external `users` flake — its
-        # inkpotmonkey-contractPackage (base variant) — via the contract's
-        # bindContractPackage, instead of building the home inline via home-manager.
-        # Identity is read from the users repo's identity.json; the workstation grant
-        # is passed as host data. Rollback = drop this block, restore the two
-        # commented lines below.
-        (inputs.contract.lib.bindContractPackage {
-          contractPackage = inputs.users.packages.x86_64-linux.inkpotmonkey-contractPackage;
-          identity = inputs.contract.lib.loadIdentity "${inputs.users}/users/inkpotmonkey/identity.json";
-          grants = {
-            workstation.enable = true;
-          };
-        })
-        (
-          { pkgs, ... }:
-          {
-            # Host glue not carried by the contractPackage.
-            users.users.inkpotmonkey.shell = pkgs.bash;
-            environment.pathsToLink = [
-              "/share/xdg-desktop-portal"
-              "/share/applications"
-            ];
-          }
-        )
-
-        # ── rollback (inline bind) — restore these two and drop the block above: ──
-        # self.users.inkpotmonkey.manifest
-        # (grant "inkpotmonkey" { workstation.enable = true; })
+        # inkpotmonkey bound from the external `users` flake via the contract (see
+        # bindInkpotmonkeyBase). Rollback = self.users.inkpotmonkey.manifest +
+        # (grant "inkpotmonkey" { workstation.enable = true; }).
+        bindInkpotmonkeyBase
       ];
     };
 
@@ -125,8 +127,7 @@ in
 
       modules = [
         ./potbelliedSeahorse/configuration.nix
-        self.users.inkpotmonkey.manifest
-        (grant "inkpotmonkey" { workstation.enable = true; })
+        bindInkpotmonkeyBase
       ];
 
     };
@@ -140,8 +141,7 @@ in
     rk1a = mkSystem {
       modules = [
         ./rk1/common.nix
-        self.users.inkpotmonkey.manifest
-        (grant "inkpotmonkey" { workstation.enable = true; })
+        bindInkpotmonkeyBase
         {
           networking.hostName = "rk1a";
           custom.profiles.monitoring-client.enable = true;
@@ -176,8 +176,7 @@ in
         # git-annex owns the corpus tree, replicated to kelpy and — unlike music — backed up
         # offsite. Adds to the same services.git-annex enabled by git-annex.nix above.
         ./rk1/library.nix
-        self.users.inkpotmonkey.manifest
-        (grant "inkpotmonkey" { workstation.enable = true; })
+        bindInkpotmonkeyBase
         ({ config, ... }: {
           networking.hostName = "rk1b";
           # rk1b is the media + monitoring node (ADR-0027). The local llama.cpp LLM stack is
