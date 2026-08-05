@@ -38,6 +38,7 @@ import socket
 import ssl
 import struct
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -274,22 +275,57 @@ class WS:
             die("WS connection closed unexpectedly")
         return chunk
 
-    def cmd(self, msg: dict[str, Any]) -> Any:
+    def try_cmd(self, msg: dict[str, Any]) -> dict[str, Any]:
+        """Send a command and return its raw `result` message without dying on
+        failure — the caller inspects `success`/`error`. Use for commands that
+        may legitimately fail while HA is still warming up (see wait_for_ws_api)."""
         self._id += 1
         msg = {**msg, "id": self._id}
         self._send_raw(msg)
         while True:
             res = self.recv()
             if res.get("id") == self._id and res.get("type") == "result":
-                if not res.get("success", False):
-                    die(f"WS command {msg['type']} failed: {res.get('error')}")
-                return res["result"]
+                return res
+
+    def cmd(self, msg: dict[str, Any]) -> Any:
+        res = self.try_cmd(msg)
+        if not res.get("success", False):
+            die(f"WS command {msg['type']} failed: {res.get('error')}")
+        return res["result"]
 
     def close(self) -> None:
         try:
             self.sock.close()
         except OSError:
             pass
+
+
+# --------------------------------------------------------------------------- #
+# Readiness                                                                   #
+# --------------------------------------------------------------------------- #
+def wait_for_ws_api(ws, attempts=45, delay=2) -> None:
+    """Block until the assist_pipeline WS API is registered.
+
+    Our shell wrapper's readiness gate polls `manifest.json` for HTTP 200, but
+    the HTTP server comes up *before* the assist_pipeline integration finishes
+    async_setup and registers its WS commands. On a slow/contended boot that
+    gap can outlast the gate, so `assist_pipeline/pipeline/list` returns
+    `unknown_command` and provisioning dies. Poll it here — treating
+    `unknown_command` as "still loading" — so we wait for the real precondition
+    rather than the HTTP-server proxy. Fail loud on any other error or timeout.
+    """
+    for _ in range(attempts):
+        res = ws.try_cmd({"type": "assist_pipeline/pipeline/list"})
+        if res.get("success", False):
+            return
+        err = res.get("error") or {}
+        if err.get("code") != "unknown_command":
+            die(f"WS command assist_pipeline/pipeline/list failed: {err}")
+        time.sleep(delay)
+    die(
+        f"assist_pipeline WS API not ready after {attempts * delay}s "
+        "(pipeline/list kept returning unknown_command)"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -417,6 +453,7 @@ def main() -> None:
     token = get_token()
     ws = WS(BASE, token)
     try:
+        wait_for_ws_api(ws)
         stt_engine, tts_engine = ensure_voice(token, ws)
         pipeline_id = wire_pipeline(ws, stt_engine, tts_engine)
         verify(ws, pipeline_id, stt_engine, tts_engine)
