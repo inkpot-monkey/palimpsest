@@ -9,8 +9,11 @@
 - **Lint (statix):** `statix check .`
 - **Lint (deadnix):** `deadnix .`
 - **Nix packages:** `nix build .#<name>`
-- **Deploy host:** `nixos-rebuild --target-host <host> --sudo --ask-sudo-password switch --flake .#<host>`
-- **Everything:** `just check` / `just build [host]` / `just switch [host]`
+- **Deploy host:** `just deploy <host>` (switch now) or `just deployBoot <host>`
+  (next boot). Wraps `nixos-rebuild` with SSH keepalives and adds
+  `--ask-sudo-password` *only* for kelpy — other hosts have passwordless wheel
+  sudo, so don't pass it yourself (it hangs waiting on stdin non-interactively).
+- **Everything:** `just check` / `just build [host]` / `just switch [host]` (local)
 
 ## Code style
 
