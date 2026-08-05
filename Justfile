@@ -20,13 +20,16 @@ ssh_opts := "-o ServerAliveInterval=20 -o ServerAliveCountMax=6 -o ConnectTimeou
 # non-interactive. kelpy is the public-facing VPS and keeps its sudo password, so the
 # recipes add --ask-sudo-password for it (prompted once, up front, before activation).
 
-# Deploy to a remote host (e.g. kelpy, porcupineFish)
+# Deploy to a remote host (e.g. kelpy, porcupineFish). The x86 workstations no longer
+# emulate aarch64, so aarch64 hosts (rk1*, porcupineFish, potbelliedSeahorse) build on
+# rk1b (the fleet's aarch64 builder). --no-reexec keeps nixos-rebuild running as the
+# local x86 tool rather than re-exec'ing the target-arch tool under (now-absent) binfmt.
 deploy host:
-		NIX_SSHOPTS="{{ssh_opts}}" nixos-rebuild --target-host {{host}} --sudo {{ if host == "kelpy" { "--ask-sudo-password" } else { "" } }} switch --flake .#{{host}}
+		NIX_SSHOPTS="{{ssh_opts}}" nixos-rebuild --no-reexec {{ if host =~ '^(rk1a|rk1b|porcupineFish|potbelliedSeahorse)$' { "--build-host rk1b" } else { "" } }} --target-host {{host}} --sudo {{ if host == "kelpy" { "--ask-sudo-password" } else { "" } }} switch --flake .#{{host}}
 
 # Deploy to a remote host and set as default for next boot
 deployBoot host:
-		NIX_SSHOPTS="{{ssh_opts}}" nixos-rebuild --target-host {{host}} --sudo {{ if host == "kelpy" { "--ask-sudo-password" } else { "" } }} boot --flake .#{{host}}
+		NIX_SSHOPTS="{{ssh_opts}}" nixos-rebuild --no-reexec {{ if host =~ '^(rk1a|rk1b|porcupineFish|potbelliedSeahorse)$' { "--build-host rk1b" } else { "" } }} --target-host {{host}} --sudo {{ if host == "kelpy" { "--ask-sudo-password" } else { "" } }} boot --flake .#{{host}}
 
 # Build the flake locally without switching
 build host="":

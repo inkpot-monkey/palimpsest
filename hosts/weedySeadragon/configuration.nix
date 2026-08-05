@@ -61,8 +61,6 @@
 
   networking.hostName = "weedySeadragon";
 
-  # Give weedySeadragon the power to cross compile for raspberry pis
-  boot.binfmt.emulatedSystems = [ "aarch64-linux" ];
   nixpkgs.buildPlatform.system = "x86_64-linux";
 
   # Power management for Framework laptop
