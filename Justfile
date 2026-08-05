@@ -49,8 +49,10 @@ cache-kernel host="porcupineFish":
      in builtins.concatStringsSep "\n" (map (o: k.${o}.outPath) k.outputs)')
   echo "kernel outputs for {{host}}:"; echo "$paths"
   # The deploy builds these on the rk1b aarch64 builder; pull any that aren't local yet.
+  # --no-check-sigs: rk1b signs its store paths with a key this host doesn't trust, and
+  # these are our own build outputs off our own builder, so the signature check is moot.
   for p in $paths; do
-    nix path-info "$p" >/dev/null 2>&1 || { echo "copying $p from rk1b"; nix copy --from ssh-ng://inkpotmonkey@rk1b "$p"; }
+    nix path-info "$p" >/dev/null 2>&1 || { echo "copying $p from rk1b"; nix copy --no-check-sigs --from ssh-ng://inkpotmonkey@rk1b "$p"; }
   done
   echo "$paths" | xargs cachix push palebluebytes
 
