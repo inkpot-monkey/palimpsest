@@ -129,11 +129,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1786085028,
-        "narHash": "sha256-gAaXU7uxoJ3HlEyF8lVkY+KQnu/5yHVLzYH3TJfD3AA=",
+        "lastModified": 1786089998,
+        "narHash": "sha256-rzY4yguUsqRE6KE8rieaekriRUsg9rZMFJiyy8zUqvs=",
         "owner": "palebluebytes",
         "repo": "host-user-contract",
-        "rev": "1bffb4ce9891c064d5f342cb8a90665c59f4865e",
+        "rev": "a2cd65edc89c94ac68391befe64206f5cd0c7b66",
         "type": "github"
       },
       "original": {
