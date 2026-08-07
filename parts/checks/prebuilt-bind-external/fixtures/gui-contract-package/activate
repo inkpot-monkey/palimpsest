@@ -1,5 +1,0 @@
-#!/bin/sh
-# Stub activate for the gui-contract-package FIXTURE. The pure-eval grant-match proof
-# (../../gui-eval.nix) never runs this — it only reads contract-requests.json. A real
-# contractPackage's activate is the home-manager activation script; here it is inert.
-echo "gui contract package (fixture) activated for $USER"

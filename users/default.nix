@@ -113,14 +113,8 @@ in
     };
   };
 
-  # =========================================
-  # NixOS Modules (System)
-  # =========================================
-  flake.users = {
-    inkpotmonkey = import ./inkpotmonkey/default.nix;
-
-    general = import ./general/default.nix;
-
-    eyeofalligator = import ./eyeofalligator/default.nix;
-  };
+  # The in-tree system-side user path (`flake.users.<u>` → users/<u>/{default,bundle,nixos}.nix,
+  # the mkHostFacts inline host-side eval) was retired with the ADR-0024/0026 turnkey cutover: every
+  # fleet host now binds the pinned external `users` flake via `bindContractUser` (hosts/default.nix),
+  # so no host imports an in-tree user manifest. Only the standalone home builds above remain in-tree.
 }
