@@ -172,7 +172,6 @@
         ./parts/apps
         ./parts/checks
         ./lib
-        ./users
         ./hosts
         ./modules/nixos/services
         ./modules/nixos/profiles

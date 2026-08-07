@@ -2,6 +2,7 @@
   config,
   lib,
   pkgs,
+  inputs,
   ...
 }:
 let
@@ -9,7 +10,12 @@ let
 in
 {
   imports = [
-    ../../../users/identity.nix
+    # Host-side system wiring for the contract (its ADR-0004): import the contract's umbrella
+    # nixos kit (the custom.users schema, realization, feature modules, insecure aggregator,
+    # exposed-host ban — all closed over the registry). The contract leaves only the platform
+    # binding to the host, and that seam is home-side now (modules/homeManager/options.nix), so
+    # this is pure glue. (Was users/identity.nix, inlined here when the in-tree users/ dir went.)
+    inputs.contract.nixosModules.default
     # The host's display binding. The contract is display-server-agnostic (contract ADR-0021):
     # it only says a gui surface is needed (custom.gui.surface.enabled); this host renders a
     # WAYLAND SDDM + Plasma 6 seat. Swap this module to change desktop environment / session type;
