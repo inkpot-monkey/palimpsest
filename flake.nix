@@ -128,10 +128,14 @@
     # bound by the `prebuilt_bind_external` integration check — NOT yet by any production host (that
     # cutover waits for the full homes to migrate). `contract` follows the fleet's so there is ONE
     # contract/lib eval and the repo's own relative `path:` contract input is bypassed.
+    # nixpkgs deliberately does NOT follow the fleet's: the pre-built home is built with the
+    # users repo's OWN nixpkgs (the toolchain its CI tests), keeping it isolated from the
+    # fleet's pin (the point of the pre-built model). Following made the fleet REBUILD the home
+    # against the fleet nixpkgs and drift — e.g. the gui/ai closure needs a package name only
+    # the users' newer pin exposes. Cost: a second nixpkgs closure in the fleet.
     # DEV: local `path:`; flips to `github:palebluebytes/users` at T7 — a URL change.
     users = {
       url = "path:/home/inkpotmonkey/code/users";
-      inputs.nixpkgs.follows = "nixpkgs";
       inputs.contract.follows = "contract";
     };
 

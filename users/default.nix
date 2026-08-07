@@ -18,8 +18,8 @@ let
         platform = system;
         granted = {
           gui.enable = true;
-          workstation.enable = false;
-          virtualization.enable = false;
+          sudo.enable = false;
+          containers.enable = false;
         };
       },
     }:

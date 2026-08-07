@@ -5,35 +5,42 @@
 }:
 let
   inherit (self.lib) mkSystem mkPiSystem;
-  # Grant-as-data (contract ADR-0002, slice 16): a host grants a user's features here, as data,
-  # next to where it binds the user — never by importing a self-granting variant. This
-  # is the fleet's grant matrix; `granted.*` is host-write-only, the user never sets it.
-  grant = user: features: { custom.users.${user}.granted = features; };
 
-  # Bind inkpotmonkey's home from the external `users` flake via the contract's
-  # bindContractPackage — the base contractPackage, arch-selected from the host's platform —
-  # instead of building the home inline via home-manager. For workstation-only (base) hosts.
-  # Identity comes from the users repo's identity.json; the host glue the package doesn't
-  # carry (login shell, XDG-portal path links) is added here.
-  bindInkpotmonkeyBase =
-    { pkgs, ... }:
-    {
-      imports = [
-        (inputs.contract.lib.bindContractPackage {
-          contractPackage =
-            inputs.users.packages.${pkgs.stdenv.hostPlatform.system}.inkpotmonkey-contractPackage;
-          identity = inputs.contract.lib.loadIdentity "${inputs.users}/users/inkpotmonkey/identity.json";
-          grants = {
-            workstation.enable = true;
-          };
-        })
-      ];
-      users.users.inkpotmonkey.shell = pkgs.bash;
-      environment.pathsToLink = [
-        "/share/xdg-desktop-portal"
-        "/share/applications"
-      ];
+  # Turnkey host-side bind (contract ADR-0025): a host declares its `contract.affordances` ONCE
+  # and binds each user BY NAME; the contract derives the grant as `affordances ∩ offer` (the
+  # user's offer is published in the pinned `users` flake's `contractUsers` index), selects the
+  # maximal baked variant, and delegates to bindContractPackage. This replaces the hand-rolled
+  # bindContractPackage + loadIdentity + per-host grant matrix — the host holds ZERO users-repo
+  # internals (no package names, variant labels or identity paths). Named `bindUserTurnkey` (NOT
+  # `bindContractUser` — that is the contract's public consumer bind this delegates to; `traceUser`
+  # is its distinct headless inspector).
+  bindUserTurnkey =
+    username:
+    inputs.contract.lib.bindContractUser {
+      inherit username;
+      usersFlake = inputs.users;
     };
+
+  # Server seat — inkpotmonkey administers it (sudo) and runs containers, no gui. Intersected with
+  # inkpotmonkey's offer this selects the base variant and confers wheel + docker/podman (the atomic
+  # capabilities that replaced the retired `workstation` role, ADR-0024). The contract adds the login
+  # account, groups and authorized keys; nothing else is needed host-side — the pre-built home carries
+  # its own packages and the login shell defaults to bashInteractive.
+  serverAffordances.contract.affordances = {
+    sudo.enable = true;
+    containers.enable = true;
+  };
+
+  # GUI workstation seat — the server affordances plus gui, so the intersection with inkpotmonkey's
+  # offer selects the gui variant and turns on the shared display surface + input groups (the DE is
+  # the seat's own binding, modules/nixos/profiles/gui-desktop.nix; the contract's realization links
+  # the XDG portal/desktop dirs). virtualization is intentionally absent — inkpotmonkey's offer no
+  # longer includes it.
+  guiAffordances.contract.affordances = {
+    gui.enable = true;
+    sudo.enable = true;
+    containers.enable = true;
+  };
 in
 {
   flake.nixosConfigurations = {
@@ -41,12 +48,8 @@ in
 
       modules = [
         ./stargazer/configuration.nix
-        self.users.inkpotmonkey.manifest
-        (grant "inkpotmonkey" {
-          gui.enable = true;
-          workstation.enable = true;
-          virtualization.enable = true;
-        })
+        guiAffordances
+        (bindUserTurnkey "inkpotmonkey")
       ];
     };
 
@@ -54,24 +57,19 @@ in
 
       modules = [
         ./weedySeadragon/configuration.nix
-        self.users.inkpotmonkey.manifest
-        self.users.eyeofalligator
-        (grant "inkpotmonkey" {
-          gui.enable = true;
-          workstation.enable = true;
-          virtualization.enable = true;
-        })
-        # eyeofalligator co-administers this laptop and had sudo pre-clamp (its identity
-        # declares wheel); the clamp drops untrusted identity groups, so its sudo must be
-        # an explicit grant now (contract ADR-0001 threat model; cloud-review finding).
-        (grant "eyeofalligator" {
-          gui.enable = true;
-          sudo.enable = true;
-        })
-        # The break-glass admin account (declared in ./weedySeadragon/configuration.nix)
-        # is a contract user too, so its wheel is also clamped unless granted. Grant sudo
-        # so the recovery account keeps root if the primary login breaks.
-        (grant "admin" { sudo.enable = true; })
+        guiAffordances
+        # inkpotmonkey (gui variant) and eyeofalligator, both bound turnkey from the `users`
+        # flake. eyeofalligator co-administers this laptop; the clamp drops the wheel it declares
+        # in its identity, so its offer includes sudo and the host affords it ⇒ wheel is conferred
+        # by the grant (contract ADR-0001 threat model). eyeofalligator's HOST-side setup (steam,
+        # flatpak, printing, …) — which the pre-built home cannot carry — lives in the module below.
+        (bindUserTurnkey "inkpotmonkey")
+        (bindUserTurnkey "eyeofalligator")
+        ./weedySeadragon/eyeofalligator.nix
+        # The break-glass admin account (declared in ./weedySeadragon/configuration.nix) is a
+        # contract user too but is NOT in the `users` flake, so it is not turnkey-bound; its wheel
+        # is clamped unless granted, so grant sudo directly to keep root if the primary login breaks.
+        { custom.users.admin.granted.sudo.enable = true; }
       ];
     };
 
@@ -79,12 +77,8 @@ in
 
       modules = [
         ./sawtoothShark/configuration.nix
-        self.users.inkpotmonkey.manifest
-        (grant "inkpotmonkey" {
-          gui.enable = true;
-          workstation.enable = true;
-          virtualization.enable = true;
-        })
+        guiAffordances
+        (bindUserTurnkey "inkpotmonkey")
       ];
     };
 
@@ -99,10 +93,11 @@ in
       };
       modules = [
         ./porcupineFish/configuration.nix
-        # Pre-built bind (bindInkpotmonkeyBase): the contractPackage is a pre-built activate
-        # script, home-manager-version-agnostic, so the Pi's separate home-manager-25_11 pin
-        # (specialArgs above) is now irrelevant for inkpotmonkey.
-        bindInkpotmonkeyBase
+        # Turnkey base bind: the contractPackage is a pre-built activate script, home-manager-
+        # version-agnostic, so the Pi's separate home-manager-25_11 pin (specialArgs above) is
+        # irrelevant for inkpotmonkey.
+        serverAffordances
+        (bindUserTurnkey "inkpotmonkey")
         # blocky removed here (ADR-0023) — the Pi-only module swap it needed went with it.
       ];
     };
@@ -116,10 +111,8 @@ in
 
       modules = [
         ./kelpy/configuration.nix
-        # inkpotmonkey bound from the external `users` flake via the contract (see
-        # bindInkpotmonkeyBase). Rollback = self.users.inkpotmonkey.manifest +
-        # (grant "inkpotmonkey" { workstation.enable = true; }).
-        bindInkpotmonkeyBase
+        serverAffordances
+        (bindUserTurnkey "inkpotmonkey")
       ];
     };
 
@@ -127,7 +120,8 @@ in
 
       modules = [
         ./potbelliedSeahorse/configuration.nix
-        bindInkpotmonkeyBase
+        serverAffordances
+        (bindUserTurnkey "inkpotmonkey")
       ];
 
     };
@@ -141,7 +135,8 @@ in
     rk1a = mkSystem {
       modules = [
         ./rk1/common.nix
-        bindInkpotmonkeyBase
+        serverAffordances
+        (bindUserTurnkey "inkpotmonkey")
         {
           networking.hostName = "rk1a";
           custom.profiles.monitoring-client.enable = true;
@@ -176,7 +171,8 @@ in
         # git-annex owns the corpus tree, replicated to kelpy and — unlike music — backed up
         # offsite. Adds to the same services.git-annex enabled by git-annex.nix above.
         ./rk1/library.nix
-        bindInkpotmonkeyBase
+        serverAffordances
+        (bindUserTurnkey "inkpotmonkey")
         ({ config, ... }: {
           networking.hostName = "rk1b";
           # rk1b is the media + monitoring node (ADR-0027). The local llama.cpp LLM stack is
