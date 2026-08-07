@@ -133,9 +133,12 @@
     # fleet's pin (the point of the pre-built model). Following made the fleet REBUILD the home
     # against the fleet nixpkgs and drift — e.g. the gui/ai closure needs a package name only
     # the users' newer pin exposes. Cost: a second nixpkgs closure in the fleet.
-    # DEV: local `path:`; flips to `github:palebluebytes/users` at T7 — a URL change.
+    # DEV: local `git+file:`; flips to `github:palebluebytes/users` at T7 — a URL change.
+    # `git+file:` (not `path:`) enumerates git-TRACKED files, so it never copies `.git/`
+    # into the store — sidestepping the `fsmonitor--daemon.ipc` socket that broke the
+    # `path:` copier. Only committed content is seen.
     users = {
-      url = "path:/home/inkpotmonkey/code/users";
+      url = "git+file:///home/inkpotmonkey/code/users";
       inputs.contract.follows = "contract";
     };
 
