@@ -67,8 +67,12 @@ Then confirm the server came back on the upstream build and the account still au
 
 ```bash
 ssh rk1b systemctl status supernote-server supernote-account-bootstrap
-ssh rk1b 'readlink -f $(systemctl show -p ExecStart --value supernote-server | grep -o "/nix/store/[^ ]*")'
-# → …-supernote-0.17.0 (not the old fork build)
+
+# Which build is actually running. ExecStart is a generated wrapper script, not the binary,
+# so read the live process's argv rather than the unit's ExecStart.
+ssh rk1b 'sudo tr "\0" " " < /proc/$(systemctl show -p MainPID --value supernote-server)/cmdline'
+# → …/nix/store/<hash>-supernote-0.17.0/bin/supernote-server serve
+
 ssh rk1b 'sudo cat /var/lib/supernote/jwt-secret | head -c 8'   # unchanged
 ```
 
