@@ -305,6 +305,18 @@ in
               done
 
               # Idempotent health/login proof: succeeds whenever the account already exists.
+              #
+              # Deliberately NOT retried, unlike the reconciler (palimpsest#142). This probe is
+              # exposed to the same lost-login-challenge race, and a collision here would send us
+              # down the register path below, which then fails on an already-existing account —
+              # a confusing deploy failure that reads like a bad secret. It is left alone anyway
+              # because the cure is worse: every login attempt, failed ones included, counts
+              # against upstream's per-account limit of 10 per 60s (server/utils/rate_limit.py,
+              # checked BEFORE credentials are verified), so a retry loop here plus the
+              # register+verify pair could trip a 429 on a FRESH install — trading a rare race for
+              # a reliable one. The exposure is small (this runs at boot/deploy, not per sync),
+              # and the reconciler — which fires on EVERY device sync — is the hardened one.
+              # If this unit fails with "Invalid credentials", re-run it before suspecting sops.
               if ${pkgs.supernote}/bin/supernote cloud login --url "${localUrl}" "$account" --password "$password"; then
                 echo "supernote: account present, login OK"
                 exit 0
