@@ -112,6 +112,18 @@ let
         port = 8095;
         origin = "rk1b";
       };
+      # Stump — the reading catalog over the git-annex document library (ADR-0031, #113).
+      # Same edge/origin split as Navidrome: it RUNS on rk1b (media node, corpus on the NVMe
+      # /var/cache/library), fronted by kelpy's Caddy at library.<domain> with TLS + the
+      # internal_only tailnet guard. The Supernote reaches it as an OPDS client over the tailnet
+      # (#114), so this vhost is the delivery path, not just a browse convenience — deploy BOTH
+      # hosts or the tailnet gets a TLS error. The vhost subdomain is this attribute name, so it's
+      # `library`; the profile that runs it is custom.profiles.stump. Port is Stump's own default.
+      library = {
+        edge = "kelpy";
+        port = 10001;
+        origin = "rk1b";
+      };
       # slskd — the Soulseek client that seeds the shared music library outward
       # (ADR-0028). It RUNS on kelpy (where the git-annex `music` replica lives),
       # inside the ProtonVPN container's netns, with its web UI published to loopback;

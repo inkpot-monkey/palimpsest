@@ -231,6 +231,16 @@ in
           # lives behind its own flag — see modules/nixos/profiles/supernote.nix.
           custom.profiles.supernote.ereader.enable = true;
 
+          # Stump — the reading catalog over the document library (ADR-0031, #113). Indexes
+          # /var/cache/library/{books,papers,notebooks} as three series-priority libraries (the
+          # scan pattern is immutable, so it is set at creation by the provisioning oneshot) and
+          # leaves the `_originals/` sibling unindexed by physical placement. Reads the tree as a
+          # member of the `library` group; DB + thumbnails on the NVMe /var/cache/stump. Tailnet-
+          # only, fronted by kelpy's Caddy at library.<domain> — DEPLOY KELPY TOO or the tailnet
+          # gets a TLS error. See modules/nixos/profiles/stump.nix and the `library` entry in
+          # parts/settings.nix; the pre-version-bump DB snapshot step is in the profile header.
+          custom.profiles.stump.enable = true;
+
           # Off-host uptime watcher (Gatus): rk1b is always-on and not kelpy, so it
           # can observe kelpy failing. Probes the fleet + alerts to #infra-alerts.
           # See ADR-0019 / modules/nixos/profiles/monitoring/watcher.nix.
