@@ -31,6 +31,21 @@
 # "public URL" knob — `HostDetails` is derived per-request from `Host` + the proxy scheme header
 # (apps/server/src/middleware/host.rs), which Caddy's `reverse_proxy` sets and preserves by default.
 #
+# ── The credential (one sops secret) ──────────────────────────────────────────────────────
+# Stump's server-owner account. The server grants owner rights to the FIRST account registered on
+# an empty database and then refuses unauthenticated registration, so this is the one credential
+# that exists — and it is what the provisioning oneshot below uses to create the three libraries.
+#
+# Lives in the shared `profiles/library.yaml` bundle (this stack's secret file, shared with the
+# Supernote server and the ereader reconciler) under a `stump` sub-map alongside `supernote:`:
+#   stump:
+#     user: reader                 # any username; unlike Supernote's, it need not be an email
+#     password: your-password
+# sops files are a SEPARATE repo (stash): add the sub-map there, commit + push, then
+# `nix flake update secrets` HERE before deploying rk1b — otherwise sops-install-secrets cannot
+# extract `stump/user` and activation fails (AGENTS.md gotcha). The file already lists rk1b as a
+# recipient (the Supernote profile reads it), so no re-keying is needed.
+#
 # ── BEFORE BUMPING THE VERSION: snapshot the database ─────────────────────────────────────
 # Stump migrates its schema on start, and one of those migrations has already destroyed data once
 # upstream (0.1.5 consolidated reading sessions and shipped an explicit backup warning). Standing
@@ -195,11 +210,11 @@ in
             # THE TRAP. Upstream sets PrivateUsers = true. Inside that user namespace only root and
             # the service's own uid/gid are mapped, so every SUPPLEMENTARY group — including the
             # `library` membership above — maps to the overflow id (nobody/65534). The corpus tree is
-            # mode 2770 root:library, so Stump loses its read path into it and every library scans as
+            # mode 2770 git-annex:library, so Stump loses its read path into it and every library scans as
             # empty: no error, no crash, just a permanently empty catalog. Forcing it off is what
             # makes the group membership real. (The alternative, SupplementaryGroups= inside the
             # namespace, still needs the gid mapped, so it does not help.) Verified red→green in the
-            # `stump` VM check, which reads a real 2770 root:library tree.
+            # `stump` VM check, which reads a real 2770 git-annex:library tree.
             PrivateUsers = lib.mkForce false;
             # systemd creates/owns /var/cache/stump for us (upstream only declares StateDirectory,
             # which lands on tmpfs here). 0700: the DB holds session tokens and password hashes.

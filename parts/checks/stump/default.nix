@@ -153,6 +153,7 @@ pkgs.testers.nixosTest {
 
   testScript = ''
     import json
+    import shlex
     import time
 
     PORT = ${toString port}
@@ -167,9 +168,25 @@ pkgs.testers.nixosTest {
     def plant(directory, series, name, source):
         """Drop a book into `<root>/<series>/` — series-priority means a root's subdirectories are
         its series, the shape the corpus is curated in. Series dir 2770 and file 0640, both
-        git-annex:library, so the ONLY way `stump` can read either is the group membership."""
-        origin.succeed(f"install -d -o git-annex -g library -m 2770 {directory}/{series}")
-        origin.succeed(f"install -m 0640 -o git-annex -g library {source} {directory}/{series}/{name}.pdf")
+        git-annex:library, so the ONLY way `stump` can read either is the group membership.
+        Paths are shell-quoted: real series names have spaces in them."""
+        series_dir = shlex.quote(f"{directory}/{series}")
+        target = shlex.quote(f"{directory}/{series}/{name}.pdf")
+        origin.succeed(f"install -d -o git-annex -g library -m 2770 {series_dir}")
+        origin.succeed(f"install -m 0640 -o git-annex -g library {source} {target}")
+
+
+    def wait_for_catalog(predicate, what, tries=60):
+        """Poll the catalog until `predicate` holds. A scan is a background job kicked off by
+        library creation (and by the watcher on a later drop), so `stump-provision` going active
+        does not mean the books are indexed yet — without this the assertions race the scanner."""
+        with origin.nested(f"waiting for the catalog: {what}"):
+            for _ in range(tries):
+                snapshot = catalog()
+                if predicate(snapshot):
+                    return snapshot
+                time.sleep(3)
+        raise Exception(f"catalog never reached '{what}': {catalog()}")
 
 
     def graphql(query):
@@ -245,6 +262,10 @@ pkgs.testers.nixosTest {
     #    can only happen if the scanner, running as `stump`, could actually read a 2770 tree it
     #    reaches solely through the `library` group. With upstream's PrivateUsers=true these come
     #    back empty (see the header).
+    libraries = wait_for_catalog(
+        lambda c: c["Books"]["books"] and c["Papers"]["books"],
+        "the initial scan indexes the planted books",
+    )
     assert libraries["Books"]["books"] == ["clocks-of-the-long-now"], libraries["Books"]
     assert libraries["Papers"]["books"] == ["time-clocks-and-ordering"], libraries["Papers"]
     assert libraries["Notebooks"]["books"] == [], libraries["Notebooks"]
@@ -257,15 +278,27 @@ pkgs.testers.nixosTest {
     origin.succeed(f"curl -sf -o /dev/null {LOCAL}/api/v2/ping")
     client.fail(f"curl -s -o /dev/null --max-time 8 http://origin:{PORT}/api/v2/ping")
 
-    # 6. THROUGH THE EDGE. Caddy's `tls internal` CA is not in the client's trust store, hence -k;
-    #    what matters is the request arrives with the edge's Host + X-Forwarded-Proto, exactly as
-    #    it would through kelpy.
+    # 6. THROUGH THE EDGE. In the deployment, kelpy reaches rk1b over `tailscale0` — which is
+    #    precisely the interface the profile opens the port on, so the edge is inside the allow-list
+    #    and everything else is outside it. This VM LAN has no tailnet, so subtest 5's rule blocks
+    #    the edge too. Stand in for the tailnet by granting the EDGE, and only the edge, the same
+    #    reach: a source-scoped accept ahead of the firewall's default drop. The `client.fail`
+    #    re-asserted below is what keeps this honest — the exception is one host, not the LAN.
+    edge_ip = edge.succeed("ip -4 -o addr show eth1 | awk '{print $4}' | cut -d/ -f1").strip()
+    edge_ip6 = edge.succeed(
+        "ip -6 -o addr show eth1 scope global | awk '{print $4}' | cut -d/ -f1"
+    ).strip()
+    origin.succeed(f"iptables -I nixos-fw 1 -s {edge_ip} -p tcp --dport {PORT} -j nixos-fw-accept")
+    origin.succeed(f"ip6tables -I nixos-fw 1 -s {edge_ip6} -p tcp --dport {PORT} -j nixos-fw-accept")
+    client.fail(f"curl -s -o /dev/null --max-time 8 http://origin:{PORT}/api/v2/ping")
+
+    #    Caddy's `tls internal` CA is not in the client's trust store, hence -k; what matters is
+    #    that the request arrives with the edge's Host + X-Forwarded-Proto, exactly as through kelpy.
     edge.wait_for_unit("caddy.service")
     edge.wait_for_open_port(443)
-    edge_ip = edge.succeed("ip -4 -o addr show eth1 | awk '{print $4}' | cut -d/ -f1").strip()
     resolve = f"--resolve ${vhost}:443:{edge_ip}"
     client.wait_until_succeeds(
-        f"curl -skf {resolve} -o /dev/null https://${vhost}/api/v2/ping", timeout=60
+        f"curl -skf {resolve} -o /dev/null https://${vhost}/api/v2/ping", timeout=90
     )
 
     # The self-referencing links an OPDS client traverses by. OPDS 2.0 is where they are absolute
@@ -279,8 +312,8 @@ pkgs.testers.nixosTest {
     )
     # Scoped to the vhost rather than a bare `http://` scan: an OPDS feed is full of
     # `http://opds-spec.org/...` rel values, which are identifiers, not links to follow.
-    assert f"https://${vhost}/" in feed, f"OPDS feed has no https://${vhost} self-links:\n{feed}"
-    assert f"http://${vhost}" not in feed, f"OPDS self-links use a non-TLS scheme:\n{feed}"
+    assert "https://${vhost}/" in feed, f"OPDS feed has no https://${vhost} self-links:\n{feed}"
+    assert "http://${vhost}" not in feed, f"OPDS self-links use a non-TLS scheme:\n{feed}"
     assert f"${vhost}:{PORT}" not in feed, f"OPDS self-links leak the origin's listen port:\n{feed}"
 
     # OPDS 1.2 — the version #114 targets — is served through the same edge. Its links are
@@ -295,13 +328,10 @@ pkgs.testers.nixosTest {
     # 7. The `watch` config on each library: a file dropped into a root after the initial scan
     #    still becomes a catalog entry, which is what makes the reconciler's drops visible.
     plant(NOTEBOOKS, "Field Notes", "2026-08-13", "${book "field-notes" "A rendered notebook."}")
-    with origin.nested("waiting for the watcher to index the new notebook"):
-        for _ in range(60):
-            if catalog()["Notebooks"]["books"] == ["2026-08-13"]:
-                break
-            time.sleep(3)
-        else:
-            raise Exception(f"the dropped notebook never appeared: {catalog()}")
+    wait_for_catalog(
+        lambda c: c["Notebooks"]["books"] == ["2026-08-13"],
+        "the watcher indexes a notebook dropped after the initial scan",
+    )
 
     # 8. THE DB SURVIVES A RESTART, and the provisioner is idempotent (no duplicate libraries).
     origin.systemctl("restart stump.service")
