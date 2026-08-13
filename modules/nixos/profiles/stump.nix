@@ -195,8 +195,9 @@ in
         # 985 (stalwart-mail), 988 (qbittorrent), 989 (openclaw).
         users.users.stump = {
           uid = 979;
-          # Read the corpus through the tree's sharing group — Stump never writes it. This is the
-          # membership that PrivateUsers would silently break (see the mkForce below).
+          # Read the corpus through the tree's sharing group — Stump never writes it. Whether this
+          # membership survives upstream's `PrivateUsers` sandbox is the question the VM check
+          # answers; see the note on the unit below.
           extraGroups = [ cfg.group ];
         };
         users.groups.stump.gid = 979;
@@ -206,16 +207,24 @@ in
           # to create a library whose path is missing).
           after = [ "stump-library-roots.service" ];
           requires = [ "stump-library-roots.service" ];
+          # UPSTREAM'S `PrivateUsers = true` IS DELIBERATELY LEFT ALONE — and that is a MEASURED
+          # decision, not an oversight, because the obvious reading of it is wrong. Inside the user
+          # namespace the `library` gid is unmapped, so it resolves to `nobody` by NAME, which looks
+          # exactly like the membership having been severed. It has not: the kernel checks file
+          # access against the process's real credentials, which systemd sets from the user database
+          # before the namespace is in play. The corpus stays readable.
+          #
+          # This matters because getting it wrong in either direction is silent. Forcing PrivateUsers
+          # off "to be safe" would drop real hardening for no reason; a genuinely severed group would
+          # make every library scan as EMPTY with no error, no crash and every unit green. So the
+          # question is settled by evidence rather than by argument. Inside the sandbox the `stump`
+          # user's groups read `979 65534` — its own gid, plus `library` (977) squashed to the
+          # overflow id — and the corpus file still opens. The `stump` VM check measures exactly
+          # that, and separately plants a book in a real 2770 git-annex:library tree the `stump`
+          # user can reach ONLY through the group and asserts it becomes a catalog entry. Verified
+          # 2026-08-13 with PrivateUsers both on and off. If a future systemd changes it, that
+          # check is what fails.
           serviceConfig = {
-            # THE TRAP. Upstream sets PrivateUsers = true. Inside that user namespace only root and
-            # the service's own uid/gid are mapped, so every SUPPLEMENTARY group — including the
-            # `library` membership above — maps to the overflow id (nobody/65534). The corpus tree is
-            # mode 2770 git-annex:library, so Stump loses its read path into it and every library scans as
-            # empty: no error, no crash, just a permanently empty catalog. Forcing it off is what
-            # makes the group membership real. (The alternative, SupplementaryGroups= inside the
-            # namespace, still needs the gid mapped, so it does not help.) Verified red→green in the
-            # `stump` VM check, which reads a real 2770 git-annex:library tree.
-            PrivateUsers = lib.mkForce false;
             # systemd creates/owns /var/cache/stump for us (upstream only declares StateDirectory,
             # which lands on tmpfs here). 0700: the DB holds session tokens and password hashes.
             CacheDirectory = "stump";

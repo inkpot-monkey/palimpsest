@@ -8,14 +8,22 @@
 #      provisioner, because the pattern is immutable afterwards. And `_originals/` is indexed by
 #      NOTHING: no library's path is inside it, and its planted file never becomes a catalog entry.
 #
-#   2. THE GROUP READ PATH — the trap this test exists for. Upstream's `services.stump` sets
-#      `PrivateUsers = true`, which maps every supplementary group to the overflow id inside the
-#      namespace and severs Stump's `library` membership. The corpus below is a real 2770
-#      git-annex:library tree that the `stump` user can ONLY read through that group, so a Stump
-#      that has lost it scans three empty libraries — no error, no crash. Asserting a planted file
-#      became a catalog entry is what makes that failure visible. (Verified to discriminate: with
-#      `PrivateUsers` left at upstream's `true`, subtest 4's `books == ["clocks-of-the-long-now"]`
-#      fails with `[]` while every unit stays green.)
+#   2. THE GROUP READ PATH — the reason this test exists. Upstream's `services.stump` runs under
+#      `PrivateUsers = true`, and Stump reaches the corpus only as a member of the `library` group.
+#      Inside a user namespace that gid is unmapped and resolves to `nobody` by NAME, which reads
+#      like the membership has been severed — and a severed membership would make all three
+#      libraries scan EMPTY with no error, no crash and every unit green. The corpus below is a
+#      real 2770 git-annex:library tree the `stump` user can reach ONLY through that group, and
+#      the assertion is that a planted book becomes a catalog entry.
+#
+#      MEASURED RESULT (2026-08-13): it works. Subtest 4 re-derives it rather than asserting it —
+#      a transient unit with the same identity and sandbox reports its groups as `979 65534` (its
+#      own gid, plus `library` squashed to the overflow id, i.e. the appearance of a severed
+#      membership) and then reads a corpus file anyway. The kernel checks access against the
+#      process's real credentials, not the namespace's view of them. So the profile leaves
+#      upstream's hardening ALONE; forcing `PrivateUsers = false` would have dropped real hardening
+#      on the strength of a name. This test is what would catch a systemd that changes the
+#      behaviour — it was also run with the force in place, and passes either way.
 #
 #   3. TAILNET-ONLY. The `client` node on the shared LAN cannot reach the catalog port directly —
 #      the profile opens it on `tailscale0` only, never `openFirewall`. Proven to be the firewall
@@ -258,10 +266,26 @@ pkgs.testers.nixosTest {
         assert lib["pattern"] == "SERIES_BASED", f"{name} is {lib['pattern']}, not SERIES_BASED"
         assert not lib["path"].startswith(ORIGINALS), f"{name} is rooted inside _originals/"
 
-    # 4. THE GROUP READ PATH. The planted books are catalog entries, in the right library — which
-    #    can only happen if the scanner, running as `stump`, could actually read a 2770 tree it
-    #    reaches solely through the `library` group. With upstream's PrivateUsers=true these come
-    #    back empty (see the header).
+    # 4. THE GROUP READ PATH. First the mechanism, directly: a transient unit with the SAME
+    #    identity and the same `PrivateUsers` sandbox the real service runs under. It reports the
+    #    namespace's view of its groups (where the unmapped `library` gid shows as the overflow id,
+    #    which is what makes this look broken) and then actually reads a corpus file. READ-OK is
+    #    the finding: the name is squashed, the credential is not.
+    #    The path goes in through --setenv rather than the command line, so the shell snippet stays
+    #    free of nested quoting (real series names have spaces in them); `id` and `cat` are absolute
+    #    because a transient unit inherits no PATH.
+    probe = origin.succeed(
+        "systemd-run --quiet --pipe --wait -p User=stump -p PrivateUsers=yes "
+        f"--setenv=BOOK={shlex.quote(BOOKS + '/Stewart Brand/clocks-of-the-long-now.pdf')} "
+        + """/bin/sh -c '/run/current-system/sw/bin/id -G; """
+        + """/run/current-system/sw/bin/cat "$BOOK" >/dev/null && echo READ-OK'"""
+    )
+    assert "READ-OK" in probe, f"the stump user cannot read the corpus under PrivateUsers: {probe}"
+    print(f"PrivateUsers sandbox: groups as seen inside the namespace + corpus read => {probe!r}")
+
+    #    Then the thing that actually matters: the planted books are catalog entries, in the right
+    #    library — which the real scanner, in the real unit, could only manage by reading a 2770
+    #    tree it reaches solely through the `library` group.
     libraries = wait_for_catalog(
         lambda c: c["Books"]["books"] and c["Papers"]["books"],
         "the initial scan indexes the planted books",
