@@ -142,13 +142,22 @@
       inputs.contract.follows = "contract";
     };
 
-    # The Supernote toolkit fork (self-hosted Private Cloud Sync server + client),
-    # tracked on its round-trip branch. `flake = false`: it is a plain Python repo,
-    # not a flake — we package it here as `pkgs.supernote` (pkgs/supernote) with
-    # nixpkgs `buildPythonApplication`, so rk1b (aarch64) substitutes the heavy deps
-    # from cache.nixos.org rather than compiling. Bump with `nix flake update supernote`.
+    # The Supernote toolkit (self-hosted Private Cloud Sync server + client) — UPSTREAM,
+    # pinned to an explicit revision (palimpsest#112, retiring the vendored
+    # `inkpot-monkey/supernote` round-trip branch that #91 pinned). Upstream implemented the
+    # device planner/realtime surface the fork existed to add, so there is no branch left to
+    # maintain; the residual gaps are tracked as their own issues rather than re-vendored.
+    #
+    # A bare `?rev=` rather than a branch ON PURPOSE: this is the device sync endpoint, and an
+    # unattended `nix flake update` that drags in an alembic migration would silently migrate
+    # the live store. Moving it must be a deliberate, reviewed edit of the rev below (take a
+    # `sqlite3 .backup` of /var/lib/supernote/system/supernote.db first — ADR-0031).
+    #
+    # `flake = false`: a plain Python repo, not a flake — packaged here as `pkgs.supernote`
+    # (pkgs/supernote) with nixpkgs `buildPythonApplication`, so rk1b (aarch64) substitutes the
+    # heavy deps from cache.nixos.org rather than compiling.
     supernote = {
-      url = "github:inkpot-monkey/supernote/fix/device-schedule-group-all";
+      url = "github:allenporter/supernote?rev=5f55872c7badc16db280e528783312e5f25f3cf8";
       flake = false;
     };
 
