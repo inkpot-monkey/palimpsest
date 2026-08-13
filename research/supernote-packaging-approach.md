@@ -1,5 +1,13 @@
 # NixOS packaging approach for the `inkpot-monkey/supernote` fork
 
+> **Partly superseded (2026-08-13, [#112](https://github.com/inkpot-monkey/palimpsest/issues/112)).**
+> The packaging *approach* this doc chose — nixpkgs `buildPythonApplication`, hand-written
+> `dependencies`, local stubs for what nixpkgs lacks — still stands and is still what
+> `pkgs/supernote` does. What changed is the subject: the transport is now UPSTREAM
+> `allenporter/supernote` at a pinned rev, not this fork, and the dependency closure below is
+> stale (upstream adds `python-socketio` and `ical`, and needs `mcp>=2.0.0`, which nixpkgs does
+> not have — see `pkgs/supernote/mcp2.nix`). Read this for the reasoning, not the dep list.
+
 Research for [palimpsest #84](https://github.com/inkpot-monkey/palimpsest/issues/84)
 (wayfinder map [#61](https://github.com/inkpot-monkey/palimpsest/issues/61)).
 Grounds the decision in the **actual** dependency closure of the fork at
