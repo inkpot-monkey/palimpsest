@@ -19,7 +19,7 @@ the *file* surface (bind, bootstrap, login, MCP-port firewalling, the ereader ro
 because that is what this deployment drives. They do **not** drive the planner, summary-digest,
 or realtime paths — only a real Nomad does.
 
-Four upstream gaps are already known and filed. Expect to meet some of them:
+Five upstream gaps are already known and filed. Expect to meet some of them:
 
 | Issue | What breaks | Banner you would see |
 | --- | --- | --- |
@@ -27,6 +27,7 @@ Four upstream gaps are already known and filed. Expect to meet some of them:
 | #137 | Planner writes are insert-only and numeric-id-only | planner sync error / duplicate tasks |
 | #138 | Planner deletes are hard deletes, no tombstone | deleted tasks reappear |
 | #139 | `PUT task/list` batch is update-only, drops `isDeleted` | planner batch sync error |
+| #140 | Upload response echoes the requested path; no rogue-root self-heal | none expected — dormant on this store |
 
 The **realtime socket** surface is expected to be fine (upstream serves socket.io with the real
 library and `allow_eio3=True`), but note upstream now *verifies the handshake `sign`* where the

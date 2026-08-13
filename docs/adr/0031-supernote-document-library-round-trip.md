@@ -117,10 +117,12 @@ implementations are independent, so a patch comparison shows no overlap):
   `task/list`) — and the flatten-aware path resolution the fork added to the VFS is there too, with
   the *opposite* precedence (upstream prefers a real root folder over the category container, so it
   does not self-heal a rogue root folder left by the old bug; ours has none).
-- **Four gaps remain**, filed rather than re-vendored: palimpsest#136 (`delete/summary` is
+- **Five gaps remain**, filed rather than re-vendored: palimpsest#136 (`delete/summary` is
   POST-only, the device sends `DELETE`), #137 (planner writes are insert-only and numeric-id-only,
   and cannot represent an ungrouped task), #138 (planner deletes are hard deletes, so off-device
-  deletes resurrect), #139 (`PUT task/list` is update-only and drops `isDeleted`).
+  deletes resurrect), #139 (`PUT task/list` is update-only and drops `isDeleted`), and #140 (the
+  device upload response echoes the requested path, and the precedence above does not self-heal).
+  #136-#139 are on the device's own sync; #140 is dormant on our store.
 
 Consequences that supersede the "a maintained fork to carry" consequence below:
 
