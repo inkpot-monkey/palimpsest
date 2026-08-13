@@ -43,11 +43,31 @@ import asyncio
 import hashlib
 import json
 import os
+import random
 import sys
 from pathlib import Path
 
 from supernote.client import Supernote
-from supernote.client.exceptions import NotFoundException
+from supernote.client.exceptions import NotFoundException, UnauthorizedException
+
+# ── Login retry (palimpsest#112, upstream gap #142) ──────────────────────────────────────────
+# Upstream's login is a two-step challenge: GET /api/official/user/query/random/code makes the
+# server store ONE challenge per account (`challenge:{account}` — supernote/server/services/
+# user.py generate_random_code), then POST login submits a hash of it plus the issuing timestamp,
+# which `verify_login_hash` requires to equal the STORED timestamp. There is one slot per account,
+# so two logins for the same account that interleave clobber each other and the loser gets a
+# misleading 401 "Invalid credentials".
+#
+# We are structurally exposed to that: ADR-0031 gives the device and this reconciler ONE shared
+# account, and the reconciler is fired BY the device's sync — so its login runs exactly when the
+# device is also authenticating. This is not a test artefact; it bites in production.
+#
+# Retrying is the honest fix at this layer: a lost challenge is transient and a fresh challenge
+# succeeds, while a genuinely wrong credential 401s on every attempt and still fails the unit
+# loudly (just a few seconds later). Jittered backoff so a retry does not re-collide with the
+# same competing client.
+LOGIN_ATTEMPTS = 5
+LOGIN_BACKOFF_BASE = 0.7
 
 URL = os.environ["SUPERNOTE_URL"].rstrip("/")
 # The downward mirror (git-annex tree) and the one-shot send inbox.
@@ -195,6 +215,29 @@ async def mirror_down(sn, store, baseline):
     return downloaded, deleted
 
 
+async def login(user, password):
+    """Log in, retrying a 401 that is really a lost login challenge (see LOGIN_ATTEMPTS above).
+
+    Only ``UnauthorizedException`` is retried, and only up to ``LOGIN_ATTEMPTS``: a genuinely bad
+    credential 401s every time and still ends up raising, so the unit fails loudly as before. Any
+    other error (unreachable store, malformed response) propagates on the first attempt — the
+    reconciler must not soldier on into the library mutation when the store is not answering.
+    """
+    for attempt in range(1, LOGIN_ATTEMPTS + 1):
+        try:
+            return await Supernote.login(user, password, host=URL)
+        except UnauthorizedException:
+            if attempt == LOGIN_ATTEMPTS:
+                raise
+            delay = LOGIN_BACKOFF_BASE * attempt * (1 + random.random())
+            print(
+                f"ereader reconcile: login 401 (attempt {attempt}/{LOGIN_ATTEMPTS}) — "
+                f"probably a lost login challenge, retrying in {delay:.1f}s"
+            )
+            await asyncio.sleep(delay)
+    raise AssertionError("unreachable")
+
+
 async def run():
     user = read_file(os.environ["SUPERNOTE_USER_FILE"])
     password = read_file(os.environ["SUPERNOTE_PASSWORD_FILE"])
@@ -202,7 +245,7 @@ async def run():
 
     # Login first: an unreachable store fails HERE, before any library mutation — the "unreachable"
     # half of the store-loss guard.
-    async with await Supernote.login(user, password, host=URL) as sn:
+    async with await login(user, password) as sn:
         store = await store_snapshot(sn)
         sent = await send_outbox(sn, store)
         downloaded, deleted = await mirror_down(sn, store, baseline)

@@ -36,37 +36,75 @@ let
   # A tiny device driver: `sync` opens a sync session (the reconcile's only trigger); `ls` prints
   # the ereader folder listing as `<path_display>\t<content_hash>` lines; `rm <path>` deletes a file
   # from the store (the device's 2-way sync propagating a device-side delete up).
+  #
+  # It CACHES its access token to a file and reuses it, re-logging-in only when the token is
+  # missing or rejected. That is what a real Nomad does — it authenticates once at pairing and then
+  # carries a long-lived JWT (which is exactly why the profile persists a stable JWT signing key
+  # across restarts). It also matters for correctness of this test: the driver is invoked by
+  # `wait_until_succeeds`, which re-runs it every second, so logging in per invocation would
+  # manufacture a login storm no device produces — and upstream keeps only ONE login challenge per
+  # account (`challenge:{account}`, palimpsest#142), so a storm makes concurrent logins fail with a
+  # misleading 401. Caching keeps the polling honest and tests the sync, not the login endpoint.
   driver = pkgs.writeText "sn-ereader-driver.py" ''
     import asyncio
     import os
     import sys
+    from pathlib import Path
 
     from supernote.client import Supernote
-    from supernote.client.exceptions import NotFoundException
+    from supernote.client.exceptions import NotFoundException, UnauthorizedException
 
     URL = os.environ["URL"]
     USER = os.environ["SN_USER"]
     PW = os.environ["SN_PASS"]
+    TOKEN_FILE = Path(os.environ.get("SN_TOKEN_FILE", "/tmp/sn-device-token"))
+
+
+    def cached_token():
+        if TOKEN_FILE.is_file():
+            return TOKEN_FILE.read_text().strip() or None
+        return None
+
+
+    async def fresh_login():
+        sn = await Supernote.login(USER, PW, host=URL)
+        if sn.token:
+            TOKEN_FILE.write_text(sn.token)
+        return sn
+
+
+    async def act(sn, cmd):
+        if cmd == "sync":
+            await sn.device.sync_start("TEST-DEVICE")
+            print("sync started")
+        elif cmd == "ls":
+            try:
+                listing = await sn.device.list_folder(
+                    "/DOCUMENT/Document/ereader", recursive=True
+                )
+            except NotFoundException:
+                return
+            for e in listing.entries:
+                print(f"{e.path_display}\t{e.content_hash}")
+        elif cmd == "rm":
+            await sn.device.delete_by_path(sys.argv[2])
+            print("deleted")
 
 
     async def main():
         cmd = sys.argv[1]
-        async with await Supernote.login(USER, PW, host=URL) as sn:
-            if cmd == "sync":
-                await sn.device.sync_start("TEST-DEVICE")
-                print("sync started")
-            elif cmd == "ls":
-                try:
-                    listing = await sn.device.list_folder(
-                        "/DOCUMENT/Document/ereader", recursive=True
-                    )
-                except NotFoundException:
+        # Try the cached token first; fall back to a real login only if it is missing or the
+        # server rejects it. No extra probe request — the command itself is the probe.
+        token = cached_token()
+        if token:
+            try:
+                async with Supernote.from_token(token, host=URL) as sn:
+                    await act(sn, cmd)
                     return
-                for e in listing.entries:
-                    print(f"{e.path_display}\t{e.content_hash}")
-            elif cmd == "rm":
-                await sn.device.delete_by_path(sys.argv[2])
-                print("deleted")
+            except UnauthorizedException:
+                pass
+        async with await fresh_login() as sn:
+            await act(sn, cmd)
 
 
     asyncio.run(main())
