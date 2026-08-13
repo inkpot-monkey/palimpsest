@@ -57,14 +57,15 @@ let
       inherit pname version;
       hash = "sha256-ffBs+zQHDK5PfIm+adwQleyhOOlwTO/7mNJcGRKrbwE=";
     };
+    # Its declared runtime deps are h11 + truststore; anyio is the `asyncio` extra, which the
+    # async server path needs. No certifi — httpx2/httpcore2 use truststore instead.
     dependencies = [
       ps.h11
       ps.truststore
       ps.anyio
-      ps.certifi
     ];
     pythonImportsCheck = [ "httpcore2" ];
-    # Wheel install: nothing to run, and the suite wants a live loopback HTTP server.
+    # Wheel install: nothing to build, and the suite wants a live loopback HTTP server.
     doCheck = false;
   };
 
@@ -81,7 +82,6 @@ let
       ps.idna
       ps.anyio
       ps.truststore
-      ps.certifi
     ];
     pythonImportsCheck = [ "httpx2" ];
     doCheck = false;
