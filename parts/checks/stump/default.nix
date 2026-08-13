@@ -38,7 +38,13 @@
 #      trust setting, since the feed would then carry the direct-connection host.
 #
 #   5. THE DB SURVIVES A RESTART. The catalog is re-served from disk, not rebuilt, and the
-#      provisioner's second run takes its idempotent path (no duplicate libraries).
+#      provisioner's second run takes its idempotent path (no duplicate libraries). Cross-REBOOT
+#      survival is deliberately not re-proven here: on rk1b it rests on `/var/cache` being a real
+#      block-device mount (hosts/rk1/nvme.nix) plus the unit's `RequiresMountsFor`, which is a
+#      property of that host's config, not of this module — and `machine.reboot()` is unreliable
+#      in this driver (the same trade-off parts/checks/supernote/default.nix documents). What IS
+#      this module's code — the durable configLocation and the idempotent provisioner — is what
+#      the restart subtest exercises.
 #
 # sops is bypassed exactly as parts/checks/supernote/default.nix does: dummy age key + forced
 # secret paths pointing at plain /etc files, so no real decryption happens in the sandbox.

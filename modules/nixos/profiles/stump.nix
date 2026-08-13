@@ -168,8 +168,9 @@ in
             # See the header: without this, self-referencing links (the ones an OPDS client
             # follows) are generated from the direct-connection scheme/host instead of the edge's.
             STUMP_TRUST_PROXY_HEADERS = "true";
-            # Only the edge and the tailnet can reach the port at all, but the server still logs
-            # the client address per request — with trust on, that is the real client, not Caddy.
+            # Upstream's current default, pinned explicitly: this host ships its journal to
+            # VictoriaLogs, so a future change to Stump's default would silently change the log
+            # volume arriving there. Raise it to 2/3 only while debugging a scan.
             STUMP_VERBOSITY = "1";
           };
           # We manage the firewall ourselves (tailnet-scoped, below); leave `openFirewall` at its
