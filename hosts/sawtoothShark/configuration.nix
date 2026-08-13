@@ -109,6 +109,22 @@
 
   users.users.inkpotmonkey.extraGroups = [ "uinput" ];
 
+  # Switch off node-exporter's `powersupplyclass` collector on THIS host only. It is a
+  # DEFAULT collector (the monitoring-exporters profile's `enabledCollectors` adds to the
+  # defaults, it does not restrict them), and it reads every attribute under
+  # /sys/class/power_supply/*. On this Latitude 7490 one of those attributes,
+  # BAT0/charge_types, is backed by dell_laptop → dell_smbios → ACPI WMI, and servicing the
+  # read needs a 64K *contiguous* kernel allocation:
+  #   node_exporter: page allocation failure: order:4, mode:0x40cc0(GFP_KERNEL|__GFP_COMP)
+  #     acpi_ut_initialize_buffer → wmidev_evaluate_method [wmi]
+  #     → run_smbios_call [dell_smbios] → charge_types_show [dell_laptop]
+  # Under memory fragmentation that allocation fails and the kernel dumps a full stack —
+  # twice in one week here, on a 5s scrape loop. Scoped to this host rather than the
+  # profile because the trigger is the Dell SMBIOS/WMI path, so the other laptops keep
+  # their battery metrics. Nothing in the stack consumes `node_power_supply_*` today
+  # (no dashboard, no probe), so on this machine the collector was pure cost.
+  services.prometheus.exporters.node.extraFlags = [ "--no-collector.powersupplyclass" ];
+
   # User grants live in the fleet grant matrix (hosts/default.nix), not here.
 
   system.stateVersion = "25.11";
