@@ -21,6 +21,82 @@ fell back to a manual native-WebDAV leg. That was then superseded once a **fork*
 fixed both blockers, restoring the original dream of a fully-automatic two-way sync
 at the cost of two reconcilers bridging the fork's blob store to Stump.
 
+## Revision — 2026-08-13: the device pulls books over OPDS; Private Cloud narrows to handwriting (supersedes the push, and the fork)
+
+The revision below fixed the delete tug-of-war by flipping the mirror's direction. It did not
+question the premise underneath both it and the amendment before it: that **the server has to
+put books on the device**. A device capability re-reads the whole problem. The Nomad supports
+**sideloading** — an official feature (*Settings → Security and Privacy → Sideloading*), not a
+jailbreak — so it can run a real **OPDS client**. Stump already speaks **OPDS 1.2** and ships a
+second catalog route that takes an **API key in the URL path**, provided precisely for clients
+that cannot send credentials in headers, which is exactly the situation a constrained e-ink
+reader is in. Delivery can therefore be **device-initiated pull**, and the conflict dissolves at
+its root rather than being managed:
+
+```
+  BOOKS OUT    DEVICE (sideloaded KOReader) ──OPDS 1.2 pull, API-key URL──▶ STUMP ──indexes──▶ library/
+               reading position  ◀────────── KOReader sync (Stump's own) ─────────────────────▶ Stump DB
+
+  HANDWRITING  DEVICE (stock Note/Document apps) ◀─Private Cloud sync (2-way)─▶ STORE ──mirror down──▶ library/
+               .note / .mark — the only path that can carry the pen layer
+```
+
+Nothing continuously re-applies a mirror *into* a store that a 2-way sync also writes, because
+nothing is injected into the store at all. **Decision: books are delivered by pull; the Private
+Cloud server is kept only for the handwriting round-trip.**
+
+- **Books out becomes an OPDS pull, and the push mechanisms go.** Superseded outright: the
+  **enforced outbound push** of the 2026-07-24 amendment (palimpsest#94) and the **one-shot
+  outbox send** of the 2026-07-25 revision (`library/ereader-outbox/`). With them go the two
+  pieces of state that only existed to serve them — the **last-synced baseline** and the
+  **store-loss guard** — because the baseline's whole job was telling a fresh local add from a
+  device-side delete, and with no server-side injection an absence from the store is
+  unambiguous. (The guard's *rule* stands on its own: an empty or unreachable store must never
+  cause deletions in the backed-up tree.) Tracked as palimpsest#114 (serve), #115 (device),
+  #117 (reduce the sync).
+
+- **What pull does *not* deliver — and why the Private Cloud server survives.** Native
+  handwriting is produced only by the device's **stock Note and Document apps**: `.note`
+  notebooks and the `.mark` sidecars written over a PDF. A sideloaded reader gets ordinary
+  Android stylus input, **not the Supernote pen layer**, and there is no path off the device for
+  `.note`/`.mark` except Private Cloud sync. So **annotations-back and notebooks cannot ride the
+  OPDS path** and are not being asked to. The Private Cloud server stays — **narrowed** to the
+  handwriting round-trip and the downward materialisation of the store into `library/` — and the
+  reading/delivery path moves to Stump + OPDS. This split rests on the pen assumption, which is
+  reasoned rather than measured; palimpsest#115 verifies it hands-on and records the finding
+  either way.
+
+- **The vendored fork is retired.** `inkpot-monkey/supernote` exists for the device
+  schedule/planner sync routes upstream lacked; upstream has since implemented that surface
+  itself (independently, not cherry-picked). The transport becomes a **pin on upstream at a
+  revision** rather than a maintained branch, which retires the "a maintained fork to carry"
+  consequence below. Verify-then-pin, not a blind input swap — the branch is 13 commits ahead but
+  151 behind, and upstream has restructured. Tracked as palimpsest#112.
+
+**Consequence — the user stories split across two paths.** Of #87: OPDS pull satisfies
+**books-out** (1, 2, 16 — folder structure survives as catalog series), **browse + read** (8, 9)
+and the self-hosted-transport constraint (10); Private Cloud keeps **annotations-back** (3, 4)
+and **notebooks** (5, 6). Story 12 — "fully automatic in both directions, never touch the
+device" — is **knowingly weakened for books**: fetching one is now a deliberate act on the
+device. That is the trade. A push that cannot distinguish "the user deleted this" from "the
+device is missing this" was buying automation with resurrection; a pull buys correctness with one
+tap.
+
+**Consequence — reading progress now round-trips.** "Reading-progress / position sync (no device
+API)" is listed under *Out of scope for v1* below; the OPDS path retires that line. Stump ships
+its own implementation of **KOReader's sync protocol**, so position syncs with no bridging code —
+matched by **content hash only** (the libraries must generate KOReader-compatible hashes and be
+rescanned), with the sync routes **off by default**. The original architecture had no answer here
+because it was reasoning about the *device*; the answer arrives with the *reader*. Tracked as
+palimpsest#116.
+
+**Consequence — Stump moves onto the critical path, and the device gains hand-configured state.**
+The catalog was a browse/read convenience; it is now how books reach the device, so its
+availability is a delivery dependency. The API-key URL is a **credential** — it grants library
+access to whoever holds it — and belongs in the secret store, not in a config file in git. And
+the sideloaded reader is device-side state this repo cannot declare: it must be written up as a
+repeatable procedure to survive a device reset or replacement (palimpsest#115).
+
 ## Revision — 2026-07-25: lean into the fork's 2-way sync; `library/ereader/` mirrors the store (supersedes the outbound-only stance)
 
 Deploying the outbound-only push (below) surfaced a design fault the amendment glossed:
