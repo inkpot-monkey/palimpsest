@@ -19,7 +19,7 @@ the *file* surface (bind, bootstrap, login, MCP-port firewalling, the ereader ro
 because that is what this deployment drives. They do **not** drive the planner, summary-digest,
 or realtime paths — only a real Nomad does.
 
-Five upstream gaps are already known and filed. Expect to meet some of them:
+Six upstream gaps are already known and filed. Expect to meet some of them:
 
 | Issue | What breaks | Banner you would see |
 | --- | --- | --- |
@@ -28,6 +28,12 @@ Five upstream gaps are already known and filed. Expect to meet some of them:
 | #138 | Planner deletes are hard deletes, no tombstone | deleted tasks reappear |
 | #139 | `PUT task/list` batch is update-only, drops `isDeleted` | planner batch sync error |
 | #140 | Upload response echoes the requested path; no rogue-root self-heal | none expected — dormant on this store |
+| #142 | Concurrent logins for one account race a single-slot challenge | reconcile unit logs a 401 and retries |
+
+**#142 is worth knowing before you start.** If `supernote-ereader-reconcile` logs
+`login 401 … probably a lost login challenge`, that is the device and the reconciler
+authenticating against the shared account at the same moment — **not** a bad credential. It
+retries and should recover. Only treat it as a credential problem if all five attempts fail.
 
 The **realtime socket** surface is expected to be fine (upstream serves socket.io with the real
 library and `allow_eio3=True`), but note upstream now *verifies the handshake `sign`* where the

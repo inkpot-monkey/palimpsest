@@ -5,11 +5,17 @@
 #
 # The server is UPSTREAM `allenporter/supernote`, pinned to an explicit rev (palimpsest#112
 # retired the vendored fork this used to track — upstream implemented the device planner and
-# realtime surface the fork existed to add). Five residual upstream gaps are filed rather than
+# realtime surface the fork existed to add). Six residual upstream gaps are filed rather than
 # re-vendored: palimpsest#136 (delete/summary verb), #137 (planner writes), #138 (planner delete
-# tombstones), #139 (planner batch), #140 (upload response path / rogue-root self-heal). None is
-# on the document path this profile drives, and #140 is dormant on our store — but #136-#139 are
-# all on the DEVICE's own sync, so a device banner after a rev bump is likely one of them.
+# tombstones), #139 (planner batch), #140 (upload response path / rogue-root self-heal), and #142
+# (concurrent logins for ONE account race a single-slot login challenge; the loser gets a
+# misleading 401 "Invalid credentials"). #136-#139 are on the DEVICE's own sync, so a device
+# banner after a rev bump is likely one of them; #140 is dormant on our store.
+#
+# #142 is the one that reaches THIS profile: the device and the reconciler share one account (see
+# the credential section) and the reconciler is fired BY the device's sync, so their logins can
+# collide. The reconciler retries a 401 for exactly that reason — if you ever see it log
+# "probably a lost login challenge", that is #142 and NOT a bad credential.
 # Hardware acceptance is a manual pass: docs/runbooks/supernote-upstream-acceptance.md.
 #
 # Plain HTTP on the LAN — no TLS, no Caddy edge, no tailnet. The device is a locked-down

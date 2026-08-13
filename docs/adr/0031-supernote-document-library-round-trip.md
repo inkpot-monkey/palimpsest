@@ -117,16 +117,23 @@ implementations are independent, so a patch comparison shows no overlap):
   `task/list`) — and the flatten-aware path resolution the fork added to the VFS is there too, with
   the *opposite* precedence (upstream prefers a real root folder over the category container, so it
   does not self-heal a rogue root folder left by the old bug; ours has none).
-- **Five gaps remain**, filed rather than re-vendored: palimpsest#136 (`delete/summary` is
+- **Six gaps remain**, filed rather than re-vendored: palimpsest#136 (`delete/summary` is
   POST-only, the device sends `DELETE`), #137 (planner writes are insert-only and numeric-id-only,
   and cannot represent an ungrouped task), #138 (planner deletes are hard deletes, so off-device
-  deletes resurrect), #139 (`PUT task/list` is update-only and drops `isDeleted`), and #140 (the
-  device upload response echoes the requested path, and the precedence above does not self-heal).
-  #136-#139 are on the device's own sync; #140 is dormant on our store.
+  deletes resurrect), #139 (`PUT task/list` is update-only and drops `isDeleted`), #140 (the
+  device upload response echoes the requested path, and the precedence above does not self-heal),
+  and **#142 (concurrent logins for one account race a single-slot login challenge and the loser
+  gets a misleading 401 "Invalid credentials")**.
+- **#142 is the one that reaches us.** The first five are on the device's own sync or dormant;
+  #142 is on the *reconciler's* path and turned the `supernote_ereader` check red. It matters
+  because this ADR deliberately gives the device and the reconciler **one shared account**, and
+  fires the reconciler *from* the device's sync — so the two authenticating clients are aimed at
+  the same account at the same moment by construction. The reconciler now retries a 401, and the
+  check's driver caches its token rather than re-authenticating on every poll.
 
 Consequences that supersede the "a maintained fork to carry" consequence below:
 
-- **No fork to rebase.** The cost moves from carrying a branch to carrying four upstream issues,
+- **No fork to rebase.** The cost moves from carrying a branch to carrying six upstream issues,
   which is the cheaper and more honest position — and it is what makes future upstream fixes free.
 - **The input is pinned to a bare rev, not a branch.** This is the device sync endpoint, and a rev
   bump can alembic-migrate the live store, so moving it must be a deliberate reviewed edit
@@ -135,9 +142,12 @@ Consequences that supersede the "a maintained fork to carry" consequence below:
   also needs `mcp>=2.0.0`, which the fleet nixpkgs pin does not have — so `pkgs/supernote/mcp2.nix`
   builds the MCP 2.x wheel chain locally, to be deleted when nixpkgs catches up. Pinning upstream
   *before* the mcp bump is not an option: the device routes landed five minutes after it.
-- **The known gaps are all on the DEVICE's own sync**, not on the document path the reconciler
-  drives — which is why both VM checks pass unchanged in intent while hardware acceptance is still
-  outstanding. That manual pass is `docs/runbooks/supernote-upstream-acceptance.md`.
+- **Reading upstream was not enough to find every gap.** Five gaps came from comparing the two
+  trees; #142 came from a red CI check, and no amount of reading would have surfaced it — it is a
+  *concurrency* property, invisible in any single code path. That is the honest lesson of this
+  cutover: a behavioural equivalence review catches missing behaviour, not emergent behaviour.
+  Hardware acceptance (`docs/runbooks/supernote-upstream-acceptance.md`) is still outstanding and
+  is the only thing that will exercise the device's own sync at all.
 
 Nothing about the *shape* of the round-trip changes here — only the provenance of the server
 binary. The shape is changed instead by the revision **above**, landed the same day: that one
