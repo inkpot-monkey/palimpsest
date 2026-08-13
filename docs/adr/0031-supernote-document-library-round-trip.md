@@ -355,6 +355,21 @@ tree.**
 - **New secret** — the Supernote account credential (email + password) the fork
   server and the reconciler share; sops, remember the secrets-repo commit + push +
   `nix flake update secrets` before deploy.
+- **A second new secret, and two Stump facts that only bite later** (built by
+  palimpsest#113). The catalog needs its own owner credential — a `stump: {user, password}`
+  sub-map alongside `supernote:` in the same `profiles/library.yaml` bundle — because the
+  three libraries have to be *created* by a provisioner rather than clicked into the admin
+  UI: Stump's **scan pattern is immutable after creation**, so a hand-made library with the
+  wrong pattern can only be fixed by deleting it and its reading progress. And since 0.1.2
+  Stump **ignores reverse-proxy headers by default**, which behind kelpy's Caddy makes it
+  generate self-referencing links from the direct connection (wrong scheme, and its own
+  listen port appended) — the links an OPDS client traverses by, so the delivery path breaks
+  before it starts. `STUMP_TRUST_PROXY_HEADERS` is the switch; it is safe only because the
+  port is open on `tailscale0` alone, so nothing but the edge can set those headers.
+  Finally: **take a `sqlite3 .backup` of `/var/cache/stump/stump.db` before every version
+  bump** — 0.1.5's reading-session consolidation shipped with an explicit data-loss warning,
+  and the next migration is a coin flip. The step is written out in
+  `modules/nixos/profiles/stump.nix`'s header.
 - **Reuses established patterns.** git-annex owning the tree so the authoritative node
   can push follows **[ADR-0028](0028-git-annex-owns-the-shared-music-library.md)**
   (music); the rk1b-authoritative / kelpy-Caddy-edge / tailnet-only shape follows

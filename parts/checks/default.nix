@@ -81,6 +81,13 @@
         supernote_ereader = import ./supernote/ereader.nix {
           inherit pkgs self inputs;
         };
+        # The Stump reading catalog (ADR-0031, palimpsest#113): three series-priority libraries
+        # over a real 2770 git-annex:library corpus (the PrivateUsers group-read trap), the
+        # unindexed `_originals/` sibling, tailnet-only reachability, and correct OPDS
+        # self-referencing links through a real Caddy edge.
+        stump = import ./stump {
+          inherit pkgs self inputs;
+        };
       };
     };
 }
