@@ -3,7 +3,10 @@
 # If meta.mainProgram is set, also: nix run .#<name>
 
 { pkgs, inputs }: {
-  # stump: upstreamed to nixpkgs; use pkgs.stump directly
+  # stump: TEMPORARY 0.1.6 override, ahead of nixpkgs (still 0.1.5 on master).
+  # Delete this line and pkgs/stump once the nixpkgs pin has stump >= 0.1.6 —
+  # see the removal condition at the top of pkgs/stump/default.nix (#111).
+  stump = pkgs.callPackage ./stump { };
   # vocabsieve = pkgs.libsForQt5.callPackage ./vocabsieve.nix { }; # broken: its dep
   # gst_all_1.gst-vaapi was removed in GStreamer 1.28 (not an in-place upgrade); disabled
   # so it stops failing `nix flake check`. Re-enable once vocabsieve moves off gst-vaapi.
