@@ -17,7 +17,7 @@
     zsa = ./zsa.nix;
 
     # --- Desktop / GUI Profiles ---
-    gui-base = ./gui-base.nix;
+    gui = ./gui.nix;
     fonts = ./fonts.nix;
     audio = ./audio.nix;
     bluetooth = ./bluetooth.nix;

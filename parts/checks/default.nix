@@ -48,7 +48,7 @@
         # grant→feature proofs, so the inline-user path and this check are retired.
         # The gui-union runtime VM moved into the contract's own suite (contract ADR-0004:
         # checks.<system>.conformance-vm there). It uses a test-only display binding, so
-        # it no longer covers this fleet's gui-desktop.nix; re-surface it from
+        # it no longer covers this fleet's gui.nix display binding; re-surface it from
         # inputs.contract.checks once the contract is published with that check if a
         # fleet-side runtime smoke is wanted.
         # The host-side COHERENCE GATE (contract ADR-0004 Q5): the real fleet ties back to the

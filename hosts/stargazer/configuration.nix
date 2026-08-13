@@ -28,7 +28,7 @@
     sudo.enable = true;
     audio.enable = true;
     wireless.enable = true;
-    gui-base.enable = true;
+    gui.enable = true;
     gaming.enable = true;
     virtualization.enable = true;
     kanata.enable = true; # keyboard remap, host-side (contract ADR-0002 slice 11)

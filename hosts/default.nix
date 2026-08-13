@@ -33,7 +33,7 @@ let
 
   # GUI workstation seat — the server affordances plus gui, so the intersection with inkpotmonkey's
   # offer selects the gui variant and turns on the shared display surface + input groups (the DE is
-  # the seat's own binding, modules/nixos/profiles/gui-desktop.nix; the contract's realization links
+  # the seat's own binding, modules/nixos/profiles/gui.nix; the contract's realization links
   # the XDG portal/desktop dirs). virtualization is intentionally absent — inkpotmonkey's offer no
   # longer includes it.
   guiAffordances.contract.affordances = {

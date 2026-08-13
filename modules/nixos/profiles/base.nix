@@ -20,7 +20,9 @@ in
     # it only says a gui surface is needed (custom.gui.surface.enabled); this host renders a
     # WAYLAND SDDM + Plasma 6 seat. Swap this module to change desktop environment / session type;
     # the contract is unchanged. Self-gated on custom.gui.surface.enabled, so inert on non-gui hosts.
-    ./gui-desktop.nix
+    # (Also carries the host-opt-in desktop plumbing behind custom.profiles.gui.enable — see
+    # the header of gui.nix for why the two gates stay separate.)
+    ./gui.nix
   ];
 
   options.custom.profiles = {

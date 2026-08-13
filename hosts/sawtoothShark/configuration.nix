@@ -22,7 +22,7 @@
     base.enable = true;
     sudo.enable = true;
     audio.enable = true;
-    gui-base.enable = true;
+    gui.enable = true;
     kanata.enable = true; # keyboard remap, host-side (contract ADR-0002 slice 11)
     backup.enable = false;
     direnv.enable = true;
