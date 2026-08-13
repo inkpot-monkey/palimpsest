@@ -1,4 +1,4 @@
-# Acceptance test for the Supernote fork server profile (ADR-0031, palimpsest#92).
+# Acceptance test for the Supernote server profile (ADR-0031, palimpsest#92).
 #
 # Runs the REAL `pkgs.supernote` server (not a mock) on a `server` node and drives the four
 # acceptance criteria from a `client` node on the same virtual LAN:
@@ -61,7 +61,7 @@ pkgs.testers.nixosTest {
 
           # Bypass sops decryption: point the two credential secrets at plain files. The
           # bootstrap oneshot LoadCredential's these paths, so the account is created from them.
-          # (`user` must be a valid email — the fork validates EMAIL_REGEX on register.)
+          # (`user` must be a valid email — the server validates EMAIL_REGEX on register.)
           sops.secrets."supernote/user".path = lib.mkForce "/etc/mock-supernote-user";
           sops.secrets."supernote/password".path = lib.mkForce "/etc/mock-supernote-password";
           environment.etc."mock-supernote-user".text = "device@example.com";

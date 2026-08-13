@@ -1,7 +1,15 @@
-# The Supernote fork's Private Cloud server (ADR-0031, palimpsest#92) — the device sync
+# The Supernote Private Cloud server (ADR-0031, palimpsest#92) — the device sync
 # endpoint the Nomad binds via *Settings → Sync → Private Cloud*. A host-agnostic profile,
 # enabled with `custom.profiles.supernote.enable = true` (rk1b, which shares the Nomad's
 # home LAN 192.168.1.0/24). Packaged as `pkgs.supernote` (palimpsest#91).
+#
+# The server is UPSTREAM `allenporter/supernote`, pinned to an explicit rev (palimpsest#112
+# retired the vendored fork this used to track — upstream implemented the device planner and
+# realtime surface the fork existed to add). Four residual upstream gaps are filed rather than
+# re-vendored: palimpsest#136 (delete/summary verb), #137 (planner writes), #138 (planner delete
+# tombstones), #139 (planner batch). None is on the document path this profile drives, but all
+# four are on the DEVICE's own sync — so a device banner after a rev bump is likely one of them.
+# Hardware acceptance is a manual pass: docs/runbooks/supernote-upstream-acceptance.md.
 #
 # Plain HTTP on the LAN — no TLS, no Caddy edge, no tailnet. The device is a locked-down
 # Android tablet that can't run Tailscale, so it reaches rk1b directly on the LAN; that is
@@ -9,13 +17,13 @@
 # registry) and gets no vhost/monitor entry. The reconciler (#107) reaches the store over
 # this same HTTP API, never the filesystem, so the store below stays private.
 #
-# The fork ALSO starts an MCP server (its LLM surface) on a second port — LLM features are
-# out of v1, so that port is deliberately left OUT of the firewall allow-list (the fork has
+# The server ALSO starts an MCP server (its LLM surface) on a second port — LLM features are
+# out of v1, so that port is deliberately left OUT of the firewall allow-list (the server has
 # no flag to disable it; it always binds `config.host`). Firewalling it off is what
 # satisfies "do not expose the MCP port".
 #
 # ── The store (`/var/lib/supernote`) ─────────────────────────────────────────────────────
-# One directory: the fork's UUID blob store + SQLite VFS + cache. Owned by the private
+# One directory: the server's UUID blob store + SQLite VFS + cache. Owned by the private
 # `supernote` user 0700 and — deliberately — NOT in the `library` group: the reconciler
 # reaches content over the client HTTP API, never the FS. Persisted WHOLE via impermanence +
 # StateDirectory (ADR-0004 pattern). It is a strict, REBUILDABLE subset of the offsite-backed
@@ -24,13 +32,14 @@
 # on rk1b anyway; only the telemetry job is declared). Recovery if the store is lost:
 #   • device intact  → re-pair the Nomad to the server and let Private Cloud Sync re-seed it;
 #   • device gone     → re-send the books from `library/ereader/` via the one-shot outbox (#107).
-# Before a `nix flake update supernote` (which can alembic-migrate the DB), take a local
-# `sqlite3 .backup` of /var/lib/supernote/system/supernote.db first (ADR-0031 consequence).
+# Before bumping the `supernote` rev in flake.nix (which can alembic-migrate the DB), take a
+# local `sqlite3 .backup` of /var/lib/supernote/system/supernote.db first (ADR-0031 consequence).
+# The input is rev-pinned precisely so that migration is never an unattended `nix flake update`.
 #
 # ── The credential (one sops secret, shared with the reconciler) ──────────────────────────
 # The Supernote account user (email) + password. The server binary itself reads no
 # user/password env var; the credential's server-side consumer is the `supernote-account-bootstrap`
-# oneshot below, which registers the single account (the fork bootstraps the first user when
+# oneshot below, which registers the single account (the server bootstraps the first user when
 # the DB is empty, then locks registration) and proves login works. The SAME secret is what
 # the device authenticates with and what the reconciler's client logs in with — one account,
 # no second auth surface. sops files are a separate repo (stash): create the secret, then
@@ -39,7 +48,7 @@
 # Lives in the shared `profiles/library.yaml` (this stack's secret bundle, shared with the
 # reconciler/#107) under a `supernote` sub-map:
 #   supernote:
-#     user: you@example.com        # the Supernote account — MUST be a valid email (the fork
+#     user: you@example.com        # the Supernote account — MUST be a valid email (the server
 #     password: your-password      # validates EMAIL_REGEX on register)
 # The file needs rk1b's host key as a recipient (sops is all-or-nothing per host) — its
 # `.sops.yaml` creation rule must be `key_groups: [ age: [ *admin, *rk1b ] ]`.
@@ -53,7 +62,7 @@
 let
   cfg = config.custom.profiles.supernote;
 
-  # The device binds the sync endpoint here; the MCP port is the fork's always-on LLM
+  # The device binds the sync endpoint here; the MCP port is the server's always-on LLM
   # surface, kept off the firewall (v1-out). Plain integers, not a settings.services entry
   # (this service is LAN-direct, not Caddy-fronted — see the header).
   port = 8080;
@@ -69,14 +78,14 @@ let
   ecfg = cfg.ereader;
   # `library/ereader/` is the DOWNWARD MIRROR of the store's ereader folder; `library/ereader-outbox/`
   # is the one-shot send inbox (drop a book there to publish it once). The device shows documents
-  # under /DOCUMENT/Document (the firmware's two-level doc root, seeded per-account by the fork —
+  # under /DOCUMENT/Document (the firmware's two-level doc root, seeded per-account by the server —
   # supernote/server/services/user.py); the trailing `ereader/` is auto-created by the server on
   # first upload. A constant, not an option — the device's doc root is fixed firmware.
   ereaderLocalDir = "${ecfg.libraryPath}/ereader";
   ereaderOutboxDir = "${ecfg.libraryPath}/ereader-outbox";
   ereaderRemoteDir = "/DOCUMENT/Document/ereader";
   # The last-synced baseline (previous store snapshot, `{rel: md5}`) — the minimal state that lets
-  # the reconciler tell a device-side delete from a fresh local add. It lives INSIDE the fork store
+  # the reconciler tell a device-side delete from a fresh local add. It lives INSIDE the server store
   # dir on purpose: the store is rebuildable and un-backed-up, so co-locating the baseline makes it
   # share the store's fate — a wiped store loses the baseline too, which is exactly the signal the
   # store-loss guard needs (empty store + no baseline = "no sync completed" → never delete).
@@ -84,7 +93,7 @@ let
 
   # A python interpreter with the `supernote` LIBRARY importable (the package is a
   # buildPythonApplication, so `toPythonModule` re-exposes its modules to withPackages). The
-  # reconciler drives `supernote.client` directly — client HTTP API only, never the fork's FS store.
+  # reconciler drives `supernote.client` directly — client HTTP API only, never the server's FS store.
   reconcilePython = pkgs.python313.withPackages (ps: [ (ps.toPythonModule pkgs.supernote) ]);
 
   # Shared systemd hardening for the supernote units (server + ereader reconcile) — one source so
@@ -113,7 +122,7 @@ let
 in
 {
   options.custom.profiles.supernote = {
-    enable = lib.mkEnableOption "the Supernote fork Private Cloud server (device sync endpoint, ADR-0031)";
+    enable = lib.mkEnableOption "the Supernote Private Cloud server (device sync endpoint, ADR-0031)";
 
     # The `ereader` round-trip (ADR-0031 v2, palimpsest#107) — off by default because it couples
     # to the git-annex `library` tree, which only exists on the media node (rk1b). The base server
@@ -180,7 +189,7 @@ in
         };
 
         systemd.services.supernote-server = {
-          description = "Supernote fork Private Cloud server (device sync endpoint)";
+          description = "Supernote Private Cloud server (device sync endpoint)";
           wantedBy = [ "multi-user.target" ];
           after = [ "network-online.target" ];
           wants = [ "network-online.target" ];
@@ -196,7 +205,7 @@ in
             SUPERNOTE_PORT = toString port;
             SUPERNOTE_MCP_PORT = toString mcpPort;
             SUPERNOTE_STORAGE_DIR = stateDir;
-            # Self-service registration stays disabled; the fork still allows the FIRST user on an
+            # Self-service registration stays disabled; the server still allows the FIRST user on an
             # empty DB (the bootstrap oneshot uses that), then this keeps it locked afterwards.
             SUPERNOTE_ENABLE_REGISTRATION = "false";
             # `supernote cloud login` (bootstrap + reconciler) caches its token under $HOME/.cache;
@@ -212,7 +221,7 @@ in
             WorkingDirectory = stateDir;
 
             # A stable JWT signing key so device + reconciler access tokens survive a server
-            # restart (the fork otherwise generates a throwaway in-memory key each start, which
+            # restart (the server otherwise generates a throwaway in-memory key each start, which
             # would invalidate the device's long-lived token on every deploy). Generated ONCE into
             # the persisted store — an auto-generated local infra key, not a credential, so the
             # "one secret / no second auth surface" invariant still holds. $STATE_DIRECTORY is set
@@ -236,7 +245,7 @@ in
         # tailnet services — the Nomad is LAN-only and can't run Tailscale, and rk1's physical NIC
         # isn't statically named here to scope to); the tailnet is trusted and every request is
         # login-gated, so the extra reach is harmless. The MCP port (${toString mcpPort}) is
-        # deliberately absent — the fork always binds it to the same host, so leaving it out of the
+        # deliberately absent — the server always binds it to the same host, so leaving it out of the
         # allow-list is what keeps the LLM surface off the network (v1-out).
         networking.firewall.allowedTCPPorts = [ port ];
 
@@ -337,7 +346,7 @@ in
           [
             {
               assertion = !lib.any covers resticPaths;
-              message = "custom.profiles.supernote: a restic backup now covers the fork store (${stateDir}), but ADR-0031 keeps it OUT of any offsite backup (it is a rebuildable subset of the offsite-backed library/). Remove that path or narrow the backup.";
+              message = "custom.profiles.supernote: a restic backup now covers the server store (${stateDir}), but ADR-0031 keeps it OUT of any offsite backup (it is a rebuildable subset of the offsite-backed library/). Remove that path or narrow the backup.";
             }
           ];
       }
@@ -366,7 +375,7 @@ in
         # The reconcile oneshot — fired by the watcher on each device-initiated sync, never on a
         # timer. Logs in with the shared credential, one-shot-sends the outbox up, then mirrors the
         # store's ereader folder down into library/ereader/ (durable device-side deletes via the
-        # baseline). Client HTTP API only; never touches the fork's FS store. Trigger-only: no
+        # baseline). Client HTTP API only; never touches the server's FS store. Trigger-only: no
         # wantedBy, so it runs solely when the watcher `systemctl start`s it.
         systemd.services.supernote-ereader-reconcile = {
           description = "Reconcile the Supernote store with library/ereader/ (mirror down + one-shot send, palimpsest#107)";
@@ -403,7 +412,7 @@ in
               ereaderLocalDir
               ereaderOutboxDir
             ];
-            # The baseline lives inside the fork store dir (see the header). StateDirectory=supernote
+            # The baseline lives inside the server store dir (see the header). StateDirectory=supernote
             # is shared with the server (same static user, same dir) — it makes /var/lib/supernote
             # writable under the sandbox and ensures it exists; 0700 to not loosen the server's mode.
             StateDirectory = "supernote";
@@ -428,7 +437,7 @@ in
         };
 
         # The sync-coupled trigger: NOT a timer and NOT a file-watcher (the owner constraint,
-        # carried over from #94). It follows the fork server's journal and fires the reconcile the
+        # carried over from #94). It follows the server's journal and fires the reconcile the
         # moment the device opens a sync — POST /api/file/2/files/synchronous/start, which the
         # server's aiohttp access log records (%r request line). Debounced so a burst of starts
         # coalesces into one reconcile. Runs as root: it reads the server unit's journal and

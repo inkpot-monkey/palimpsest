@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Reconcile the Supernote store's ``ereader/`` folder with ``library/ereader/``.
 
-The `ereader` round-trip flipped to lean on the fork's own 2-way sync (ADR-0031 v2,
+The `ereader` round-trip flipped to lean on the server's own 2-way sync (ADR-0031 v2,
 palimpsest#107, superseding the outbound-only push of #94). `library/ereader/` is now a
-**downward mirror** of the fork store, not a source that pushes up:
+**downward mirror** of the server store, not a source that pushes up:
 
   * **One-shot send (outbox).** Files dropped in ``library/ereader-outbox/`` are a deliberate
     inject: each is uploaded once to the store, then *cleared* from the outbox
-    (uploads-once-then-clears). After it lands, the fork owns its device lifecycle — the outbox
+    (uploads-once-then-clears). After it lands, the server owns its device lifecycle — the outbox
     never re-applies it, so a later device-side delete is durable.
   * **Store -> library mirror.** The store's ``ereader/`` folder is materialised down into the
     git-annex tree: files the tree lacks (or whose content changed) are ``download_content``ed in,
@@ -19,19 +19,19 @@ The delete direction turns on one ambiguity: a file present in ``library/`` but 
 store is *either* a fresh local add *or* a device-side delete. We disambiguate with a **last-synced
 baseline** — the previous sync's store snapshot (``{rel: md5}``). "Was in the baseline, now gone" =
 a real delete -> remove from ``library/``; otherwise it is a fresh add -> leave it. The baseline
-lives *inside* the fork store's state dir, so it shares the store's fate: a wiped/rebuilt store
+lives *inside* the server store's state dir, so it shares the store's fate: a wiped/rebuilt store
 loses the baseline too, which is exactly the signal the **store-loss guard** needs (an empty store
 with no baseline = "no device sync has completed for this store" -> never delete from the
 backed-up tree).
 
 Reads (all via env; secrets arrive as files from systemd LoadCredential, never argv/environ):
-  SUPERNOTE_URL            base URL of the local fork server (e.g. http://127.0.0.1:8080)
+  SUPERNOTE_URL            base URL of the local Supernote server (e.g. http://127.0.0.1:8080)
   SUPERNOTE_USER_FILE      file holding the Supernote account email (the shared credential)
   SUPERNOTE_PASSWORD_FILE  file holding the account password
   EREADER_LOCAL_DIR        the downward mirror (e.g. /var/cache/library/ereader)
   EREADER_OUTBOX_DIR       the one-shot send inbox (e.g. /var/cache/library/ereader-outbox)
   EREADER_REMOTE_DIR       device VFS destination (e.g. /DOCUMENT/Document/ereader)
-  EREADER_BASELINE         the persisted last-synced snapshot (JSON, inside the fork store dir)
+  EREADER_BASELINE         the persisted last-synced snapshot (JSON, inside the server store dir)
 
 Fail-loud (non-zero exit) so a broken reconcile shows up as a failed unit. An unreachable store
 fails at login *before* any library mutation, so the guard against nuking the backup holds for the
@@ -81,7 +81,7 @@ def load_baseline():
     """The previous sync's store snapshot ``{rel: md5}``.
 
     Absent or corrupt reads as ``{}`` — which the store-loss guard treats as "no device sync has
-    completed for this store incarnation". Since the baseline lives inside the fork store dir, a
+    completed for this store incarnation". Since the baseline lives inside the server store dir, a
     wiped store leaves no baseline, so an empty read is the honest signal there.
     """
     try:
@@ -102,7 +102,7 @@ def save_baseline(snapshot):
 async def store_snapshot(sn):
     """``{rel: md5}`` for every file under the remote ereader folder.
 
-    The fork's ``content_hash`` IS the file's md5 (``upload_content`` finishes with the same md5
+    The server's ``content_hash`` IS the file's md5 (``upload_content`` finishes with the same md5
     ``list_folder`` reads back — ADR-0031's "the md5 content_hash is exact"), so these values compare
     directly against the locally-computed md5s in ``local_snapshot`` / the outbox.
 
@@ -164,7 +164,7 @@ async def mirror_down(sn, store, baseline):
     A file in the mirror but absent from the store is deleted ONLY if it was in the baseline
     (present last sync) — a durable device-side delete. A file never in the baseline is a fresh
     local add and is left alone. This baseline gate IS the store-loss guard: the baseline lives
-    inside the fork store dir (see the module header), so a wiped/rebuilt store comes up with an
+    inside the server store dir (see the module header), so a wiped/rebuilt store comes up with an
     EMPTY baseline too — nothing is "in the baseline", so nothing is deleted and the backed-up tree
     is safe. (An unreachable store never reaches here — login fails first, before any mutation.)
     """
@@ -173,7 +173,7 @@ async def mirror_down(sn, store, baseline):
     deleted = 0
 
     # Additions / content updates — the store is authoritative for what the device holds. `digest`
-    # is the store's content_hash, which the fork sets to the file's md5 (see store_snapshot), so it
+    # is the store's content_hash, which the server sets to the file's md5 (see store_snapshot), so it
     # compares directly against the locally-computed md5 in `local`.
     for rel, digest in sorted(store.items()):
         if local.get(rel) == digest:

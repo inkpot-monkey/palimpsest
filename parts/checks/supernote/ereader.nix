@@ -22,7 +22,7 @@
   inputs,
 }:
 let
-  # The account the fork bootstraps from the mock credential (must be a valid email — the fork
+  # The account the server bootstraps from the mock credential (must be a valid email — the server
   # validates EMAIL_REGEX on register). Reused verbatim by the client-side device driver.
   account = "device@example.com";
   password = "sync-secret-123";
