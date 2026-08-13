@@ -97,6 +97,52 @@ access to whoever holds it — and belongs in the secret store, not in a config 
 the sideloaded reader is device-side state this repo cannot declare: it must be written up as a
 repeatable procedure to survive a device reset or replacement (palimpsest#115).
 
+## Revision — 2026-08-13: the transport is upstream again; the vendored fork is retired (palimpsest#112)
+
+The decision below adopted `inkpot-monkey/supernote` — a fork of `allenporter/supernote` — because
+upstream lacked the device planner/realtime surface, and it accepted "a maintained fork to carry"
+as the price. **That price no longer buys anything: upstream has implemented the surface itself.**
+The transport input is now `github:allenporter/supernote` pinned at an explicit revision, and the
+fork branch is no longer an input.
+
+What changed upstream, established by reading both trees rather than by diffing patches (the two
+implementations are independent, so a patch comparison shows no overlap):
+
+- **The realtime channel is upstream and better.** The fork hand-rolled Engine.IO v3 in
+  `server/realtime.py` precisely because modern `python-socketio` rejects `EIO=3`. Upstream now
+  serves socket.io with the real library and `allow_eio3=True` (`server/socket.py`), and adds what
+  the fork's connect-only prototype never had: handshake **signature** verification, `ratta_ping`,
+  and server→client push. This is a superset, not a substitute.
+- **The device schedule routes are upstream** (`schedule/group/all`, `schedule/task/all`,
+  `task/list`) — and the flatten-aware path resolution the fork added to the VFS is there too, with
+  the *opposite* precedence (upstream prefers a real root folder over the category container, so it
+  does not self-heal a rogue root folder left by the old bug; ours has none).
+- **Four gaps remain**, filed rather than re-vendored: palimpsest#136 (`delete/summary` is
+  POST-only, the device sends `DELETE`), #137 (planner writes are insert-only and numeric-id-only,
+  and cannot represent an ungrouped task), #138 (planner deletes are hard deletes, so off-device
+  deletes resurrect), #139 (`PUT task/list` is update-only and drops `isDeleted`).
+
+Consequences that supersede the "a maintained fork to carry" consequence below:
+
+- **No fork to rebase.** The cost moves from carrying a branch to carrying four upstream issues,
+  which is the cheaper and more honest position — and it is what makes future upstream fixes free.
+- **The input is pinned to a bare rev, not a branch.** This is the device sync endpoint, and a rev
+  bump can alembic-migrate the live store, so moving it must be a deliberate reviewed edit
+  (`sqlite3 .backup` first). An unattended `nix flake update` cannot move it.
+- **The dependency set grew.** Upstream needs `python-socketio` and `ical`; both are in nixpkgs. It
+  also needs `mcp>=2.0.0`, which the fleet nixpkgs pin does not have — so `pkgs/supernote/mcp2.nix`
+  builds the MCP 2.x wheel chain locally, to be deleted when nixpkgs catches up. Pinning upstream
+  *before* the mcp bump is not an option: the device routes landed five minutes after it.
+- **The known gaps are all on the DEVICE's own sync**, not on the document path the reconciler
+  drives — which is why both VM checks pass unchanged in intent while hardware acceptance is still
+  outstanding. That manual pass is `docs/runbooks/supernote-upstream-acceptance.md`.
+
+Nothing about the *shape* of the round-trip changes here — only the provenance of the server
+binary. The shape is changed instead by the revision **above**, landed the same day: that one
+retires the outbox and the enforced push in favour of an OPDS pull, and narrows this server to the
+handwriting round-trip. Read the two together — this revision says *whose* server binary; that one
+says *what it is still for*.
+
 ## Revision — 2026-07-25: lean into the fork's 2-way sync; `library/ereader/` mirrors the store (supersedes the outbound-only stance)
 
 Deploying the outbound-only push (below) surfaced a design fault the amendment glossed:
@@ -277,7 +323,9 @@ tree.**
   two-way sync at the cost of **two reconciler passes, bespoke Python packaging, a
   maintained fork pinned as a flake input, and a second durable store**. The trade is
   deliberate: hands-off sync is the original goal the spike had disproven.
-- **A maintained fork to carry.** The flake input tracks
+- **A maintained fork to carry.** *(Superseded by the 2026-08-13 revision above: the input is now
+  upstream `github:allenporter/supernote` at a bare pinned rev, and there is no fork.)* The flake
+  input tracks
   `github:inkpot-monkey/supernote/fix/device-schedule-group-all`; `flake.lock` pins
   the rev and `nix flake update supernote` bumps it deliberately (fleet norm). The
   hand-written Nix `dependencies` list won't auto-follow a bump — a missing dep fails
