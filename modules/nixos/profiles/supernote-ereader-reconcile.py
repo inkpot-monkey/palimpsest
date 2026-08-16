@@ -3,7 +3,14 @@
 
 The `ereader` round-trip flipped to lean on the server's own 2-way sync (ADR-0031 v2,
 palimpsest#107, superseding the outbound-only push of #94). `library/ereader/` is now a
-**downward mirror** of the server store, not a source that pushes up:
+**downward mirror** of the server store, not a source that pushes up.
+
+RETIRED BUT STILL SHIPPED: ADR-0031's governing 2026-08-13 revision supersedes outbound delivery
+entirely — books reach the device by OPDS pull now. The outbox send and the baseline below exist
+only for that retired path and are scheduled for removal by palimpsest#117, which is sequenced
+after #115 so the replacement is proven on hardware before the working one is deleted. The
+downward mirror is NOT retired; it is how handwriting comes back.
+
 
   * **One-shot send (outbox).** Files dropped in ``library/ereader-outbox/`` are a deliberate
     inject: each is uploaded once to the store, then *cleared* from the outbox

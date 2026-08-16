@@ -23,9 +23,55 @@ at the cost of two reconcilers bridging the fork's blob store to Stump.
 
 That shape is **no longer the decision**. Everything from "## Decision" down, and the two
 revisions dated 2026-07-24 and 2026-07-25, describe it as it stood and are kept as the record of
-how the design got here — read them as history. The 2026-08-13 revisions below govern: the fork
-is retired for a pin on upstream, and books are no longer pushed at all. Where the older text and
-the newer text disagree, the newer text wins.
+how the design got here — read them as history. The 2026-08-13 and 2026-08-16 revisions below
+govern: the fork is retired for a pin on upstream, books are no longer pushed at all, and the
+device authenticates with Basic auth rather than an API key. Where the older text and the newer
+text disagree, the newer text wins — including between the dated revisions themselves, which are
+ordered newest first.
+
+## Revision — 2026-08-16: the device authenticates with Basic auth, not an API key (supersedes the API-key URL)
+
+The revision below chose the **API-key-in-URL** route on the reasoning that a constrained reader
+cannot send an `Authorization` header. The route exists and that reasoning still holds for clients
+that genuinely cannot — but it was never checked whether Stump offers anything else, and it does:
+**HTTP Basic auth, accepted on OPDS 1.2 and nowhere else**
+(`apps/server/src/middleware/auth.rs` gates the `Basic ` branch on `is_opds`). OPDS 1.2 is the
+version this design already targets, and the server answers an unauthenticated OPDS request with
+`WWW-Authenticate: Basic realm="stump OPDS v1.2"` — the challenge that tells a reader app to
+prompt.
+
+**Decision: the device authenticates as the dedicated non-owner account over Basic auth at
+`https://library.<domain>/opds/v1.2/catalog`. The API-key URL is retired.** The diagram in the
+revision below is otherwise unchanged; only the credential on the BOOKS OUT arrow differs:
+
+```
+  BOOKS OUT    DEVICE (sideloaded reader) ──OPDS 1.2 pull, Basic auth──▶ STUMP ──indexes──▶ library/
+```
+
+- **Because the API key cannot be declared.** Keys are generated server-side
+  (`create_prefixed_key` → `generate_key_and_hash`) and `ApikeyInput` has no field to supply one,
+  so the value can only be learned *after* the first deploy and hand-carried into sops. That makes
+  every fresh database a two-phase deploy with a manual step in the middle. Basic auth needs no
+  round trip: both halves of the credential — username as a module option, password as a sops
+  secret — are determined before the server starts. This supersedes the sentence below that the
+  **API-key URL** "belongs in the secret store": there is no such URL. The rule it expresses is
+  unchanged and still honoured — the credential lives in sops (`stump/opds_password`), and the
+  URL, now carrying nothing secret, does not.
+
+- **The scope gets tighter, not looser.** The account previously needed `ACCESS_API_KEYS` purely so
+  it could hold a key; with no key that permission authorises nothing, so the account is
+  `DOWNLOAD_FILE` alone — the only permission any OPDS 1.2 route enforces. The non-owner
+  requirement is untouched and is still the load-bearing part: `enforce_permissions`
+  short-circuits on `is_server_owner`, so an owner credential cannot be scoped at all.
+
+- **A password is safe here in a way a bearer token would not be.** Because Basic auth is confined
+  to the OPDS routes, the credential typed into a reader app cannot be replayed against the
+  GraphQL API. The acceptance test asserts that confinement rather than trusting it.
+
+- **This rests on the device's reader supporting Basic auth**, which is reasoned rather than
+  measured — the same standing as the pen-layer assumption below, and it is palimpsest#115 that
+  settles it. If the reader cannot, the API-key path is implemented and tested at commit
+  `a3a2683`. Tracked as palimpsest#114.
 
 ## Revision — 2026-08-13: the device pulls books over OPDS; Private Cloud narrows to handwriting (supersedes the push, and the fork)
 

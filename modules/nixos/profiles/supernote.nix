@@ -18,6 +18,17 @@
 # "probably a lost login challenge", that is #142 and NOT a bad credential.
 # Hardware acceptance is a manual pass: docs/runbooks/supernote-upstream-acceptance.md.
 #
+# ── RETIRED BY ADR-0031, STILL SHIPPED PENDING palimpsest#117 ─────────────────────────────
+# The governing 2026-08-13 revision of ADR-0031 supersedes the outbound push outright: books now
+# reach the device by OPDS pull, so nothing needs to put them there. Three things below exist only
+# to serve that retired path and are scheduled for removal by palimpsest#117 — the one-shot outbox
+# send (`ereaderOutbox`, `library/ereader-outbox/`), the last-synced baseline, and the store-loss
+# guard that protects it. They are still here, and still tested, because #117 is sequenced after
+# palimpsest#115: #115 is what confirms the device can actually pull, and deleting the only working
+# delivery path before its replacement is proven on hardware would leave no way to get a book onto
+# the Nomad. Do not read their presence as current design — read ADR-0031's 2026-08-13 revision.
+# The DOWNWARD mirror (store → `library/ereader/`) is NOT retired; it carries the handwriting.
+#
 # Plain HTTP on the LAN — no TLS, no Caddy edge, no tailnet. The device is a locked-down
 # Android tablet that can't run Tailscale, so it reaches rk1b directly on the LAN; that is
 # why this service is NOT in `settings.services` (which is the Caddy-fronted, uptime-probed
