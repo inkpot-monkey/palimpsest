@@ -243,8 +243,14 @@ mutation UpdateUser($id: ID!, $input: UpdateUserInput!) {
   updateUser(id: $id, input: $input) { id username }
 }
 """
+# `ApikeyInput`, not `APIKeyInput`: async-graphql folds a run of leading capitals to title case when
+# it derives the SDL name, so the Rust `APIKeyInput` is published as `ApikeyInput` (and the object as
+# `Apikey`) while `CreatedAPIKey` — named by a different derive — keeps its capitals. Reading the
+# Rust struct is therefore not enough to know the wire name; crates/graphql/schema.graphql is the
+# only authority. Getting it wrong fails at request time, not at startup: the server answers
+# `Unknown type "APIKeyInput"` and provisioning dies after the account already exists.
 CREATE_API_KEY = """
-mutation CreateApiKey($input: APIKeyInput!) {
+mutation CreateApiKey($input: ApikeyInput!) {
   createApiKey(input: $input) { secret apiKey { id name } }
 }
 """

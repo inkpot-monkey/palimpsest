@@ -255,7 +255,7 @@ pkgs.testers.nixosTest {
         body = json.dumps({"query": query})
         raw = origin.succeed(
             f"curl -sf -b /tmp/jar -X POST {LOCAL}/api/graphql "
-            f"-H 'Content-Type: application/json' -d {repr(body)}"
+            f"-H 'Content-Type: application/json' -d {shlex.quote(body)}"
         )
         parsed = json.loads(raw)
         assert "errors" not in parsed, f"GraphQL errors: {parsed}"
@@ -450,11 +450,16 @@ pkgs.testers.nixosTest {
 
     def refused(query, what):
         """Assert the OPDS key is REFUSED a privileged GraphQL operation — matching Stump's
-        permission-denied message specifically, so a typo in the query cannot pass as a refusal."""
+        permission-denied message specifically, so a typo in the query cannot pass as a refusal.
+
+        Quote the body with shlex, never repr: repr re-escapes the backslashes json.dumps emits for
+        an embedded `"`, so a query containing a string literal reaches the server as invalid JSON
+        and comes back as an empty body. That reads as a crash here rather than a passing refusal,
+        but only because this helper parses the answer — a laxer check would have called it a pass."""
         body = json.dumps({"query": query})
         answer = origin.succeed(
             f"curl -s -H 'Authorization: Bearer {api_key}' -X POST {LOCAL}/api/graphql "
-            f"-H 'Content-Type: application/json' -d {repr(body)}"
+            f"-H 'Content-Type: application/json' -d {shlex.quote(body)}"
         )
         messages = [e.get("message") for e in json.loads(answer).get("errors", [])]
         assert FORBIDDEN in messages, f"the OPDS key was not refused {what}: {answer}"
