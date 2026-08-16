@@ -70,8 +70,10 @@ revision below is otherwise unchanged; only the credential on the BOOKS OUT arro
 
 - **This rests on the device's reader supporting Basic auth**, which is reasoned rather than
   measured — the same standing as the pen-layer assumption below, and it is palimpsest#115 that
-  settles it. If the reader cannot, the API-key path is implemented and tested at commit
-  `a3a2683`. Tracked as palimpsest#114.
+  settles it. If the reader cannot, the API-key path was implemented and tested before this
+  revision retired it — recover it with
+  `git log --all --grep='bank the OPDS key'` (`d5a3499` at the time of writing, but a rebase
+  will move it; the subject is the durable handle). Tracked as palimpsest#114.
 
 ## Revision — 2026-08-13: the device pulls books over OPDS; Private Cloud narrows to handwriting (supersedes the push, and the fork)
 
