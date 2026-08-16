@@ -1,4 +1,4 @@
-# A self-hosted document library round-trips to the Supernote through the allenporter fork, indexed by Stump
+# A self-hosted document library round-trips to the Supernote — books out by OPDS pull, handwriting back by Private Cloud Sync — indexed by Stump
 
 A self-hosted, annotated **document library** — books *and* the user's own
 PDFs/papers/notes — that a **Supernote Nomad (A6 X2)** can read on e-ink and write
@@ -20,6 +20,12 @@ receiver/processor, and its socket.io realtime channel 500s), so the first desig
 fell back to a manual native-WebDAV leg. That was then superseded once a **fork**
 fixed both blockers, restoring the original dream of a fully-automatic two-way sync
 at the cost of two reconcilers bridging the fork's blob store to Stump.
+
+That shape is **no longer the decision**. Everything from "## Decision" down, and the two
+revisions dated 2026-07-24 and 2026-07-25, describe it as it stood and are kept as the record of
+how the design got here — read them as history. The 2026-08-13 revisions below govern: the fork
+is retired for a pin on upstream, and books are no longer pushed at all. Where the older text and
+the newer text disagree, the newer text wins.
 
 ## Revision — 2026-08-13: the device pulls books over OPDS; Private Cloud narrows to handwriting (supersedes the push, and the fork)
 
