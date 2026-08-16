@@ -4,31 +4,28 @@
 Stump has no declarative configuration for any of it: the first account is claimed through
 `POST /api/v2/auth/register` (the server grants owner rights to the first user on an empty
 database, then refuses unauthenticated registration), libraries are created through the GraphQL
-`createLibrary` mutation, and API keys through `createApiKey`. This codifies all three, the same
+`createLibrary` mutation, and accounts through `createUser`. This codifies all three, the same
 way navidrome-provision-users.py codifies Navidrome's admin-UI clicking.
 
 The reason the LIBRARIES must be codified rather than clicked: a library's scan pattern
 (`libraryPattern: SERIES_BASED`) is immutable after creation. Getting it wrong means deleting the
 library — and its reading progress — to fix it.
 
-The reason the OPDS CREDENTIAL must be codified rather than clicked: it has to be minimally
-scoped, and the only way to get a genuinely scoped key out of Stump is a chain of three steps that
-is easy to get subtly wrong by hand (see ensure_opds_credential below).
+The reason the OPDS CREDENTIAL must be codified rather than clicked: it has to belong to a
+non-owner account and resolve to exactly one permission, and an account clicked together in the UI
+gets neither by default (see ensure_opds_credential below).
 
 Reads (paths via env, populated from systemd LoadCredential so secrets never hit argv/environ):
   STUMP_USER_FILE           the owner account's username
   STUMP_PASSWORD_FILE       the owner account's password
   STUMP_OPDS_PASSWORD_FILE  the dedicated OPDS reader account's password
-  STUMP_OPDS_KEY_FILE       the banked OPDS API key (may be empty before it is minted)
   STUMP_URL                 base URL of the local Stump (e.g. http://127.0.0.1:10001)
   STUMP_LIBRARIES           JSON list of {"name": ..., "path": ...} — the libraries to ensure
   STUMP_OPDS_USER           username of the dedicated, non-owner OPDS reader account
   STUMP_PUBLIC_URL          the edge origin the catalog URL is built from (https://library.<domain>)
-  STUMP_OPDS_HANDOFF        where a freshly minted key is written for the operator to bank
 
-Writes STUMP_OPDS_URL (0600): the assembled catalog URL for whichever key is currently live. Only
-the key is banked in sops — everything else in the URL is public repo content — so the URL the
-device is actually pointed at is derived here rather than stored twice.
+Writes nothing outside the server. Every credential it needs is declared before it runs, so there
+is no value to hand back to the operator and no state to keep between runs.
 
 Create-only by design where curation could be lost: a library that already exists is left
 completely untouched (name, pattern, ignore rules, curation), so this can run on every deploy.
@@ -36,15 +33,14 @@ The OPDS reader account is machine-owned instead, so it is converged rather than
 Fail-loud (non-zero exit) so a broken run shows up as a failed unit instead of an empty catalog.
 """
 
+import base64
 import json
 import os
-import stat
 import sys
 import time
 import urllib.error
 import urllib.request
 from http.cookiejar import CookieJar
-from pathlib import Path
 
 BASE = os.environ["STUMP_URL"].rstrip("/")
 LIBRARIES = json.loads(os.environ["STUMP_LIBRARIES"])
@@ -202,37 +198,32 @@ def ensure_libraries():
 
 
 # ── THE OPDS CREDENTIAL (palimpsest#114) ────────────────────────────────────────────────────
-# Stump serves OPDS 1.2 twice: at `/opds/v1.2/...`, which needs an Authorization header, and at
-# `/opds/{api_key}/v1.2/...`, which carries the credential in the path instead — the route
-# upstream added for clients that cannot send auth headers, and the one the Supernote's sideloaded
-# reader uses (#115). Everything below exists to make that second route's key MINIMALLY scoped,
-# which is not what you get by clicking "new API key" in the UI.
+# THE CATALOG CREDENTIAL. Stump serves OPDS 1.2 at `/opds/v1.2/...` and accepts HTTP Basic auth
+# there — and ONLY there. `apps/server/src/middleware/auth.rs` gates the `Basic ` branch on
+# `is_opds`, and answers an unauthenticated OPDS request with a
+# `WWW-Authenticate: Basic realm="stump OPDS v1.2"` challenge, which is how a reader app knows to
+# prompt. So the credential the device needs is just this account's username and password, both of
+# which are declared — the username as a module option, the password in sops.
 #
-# WHY A DEDICATED, NON-OWNER ACCOUNT. A key carries either its owner's permissions ("inherit") or
-# an explicit custom subset. The subset looks like scoping and, on the server owner, is not:
-# `AuthContext::enforce_permissions` returns Ok unconditionally when `is_server_owner`, and
-# `validate_api_key` preserves that flag when it applies the key's custom permissions
-# (apps/server/src/middleware/auth.rs). So a "read-only" key minted by the owner can still create
-# libraries and manage users — the scope is recorded and never consulted. The only way the subset
-# is enforced is for the key to belong to an account that is not the owner. Hence a second,
-# machine-owned account whose whole purpose is to hold this key.
+# WHY NOT AN API KEY. Stump also serves `/opds/{api_key}/v1.2/...`, carrying the credential in the
+# path for clients that cannot set a header. That route cannot be provisioned declaratively: keys
+# are minted server-side by `create_prefixed_key` -> `generate_key_and_hash`, and `ApikeyInput` has
+# no field to supply one, so the value can only be learned after the first deploy and hand-carried
+# back into sops. Basic auth needs no such round trip. If palimpsest#115 finds the device's reader
+# cannot do Basic auth, the key path is in git history — but it is not carried on spec.
 #
-# THE TWO PERMISSION SETS, AND WHY THEY DIFFER.
-#   * The ACCOUNT needs `DOWNLOAD_FILE` (the only permission any OPDS 1.2 route enforces —
-#     `serve_media_file` gates the acquisition link on it; browsing enforces nothing beyond
-#     authentication) and `ACCESS_API_KEYS` (without it `validate_api_key` rejects every key the
-#     account holds, and `createApiKey` refuses to mint one). Neither implies anything else:
-#     `AssociatedPermission` maps both to the empty set.
-#   * The KEY gets `DOWNLOAD_FILE` only. Dropping `ACCESS_API_KEYS` from the key means the
-#     credential that leaves this host cannot mint further credentials — the account can, but the
-#     account's password never leaves the sops file.
-# Note the tightening upstream made in 0.1.3/0.1.4: new accounts get NO permissions by default and
-# key permission matching was fixed. A key that works in the UI but 403s on OPDS is this, not the
-# endpoint — which is why the health check below asserts the exact resolved permission set rather
-# than just "the request returned 200".
-OPDS_KEY_NAME = "opds-catalog"
-OPDS_KEY_PERMISSIONS = ["DOWNLOAD_FILE"]
-OPDS_ACCOUNT_PERMISSIONS = ["ACCESS_API_KEYS", "DOWNLOAD_FILE"]
+# WHY A DEDICATED, NON-OWNER ACCOUNT. The credential must not be the owner's:
+# `AuthContext::enforce_permissions` returns Ok unconditionally when `is_server_owner`, so an
+# owner credential is unscopeable by construction. A second, machine-owned account is what makes
+# the permission set below mean anything.
+#
+# THE PERMISSION SET. `DOWNLOAD_FILE` alone — the only permission any OPDS 1.2 route enforces
+# (`serve_media_file` gates the acquisition link on it; browsing enforces nothing beyond
+# authentication). `ACCESS_API_KEYS` is deliberately absent: it was only ever needed so the account
+# could hold an API key, and without a key there is nothing for it to authorise. Note upstream's
+# 0.1.3/0.1.4 tightening — new accounts get NO permissions by default — which is why the health
+# check below asserts the exact set the server RESOLVES rather than just a 200.
+OPDS_ACCOUNT_PERMISSIONS = ["DOWNLOAD_FILE"]
 
 CREATE_USER = """
 mutation CreateUser($input: CreateUserInput!) { createUser(input: $input) { id username } }
@@ -242,44 +233,17 @@ mutation UpdateUser($id: ID!, $input: UpdateUserInput!) {
   updateUser(id: $id, input: $input) { id username }
 }
 """
-# `ApikeyInput`, not `APIKeyInput`: async-graphql folds a run of leading capitals to title case when
-# it derives the SDL name, so the Rust `APIKeyInput` is published as `ApikeyInput` (and the object as
-# `Apikey`) while `CreatedAPIKey` — named by a different derive — keeps its capitals. Reading the
-# Rust struct is therefore not enough to know the wire name; crates/graphql/schema.graphql is the
-# only authority. Getting it wrong fails at request time, not at startup: the server answers
-# `Unknown type "APIKeyInput"` and provisioning dies after the account already exists.
-CREATE_API_KEY = """
-mutation CreateApiKey($input: ApikeyInput!) {
-  createApiKey(input: $input) { secret apiKey { id name } }
-}
-"""
-DELETE_API_KEY = "mutation DeleteApiKey($id: Int!) { deleteApiKey(id: $id) { id } }"
 
 
-def catalog_url(key):
-    """The URL the device is pointed at. Everything but the key is public repo content (the
-    `library` service entry in parts/settings.nix), so only the key is banked and this is
-    reassembled from it each run."""
-    return f"{PUBLIC_URL}/opds/{key}/v1.2/catalog"
+def catalog_url():
+    """The URL the device is pointed at. It carries no credential — the username and password go
+    in the Basic auth prompt — so unlike the API-key form it is safe to log."""
+    return f"{PUBLIC_URL}/opds/v1.2/catalog"
 
 
-def write_private(path, content):
-    """Write 0600 before the bytes land — these files must never exist world-readable, not even
-    briefly, so the mode goes in the open() flags rather than a chmod afterwards."""
-    with os.fdopen(
-        os.open(
-            path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, stat.S_IRUSR | stat.S_IWUSR
-        ),
-        "w",
-        encoding="utf-8",
-    ) as fh:
-        fh.write(content + "\n")
-
-
-def publish_url(key):
-    """Materialise the catalog URL for the operator to point the device at. Written to a file
-    rather than logged: this host ships its journal to VictoriaLogs, and the URL carries the key."""
-    write_private(Path(os.environ["STUMP_OPDS_URL"]), catalog_url(key))
+def basic_auth(reader, password):
+    token = base64.b64encode(f"{reader}:{password}".encode()).decode()
+    return {"Authorization": f"Basic {token}"}
 
 
 def find_user(username):
@@ -307,8 +271,8 @@ def ensure_reader_account(reader, password):
     )
     print(
         f"stump: created the OPDS reader account {reader!r} with "
-        f"{OPDS_ACCOUNT_PERMISSIONS} — it is not the server owner, which is what makes the "
-        "key's scope enforceable"
+        f"{OPDS_ACCOUNT_PERMISSIONS} — it is not the server owner, which is what makes that "
+        "scope enforceable"
     )
 
 
@@ -316,7 +280,7 @@ def reader_session(reader, password):
     """Log in as the reader. If the account rejects the password from the secret store, reset it
     (as the owner) to match and retry: the account is machine-owned, so the sops file is its
     source of truth, and the alternative — failing until someone deletes the user in the UI —
-    leaves the catalog credential unmintable for no good reason."""
+    leaves the catalog unreachable for no good reason."""
     opener = new_opener()
     body = {"username": reader, "password": password}
     try:
@@ -351,132 +315,60 @@ def reader_session(reader, password):
     return opener
 
 
-def key_complaint(key, reader):
-    """None if `key` is a live, minimally scoped credential for `reader`; otherwise why it is not.
-
-    Both halves matter. `/api/v2/auth/me` reports the permission set the server RESOLVED for the
-    key, which is the only way to tell a scoped key from one that merely records a scope (see the
-    server-owner note above). The catalog fetch then proves the actual route the device will use,
-    rather than inferring it from the permission set."""
-    bare = (
-        urllib.request.build_opener()
-    )  # no cookie jar: a session would mask a dead key
-    try:
-        viewer = api(
-            "GET",
-            "/api/v2/auth/me",
-            opener=bare,
-            headers={"Authorization": f"Bearer {key}"},
-        )
-    except urllib.error.HTTPError as err:
-        return f"the server rejected it ({err.code} {err.reason})"
-    except (urllib.error.URLError, OSError) as err:
-        return f"the server could not be asked about it ({err})"
-
-    if viewer.get("username") != reader:
-        return f"it belongs to {viewer.get('username')!r}, not the reader account {reader!r}"
-    if viewer.get("isServerOwner"):
-        return "it belongs to the server owner, whose permissions are never enforced"
-    granted = sorted(viewer.get("permissions") or [])
-    if granted != sorted(OPDS_KEY_PERMISSIONS):
-        return f"it resolves to {granted}, not {sorted(OPDS_KEY_PERMISSIONS)}"
-
-    try:
-        # Not `api()`: an OPDS feed is XML, so there is nothing to decode as JSON. Reaching a
-        # 200 with no Authorization header at all is the whole assertion.
-        with bare.open(BASE + f"/opds/{key}/v1.2/catalog", timeout=30) as resp:
-            resp.read()
-    except urllib.error.HTTPError as err:
-        return f"the catalog route refused it ({err.code} {err.reason})"
-    except (urllib.error.URLError, OSError) as err:
-        return f"the catalog route could not be reached ({err})"
-    return None
-
-
-def mint_key(reader, password):
-    """Mint a fresh minimally scoped key for the reader and return its secret."""
-    opener = reader_session(reader, password)
-    # Stump stores only a hash of a key, so a same-named key left over from an earlier run is
-    # unrecoverable dead weight — and leaving it would quietly keep a second live credential in
-    # existence. Drop it before minting.
-    for existing in graphql("query { apiKeys { id name } }", opener=opener)["apiKeys"]:
-        if existing["name"] == OPDS_KEY_NAME:
-            graphql(DELETE_API_KEY, {"id": existing["id"]}, opener=opener)
-            print(
-                f"stump: revoked the previous, unrecoverable {OPDS_KEY_NAME!r} API key"
-            )
-    created = graphql(
-        CREATE_API_KEY,
-        {
-            "input": {
-                "name": OPDS_KEY_NAME,
-                "permissions": {"custom": OPDS_KEY_PERMISSIONS},
-            }
-        },
-        opener=opener,
-    )["createApiKey"]
-    print(
-        f"stump: minted the {OPDS_KEY_NAME!r} API key for {reader!r}, scoped to "
-        f"{OPDS_KEY_PERMISSIONS}"
-    )
-    return created["secret"]
-
-
-def bank_it(handoff, minted):
-    """Tell the operator to move the credential into the secret store. Deliberately without the
-    key: this host ships its journal to VictoriaLogs, and a credential printed once is a
-    credential stored forever in the log store."""
-    lead = "minted a new OPDS API key" if minted else "has an OPDS API key"
-    print(
-        f"stump: {lead} that is NOT in the secret store. It is a credential — whoever holds it "
-        f"can browse and download the whole library. Read it from {handoff} (as root or the "
-        "stump user), add it to the `library` sops file as `stump/opds_key`, commit + push the "
-        "secrets repo, `nix flake update secrets` here, and redeploy. The catalog URL to give "
-        f"the device is in {os.environ['STUMP_OPDS_URL']}.",
-        file=sys.stderr,
-    )
-
-
 def ensure_opds_credential():
-    """Reconcile the catalog credential against the secret store.
+    """Make the declared credential work, and prove it does.
 
-    Resolution order, and why: the key banked in sops is authoritative because it is the one the
-    device was given, so if it is live there is nothing to do. Falling back to the handoff file
-    before minting is what stops a credential rotation on every single deploy while the operator
-    has not banked it yet — otherwise an un-banked key would be silently invalidated the next
-    time this ran, and the device would 401 with nothing having visibly changed.
-
-    Whichever key wins, the catalog URL is republished from it, so the URL file always matches the
-    key actually in force rather than a stale one from an earlier mint."""
+    Nothing is minted and nothing is handed back to the operator: the username is a module option
+    and the password is in sops, so the credential is fully determined before this runs. All this
+    does is converge the server onto it and then verify, which is worth doing at provision time
+    because every failure mode here is otherwise silent until the device 401s in someone's hand.
+    """
     reader = os.environ["STUMP_OPDS_USER"]
     password = read_file(os.environ["STUMP_OPDS_PASSWORD_FILE"])
-    handoff = Path(os.environ["STUMP_OPDS_HANDOFF"])
-    banked = read_file(os.environ["STUMP_OPDS_KEY_FILE"])
 
     ensure_reader_account(reader, password)
 
-    if banked:
-        complaint = key_complaint(banked, reader)
-        if complaint is None:
-            print("stump: the OPDS API key from the secret store is live")
-            publish_url(banked)
-            return
-        print(
-            f"stump: WARNING the banked OPDS API key no longer works — {complaint}",
-            file=sys.stderr,
+    # The scope as the SERVER resolves it, not as we asked for it. A session login is used rather
+    # than Basic auth because Basic is confined to the OPDS routes, and `/api/v2/auth/me` is not
+    # one — that confinement is itself part of why this credential is safe to put in a reader app.
+    viewer = api("GET", "/api/v2/auth/me", opener=reader_session(reader, password))
+    if viewer.get("isServerOwner"):
+        raise SystemExit(
+            f"stump: the OPDS account {reader!r} is the server owner — its permissions would "
+            "never be enforced"
+        )
+    granted = sorted(viewer.get("permissions") or [])
+    if granted != sorted(OPDS_ACCOUNT_PERMISSIONS):
+        raise SystemExit(
+            f"stump: the OPDS account {reader!r} resolves to {granted}, not "
+            f"{sorted(OPDS_ACCOUNT_PERMISSIONS)}"
         )
 
-    if handoff.exists():
-        key = read_file(handoff)
-        if key and key_complaint(key, reader) is None:
-            publish_url(key)
-            bank_it(handoff, minted=False)
-            return
+    # The actual route the device will use, with the actual credential, over Basic auth. Not
+    # `api()`: an OPDS feed is XML, so there is nothing to decode as JSON.
+    bare = (
+        urllib.request.build_opener()
+    )  # no cookie jar: a session would mask a bad password
+    request = urllib.request.Request(
+        BASE + "/opds/v1.2/catalog", headers=basic_auth(reader, password)
+    )
+    try:
+        with bare.open(request, timeout=30) as resp:
+            resp.read()
+    except urllib.error.HTTPError as err:
+        raise SystemExit(
+            f"stump: the OPDS 1.2 catalog refused the {reader!r} credential "
+            f"({err.code} {err.reason})"
+        ) from err
+    except (urllib.error.URLError, OSError) as err:
+        raise SystemExit(
+            f"stump: the OPDS 1.2 catalog could not be reached ({err})"
+        ) from err
 
-    secret = mint_key(reader, password)
-    write_private(handoff, secret)
-    publish_url(secret)
-    bank_it(handoff, minted=True)
+    print(
+        f"stump: the OPDS 1.2 catalog at {catalog_url()} serves {reader!r} over Basic auth, "
+        f"scoped to {granted}"
+    )
 
 
 def main():

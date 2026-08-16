@@ -37,17 +37,23 @@
 #      #114 before it starts. Discriminating by construction — the assertion fails without the
 #      trust setting, since the feed would then carry the direct-connection host.
 #
-#   5. THE OPDS CATALOG CREDENTIAL (palimpsest#114). The provisioner mints a key on the dedicated
-#      non-owner reader account, and the test then behaves like the client #115 will run: it
-#      fetches the OPDS 1.2 catalog through the edge WITH NO AUTHORIZATION HEADER — the key is in
-#      the URL path — walks the navigation links down to an acquisition link and downloads the
-#      book, comparing bytes with what was planted. It also pins the two properties that are easy
-#      to believe without evidence: that the key resolves to exactly `[DOWNLOAD_FILE]` on a
-#      non-owner account (a custom scope on the OWNER is recorded and never enforced, so a key
-#      minted the obvious way would pass a "can it read the catalog" test while being a full
-#      administrative credential), and that the reconcile against the secret store neither
-#      re-mints on every run nor keeps serving a key that has stopped working. Only the key is
-#      banked; the catalog URL is derived from it each run, so the derivation is asserted too.
+#   5. THE OPDS CATALOG CREDENTIAL (palimpsest#114). The device authenticates as a dedicated
+#      non-owner account over HTTP Basic auth, which Stump accepts on OPDS 1.2 and nowhere else.
+#      Nothing is minted: both halves of the credential are declared before the server starts, so
+#      there is no handoff file and no state between runs — and the test asserts that absence, so
+#      the retired mint/bank machinery cannot quietly come back. It pins three properties that are
+#      easy to believe without evidence: that the credential resolves to exactly `[DOWNLOAD_FILE]`
+#      on a non-owner account (a scope on the OWNER is recorded and never enforced, so pointing the
+#      device at the owner would pass every catalog request below while holding full administrative
+#      rights); that an unauthenticated request is met with a `WWW-Authenticate: Basic` challenge,
+#      which is how a reader app knows to prompt; and that Basic auth does NOT work off the OPDS
+#      routes, which is what makes this password safe to type into a device.
+#
+#      The test then behaves like the client #115 will run: through the edge over TLS, it walks the
+#      feed from the catalog root down to an acquisition link — following the rels the feed itself
+#      advertises rather than URLs assembled here — downloads the book and compares its digest with
+#      what was planted. A real reader app on the real device is #115; this is as close as a VM
+#      gets.
 #
 #   6. THE DB SURVIVES A RESTART. The catalog is re-served from disk, not rebuilt, and the
 #      provisioner's second run takes its idempotent path (no duplicate libraries). Cross-REBOOT
@@ -74,12 +80,6 @@ let
   # mock credential; the account itself is created by the provisioner.
   opdsUser = "opds";
   opdsPassword = "opds-secret-456";
-
-  # The mock `stump/opds_key` secret. Unlike the other three it has to be WRITABLE: the test
-  # starts it empty (the state of a fresh deployment, before anyone has banked anything), then
-  # writes the minted key into it to prove the reconcile path. `environment.etc` would put it in
-  # the store, so it is a tmpfiles-created file under /run instead.
-  opdsKeyFile = "/run/mock-stump-opds-key";
 
   # A plain test dir standing in for rk1b's NVMe /var/cache/library — no git-annex, no mount here.
   libraryPath = "/var/lib/library";
@@ -154,10 +154,6 @@ pkgs.testers.nixosTest {
           };
           systemd.tmpfiles.rules = [
             "d ${libraryPath} 2770 git-annex library -"
-            # The mock `stump/opds_key` secret: empty, and owned by `stump` so the provisioner's
-            # LoadCredential can read it. This is the pre-bootstrap state — the sops key exists
-            # (sops-nix has no optional secrets) but holds no API key yet.
-            "f ${opdsKeyFile} 0400 stump stump -"
           ];
 
           # Satisfy the sops assertions without a real key/file, and force the four credential
@@ -168,7 +164,6 @@ pkgs.testers.nixosTest {
           sops.secrets."stump/user".path = lib.mkForce "/etc/mock-stump-user";
           sops.secrets."stump/password".path = lib.mkForce "/etc/mock-stump-password";
           sops.secrets."stump/opds_password".path = lib.mkForce "/etc/mock-stump-opds-password";
-          sops.secrets."stump/opds_key".path = lib.mkForce opdsKeyFile;
           environment.etc."mock-stump-user".text = owner;
           environment.etc."mock-stump-password".text = password;
           environment.etc."mock-stump-opds-password".text = opdsPassword;
@@ -418,85 +413,81 @@ pkgs.testers.nixosTest {
     assert "already present" in journal, f"the newest provisioner run re-created libraries:\n{journal}"
 
     # ── 9. THE OPDS CATALOG CREDENTIAL (#114) ────────────────────────────────────────────────
-    # Nothing was banked in the (mock) secret store, so the boot-time provisioner run should have
-    # minted a key, left it where the operator can bank it, and published the URL assembled from
-    # it — and put the credential nowhere else.
-    HANDOFF = "/var/cache/stump/opds-key"
-    URL_FILE = "/var/cache/stump/opds-url"
-
-    for path in (HANDOFF, URL_FILE):
-        meta = origin.succeed(f"stat -c '%U %a' {path}").strip()
-        assert meta == "stump 600", f"{path} is {meta}, not a 0600 file owned by stump"
-
-    api_key = origin.succeed(f"cat {HANDOFF}").strip()
-    assert api_key.startswith("stump_"), f"the handoff file holds no Stump API key: {api_key!r}"
-
-    # Only the key is banked; the URL is derived. Assert the derivation rather than re-deriving it
-    # the same way here, so a provisioner that assembled the wrong edge or the wrong OPDS version
-    # cannot agree with the test by construction.
-    opds_url = origin.succeed(f"cat {URL_FILE}").strip()
-    assert opds_url == f"https://${vhost}/opds/{api_key}/v1.2/catalog", f"derived URL is {opds_url}"
-
-    # The journal is shipped to VictoriaLogs, so a credential printed even once would be stored
-    # there forever. The provisioner must name the files, never the key.
+    # The credential is declared, not minted: the username is a module option and the password is
+    # a sops secret, so there is no handoff file, nothing for the operator to bank, and nothing
+    # that could differ between the first deploy and the tenth. What the provisioner does is
+    # converge the account and verify it — so what this section asserts is the verification.
     journal = origin.succeed("journalctl -u stump-provision --no-pager -o cat")
-    assert "NOT in the secret store" in journal, f"the operator was not told to bank the key:\n{journal}"
-    assert api_key not in journal, "the provisioner leaked the API key into the journal"
+    assert "serves '${opdsUser}' over Basic auth" in journal, f"the credential was not verified:\n{journal}"
+    assert "${opdsPassword}" not in journal, "the provisioner leaked the OPDS password into the journal"
 
-    # THE SCOPE, AS THE SERVER RESOLVES IT. This is the assertion that separates a scoped key from
-    # one that merely records a scope: a custom permission set on the SERVER OWNER is ignored
-    # (`enforce_permissions` short-circuits on `is_server_owner`), so a key minted the obvious way
-    # would sail through every catalog request below while still being able to manage the server.
-    viewer = json.loads(
-        origin.succeed(f"curl -sf -H 'Authorization: Bearer {api_key}' {LOCAL}/api/v2/auth/me")
+    # No state is kept between runs. The old design left two 0600 files in the cache dir; their
+    # absence is what proves the mint/bank machinery is gone rather than merely unused.
+    origin.fail("test -e /var/cache/stump/opds-key")
+    origin.fail("test -e /var/cache/stump/opds-url")
+
+    # THE SCOPE, AS THE SERVER RESOLVES IT. The assertion that separates a scoped credential from
+    # one that merely records a scope: `enforce_permissions` short-circuits on `is_server_owner`,
+    # so had the device been pointed at the owner account it would pass every catalog request
+    # below while holding full administrative rights.
+    reader_jar = "/tmp/reader-jar"
+    origin.succeed(
+        f"curl -sf -c {reader_jar} -X POST {LOCAL}/api/v2/auth/login "
+        "-H 'Content-Type: application/json' "
+        f"""-d '{json.dumps({"username": "${opdsUser}", "password": "${opdsPassword}"})}' -o /dev/null"""
     )
-    assert viewer["username"] == "${opdsUser}", f"the key belongs to {viewer['username']}"
-    assert viewer["isServerOwner"] is False, "the OPDS key belongs to the server owner"
-    assert viewer["permissions"] == ["DOWNLOAD_FILE"], f"key scope is {viewer['permissions']}"
+    viewer = json.loads(origin.succeed(f"curl -sf -b {reader_jar} {LOCAL}/api/v2/auth/me"))
+    assert viewer["username"] == "${opdsUser}", f"the credential belongs to {viewer['username']}"
+    assert viewer["isServerOwner"] is False, "the OPDS account is the server owner"
+    assert viewer["permissions"] == ["DOWNLOAD_FILE"], f"scope is {viewer['permissions']}"
 
-    FORBIDDEN = "You do not have permission to perform this action."
+    # BASIC AUTH IS CONFINED TO OPDS. This is what makes a password safe to type into a reader
+    # app: `auth_middleware` gates the `Basic ` branch on `is_opds`, so the same credential that
+    # opens the catalog cannot be replayed against the API. Asserted, not assumed — if a future
+    # version widened it, the device's password would silently become an API credential.
+    origin.fail(f"curl -sf -u ${opdsUser}:${opdsPassword} -o /dev/null {LOCAL}/api/v2/auth/me")
 
-    def refused(query, what):
-        """Assert the OPDS key is REFUSED a privileged GraphQL operation — matching Stump's
-        permission-denied message specifically, so a typo in the query cannot pass as a refusal.
+    # ── 10. THE DEVICE'S PATH, END TO END (#114/#115) ────────────────────────────────────────
+    # From here on the test behaves like the reader app #115 will run: everything goes through the
+    # edge over TLS, authenticated the way the device will authenticate, following links the feed
+    # itself advertises rather than URLs assembled here.
+    AUTH = "-u ${opdsUser}:${opdsPassword}"
 
-        Quote the body with shlex, never repr: repr re-escapes the backslashes json.dumps emits for
-        an embedded `"`, so a query containing a string literal reaches the server as invalid JSON
-        and comes back as an empty body. That reads as a crash here rather than a passing refusal,
-        but only because this helper parses the answer — a laxer check would have called it a pass."""
-        body = json.dumps({"query": query})
-        answer = origin.succeed(
-            f"curl -s -H 'Authorization: Bearer {api_key}' -X POST {LOCAL}/api/graphql "
-            f"-H 'Content-Type: application/json' -d {shlex.quote(body)}"
-        )
-        messages = [e.get("message") for e in json.loads(answer).get("errors", [])]
-        assert FORBIDDEN in messages, f"the OPDS key was not refused {what}: {answer}"
-
-    # Reading the user list needs ReadUsers; minting another key needs AccessApiKeys — which the
-    # ACCOUNT has (or it could hold no key at all) and the KEY deliberately does not, so the
-    # credential that leaves this host cannot mint successors.
-    refused("{ users { nodes { id } } }", "the user list")
-    refused(
-        'mutation { createApiKey(input: {name: "escalation", permissions: {custom: [DOWNLOAD_FILE]}}) { secret } }',
-        "minting a second API key",
+    # An unauthenticated OPDS 1.2 request must be challenged, not served — and the challenge is
+    # what tells a reader app to prompt for credentials, so its presence is part of the contract.
+    challenge = client.succeed(
+        f"curl -sk {resolve} -o /dev/null -D - https://${vhost}/opds/v1.2/catalog"
     )
+    assert "401" in challenge.splitlines()[0], f"an unauthenticated catalog was served:\n{challenge}"
+    # Case-insensitively: the edge speaks HTTP/2, which lowercases header names on the wire, so
+    # the `WWW-Authenticate` Stump writes arrives as `www-authenticate`. A reader app parsing the
+    # challenge sees the same thing, which is the reason to assert it through the edge and not
+    # against the origin.
+    assert "www-authenticate: basic" in challenge.lower(), f"no Basic auth challenge:\n{challenge}"
 
-    # THE WALK. From here on the test is a client: over TLS, at the public vhost, through the
-    # edge, with NO Authorization header — the whole point of the API-key-in-URL route is that a
-    # reader which cannot set headers still authenticates.
+    # A wrong password is refused. Without this the assertions below would pass against a server
+    # that had stopped checking credentials at all.
+    client.fail(f"curl -skf {resolve} -u ${opdsUser}:wrong-password -o /dev/null https://${vhost}/opds/v1.2/catalog")
+
     def opds(path):
-        return client.succeed(f"curl -skf {resolve} 'https://${vhost}{path}'")
+        return client.succeed(f"curl -skf {resolve} {AUTH} 'https://${vhost}{path}'")
 
     def entries(document):
+        # findall, NOT iter: `iter` recurses, so it would also collect entries nested inside
+        # another entry and flatten the navigation hierarchy this walk is meant to descend.
         return {e.findtext(ATOM + "title"): e for e in ET.fromstring(document).findall(ATOM + "entry")}
 
     def follow(entry, rel):
+        # Raises rather than returning None: a missing link is a broken catalog, and continuing
+        # with None would fail later somewhere less informative.
         for candidate in entry.findall(ATOM + "link"):
             if candidate.get("rel") == rel:
                 return candidate.get("href")
         raise Exception(f"no {rel} link on entry {entry.findtext(ATOM + 'title')!r}")
 
-    root = entries(opds(f"/opds/{api_key}/v1.2/catalog"))
+    # The root is a NAVIGATION feed — 'All books', 'All series', 'Keep reading' and so on — so the
+    # libraries hang off 'All libraries' rather than appearing at the top level.
+    root = entries(opds("/opds/v1.2/catalog"))
     assert "All libraries" in root, f"the catalog has no library navigation: {sorted(root)}"
     libraries_feed = entries(opds(follow(root["All libraries"], "subsection")))
     assert set(libraries_feed) == {"Books", "Papers", "Notebooks"}, sorted(libraries_feed)
@@ -508,68 +499,18 @@ pkgs.testers.nixosTest {
     assert len(books_feed) == 1, f"expected one book in the series: {sorted(books_feed)}"
     acquisition = follow(next(iter(books_feed.values())), "http://opds-spec.org/acquisition")
 
-    # ...and the acquisition link actually yields the planted bytes. Compared by digest rather
-    # than by size, so a truncated or re-encoded response cannot pass.
-    client.succeed(f"curl -skf {resolve} -o /tmp/acquired.pdf 'https://${vhost}{acquisition}'")
+    # THE BYTES. The acquisition link yields exactly what was planted — compared by digest, so a
+    # truncated or re-encoded download cannot pass. This is the closest a VM can get to "a reader
+    # app downloaded the book"; an actual client on the actual device is palimpsest#115.
+    client.succeed(f"curl -skf {resolve} {AUTH} -o /tmp/acquired.pdf 'https://${vhost}{acquisition}'")
     downloaded = client.succeed("sha256sum /tmp/acquired.pdf").split()[0]
     planted = origin.succeed(
         f"sha256sum {shlex.quote(BOOKS + '/Stewart Brand/clocks-of-the-long-now.pdf')}"
     ).split()[0]
     assert downloaded == planted, f"downloaded {downloaded}, planted {planted}"
 
-    # REFUSALS. Without the key in the path and without a header there is no credential at all;
-    # and a key that has been tampered with is not a near-miss, it is a different key.
-    client.fail(f"curl -skf {resolve} -o /dev/null https://${vhost}/opds/v1.2/catalog")
-    client.fail(f"curl -skf {resolve} -o /dev/null 'https://${vhost}/opds/{api_key}x/v1.2/catalog'")
-    # The acquisition link is a credentialled URL too, not just the catalog entry point.
-    client.fail(f"curl -skf {resolve} -o /dev/null 'https://${vhost}{acquisition.replace(api_key, api_key + 'x')}'")
-
-    # NO CHURN WHILE UNBANKED. Re-running the provisioner must not rotate a credential the
-    # operator has not banked yet — otherwise the device would start 401ing after an unrelated
-    # deploy, with nothing visibly changed.
-    origin.systemctl("restart stump-provision.service")
-    origin.wait_for_unit("stump-provision.service")
-    assert origin.succeed(f"cat {HANDOFF}").strip() == api_key, "an unbanked key was rotated"
-    journal = origin.succeed("journalctl -u stump-provision --no-pager -o cat")
-    assert journal.count("minted the") == 1, f"the key was minted more than once:\n{journal}"
-
-    # BANKED. With the key in the secret store the provisioner recognises it as live and stops
-    # nagging — this is the steady state, and it is what makes the sops entry load-bearing rather
-    # than decorative. The URL is republished from the banked key, not left over from the mint.
-    origin.succeed(f"printf '%s\\n' '{api_key}' > ${opdsKeyFile}")
-    origin.succeed(f"rm {URL_FILE}")
-    origin.systemctl("restart stump-provision.service")
-    origin.wait_for_unit("stump-provision.service")
-    journal = origin.succeed("journalctl -u stump-provision --no-pager -o cat")
-    assert "from the secret store is live" in journal, f"the banked key was not recognised:\n{journal}"
-    assert journal.count("minted the") == 1, f"the banked key was needlessly re-minted:\n{journal}"
-    assert origin.succeed(f"cat {URL_FILE}").strip() == opds_url, "the URL was not republished"
-
-    # WRONG, BUT NOT LOST. A banked key that does not work while the minted one still does is an
-    # operator mistake, not a dead credential: the fix is to bank the right key, so the
-    # provisioner says so and mints nothing. Rotating here would revoke a credential the device
-    # is happily using.
-    origin.succeed(f"printf '%s\\n' '{api_key}x' > ${opdsKeyFile}")
-    origin.systemctl("restart stump-provision.service")
-    origin.wait_for_unit("stump-provision.service")
-    journal = origin.succeed("journalctl -u stump-provision --no-pager -o cat")
-    assert "no longer works" in journal, f"a dead banked key went unnoticed:\n{journal}"
-    assert journal.count("minted the") == 1, f"a still-live credential was rotated:\n{journal}"
-    assert origin.succeed(f"cat {HANDOFF}").strip() == api_key
-
-    # GENUINELY LOST. Both copies gone — the shape of a rebuilt database or a key revoked in the
-    # UI, which on the device is a silent 401. A fresh key is minted, and the old one is revoked
-    # rather than left lying around as a second live credential.
-    origin.succeed(f"rm {HANDOFF}")
-    origin.systemctl("restart stump-provision.service")
-    origin.wait_for_unit("stump-provision.service")
-    journal = origin.succeed("journalctl -u stump-provision --no-pager -o cat")
-    assert journal.count("minted the") == 2, f"the lost credential was not replaced:\n{journal}"
-    rotated = origin.succeed(f"cat {HANDOFF}").strip()
-    assert rotated != api_key, "the handoff file still holds the lost key"
-    rotated_url = origin.succeed(f"cat {URL_FILE}").strip()
-    assert rotated_url == f"https://${vhost}/opds/{rotated}/v1.2/catalog", rotated_url
-    client.succeed(f"curl -skf {resolve} -o /dev/null '{rotated_url}'")
-    client.fail(f"curl -skf {resolve} -o /dev/null '{opds_url}'")
+    # The acquisition link is credentialled too, not just the catalog entry point — otherwise the
+    # books would be readable by anyone who could guess a media id.
+    client.fail(f"curl -skf {resolve} -o /dev/null 'https://${vhost}{acquisition}'")
   '';
 }

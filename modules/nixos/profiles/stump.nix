@@ -31,46 +31,39 @@
 # "public URL" knob — `HostDetails` is derived per-request from `Host` + the proxy scheme header
 # (apps/server/src/middleware/host.rs), which Caddy's `reverse_proxy` sets and preserves by default.
 #
-# ── The credentials (four sops secrets) ───────────────────────────────────────────────────
-# Two accounts, and the URL that stands in for one of them.
-#
+# ── The credentials (three sops secrets, two accounts) ────────────────────────────────────
 # `stump/user` + `stump/password` are Stump's server-owner account. The server grants owner rights
 # to the FIRST account registered on an empty database and then refuses unauthenticated
 # registration, so this is the account everything else is bootstrapped from — it is what the
 # provisioning oneshot below uses to create the three libraries.
 #
-# `stump/opds_password` is the DEDICATED, NON-OWNER reader account that holds the OPDS API key
-# (#114). It exists because a custom permission set on a key belonging to the server owner is
-# recorded but never enforced — see the long note in stump-provision.py. Its username is not a
-# secret and is set by `opdsUser` below, not by sops.
+# `stump/opds_password` is the DEDICATED, NON-OWNER reader account the device authenticates as
+# (#114). Non-owner because `enforce_permissions` short-circuits on `is_server_owner`, so an owner
+# credential cannot be scoped at all — see the long note in stump-provision.py. Its username is not
+# a secret and is set by `opdsUser` below, not by sops.
 #
-# `stump/opds_key` is the API key the catalog URL carries. It is a bearer credential — whoever
-# holds it can browse and download the whole library — so it is stored here rather than in this
-# repo. Only the key is banked: everything else in the URL (scheme, vhost, the `/opds/…/v1.2/
-# catalog` path) is public repo content from the `library` service entry, so the provisioner
-# reassembles `https://library.<domain>/opds/<key>/v1.2/catalog` each run and writes it to
-# `/var/cache/stump/opds-url` (0600) for the operator to point the device at. Storing the key
-# alone keeps one copy of the secret instead of two that can disagree.
+# THE DEVICE CREDENTIAL IS THAT ACCOUNT, over HTTP Basic auth at
+# `https://library.<domain>/opds/v1.2/catalog`. Stump accepts Basic auth on OPDS 1.2 and NOWHERE
+# else (`apps/server/src/middleware/auth.rs` gates it on `is_opds`), which is what makes a password
+# safe to type into a reader app: it cannot be replayed against the GraphQL API. Both halves are
+# declared before anything runs — username here, password in sops — so there is nothing to mint,
+# bank, or carry back from the first deploy.
 #
-# The provisioner reconciles against the banked key: if it is live, nothing happens; if it is
-# missing or dead, a fresh one is minted and written to `/var/cache/stump/opds-key` (0600) for the
-# operator to bank. It is chicken-and-egg by nature — only the server can mint the key — so the
-# first deploy of a fresh database always ends with the provisioner telling you to go and bank it,
-# and the second deploy is quiet.
+# Stump also serves `/opds/{api_key}/v1.2/...` for clients that cannot set a header. That route is
+# deliberately NOT used: keys are generated server-side and cannot be supplied, so it would force a
+# value to be learned after deploy and hand-copied into sops — the opposite of declarative. If
+# palimpsest#115 finds the device's reader cannot do Basic auth, that path is in git history.
 #
-# All four live in the shared `profiles/library.yaml` bundle (this stack's secret file, shared
+# All three live in the shared `profiles/library.yaml` bundle (this stack's secret file, shared
 # with the Supernote server and the ereader reconciler) under a `stump` sub-map alongside
 # `supernote:`:
 #   stump:
 #     user: reader                 # any username; unlike Supernote's, it need not be an email
 #     password: your-password
-#     opds_password: another-password   # the reader account; never leaves the host
-#     opds_key: ""                 # empty on first deploy; fill it from the handoff file
+#     opds_password: another-password   # the reader account — this is the device's password
 # sops files are a SEPARATE repo (stash): add the sub-map there, commit + push, then
 # `nix flake update secrets` HERE before deploying rk1b — otherwise sops-install-secrets cannot
-# extract `stump/user` and activation fails (AGENTS.md gotcha). Note `opds_key` must be PRESENT
-# (even as an empty string) from the first deploy: sops-nix fails activation on a declared secret
-# whose key is missing, and there is no "optional secret". The file already lists rk1b as a
+# extract `stump/user` and activation fails (AGENTS.md gotcha). The file already lists rk1b as a
 # recipient (the Supernote profile reads it), so no re-keying is needed.
 #
 # ── BEFORE BUMPING THE VERSION: snapshot the database ─────────────────────────────────────
@@ -128,15 +121,6 @@ let
   # "outside every root" invariant is expressed as a set difference, not a comment.
   originalsDir = "_originals";
 
-  # Where the provisioner drops a freshly minted API key for the operator to bank in sops, and
-  # where it republishes the assembled catalog URL to point the device at. Both inside the 0700
-  # stump-owned CacheDirectory, and written 0600 on top of that. Two files rather than one because
-  # they have different lifetimes: the key is transient (it exists until it is banked, and is only
-  # consulted to avoid re-minting an un-banked one), while the URL is regenerated every run from
-  # whichever key is in force, so it is always safe to read and always current.
-  opdsHandoff = "${configDir}/opds-key";
-  opdsUrlFile = "${configDir}/opds-url";
-
   rootPath = dir: "${cfg.libraryPath}/${dir}";
   # `{name, path}` pairs handed to the provisioner as JSON.
   libraryPlan = lib.mapAttrsToList (dir: name: {
@@ -185,11 +169,12 @@ in
       type = lib.types.str;
       default = "opds";
       description = ''
-        Username of the dedicated, non-owner Stump account that holds the OPDS catalog API key
-        (palimpsest#114). Not a secret — it never appears in the credential URL, and knowing it
-        buys nothing without the password (`stump/opds_password`), which never leaves the host.
-        It exists because Stump only enforces an API key's custom permission set when the key
-        belongs to an account that is not the server owner; see stump-provision.py.
+        Username of the dedicated, non-owner Stump account the device authenticates as over
+        HTTP Basic auth on the OPDS 1.2 catalog (palimpsest#114). Not a secret — knowing it buys
+        nothing without the password (`stump/opds_password`). It is separate from the owner
+        account because Stump's `enforce_permissions` short-circuits on `is_server_owner`, so an
+        owner credential resolves to full administrative rights however it is scoped; see
+        stump-provision.py.
       '';
     };
 
@@ -335,8 +320,8 @@ in
         # Navidrome and Home Assistant provisioners strike. Idempotent + create-only: an existing
         # library is left completely untouched, so hand-made curation in the UI is never clobbered.
         #
-        # It also reconciles the OPDS catalog credential (#114) — the dedicated reader account and
-        # its minimally scoped API key. That is here rather than in a unit of its own because it is
+        # It also converges the OPDS reader account (#114) and verifies the catalog answers its
+        # credential over Basic auth. That is here rather than in a unit of its own because it is
         # the same bootstrap: it needs the owner session this script already holds, and splitting it
         # out would mean logging in twice and ordering two oneshots against each other for nothing.
         sops.secrets =
@@ -345,7 +330,6 @@ in
               "stump/user"
               "stump/password"
               "stump/opds_password"
-              "stump/opds_key"
             ]
             (key: {
               sopsFile = self.lib.getSecretFile "library";
@@ -373,8 +357,6 @@ in
             # The URL handed to the device has to be the EDGE's, not this loopback one: the
             # Supernote has no route to the origin except through kelpy's Caddy.
             STUMP_PUBLIC_URL = cfg.publicUrl;
-            STUMP_OPDS_HANDOFF = opdsHandoff;
-            STUMP_OPDS_URL = opdsUrlFile;
           };
           serviceConfig = {
             Type = "oneshot";
@@ -386,14 +368,12 @@ in
               "user:${config.sops.secrets."stump/user".path}"
               "password:${config.sops.secrets."stump/password".path}"
               "opds-password:${config.sops.secrets."stump/opds_password".path}"
-              "opds-key:${config.sops.secrets."stump/opds_key".path}"
             ];
             ExecStart = pkgs.writeShellScript "stump-provision" ''
               set -euo pipefail
               export STUMP_USER_FILE="$CREDENTIALS_DIRECTORY/user"
               export STUMP_PASSWORD_FILE="$CREDENTIALS_DIRECTORY/password"
               export STUMP_OPDS_PASSWORD_FILE="$CREDENTIALS_DIRECTORY/opds-password"
-              export STUMP_OPDS_KEY_FILE="$CREDENTIALS_DIRECTORY/opds-key"
               exec ${pkgs.python3}/bin/python3 ${./stump-provision.py}
             '';
           };
