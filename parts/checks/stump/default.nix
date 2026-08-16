@@ -37,7 +37,18 @@
 #      #114 before it starts. Discriminating by construction — the assertion fails without the
 #      trust setting, since the feed would then carry the direct-connection host.
 #
-#   5. THE DB SURVIVES A RESTART. The catalog is re-served from disk, not rebuilt, and the
+#   5. THE OPDS CATALOG CREDENTIAL (palimpsest#114). The provisioner mints a key on the dedicated
+#      non-owner reader account, and the test then behaves like the client #115 will run: it
+#      fetches the OPDS 1.2 catalog through the edge WITH NO AUTHORIZATION HEADER — the key is in
+#      the URL path — walks the navigation links down to an acquisition link and downloads the
+#      book, comparing bytes with what was planted. It also pins the two properties that are easy
+#      to believe without evidence: that the key resolves to exactly `[DOWNLOAD_FILE]` on a
+#      non-owner account (a custom scope on the OWNER is recorded and never enforced, so a key
+#      minted the obvious way would pass a "can it read the catalog" test while being a full
+#      administrative credential), and that the reconcile against the secret store neither
+#      re-mints on every run nor keeps serving a URL that has stopped working.
+#
+#   6. THE DB SURVIVES A RESTART. The catalog is re-served from disk, not rebuilt, and the
 #      provisioner's second run takes its idempotent path (no duplicate libraries). Cross-REBOOT
 #      survival is deliberately not re-proven here: on rk1b it rests on `/var/cache` being a real
 #      block-device mount (hosts/rk1/nvme.nix) plus the unit's `RequiresMountsFor`, which is a
@@ -57,6 +68,17 @@ let
   # The owner account the provisioner claims from the mock credential.
   owner = "reader";
   password = "catalog-secret-123";
+
+  # The dedicated, non-owner account that holds the OPDS key (#114). Its password is the second
+  # mock credential; the account itself is created by the provisioner.
+  opdsUser = "opds";
+  opdsPassword = "opds-secret-456";
+
+  # The mock `stump/opds_url` secret. Unlike the other three it has to be WRITABLE: the test
+  # starts it empty (the state of a fresh deployment, before anyone has banked anything), then
+  # writes the minted URL into it to prove the reconcile path. `environment.etc` would put it in
+  # the store, so it is a tmpfiles-created file under /run instead.
+  opdsUrlFile = "/run/mock-stump-opds-url";
 
   # A plain test dir standing in for rk1b's NVMe /var/cache/library — no git-annex, no mount here.
   libraryPath = "/var/lib/library";
@@ -112,6 +134,12 @@ pkgs.testers.nixosTest {
             enable = true;
             # Point the tree at a plain test dir (no NVMe mount / git-annex module here).
             inherit libraryPath;
+            inherit opdsUser;
+            # The catalog URL the provisioner hands the operator has to name the EDGE, which in
+            # this test is `library.example.com` rather than the fleet's real domain. Overriding
+            # it here is also what lets the OPDS walk below follow the minted URL literally,
+            # instead of reassembling one and hoping the two agree.
+            publicUrl = "https://${vhost}";
           };
 
           # The corpus tree exactly as hosts/rk1/library.nix builds it: owned by git-annex, group
@@ -123,17 +151,26 @@ pkgs.testers.nixosTest {
             isSystemUser = true;
             group = "git-annex";
           };
-          systemd.tmpfiles.rules = [ "d ${libraryPath} 2770 git-annex library -" ];
+          systemd.tmpfiles.rules = [
+            "d ${libraryPath} 2770 git-annex library -"
+            # The mock `stump/opds_url` secret: empty, and owned by `stump` so the provisioner's
+            # LoadCredential can read it. This is the pre-bootstrap state — the sops key exists
+            # (sops-nix has no optional secrets) but holds no URL yet.
+            "f ${opdsUrlFile} 0400 stump stump -"
+          ];
 
-          # Satisfy the sops assertions without a real key/file, and force the two credential
+          # Satisfy the sops assertions without a real key/file, and force the four credential
           # secrets to plain files (same bypass as the #92 supernote test).
           sops.age.keyFile = "/etc/dummy-sops-key";
           sops.defaultSopsFile = pkgs.writeText "dummy-sops.yaml" "";
           sops.validateSopsFiles = false;
           sops.secrets."stump/user".path = lib.mkForce "/etc/mock-stump-user";
           sops.secrets."stump/password".path = lib.mkForce "/etc/mock-stump-password";
+          sops.secrets."stump/opds_password".path = lib.mkForce "/etc/mock-stump-opds-password";
+          sops.secrets."stump/opds_url".path = lib.mkForce opdsUrlFile;
           environment.etc."mock-stump-user".text = owner;
           environment.etc."mock-stump-password".text = password;
+          environment.etc."mock-stump-opds-password".text = opdsPassword;
 
           environment.systemPackages = [ pkgs.curl ];
           # Stump migrates its schema and renders PDF thumbnails on first scan.
@@ -169,6 +206,10 @@ pkgs.testers.nixosTest {
     import json
     import shlex
     import time
+    import xml.etree.ElementTree as ET
+
+    # OPDS 1.2 is Atom; every element the walk below looks for is in the Atom namespace.
+    ATOM = "{http://www.w3.org/2005/Atom}"
 
     PORT = ${toString port}
     LOCAL = f"http://127.0.0.1:{PORT}"
@@ -374,5 +415,145 @@ pkgs.testers.nixosTest {
     assert after["Notebooks"]["books"] == ["2026-08-13"], after["Notebooks"]
     journal = origin.succeed("journalctl -u stump-provision --no-pager -o cat")
     assert "already present" in journal, f"the newest provisioner run re-created libraries:\n{journal}"
+
+    # ── 9. THE OPDS CATALOG CREDENTIAL (#114) ────────────────────────────────────────────────
+    # Nothing was banked in the (mock) secret store, so the boot-time provisioner run should have
+    # minted a key and left the assembled URL where the operator can find it — and nowhere else.
+    HANDOFF = "/var/cache/stump/opds-url"
+
+    meta = origin.succeed(f"stat -c '%U %a' {HANDOFF}").strip()
+    assert meta == "stump 600", f"the handoff file is {meta}, not a 0600 file owned by stump"
+    opds_url = origin.succeed(f"cat {HANDOFF}").strip()
+    assert opds_url.startswith("https://${vhost}/opds/"), f"handoff URL names the wrong edge: {opds_url}"
+    assert opds_url.endswith("/v1.2/catalog"), f"handoff URL is not an OPDS 1.2 catalog: {opds_url}"
+    api_key = opds_url[len("https://${vhost}/opds/") : -len("/v1.2/catalog")]
+    assert api_key.startswith("stump_"), f"the URL carries no Stump API key: {opds_url}"
+
+    # The journal is shipped to VictoriaLogs, so a credential printed even once would be stored
+    # there forever. The provisioner must name the file, never the URL.
+    journal = origin.succeed("journalctl -u stump-provision --no-pager -o cat")
+    assert "NOT in the secret store" in journal, f"the operator was not told to bank the URL:\n{journal}"
+    assert api_key not in journal, "the provisioner leaked the API key into the journal"
+
+    # THE SCOPE, AS THE SERVER RESOLVES IT. This is the assertion that separates a scoped key from
+    # one that merely records a scope: a custom permission set on the SERVER OWNER is ignored
+    # (`enforce_permissions` short-circuits on `is_server_owner`), so a key minted the obvious way
+    # would sail through every catalog request below while still being able to manage the server.
+    viewer = json.loads(
+        origin.succeed(f"curl -sf -H 'Authorization: Bearer {api_key}' {LOCAL}/api/v2/auth/me")
+    )
+    assert viewer["username"] == "${opdsUser}", f"the key belongs to {viewer['username']}"
+    assert viewer["isServerOwner"] is False, "the OPDS key belongs to the server owner"
+    assert viewer["permissions"] == ["DOWNLOAD_FILE"], f"key scope is {viewer['permissions']}"
+
+    FORBIDDEN = "You do not have permission to perform this action."
+
+    def refused(query, what):
+        """Assert the OPDS key is REFUSED a privileged GraphQL operation — matching Stump's
+        permission-denied message specifically, so a typo in the query cannot pass as a refusal."""
+        body = json.dumps({"query": query})
+        answer = origin.succeed(
+            f"curl -s -H 'Authorization: Bearer {api_key}' -X POST {LOCAL}/api/graphql "
+            f"-H 'Content-Type: application/json' -d {repr(body)}"
+        )
+        messages = [e.get("message") for e in json.loads(answer).get("errors", [])]
+        assert FORBIDDEN in messages, f"the OPDS key was not refused {what}: {answer}"
+
+    # Reading the user list needs ReadUsers; minting another key needs AccessApiKeys — which the
+    # ACCOUNT has (or it could hold no key at all) and the KEY deliberately does not, so the
+    # credential that leaves this host cannot mint successors.
+    refused("{ users { nodes { id } } }", "the user list")
+    refused(
+        'mutation { createApiKey(input: {name: "escalation", permissions: {custom: [DOWNLOAD_FILE]}}) { secret } }',
+        "minting a second API key",
+    )
+
+    # THE WALK. From here on the test is a client: over TLS, at the public vhost, through the
+    # edge, with NO Authorization header — the whole point of the API-key-in-URL route is that a
+    # reader which cannot set headers still authenticates.
+    def opds(path):
+        return client.succeed(f"curl -skf {resolve} 'https://${vhost}{path}'")
+
+    def entries(document):
+        return {e.findtext(ATOM + "title"): e for e in ET.fromstring(document).findall(ATOM + "entry")}
+
+    def follow(entry, rel):
+        for candidate in entry.findall(ATOM + "link"):
+            if candidate.get("rel") == rel:
+                return candidate.get("href")
+        raise Exception(f"no {rel} link on entry {entry.findtext(ATOM + 'title')!r}")
+
+    root = entries(opds(f"/opds/{api_key}/v1.2/catalog"))
+    assert "All libraries" in root, f"the catalog has no library navigation: {sorted(root)}"
+    libraries_feed = entries(opds(follow(root["All libraries"], "subsection")))
+    assert set(libraries_feed) == {"Books", "Papers", "Notebooks"}, sorted(libraries_feed)
+
+    series_feed = entries(opds(follow(libraries_feed["Books"], "subsection")))
+    assert "Stewart Brand" in series_feed, f"Books has no Stewart Brand series: {sorted(series_feed)}"
+
+    books_feed = entries(opds(follow(series_feed["Stewart Brand"], "subsection")))
+    assert len(books_feed) == 1, f"expected one book in the series: {sorted(books_feed)}"
+    acquisition = follow(next(iter(books_feed.values())), "http://opds-spec.org/acquisition")
+
+    # ...and the acquisition link actually yields the planted bytes. Compared by digest rather
+    # than by size, so a truncated or re-encoded response cannot pass.
+    client.succeed(f"curl -skf {resolve} -o /tmp/acquired.pdf 'https://${vhost}{acquisition}'")
+    downloaded = client.succeed("sha256sum /tmp/acquired.pdf").split()[0]
+    planted = origin.succeed(
+        f"sha256sum {shlex.quote(BOOKS + '/Stewart Brand/clocks-of-the-long-now.pdf')}"
+    ).split()[0]
+    assert downloaded == planted, f"downloaded {downloaded}, planted {planted}"
+
+    # REFUSALS. Without the key in the path and without a header there is no credential at all;
+    # and a key that has been tampered with is not a near-miss, it is a different key.
+    client.fail(f"curl -skf {resolve} -o /dev/null https://${vhost}/opds/v1.2/catalog")
+    client.fail(f"curl -skf {resolve} -o /dev/null 'https://${vhost}/opds/{api_key}x/v1.2/catalog'")
+    # The acquisition link is a credentialled URL too, not just the catalog entry point.
+    client.fail(f"curl -skf {resolve} -o /dev/null 'https://${vhost}{acquisition.replace(api_key, api_key + 'x')}'")
+
+    # NO CHURN WHILE UNBANKED. Re-running the provisioner must not rotate a credential the
+    # operator has not banked yet — otherwise the device would start 401ing after an unrelated
+    # deploy, with nothing visibly changed.
+    origin.systemctl("restart stump-provision.service")
+    origin.wait_for_unit("stump-provision.service")
+    assert origin.succeed(f"cat {HANDOFF}").strip() == opds_url, "an unbanked URL was rotated"
+    journal = origin.succeed("journalctl -u stump-provision --no-pager -o cat")
+    assert journal.count("minted the") == 1, f"the key was minted more than once:\n{journal}"
+
+    # BANKED. With the URL in the secret store the provisioner recognises it as live and stops
+    # nagging — this is the steady state, and it is what makes the sops entry load-bearing rather
+    # than decorative.
+    origin.succeed(f"printf '%s\\n' '{opds_url}' > ${opdsUrlFile}")
+    origin.systemctl("restart stump-provision.service")
+    origin.wait_for_unit("stump-provision.service")
+    journal = origin.succeed("journalctl -u stump-provision --no-pager -o cat")
+    assert "from the secret store is live" in journal, f"the banked URL was not recognised:\n{journal}"
+    assert journal.count("minted the") == 1, f"the banked URL was needlessly re-minted:\n{journal}"
+
+    # WRONG, BUT NOT LOST. A banked URL that does not work while the minted one still does is an
+    # operator mistake, not a dead credential: the fix is to bank the right URL, so the
+    # provisioner says so and mints nothing. Rotating here would revoke a credential the device
+    # is happily using.
+    dead_url = opds_url.replace(api_key, api_key + "x")
+    origin.succeed(f"printf '%s\\n' '{dead_url}' > ${opdsUrlFile}")
+    origin.systemctl("restart stump-provision.service")
+    origin.wait_for_unit("stump-provision.service")
+    journal = origin.succeed("journalctl -u stump-provision --no-pager -o cat")
+    assert "no longer works" in journal, f"a dead banked URL went unnoticed:\n{journal}"
+    assert journal.count("minted the") == 1, f"a still-live credential was rotated:\n{journal}"
+    assert origin.succeed(f"cat {HANDOFF}").strip() == opds_url
+
+    # GENUINELY LOST. Both copies gone — the shape of a rebuilt database or a key revoked in the
+    # UI, which on the device is a silent 401. A fresh key is minted, and the old one is revoked
+    # rather than left lying around as a second live credential.
+    origin.succeed(f"rm {HANDOFF}")
+    origin.systemctl("restart stump-provision.service")
+    origin.wait_for_unit("stump-provision.service")
+    journal = origin.succeed("journalctl -u stump-provision --no-pager -o cat")
+    assert journal.count("minted the") == 2, f"the lost credential was not replaced:\n{journal}"
+    rotated = origin.succeed(f"cat {HANDOFF}").strip()
+    assert rotated != opds_url, "the handoff file still holds the lost URL"
+    client.succeed(f"curl -skf {resolve} -o /dev/null '{rotated}'")
+    client.fail(f"curl -skf {resolve} -o /dev/null '{opds_url}'")
   '';
 }
