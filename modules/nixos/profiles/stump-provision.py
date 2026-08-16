@@ -19,12 +19,16 @@ Reads (paths via env, populated from systemd LoadCredential so secrets never hit
   STUMP_USER_FILE           the owner account's username
   STUMP_PASSWORD_FILE       the owner account's password
   STUMP_OPDS_PASSWORD_FILE  the dedicated OPDS reader account's password
-  STUMP_OPDS_URL_FILE       the banked OPDS catalog URL (may be empty before it is minted)
+  STUMP_OPDS_KEY_FILE       the banked OPDS API key (may be empty before it is minted)
   STUMP_URL                 base URL of the local Stump (e.g. http://127.0.0.1:10001)
   STUMP_LIBRARIES           JSON list of {"name": ..., "path": ...} — the libraries to ensure
   STUMP_OPDS_USER           username of the dedicated, non-owner OPDS reader account
   STUMP_PUBLIC_URL          the edge origin the catalog URL is built from (https://library.<domain>)
-  STUMP_OPDS_HANDOFF        where a freshly minted catalog URL is written for the operator
+  STUMP_OPDS_HANDOFF        where a freshly minted key is written for the operator to bank
+
+Writes STUMP_OPDS_URL (0600): the assembled catalog URL for whichever key is currently live. Only
+the key is banked in sops — everything else in the URL is public repo content — so the URL the
+device is actually pointed at is derived here rather than stored twice.
 
 Create-only by design where curation could be lost: a library that already exists is left
 completely untouched (name, pattern, ignore rules, curation), so this can run on every deploy.
@@ -34,7 +38,6 @@ Fail-loud (non-zero exit) so a broken run shows up as a failed unit instead of a
 
 import json
 import os
-import re
 import stat
 import sys
 import time
@@ -231,10 +234,6 @@ OPDS_KEY_NAME = "opds-catalog"
 OPDS_KEY_PERMISSIONS = ["DOWNLOAD_FILE"]
 OPDS_ACCOUNT_PERMISSIONS = ["ACCESS_API_KEYS", "DOWNLOAD_FILE"]
 
-# The shape of the credential the device is given. Everything but `<key>` is public repo content
-# (the `library` service entry in parts/settings.nix); the key is the whole secret.
-CATALOG_URL = re.compile(r"^https?://[^/]+/opds/(?P<key>[^/]+)/v1\.2/catalog/?$")
-
 CREATE_USER = """
 mutation CreateUser($input: CreateUserInput!) { createUser(input: $input) { id username } }
 """
@@ -257,14 +256,30 @@ mutation CreateApiKey($input: ApikeyInput!) {
 DELETE_API_KEY = "mutation DeleteApiKey($id: Int!) { deleteApiKey(id: $id) { id } }"
 
 
-def catalog_url(secret):
-    return f"{PUBLIC_URL}/opds/{secret}/v1.2/catalog"
+def catalog_url(key):
+    """The URL the device is pointed at. Everything but the key is public repo content (the
+    `library` service entry in parts/settings.nix), so only the key is banked and this is
+    reassembled from it each run."""
+    return f"{PUBLIC_URL}/opds/{key}/v1.2/catalog"
 
 
-def key_from_url(url):
-    """The key embedded in a catalog URL, or None if the URL is not one."""
-    match = CATALOG_URL.match(url)
-    return match.group("key") if match else None
+def write_private(path, content):
+    """Write 0600 before the bytes land — these files must never exist world-readable, not even
+    briefly, so the mode goes in the open() flags rather than a chmod afterwards."""
+    with os.fdopen(
+        os.open(
+            path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, stat.S_IRUSR | stat.S_IWUSR
+        ),
+        "w",
+        encoding="utf-8",
+    ) as fh:
+        fh.write(content + "\n")
+
+
+def publish_url(key):
+    """Materialise the catalog URL for the operator to point the device at. Written to a file
+    rather than logged: this host ships its journal to VictoriaLogs, and the URL carries the key."""
+    write_private(Path(os.environ["STUMP_OPDS_URL"]), catalog_url(key))
 
 
 def find_user(username):
@@ -409,14 +424,15 @@ def mint_key(reader, password):
 
 def bank_it(handoff, minted):
     """Tell the operator to move the credential into the secret store. Deliberately without the
-    URL: this host ships its journal to VictoriaLogs, and a credential printed once is a
+    key: this host ships its journal to VictoriaLogs, and a credential printed once is a
     credential stored forever in the log store."""
-    lead = "minted a new OPDS catalog URL" if minted else "has an OPDS catalog URL"
+    lead = "minted a new OPDS API key" if minted else "has an OPDS API key"
     print(
         f"stump: {lead} that is NOT in the secret store. It is a credential — whoever holds it "
         f"can browse and download the whole library. Read it from {handoff} (as root or the "
-        "stump user), add it to the `library` sops file as `stump/opds_url`, commit + push the "
-        "secrets repo, `nix flake update secrets` here, and redeploy.",
+        "stump user), add it to the `library` sops file as `stump/opds_key`, commit + push the "
+        "secrets repo, `nix flake update secrets` here, and redeploy. The catalog URL to give "
+        f"the device is in {os.environ['STUMP_OPDS_URL']}.",
         file=sys.stderr,
     )
 
@@ -424,50 +440,42 @@ def bank_it(handoff, minted):
 def ensure_opds_credential():
     """Reconcile the catalog credential against the secret store.
 
-    Resolution order, and why: the URL banked in sops is authoritative because it is the copy the
+    Resolution order, and why: the key banked in sops is authoritative because it is the one the
     device was given, so if it is live there is nothing to do. Falling back to the handoff file
     before minting is what stops a credential rotation on every single deploy while the operator
-    has not banked it yet — otherwise an un-banked URL would be silently invalidated the next
-    time this ran, and the device would 401 with nothing having visibly changed."""
+    has not banked it yet — otherwise an un-banked key would be silently invalidated the next
+    time this ran, and the device would 401 with nothing having visibly changed.
+
+    Whichever key wins, the catalog URL is republished from it, so the URL file always matches the
+    key actually in force rather than a stale one from an earlier mint."""
     reader = os.environ["STUMP_OPDS_USER"]
     password = read_file(os.environ["STUMP_OPDS_PASSWORD_FILE"])
     handoff = Path(os.environ["STUMP_OPDS_HANDOFF"])
-    banked = read_file(os.environ["STUMP_OPDS_URL_FILE"])
+    banked = read_file(os.environ["STUMP_OPDS_KEY_FILE"])
 
     ensure_reader_account(reader, password)
 
     if banked:
-        key = key_from_url(banked)
-        if key is None:
-            raise SystemExit(
-                "stump: `stump/opds_url` in the secret store is not a catalog URL — expected "
-                "https://<host>/opds/<key>/v1.2/catalog"
-            )
-        complaint = key_complaint(key, reader)
+        complaint = key_complaint(banked, reader)
         if complaint is None:
-            print("stump: the OPDS catalog URL from the secret store is live")
+            print("stump: the OPDS API key from the secret store is live")
+            publish_url(banked)
             return
         print(
-            f"stump: WARNING the banked OPDS catalog URL no longer works — {complaint}",
+            f"stump: WARNING the banked OPDS API key no longer works — {complaint}",
             file=sys.stderr,
         )
 
     if handoff.exists():
-        key = key_from_url(read_file(handoff))
+        key = read_file(handoff)
         if key and key_complaint(key, reader) is None:
+            publish_url(key)
             bank_it(handoff, minted=False)
             return
 
     secret = mint_key(reader, password)
-    # 0600 before the bytes land: the file must never exist world-readable, not even briefly.
-    with os.fdopen(
-        os.open(
-            handoff, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, stat.S_IRUSR | stat.S_IWUSR
-        ),
-        "w",
-        encoding="utf-8",
-    ) as fh:
-        fh.write(catalog_url(secret) + "\n")
+    write_private(handoff, secret)
+    publish_url(secret)
     bank_it(handoff, minted=True)
 
 

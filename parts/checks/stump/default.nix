@@ -46,7 +46,8 @@
 #      non-owner account (a custom scope on the OWNER is recorded and never enforced, so a key
 #      minted the obvious way would pass a "can it read the catalog" test while being a full
 #      administrative credential), and that the reconcile against the secret store neither
-#      re-mints on every run nor keeps serving a URL that has stopped working.
+#      re-mints on every run nor keeps serving a key that has stopped working. Only the key is
+#      banked; the catalog URL is derived from it each run, so the derivation is asserted too.
 #
 #   6. THE DB SURVIVES A RESTART. The catalog is re-served from disk, not rebuilt, and the
 #      provisioner's second run takes its idempotent path (no duplicate libraries). Cross-REBOOT
@@ -74,11 +75,11 @@ let
   opdsUser = "opds";
   opdsPassword = "opds-secret-456";
 
-  # The mock `stump/opds_url` secret. Unlike the other three it has to be WRITABLE: the test
+  # The mock `stump/opds_key` secret. Unlike the other three it has to be WRITABLE: the test
   # starts it empty (the state of a fresh deployment, before anyone has banked anything), then
-  # writes the minted URL into it to prove the reconcile path. `environment.etc` would put it in
+  # writes the minted key into it to prove the reconcile path. `environment.etc` would put it in
   # the store, so it is a tmpfiles-created file under /run instead.
-  opdsUrlFile = "/run/mock-stump-opds-url";
+  opdsKeyFile = "/run/mock-stump-opds-key";
 
   # A plain test dir standing in for rk1b's NVMe /var/cache/library — no git-annex, no mount here.
   libraryPath = "/var/lib/library";
@@ -153,10 +154,10 @@ pkgs.testers.nixosTest {
           };
           systemd.tmpfiles.rules = [
             "d ${libraryPath} 2770 git-annex library -"
-            # The mock `stump/opds_url` secret: empty, and owned by `stump` so the provisioner's
+            # The mock `stump/opds_key` secret: empty, and owned by `stump` so the provisioner's
             # LoadCredential can read it. This is the pre-bootstrap state — the sops key exists
-            # (sops-nix has no optional secrets) but holds no URL yet.
-            "f ${opdsUrlFile} 0400 stump stump -"
+            # (sops-nix has no optional secrets) but holds no API key yet.
+            "f ${opdsKeyFile} 0400 stump stump -"
           ];
 
           # Satisfy the sops assertions without a real key/file, and force the four credential
@@ -167,7 +168,7 @@ pkgs.testers.nixosTest {
           sops.secrets."stump/user".path = lib.mkForce "/etc/mock-stump-user";
           sops.secrets."stump/password".path = lib.mkForce "/etc/mock-stump-password";
           sops.secrets."stump/opds_password".path = lib.mkForce "/etc/mock-stump-opds-password";
-          sops.secrets."stump/opds_url".path = lib.mkForce opdsUrlFile;
+          sops.secrets."stump/opds_key".path = lib.mkForce opdsKeyFile;
           environment.etc."mock-stump-user".text = owner;
           environment.etc."mock-stump-password".text = password;
           environment.etc."mock-stump-opds-password".text = opdsPassword;
@@ -418,21 +419,28 @@ pkgs.testers.nixosTest {
 
     # ── 9. THE OPDS CATALOG CREDENTIAL (#114) ────────────────────────────────────────────────
     # Nothing was banked in the (mock) secret store, so the boot-time provisioner run should have
-    # minted a key and left the assembled URL where the operator can find it — and nowhere else.
-    HANDOFF = "/var/cache/stump/opds-url"
+    # minted a key, left it where the operator can bank it, and published the URL assembled from
+    # it — and put the credential nowhere else.
+    HANDOFF = "/var/cache/stump/opds-key"
+    URL_FILE = "/var/cache/stump/opds-url"
 
-    meta = origin.succeed(f"stat -c '%U %a' {HANDOFF}").strip()
-    assert meta == "stump 600", f"the handoff file is {meta}, not a 0600 file owned by stump"
-    opds_url = origin.succeed(f"cat {HANDOFF}").strip()
-    assert opds_url.startswith("https://${vhost}/opds/"), f"handoff URL names the wrong edge: {opds_url}"
-    assert opds_url.endswith("/v1.2/catalog"), f"handoff URL is not an OPDS 1.2 catalog: {opds_url}"
-    api_key = opds_url[len("https://${vhost}/opds/") : -len("/v1.2/catalog")]
-    assert api_key.startswith("stump_"), f"the URL carries no Stump API key: {opds_url}"
+    for path in (HANDOFF, URL_FILE):
+        meta = origin.succeed(f"stat -c '%U %a' {path}").strip()
+        assert meta == "stump 600", f"{path} is {meta}, not a 0600 file owned by stump"
+
+    api_key = origin.succeed(f"cat {HANDOFF}").strip()
+    assert api_key.startswith("stump_"), f"the handoff file holds no Stump API key: {api_key!r}"
+
+    # Only the key is banked; the URL is derived. Assert the derivation rather than re-deriving it
+    # the same way here, so a provisioner that assembled the wrong edge or the wrong OPDS version
+    # cannot agree with the test by construction.
+    opds_url = origin.succeed(f"cat {URL_FILE}").strip()
+    assert opds_url == f"https://${vhost}/opds/{api_key}/v1.2/catalog", f"derived URL is {opds_url}"
 
     # The journal is shipped to VictoriaLogs, so a credential printed even once would be stored
-    # there forever. The provisioner must name the file, never the URL.
+    # there forever. The provisioner must name the files, never the key.
     journal = origin.succeed("journalctl -u stump-provision --no-pager -o cat")
-    assert "NOT in the secret store" in journal, f"the operator was not told to bank the URL:\n{journal}"
+    assert "NOT in the secret store" in journal, f"the operator was not told to bank the key:\n{journal}"
     assert api_key not in journal, "the provisioner leaked the API key into the journal"
 
     # THE SCOPE, AS THE SERVER RESOLVES IT. This is the assertion that separates a scoped key from
@@ -521,32 +529,33 @@ pkgs.testers.nixosTest {
     # deploy, with nothing visibly changed.
     origin.systemctl("restart stump-provision.service")
     origin.wait_for_unit("stump-provision.service")
-    assert origin.succeed(f"cat {HANDOFF}").strip() == opds_url, "an unbanked URL was rotated"
+    assert origin.succeed(f"cat {HANDOFF}").strip() == api_key, "an unbanked key was rotated"
     journal = origin.succeed("journalctl -u stump-provision --no-pager -o cat")
     assert journal.count("minted the") == 1, f"the key was minted more than once:\n{journal}"
 
-    # BANKED. With the URL in the secret store the provisioner recognises it as live and stops
+    # BANKED. With the key in the secret store the provisioner recognises it as live and stops
     # nagging — this is the steady state, and it is what makes the sops entry load-bearing rather
-    # than decorative.
-    origin.succeed(f"printf '%s\\n' '{opds_url}' > ${opdsUrlFile}")
+    # than decorative. The URL is republished from the banked key, not left over from the mint.
+    origin.succeed(f"printf '%s\\n' '{api_key}' > ${opdsKeyFile}")
+    origin.succeed(f"rm {URL_FILE}")
     origin.systemctl("restart stump-provision.service")
     origin.wait_for_unit("stump-provision.service")
     journal = origin.succeed("journalctl -u stump-provision --no-pager -o cat")
-    assert "from the secret store is live" in journal, f"the banked URL was not recognised:\n{journal}"
-    assert journal.count("minted the") == 1, f"the banked URL was needlessly re-minted:\n{journal}"
+    assert "from the secret store is live" in journal, f"the banked key was not recognised:\n{journal}"
+    assert journal.count("minted the") == 1, f"the banked key was needlessly re-minted:\n{journal}"
+    assert origin.succeed(f"cat {URL_FILE}").strip() == opds_url, "the URL was not republished"
 
-    # WRONG, BUT NOT LOST. A banked URL that does not work while the minted one still does is an
-    # operator mistake, not a dead credential: the fix is to bank the right URL, so the
+    # WRONG, BUT NOT LOST. A banked key that does not work while the minted one still does is an
+    # operator mistake, not a dead credential: the fix is to bank the right key, so the
     # provisioner says so and mints nothing. Rotating here would revoke a credential the device
     # is happily using.
-    dead_url = opds_url.replace(api_key, api_key + "x")
-    origin.succeed(f"printf '%s\\n' '{dead_url}' > ${opdsUrlFile}")
+    origin.succeed(f"printf '%s\\n' '{api_key}x' > ${opdsKeyFile}")
     origin.systemctl("restart stump-provision.service")
     origin.wait_for_unit("stump-provision.service")
     journal = origin.succeed("journalctl -u stump-provision --no-pager -o cat")
-    assert "no longer works" in journal, f"a dead banked URL went unnoticed:\n{journal}"
+    assert "no longer works" in journal, f"a dead banked key went unnoticed:\n{journal}"
     assert journal.count("minted the") == 1, f"a still-live credential was rotated:\n{journal}"
-    assert origin.succeed(f"cat {HANDOFF}").strip() == opds_url
+    assert origin.succeed(f"cat {HANDOFF}").strip() == api_key
 
     # GENUINELY LOST. Both copies gone — the shape of a rebuilt database or a key revoked in the
     # UI, which on the device is a silent 401. A fresh key is minted, and the old one is revoked
@@ -557,8 +566,10 @@ pkgs.testers.nixosTest {
     journal = origin.succeed("journalctl -u stump-provision --no-pager -o cat")
     assert journal.count("minted the") == 2, f"the lost credential was not replaced:\n{journal}"
     rotated = origin.succeed(f"cat {HANDOFF}").strip()
-    assert rotated != opds_url, "the handoff file still holds the lost URL"
-    client.succeed(f"curl -skf {resolve} -o /dev/null '{rotated}'")
+    assert rotated != api_key, "the handoff file still holds the lost key"
+    rotated_url = origin.succeed(f"cat {URL_FILE}").strip()
+    assert rotated_url == f"https://${vhost}/opds/{rotated}/v1.2/catalog", rotated_url
+    client.succeed(f"curl -skf {resolve} -o /dev/null '{rotated_url}'")
     client.fail(f"curl -skf {resolve} -o /dev/null '{opds_url}'")
   '';
 }

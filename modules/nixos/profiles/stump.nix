@@ -44,15 +44,19 @@
 # recorded but never enforced — see the long note in stump-provision.py. Its username is not a
 # secret and is set by `opdsUser` below, not by sops.
 #
-# `stump/opds_url` is the catalog URL the device is given: `https://library.<domain>/opds/<key>
-# /v1.2/catalog`. It is a bearer credential — whoever holds it can browse and download the whole
-# library — so it is stored here rather than in this repo. Everything in it except `<key>` is
-# public repo content already, but the assembled URL is what a reader app is pointed at, so the
-# assembled URL is what is banked. The provisioner reconciles against it: if the banked URL is
-# live, nothing happens; if it is missing or dead, a fresh key is minted and written to
-# `/var/cache/stump/opds-url` (0600) for the operator to bank. It is chicken-and-egg by nature —
-# only the server can mint the key — so the first deploy of a fresh database always ends with the
-# provisioner telling you to go and bank it, and the second deploy is quiet.
+# `stump/opds_key` is the API key the catalog URL carries. It is a bearer credential — whoever
+# holds it can browse and download the whole library — so it is stored here rather than in this
+# repo. Only the key is banked: everything else in the URL (scheme, vhost, the `/opds/…/v1.2/
+# catalog` path) is public repo content from the `library` service entry, so the provisioner
+# reassembles `https://library.<domain>/opds/<key>/v1.2/catalog` each run and writes it to
+# `/var/cache/stump/opds-url` (0600) for the operator to point the device at. Storing the key
+# alone keeps one copy of the secret instead of two that can disagree.
+#
+# The provisioner reconciles against the banked key: if it is live, nothing happens; if it is
+# missing or dead, a fresh one is minted and written to `/var/cache/stump/opds-key` (0600) for the
+# operator to bank. It is chicken-and-egg by nature — only the server can mint the key — so the
+# first deploy of a fresh database always ends with the provisioner telling you to go and bank it,
+# and the second deploy is quiet.
 #
 # All four live in the shared `profiles/library.yaml` bundle (this stack's secret file, shared
 # with the Supernote server and the ereader reconciler) under a `stump` sub-map alongside
@@ -61,10 +65,10 @@
 #     user: reader                 # any username; unlike Supernote's, it need not be an email
 #     password: your-password
 #     opds_password: another-password   # the reader account; never leaves the host
-#     opds_url: ""                 # empty on first deploy; fill it from the handoff file
+#     opds_key: ""                 # empty on first deploy; fill it from the handoff file
 # sops files are a SEPARATE repo (stash): add the sub-map there, commit + push, then
 # `nix flake update secrets` HERE before deploying rk1b — otherwise sops-install-secrets cannot
-# extract `stump/user` and activation fails (AGENTS.md gotcha). Note `opds_url` must be PRESENT
+# extract `stump/user` and activation fails (AGENTS.md gotcha). Note `opds_key` must be PRESENT
 # (even as an empty string) from the first deploy: sops-nix fails activation on a declared secret
 # whose key is missing, and there is no "optional secret". The file already lists rk1b as a
 # recipient (the Supernote profile reads it), so no re-keying is needed.
@@ -124,9 +128,14 @@ let
   # "outside every root" invariant is expressed as a set difference, not a comment.
   originalsDir = "_originals";
 
-  # Where the provisioner drops a freshly minted catalog URL for the operator to bank in sops.
-  # Inside the 0700 stump-owned CacheDirectory, and written 0600 on top of that.
-  opdsHandoff = "${configDir}/opds-url";
+  # Where the provisioner drops a freshly minted API key for the operator to bank in sops, and
+  # where it republishes the assembled catalog URL to point the device at. Both inside the 0700
+  # stump-owned CacheDirectory, and written 0600 on top of that. Two files rather than one because
+  # they have different lifetimes: the key is transient (it exists until it is banked, and is only
+  # consulted to avoid re-minting an un-banked one), while the URL is regenerated every run from
+  # whichever key is in force, so it is always safe to read and always current.
+  opdsHandoff = "${configDir}/opds-key";
+  opdsUrlFile = "${configDir}/opds-url";
 
   rootPath = dir: "${cfg.libraryPath}/${dir}";
   # `{name, path}` pairs handed to the provisioner as JSON.
@@ -336,7 +345,7 @@ in
               "stump/user"
               "stump/password"
               "stump/opds_password"
-              "stump/opds_url"
+              "stump/opds_key"
             ]
             (key: {
               sopsFile = self.lib.getSecretFile "library";
@@ -365,6 +374,7 @@ in
             # Supernote has no route to the origin except through kelpy's Caddy.
             STUMP_PUBLIC_URL = cfg.publicUrl;
             STUMP_OPDS_HANDOFF = opdsHandoff;
+            STUMP_OPDS_URL = opdsUrlFile;
           };
           serviceConfig = {
             Type = "oneshot";
@@ -376,14 +386,14 @@ in
               "user:${config.sops.secrets."stump/user".path}"
               "password:${config.sops.secrets."stump/password".path}"
               "opds-password:${config.sops.secrets."stump/opds_password".path}"
-              "opds-url:${config.sops.secrets."stump/opds_url".path}"
+              "opds-key:${config.sops.secrets."stump/opds_key".path}"
             ];
             ExecStart = pkgs.writeShellScript "stump-provision" ''
               set -euo pipefail
               export STUMP_USER_FILE="$CREDENTIALS_DIRECTORY/user"
               export STUMP_PASSWORD_FILE="$CREDENTIALS_DIRECTORY/password"
               export STUMP_OPDS_PASSWORD_FILE="$CREDENTIALS_DIRECTORY/opds-password"
-              export STUMP_OPDS_URL_FILE="$CREDENTIALS_DIRECTORY/opds-url"
+              export STUMP_OPDS_KEY_FILE="$CREDENTIALS_DIRECTORY/opds-key"
               exec ${pkgs.python3}/bin/python3 ${./stump-provision.py}
             '';
           };
