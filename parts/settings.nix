@@ -115,9 +115,17 @@ let
       # Stump — the reading catalog over the git-annex document library (ADR-0031, #113).
       # Same edge/origin split as Navidrome: it RUNS on rk1b (media node, corpus on the NVMe
       # /var/cache/library), fronted by kelpy's Caddy at library.<domain> with TLS + the
-      # internal_only tailnet guard. The Supernote reaches it as an OPDS client over the tailnet
-      # (#114), so this vhost is the delivery path, not just a browse convenience — deploy BOTH
-      # hosts or the tailnet gets a TLS error. The vhost subdomain is this attribute name, so it's
+      # internal_only tailnet guard. Deploy BOTH hosts or the tailnet gets a TLS error.
+      #
+      # This vhost is the BROWSE path. It was written as the Supernote's OPDS delivery path too
+      # (#114), on the assumption the device could not join the tailnet — it can (ADR-0031,
+      # revision 2026-08-17), so the device now pulls from rk1b DIRECTLY at
+      # `http://rk1b.<tailnet>:10001/opds/v1.2/catalog`. Going through here would hairpin a book
+      # stored on rk1b out to kelpy (a VPS) and back, gated by home upstream; measured, a 23MB
+      # epub crawled. Both paths stay open and both are Basic-auth'd by Stump; see
+      # docs/runbooks/supernote-koreader-opds.md.
+      #
+      # The vhost subdomain is this attribute name, so it's
       # `library`; the profile that runs it is custom.profiles.stump. Port is Stump's own default.
       library = {
         edge = "kelpy";
