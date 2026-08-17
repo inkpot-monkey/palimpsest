@@ -29,3 +29,22 @@ Reversed for cache reuse:
 - `nixConfig.nix` trusts `palebluebytes.cachix.org`, so the prebuilt binary substitutes.
 
 Tradeoff: this gives up the "deployed bytes built against the fleet pin" property — the bridge ships its own nixpkgs in the closure. In practice the two nixpkgs revs track `nixos-unstable` closely (at the time of writing they were identical), and the cache-hit win (no source rebuild on bumps) is worth it. Bootstrap caveat: the *building* host (the workstation running `nixos-rebuild`, since there's no `--build-host`) must also trust the cachix — which it does once it has rebuilt with this change, or via a one-time `--option extra-substituters https://palebluebytes.cachix.org`.
+
+### Before re-locking this input, check CI built the revision
+
+The amendment above buys a cache hit **only for revisions the bridge's CI actually built**. `nix flake update jmap-bridge` moves the pin to whatever the branch tip is at that moment, and that tip is not always one CI has finished — or, in the case that bit on 2026-08-17, one CI ever ran against at all. So:
+
+```
+gh run list --repo palebluebytes/jmap-matrix-bridge --commit <rev>
+```
+
+An empty result, or anything other than a successful run, means the closure was never pushed to the cachix and **the next deploy compiles matrix-sdk/sqlx from source** — exactly what this amendment exists to avoid.
+
+The failure is silent and easy to misread. There is no error: the deploy simply takes an extra half-hour, and it looks like a caching problem rather than a pin pointing somewhere CI never went. It cost a confused kelpy deploy before being traced. The tell is that *no* substituter has the path — not the local store, not the cachix — because the artifact was never produced, rather than produced and evicted.
+
+Concretely, the fleet had been pinned to `9a9f7ce282`, a release-plz merge with zero CI runs; moving to the CI-green branch head turned a full Rust build into an 8.9 MiB fetch.
+
+Two related traps, same neighbourhood:
+
+- `nix flake update` makes **anonymous** GitHub API calls and hits `429: Too Many Requests` on a busy machine. `--option access-tokens github.com=$(gh auth token)` uses the existing `gh` credential and clears it.
+- A newly added file that is **not yet `git add`ed** is invisible to the flake (the source is git-tracked-files-only), and shows up as `error: Path '…' in the repository … is not tracked by Git` at eval time, not as a missing-file error.
