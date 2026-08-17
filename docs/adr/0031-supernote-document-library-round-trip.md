@@ -5,8 +5,11 @@ PDFs/papers/notes — that a **Supernote Nomad (A6 X2)** can read on e-ink and w
 handwriting back into, with a **web browse + in-browser reading UI**, was the goal.
 The hard constraint that shaped everything: transport is **self-hosted only** —
 Supernote Cloud, Dropbox, and Google Drive are all banned — and the device is a
-locked-down Android tablet that **cannot run a Tailscale client**, so tailnet
-reachability has to come from the network, not the device. Handwritten annotations
+locked-down Android tablet that — *on the firmware the spike ran* — **could not run a
+Tailscale client**, so tailnet reachability had to come from the network, not the device.
+(That constraint shaped everything below and is kept here as the reason the design looks the
+way it does. It was **falsified on 2026-08-17** once Ratta shipped sideloading — see the first
+revision.) Handwritten annotations
 must come back as the **raw `.note`/`.mark` preserved *and* converted** to a viewable
 artifact (not flattened-only, not OCR). The round-trip is **bidirectional** — push
 books out *and* pull annotations back.
@@ -23,11 +26,63 @@ at the cost of two reconcilers bridging the fork's blob store to Stump.
 
 That shape is **no longer the decision**. Everything from "## Decision" down, and the two
 revisions dated 2026-07-24 and 2026-07-25, describe it as it stood and are kept as the record of
-how the design got here — read them as history. The 2026-08-13 and 2026-08-16 revisions below
-govern: the fork is retired for a pin on upstream, books are no longer pushed at all, and the
-device authenticates with Basic auth rather than an API key. Where the older text and the newer
+how the design got here — read them as history. The 2026-08-13, 2026-08-16 and 2026-08-17
+revisions below govern: the fork is retired for a pin on upstream, books are no longer pushed at
+all, the device authenticates with Basic auth rather than an API key, and the device runs a
+Tailscale client of its own. Where the older text and the newer
 text disagree, the newer text wins — including between the dated revisions themselves, which are
 ordered newest first.
+
+## Revision — 2026-08-17: the device *can* run a Tailscale client (retires the framing constraint above)
+
+The opening paragraph's hard constraint — a locked-down tablet that **cannot run a Tailscale
+client**, so "tailnet reachability has to come from the network, not the device" — is false, and
+was measured false on the actual Nomad (`SN078D10010247`, Chauvet `E103.2606141001.2389`,
+Android 11, arm64-v8a). It was true of the firmware the original spike ran on; Ratta has since
+added app sideloading, and nobody re-tested the premise afterwards.
+
+**Decision: the device is a first-class tailnet node. Designs downstream of this ADR may assume
+the Nomad reaches tailnet services directly.** The node is `supernote-nomad`.
+
+- **Chauvet's AOSP VPN stack is intact, not stripped.** `/dev/tun` (char 10,200, `system:vpn`),
+  `com.android.vpndialogs` installed and enabled, `BIND_VPN_SERVICE` / `CONTROL_VPN` /
+  `CONTROL_ALWAYS_ON_VPN` all defined, and `Settings$VpnSettingsActivity` resolves. Ratta removed
+  the launcher and the store, not the networking. Tailscale 1.102.2 (the **universal** APK from
+  `pkgs.tailscale.com` — the device has no Play services) installs and authenticates; the login
+  redirect survives despite no Custom Tabs service being registered, which was the predicted
+  failure and did not occur.
+
+- **Verified from the device, not inferred:** ping to rk1b 0% loss ~20 ms; TCP to Stump's OPDS
+  port **10001** open; MagicDNS resolves `library.<domain>` to the kelpy edge. The delivery path
+  the revision below designed is reachable from the Nomad end to end.
+
+- **Sideloading is what unlocked this, and it is the same switch that exposes ADB.**
+  Settings → Security & Privacy → Sideloading. With it off the device enumerates USB as `mtp`
+  with only MTP and HID interfaces, so `adb` sees nothing — worth knowing before diagnosing a
+  cable.
+
+- **Two operational conditions, or it regresses silently.** The package must be held out of doze
+  (`dumpsys deviceidle whitelist +com.tailscale.ipn`, persisted) or the tunnel comes up and then
+  drops on sleep, which presents as an intermittent catalog rather than a VPN fault. Always-on
+  VPN is deliberately **off**: arming it with lockdown before the tunnel is trusted can leave the
+  device with no network at all, recoverable only over ADB.
+
+- **What this does *not* change.** The architecture is unaffected — OPDS pull over the tailnet
+  edge is what `parts/settings.nix` already assumed (its `library` entry describes the Supernote
+  as a tailnet OPDS client), so this removes a contradiction rather than introducing a change.
+  Private Cloud sync still targets rk1b over the home LAN, and an Android Tailscale client does
+  not capture LAN routes, so that leg is untouched. `VpnService` is system-wide, so routing the
+  native sync over the tailnet is now *possible* — it is explicitly **not adopted here**, and
+  would need its own decision.
+
+- **What it retires.** The away-from-home note under "Consequences" — reach beyond the house
+  needing a GL.iNet travel router running Tailscale — is obsolete; the device carries its own
+  client now.
+
+- **Adjacent, still open:** this proves the *device* can hold a tailnet address, not that its
+  reader speaks Basic auth. KOReader v2026.07.1 is installed and configured against the catalog
+  with a username/password, which is supporting evidence, but palimpsest#115 is settled by a
+  successful authenticated fetch, not by the presence of the fields.
 
 ## Revision — 2026-08-16: the device authenticates with Basic auth, not an API key (supersedes the API-key URL)
 
@@ -405,7 +460,9 @@ tree.**
   a factory device below that floor breaks the transport.
 - **At-home only in v1.** rk1b shares the Nomad's LAN, so no subnet router is needed
   at home; extending reach away-from-home (a GL.iNet travel router running Tailscale)
-  is deferred out of v1.
+  is deferred out of v1. *(Superseded 2026-08-17: the device runs its own Tailscale
+  client, so no travel router is needed for the OPDS leg. Private Cloud sync still
+  wants the LAN.)*
 - **New secret** — the Supernote account credential (email + password) the fork
   server and the reconciler share; sops, remember the secrets-repo commit + push +
   `nix flake update secrets` before deploy.

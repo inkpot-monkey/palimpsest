@@ -88,7 +88,13 @@ investigate before touching the device.
 
 ## The device pass
 
-Do these in order, on the Nomad, on the home LAN (the device cannot use Tailscale).
+Do these in order, on the Nomad, on the home LAN.
+
+> **The device *can* use Tailscale** — this runbook previously said it could not, which was true
+> of the firmware the original spike ran but not since Ratta shipped sideloading (ADR-0031,
+> revision 2026-08-17; the node is `supernote-nomad`). It changes nothing here: Private Cloud
+> sync targets rk1b on the LAN, and the Android client does not capture LAN routes, so the pass
+> below is the same whether the tunnel is up or down. Leave it however you find it.
 
 ### 1. Sync completes at all
 
