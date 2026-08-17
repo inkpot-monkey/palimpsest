@@ -244,6 +244,14 @@ in
             # the persisted store — an auto-generated local infra key, not a credential, so the
             # "one secret / no second auth surface" invariant still holds. $STATE_DIRECTORY is set
             # by systemd from StateDirectory= above.
+            # Translate a vendored-fork alembic stamp onto upstream's history before the server
+            # touches the DB (palimpsest#112). An ExecStartPre rather than its own unit so it
+            # cannot be skipped or ordered around: upstream's alembic aborts at startup on an
+            # unknown revision, and — because the bootstrap oneshot Requires= this service and has
+            # no start timeout — that turns into a deploy that hangs forever instead of failing.
+            # No-op on an upstream-stamped or absent DB, so it is safe on every start.
+            ExecStartPre = "${pkgs.python3}/bin/python3 ${./supernote-db-stamp.py} ${stateDir}/system/supernote.db";
+
             ExecStart = pkgs.writeShellScript "supernote-server-start" ''
               set -euo pipefail
               jwt="$STATE_DIRECTORY/jwt-secret"

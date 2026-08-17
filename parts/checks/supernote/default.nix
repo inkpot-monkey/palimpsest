@@ -156,5 +156,61 @@ pkgs.testers.nixosTest {
         "HOME=/tmp ${pkgs.supernote}/bin/supernote cloud login "
         "--url http://127.0.0.1:8080 device@example.com --password sync-secret-123"
     )
+
+    # ── 5. A VENDORED-FORK DATABASE STARTS (palimpsest#112) ──────────────────────────────────
+    # The fork carried its own alembic migrations, so a database it created is stamped with a
+    # revision upstream has never heard of, and upstream's alembic aborts at startup rather than
+    # warning. This is not hypothetical: it crash-looped rk1b for 35 minutes on 2026-08-17, and
+    # because the bootstrap oneshot Requires= the server with no start timeout, the deploy hung
+    # instead of failing. Reproduce the exact condition and assert the ExecStartPre recovers it.
+    DB = "/var/lib/supernote/system/supernote.db"
+
+    def stamp(revision):
+        server.succeed(
+            f"""${pkgs.python3}/bin/python3 -c 'import sqlite3; c = sqlite3.connect("{DB}"); """
+            f"""c.execute("update alembic_version set version_num = ?", ("{revision}",)); c.commit()'"""
+        )
+
+    def revision():
+        return server.succeed(
+            f"""${pkgs.python3}/bin/python3 -c 'import sqlite3; """
+            f"""print(sqlite3.connect("{DB}").execute("select version_num from alembic_version").fetchone()[0])'"""
+        ).strip()
+
+    users_before = server.succeed(
+        f"""${pkgs.python3}/bin/python3 -c 'import sqlite3; """
+        f"""print(sqlite3.connect("{DB}").execute("select count(*) from users").fetchone()[0])'"""
+    ).strip()
+
+    stamp("9d2f7b3c1a08")
+    server.systemctl("restart supernote-server.service")
+    server.wait_for_open_port(8080)
+
+    assert revision() == "7a8291f043bc", f"the fork stamp was not translated: {revision()}"
+    # Translated, not migrated: the accounts must still be there afterwards.
+    users_after = server.succeed(
+        f"""${pkgs.python3}/bin/python3 -c 'import sqlite3; """
+        f"""print(sqlite3.connect("{DB}").execute("select count(*) from users").fetchone()[0])'"""
+    ).strip()
+    assert users_after == users_before, f"users went from {users_before} to {users_after}"
+    server.succeed(
+        "HOME=/tmp ${pkgs.supernote}/bin/supernote cloud login "
+        "--url http://127.0.0.1:8080 device@example.com --password sync-secret-123"
+    )
+    server.succeed("test -n \"$(ls /var/lib/supernote/backups/supernote-pre-stamp-*.db)\"")
+
+    # AND IT REFUSES TO GUESS. An unrecognised revision must fail the unit, not be waved through:
+    # a database from some other fork lineage could be stamped with something equally unfamiliar
+    # while having a genuinely divergent schema, and declaring that "at head" would let the
+    # server corrupt it. Failing to start is recoverable; a wrong stamp may not be.
+    stamp("deadbeef1234")
+    server.systemctl("stop supernote-server.service")
+    server.fail("systemctl start supernote-server.service")
+    assert revision() == "deadbeef1234", "an unknown revision was rewritten anyway"
+
+    # Put it back so the unit ends the test healthy rather than in a failed state.
+    stamp("7a8291f043bc")
+    server.systemctl("start supernote-server.service")
+    server.wait_for_open_port(8080)
   '';
 }
