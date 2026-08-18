@@ -51,7 +51,9 @@ Reads (all via env; secrets arrive as files from systemd LoadCredential, never a
   EREADER_REMOTE_DIR       device VFS source (e.g. /DOCUMENT/Document/ereader)
 
 Fail-loud (non-zero exit) so a broken reconcile shows up as a failed unit. Emits a single
-``ereader reconcile: downloaded=<a> deleted=<b>`` summary line the VM check asserts on.
+``ereader reconcile: store=<n|absent> downloaded=<a> deleted=<b>`` summary line the VM check
+asserts on. ``store=`` is what tells an absent remote folder (guard engaged) from an empty one
+(deletes proceeded) — the two are otherwise indistinguishable in the log.
 """
 
 import asyncio
@@ -168,12 +170,11 @@ async def mirror_down(sn, folder_exists, store):
 
     # Deletes — durable device-side deletes, unless the remote folder is gone entirely (the guard).
     if not folder_exists:
-        if local:
-            print(
-                f"ereader reconcile: no {REMOTE_DIR} in the store — keeping "
-                f"{len(local)} mirrored file(s); a store with no ereader folder is a wiped or "
-                "not-yet-re-seeded one and must not delete from the backed-up tree"
-            )
+        print(
+            f"ereader reconcile: no {REMOTE_DIR} in the store — keeping "
+            f"{len(local)} mirrored file(s); a store with no ereader folder is a wiped or "
+            "not-yet-re-seeded one and must not delete from the backed-up tree"
+        )
         return downloaded, deleted
 
     for rel in sorted(local):
@@ -217,7 +218,15 @@ async def run():
         folder_exists, store = await store_snapshot(sn)
         downloaded, deleted = await mirror_down(sn, folder_exists, store)
 
-    print(f"ereader reconcile: downloaded={downloaded} deleted={deleted}")
+    # `store=` is not decoration: the whole reduction turns on telling an ABSENT remote folder
+    # (the guard engages, deletes are suppressed) from an EMPTY one (the device holds nothing and
+    # deletes proceed), and those two produce an identical `downloaded=0 deleted=0` tail. Without
+    # this token a reader cannot tell which branch ran — and on a quiet run, where the mirror is
+    # also empty, the guard's own explanatory line never prints either, so the log would be
+    # completely silent about the one decision worth auditing. Measured on rk1b's first live run:
+    # `store=0`, the folder having survived its last document being deleted.
+    state = len(store) if folder_exists else "absent"
+    print(f"ereader reconcile: store={state} downloaded={downloaded} deleted={deleted}")
 
 
 def main():

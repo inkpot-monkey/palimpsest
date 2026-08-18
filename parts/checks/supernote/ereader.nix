@@ -273,7 +273,7 @@ pkgs.testers.nixosTest {
     def reconcile_summary():
         # The newest `downloaded=.. deleted=..` summary line from the reconcile unit.
         log = server.succeed("journalctl -u supernote-ereader-reconcile --no-pager -o cat")
-        lines = [ln for ln in log.splitlines() if "ereader reconcile: downloaded=" in ln]
+        lines = [ln for ln in log.splitlines() if "ereader reconcile: store=" in ln]
         assert lines, f"no reconcile summary line found:\n{log}"
         return lines[-1]
 
@@ -381,7 +381,7 @@ pkgs.testers.nixosTest {
     # re-download (content matches) and no delete (the document is still in the store).
     server.systemctl("restart supernote-server.service")
     server.wait_for_open_port(8080)
-    reconcile("downloaded=0 deleted=0")
+    reconcile("store=1 downloaded=0 deleted=0")
     server.succeed(f"test -f {MIRROR}/field-notes.pdf")
 
     # ── F. THE CATALOG COEXISTS, AND THE MIRROR STAYS OUT OF IT ─────────────────────────────────
@@ -421,12 +421,15 @@ pkgs.testers.nixosTest {
     # wrong, and it would get it wrong PERMANENTLY, because after the fact nothing distinguishes
     # "the device emptied its folder" from "the store was wiped". The delete must propagate here.
     client.succeed("${env} ${snpy}/bin/python ${driver} rm /DOCUMENT/Document/ereader/field-notes.pdf")
-    reconcile("downloaded=0 deleted=1")
+    # `store=0` is the discriminating half: the folder is still there and holds nothing, so the
+    # guard did NOT engage and the delete is a real one. Without this token a passing `deleted=1`
+    # would not distinguish that from a guard that happened to let it through.
+    reconcile("store=0 downloaded=0 deleted=1")
     server.succeed(f"test ! -e {MIRROR}/field-notes.pdf")
 
     # ...and it is NOT resurrected: nothing can push it back, so a second reconcile is a no-op and
     # the store stays empty.
-    reconcile("downloaded=0 deleted=0")
+    reconcile("store=0 downloaded=0 deleted=0")
     server.succeed(f"test ! -e {MIRROR}/field-notes.pdf")
     listing = client.succeed("${env} ${snpy}/bin/python ${driver} ls")
     assert "field-notes.pdf" not in listing, f"the deleted document came back in the store:\n{listing}"
@@ -460,7 +463,7 @@ pkgs.testers.nixosTest {
     # backed-up one and the store is not.
     server.succeed(f"echo -n 'precious-backup' > {MIRROR}/orphan.txt")
     server.succeed(f"chown git-annex:library {MIRROR}/orphan.txt")
-    reconcile("downloaded=0 deleted=0")
+    reconcile("store=absent downloaded=0 deleted=0")
     server.succeed(f"test -f {MIRROR}/orphan.txt")
     body = server.succeed(f"cat {MIRROR}/orphan.txt")
     assert body == "precious-backup", f"the guarded file was clobbered: {body!r}"
