@@ -8,12 +8,39 @@
 #
 # palimpsest#112 retired the vendored `inkpot-monkey/supernote` fork this used to track.
 # Relative to that fork's `[all]` set, upstream changed the dependency set in three ways:
-#   • + python-socketio (in nixpkgs) — the device realtime channel. Upstream serves socket.io
-#     with the real library (`allow_eio3=True`, supernote/server/socket.py), replacing the
-#     fork's hand-rolled EIO3 `supernote/server/realtime.py`. The SERVER imports it
+#   • + python-socketio (in nixpkgs) — the device realtime channel, replacing the fork's
+#     hand-rolled EIO3 `supernote/server/realtime.py`. The SERVER imports it
 #     unconditionally; only the client tree guards it (`supernote/client/__init__.py`
 #     try/except ImportError), so it must be present or the server fails at IMPORT, not at
 #     first connect.
+#
+#     THE CUTOVER'S PREMISE HERE WAS WRONG, and the hardware pass found it (palimpsest#112).
+#     This comment used to read "upstream serves socket.io with the real library
+#     (`allow_eio3=True`)" — i.e. that upstream's own EIO3 support made the fork's realtime
+#     module redundant. `allow_eio3` is a **JavaScript** socket.io server option. It does not
+#     exist in python-socketio or python-engineio at ANY version (checked 3.x/4.x/5.x source
+#     and docs: zero occurrences); `allenporter/supernote` is essentially the only Python code
+#     passing it. Both libraries end their `__init__` in `**kwargs`, so the argument is
+#     forwarded from socketio to engineio and then silently DISCARDED — no error, no warning.
+#     Upstream therefore has no EIO3 support and never has had, at any pin.
+#
+#     The Nomad speaks EIO=3, so every device handshake is refused with a 400
+#     ("The client is using an unsupported version of the Socket.IO or Engine.IO protocols")
+#     while the server starts clean and both VM checks pass — neither drives the realtime
+#     surface.
+#
+#     A local shim WAS built and tested on hardware, then REVERTED — do not re-derive it.
+#     Patching python-engineio to accept EIO=3 (and to answer a client-sent PING, since v3
+#     reverses the heartbeat) moved the device handshake from 400 to a successful 101
+#     upgrade. It got no further: the Socket.IO layer above still speaks protocol v5 while
+#     the device pairs EIO3 with Socket.IO v2, so the CONNECT packet is never parsed and
+#     `socket.py`'s connect handler never fires (verified on rk1b: zero occurrences of both
+#     its success and its two rejection log lines). Going further would mean downgrading to
+#     python-socketio 4.x + python-engineio 3.x — two EOL majors — to restore a channel that
+#     carries NOTHING: `send_message()` has no callers anywhere in the server, and
+#     `server/app.py` discards `setup_socketio()`'s return value, so the push path is
+#     unreachable dead code. Connected, the channel only echoes heartbeats. Deliberately
+#     left broken; the file sync and planner routes it sits beside are unaffected.
 #   • + ical (in nixpkgs) — the `GET /api/schedule/feed.ics` VTODO export
 #     (services/ical_export.py).
 #   • `mcp>=1.25.0` → `>=2.0.0` — NOT in nixpkgs. The fleet pin ships 1.26.0, whose layout has
