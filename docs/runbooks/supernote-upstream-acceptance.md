@@ -118,8 +118,22 @@ Look for `POST /api/file/2/files/synchronous/start` (the sync opening) and any n
 ssh rk1b 'sudo install -o git-annex -g library -m 664 /path/to/book.pdf /var/cache/library/ereader-outbox/'
 ```
 
-Sync again. **Expected:** `book.pdf` appears on the device under `Document/ereader`, the outbox
-is empty, and the file is mirrored into `/var/cache/library/ereader/`.
+Now sync **twice**, and expect the file only on the second one.
+
+The reconciler is *triggered by* a device sync, so the first sync fires it and the upload into
+the store lands a few seconds **after** that sync has already closed — the device cannot see a
+file that arrived after it stopped listening. The second sync is the one that pulls it down.
+Measured 2026-08-18: sync ended `15:12:41`, `sent` logged `15:12:45`. A single sync leaving the
+device empty is **correct behaviour, not a fault** — do not go looking for one.
+
+**Expected after the second sync:** `book.pdf` appears on the device under `Document/ereader`,
+the outbox is empty (the send is one-shot), and the file is mirrored into
+`/var/cache/library/ereader/`. Verify the content rather than the listing:
+
+```bash
+ssh rk1b 'sudo md5sum /var/cache/library/ereader/<file>'
+adb shell md5sum /sdcard/Document/ereader/<file>   # if ADB is available; must match
+```
 
 ```bash
 ssh rk1b journalctl -u supernote-ereader-reconcile -n 20 --no-pager
