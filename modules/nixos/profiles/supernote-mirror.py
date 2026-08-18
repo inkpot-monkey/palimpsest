@@ -116,6 +116,28 @@ def local_snapshot():
     return snap
 
 
+def prune_empty_dirs():
+    """Remove directories the deletes emptied, deepest first.
+
+    Without this a folder deleted on the device leaves its directory behind for ever, and the tree
+    stops being the strict materialisation the design claims. It is local tidiness rather than
+    replicated state — git cannot represent an empty directory, so a stale one never reaches kelpy
+    and never goes offsite — which is exactly why nothing else would ever clean it up.
+
+    Deepest first so that emptying a child lets its parent go in the same pass. `rmdir` refuses a
+    non-empty directory, so the try/except IS the "is it empty" test and there is no race between
+    checking and removing.
+    """
+    if not MIRROR_DIR.is_dir():
+        return
+    dirs = [p for p in MIRROR_DIR.rglob("*") if p.is_dir()]
+    for d in sorted(dirs, key=lambda p: len(p.parts), reverse=True):
+        try:
+            d.rmdir()
+        except OSError:
+            pass
+
+
 async def mirror_down(sn, store):
     """Materialise the store into the mirror: download what is new, remove what is gone."""
     local = local_snapshot()
@@ -133,9 +155,16 @@ async def mirror_down(sn, store):
         print(f"supernote mirror: downloaded {rel}")
 
     # The guard — see the module header. An entirely empty device is store loss, not housekeeping.
+    #
+    # `<4>` is systemd's log-level prefix (sd-daemon): the journal strips it and files the line as a
+    # WARNING, so `journalctl -p warning` surfaces it. The unit deliberately still SUCCEEDS — the
+    # guard tripping is correct behaviour, not a failure, and a unit left permanently failed until
+    # the device re-seeds would be noise. But an untripped run and a tripped one otherwise differ
+    # only in a count, so without this a wiped store reads as a healthy sync indefinitely with
+    # nothing escalating.
     if not store and local:
         print(
-            f"supernote mirror: the store lists NO files at all — keeping {len(local)} mirrored "
+            f"<4>supernote mirror: the store lists NO files at all — keeping {len(local)} mirrored "
             "file(s); an empty device VFS is a wiped or not-yet-re-seeded store and must not "
             "delete from the backed-up tree"
         )
@@ -146,6 +175,8 @@ async def mirror_down(sn, store):
             (MIRROR_DIR / rel).unlink()
             deleted += 1
             print(f"supernote mirror: deleted {rel}")
+
+    prune_empty_dirs()
     return downloaded, deleted
 
 

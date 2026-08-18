@@ -81,6 +81,38 @@ pkgs.testers.nixosTest {
   # The port literals below (8080 sync, 8081 MCP) mirror `port`/`mcpPort` in
   # modules/nixos/profiles/supernote.nix — keep them in step if those change.
   testScript = ''
+    import time
+
+
+    def cloud_login(what):
+        """A `cloud login` that tolerates upstream gap palimpsest#142.
+
+        Upstream stores ONE login challenge per account (`challenge:{account}`), so two logins for
+        the same account that interleave clobber each other and the loser gets a misleading 401
+        "Invalid credentials". This test shares its single account with the bootstrap oneshot and
+        logs in immediately after it, which is precisely the collision #142 describes — and it is
+        NOT what any of these subtests is asserting. They assert that the account authenticates;
+        winning a race against a concurrent login is a different claim, and one production does not
+        make either (the mirror retries for exactly this reason, and rk1b logs in first try).
+
+        Retrying keeps the assertion honest rather than weakening it: a genuinely bad credential
+        401s on every attempt and still fails here, just a few seconds later. Kept small because
+        every attempt, failures included, counts against upstream's per-account rate limit of 10
+        per 60s — checked BEFORE credentials are verified — so a long retry loop would trade a
+        rare race for a reliable 429.
+        """
+        for attempt in range(1, 4):
+            status = server.execute(
+                "HOME=/tmp ${pkgs.supernote}/bin/supernote cloud login "
+                "--url http://127.0.0.1:8080 device@example.com --password sync-secret-123"
+            )[0]
+            if status == 0:
+                return
+            print(f"{what}: login attempt {attempt}/3 failed — probably palimpsest#142, retrying")
+            time.sleep(3)
+        raise Exception(f"{what}: `cloud login` failed three times — not a lost challenge")
+
+
     start_all()
 
     # 1. Server comes up and binds the sync port.
@@ -110,10 +142,7 @@ pkgs.testers.nixosTest {
 
     # 1 (end-to-end): a fresh `cloud login` from the client-side account credential succeeds
     #     against the server, confirming the bootstrapped account authenticates over the network.
-    server.succeed(
-        "HOME=/tmp ${pkgs.supernote}/bin/supernote cloud login "
-        "--url http://127.0.0.1:8080 device@example.com --password sync-secret-123"
-    )
+    cloud_login("network login")
 
     # 4. The two bespoke bits a deploy (which re-runs these units) depends on: an IDEMPOTENT
     #    bootstrap and a STABLE JWT. Verified via targeted service restarts rather than a VM reboot
@@ -152,9 +181,6 @@ pkgs.testers.nixosTest {
     # Store still 0700 and the account still authenticates after the restarts.
     perms = server.succeed("stat -c '%a' /var/lib/supernote").strip()
     assert perms == "700", f"expected /var/lib/supernote mode 700, got {perms}"
-    server.succeed(
-        "HOME=/tmp ${pkgs.supernote}/bin/supernote cloud login "
-        "--url http://127.0.0.1:8080 device@example.com --password sync-secret-123"
-    )
+    cloud_login("post-restart login")
   '';
 }

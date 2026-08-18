@@ -70,26 +70,15 @@ let
   # real device would.
   snpy = pkgs.python313.withPackages (ps: [ (ps.toPythonModule pkgs.supernote) ]);
 
-  # A real PDF, not a stub. Content type is the whole point of subtest F: Stump dispatches on it and
-  # only handles zip/rar/epub/pdf, so a text file left out of the catalog would prove nothing about
-  # placement. `groff.perl` carries `gropdf`, which nixpkgs splits out of the main `groff` output.
-  document =
-    name: text:
-    pkgs.runCommand "${name}.pdf"
-      {
-        nativeBuildInputs = [
-          pkgs.groff
-          pkgs.groff.perl
-        ];
-      }
-      ''
-        printf '.SH\n%s\n.PP\n%s\n' ${pkgs.lib.escapeShellArg name} ${pkgs.lib.escapeShellArg text} \
-          | groff -T pdf -ms > $out
-      '';
+  # The shared Stump scaffolding: a real PDF builder plus the catalog helpers. Extracted rather
+  # than copied from parts/checks/stump — content type is the whole point of subtest F, since Stump
+  # dispatches on it and a stub file would make the placement assertion vacuous.
+  stump = import (self + /parts/checks/lib/stump-catalog.nix) { inherit pkgs; };
+  inherit (stump) book;
 
   # What the device "wrote on" and syncs back — an annotated PDF is the realistic shape of what the
   # Private Cloud carries now that books go out over OPDS.
-  annotated = document "field-notes" "A document the device annotated and synced back.";
+  annotated = book "field-notes" "A document the device annotated and synced back.";
   # A stand-in for a `.note` notebook. Its BYTES are arbitrary — nothing here parses the format —
   # but its PLACEMENT is the whole point: `/NOTE/Note` is where the firmware keeps handwriting, it
   # is the reason the Private Cloud server is still deployed at all, and the previous
@@ -97,7 +86,7 @@ let
   scribble = pkgs.writeText "scribble.note" "SUPERNOTE-NOTE stand-in: the pen layer comes home.";
   # A book in a Stump root, so subtest F's negative assertion has a positive control: the same file
   # type IS indexed when it sits in an indexed root.
-  shelved = document "clocks-of-the-long-now" "A book in the Books root.";
+  shelved = book "clocks-of-the-long-now" "A book in the Books root.";
 
   # A tiny device driver: `sync` opens a sync session (the mirror's only trigger); `ls` prints the
   # WHOLE device listing as `<path_display>\t<content_hash>` lines; `put <local> <device-path>`
@@ -267,7 +256,6 @@ pkgs.testers.nixosTest {
     import shlex
     import time
 
-    LOCAL_STUMP = "http://127.0.0.1:${toString port}"
     MIRROR = "${libraryPath}/supernote"
 
 
@@ -287,42 +275,12 @@ pkgs.testers.nixosTest {
         assert expected in summary, f"expected '{expected}', got:\n{summary}"
 
 
-    def graphql(query):
-        """Run a query as the Stump owner; the REST login's cookie authorises GraphQL."""
-        server.succeed(
-            f"curl -sf -c /tmp/jar -X POST {LOCAL_STUMP}/api/v2/auth/login "
-            "-H 'Content-Type: application/json' "
-            f"""-d '{json.dumps({"username": "${stumpOwner}", "password": "${stumpPassword}"})}' -o /dev/null"""
-        )
-        body = json.dumps({"query": query})
-        raw = server.succeed(
-            f"curl -sf -b /tmp/jar -X POST {LOCAL_STUMP}/api/graphql "
-            f"-H 'Content-Type: application/json' -d {shlex.quote(body)}"
-        )
-        parsed = json.loads(raw)
-        assert "errors" not in parsed, f"GraphQL errors: {parsed}"
-        return parsed["data"]
-
-
-    def catalog():
-        """{library name: sorted media names} straight from the server."""
-        data = graphql("{ libraries { nodes { name media { name } } } }")
-        return {
-            node["name"]: sorted(m["name"] for m in node["media"])
-            for node in data["libraries"]["nodes"]
-        }
-
-
-    def wait_for_catalog(predicate, what, tries=60):
-        """A scan is a background job kicked off by library creation, so `stump-provision` going
-        active does not mean the books are indexed yet."""
-        with server.nested(f"waiting for the catalog: {what}"):
-            for _ in range(tries):
-                snapshot = catalog()
-                if predicate(snapshot):
-                    return snapshot
-                time.sleep(3)
-        raise Exception(f"catalog never reached '{what}': {catalog()}")
+    ${stump.helpers {
+      node = "server";
+      owner = stumpOwner;
+      password = stumpPassword;
+      inherit port;
+    }}
 
 
     start_all()
@@ -420,12 +378,17 @@ pkgs.testers.nixosTest {
         "${libraryPath}/books/'Stewart Brand'/clocks-of-the-long-now.pdf"
     )
     indexed = wait_for_catalog(
-        lambda c: c.get("Books") == ["clocks-of-the-long-now"],
+        lambda c: c.get("Books", {}).get("books") == ["clocks-of-the-long-now"],
         "the planted book is indexed",
     )
-    everything = [name for names in indexed.values() for name in names]
+    everything = [b for lib in indexed.values() for b in lib["books"]]
     assert "field-notes" not in everything, (
         f"the mirror leaked into the catalog: {indexed}"
+    )
+    # And nothing is rooted inside the mirror — placement, not an ignore glob, is what keeps the
+    # device's content out of the catalog.
+    assert not any(lib["path"].startswith(MIRROR) for lib in indexed.values()), (
+        f"a Stump library is rooted inside the mirror: {indexed}"
     )
 
     # ── C. DURABLE DELETE ───────────────────────────────────────────────────────────────────────

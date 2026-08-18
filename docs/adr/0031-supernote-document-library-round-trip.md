@@ -136,6 +136,17 @@ keeps no state at all.**
   `folder_exists` flag and the `NotFoundException` handling all go, along with the remote-path
   option. The reconciler ends **smaller than the version that did less**.
 
+- **Known and accepted: a PARTIALLY re-seeded store is not guarded.** The rule above fires only on
+  a completely empty listing. While a wiped store is being re-seeded by the device, the listing is
+  non-empty, so anything not yet re-uploaded is absent — and is therefore deleted from the mirror in
+  that run. It self-corrects once the device finishes (the mirror re-downloads), and nothing is
+  truly lost, because the tree is a git-annex repository with full history and a kelpy replica and
+  nothing in the module runs `dropunused`. A stateless ratio guard — refuse a run that would delete
+  most of the tree — was considered and **declined**: it buys protection against a rare, recoverable
+  case at the cost of tripping on a legitimate bulk delete and needing manual intervention on the
+  one path that is supposed to be automatic. Recorded rather than fixed, so the next person meets a
+  decision instead of a hole.
+
 - **The store's sandbox now agrees with the architecture.** The baseline was persisted *inside*
   the server store, which is why the reconcile unit carried a `StateDirectory`. Removing it makes
   "the store is reached only over the client API, never its filesystem" a property of the sandbox

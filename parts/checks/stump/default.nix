@@ -91,25 +91,11 @@ let
   # Taken from the registry rather than repeated, so the test cannot drift from the deployment.
   inherit (self.settings.services.private.library) port;
 
-  # Real books, so the scanner has something it genuinely knows how to process — Stump dispatches
-  # on content type and only handles zip/rar/epub/pdf, so a stub file would never become a catalog
-  # entry and the read-path assertion would be vacuous. groff emits a valid PDF from a tiny troff
-  # source without dragging in a document toolchain. `groff.perl` is required as well as `groff`:
-  # nixpkgs splits the perl-implemented drivers into their own output, and `gropdf` — the one this
-  # needs — is among them, so plain `groff` fails with "couldn't exec gropdf".
-  book =
-    name: text:
-    pkgs.runCommand "${name}.pdf"
-      {
-        nativeBuildInputs = [
-          pkgs.groff
-          pkgs.groff.perl
-        ];
-      }
-      ''
-        printf '.SH\n%s\n.PP\n%s\n' ${pkgs.lib.escapeShellArg name} ${pkgs.lib.escapeShellArg text} \
-          | groff -T pdf -ms > $out
-      '';
+  # Real books (so the scanner has something it knows how to process) and the catalog helpers,
+  # both shared with parts/checks/supernote/mirror.nix — the other check that stands a real Stump
+  # up over this tree.
+  stump = import (self + /parts/checks/lib/stump-catalog.nix) { inherit pkgs; };
+  inherit (stump) book;
 in
 pkgs.testers.nixosTest {
   name = "stump-catalog-test";
@@ -227,48 +213,10 @@ pkgs.testers.nixosTest {
         origin.succeed(f"install -m 0640 -o git-annex -g library {source} {target}")
 
 
-    def wait_for_catalog(predicate, what, tries=60):
-        """Poll the catalog until `predicate` holds. A scan is a background job kicked off by
-        library creation (and by the watcher on a later drop), so `stump-provision` going active
-        does not mean the books are indexed yet — without this the assertions race the scanner."""
-        with origin.nested(f"waiting for the catalog: {what}"):
-            for _ in range(tries):
-                snapshot = catalog()
-                if predicate(snapshot):
-                    return snapshot
-                time.sleep(3)
-        raise Exception(f"catalog never reached '{what}': {catalog()}")
-
-
-    def graphql(query):
-        """Run a query as the owner. The session cookie the REST login mints is what authorises
-        the GraphQL endpoint, so both calls share one cookie jar."""
-        origin.succeed(
-            f"curl -sf -c /tmp/jar -X POST {LOCAL}/api/v2/auth/login "
-            "-H 'Content-Type: application/json' "
-            f"""-d '{json.dumps({"username": "${owner}", "password": "${password}"})}' -o /dev/null"""
-        )
-        body = json.dumps({"query": query})
-        raw = origin.succeed(
-            f"curl -sf -b /tmp/jar -X POST {LOCAL}/api/graphql "
-            f"-H 'Content-Type: application/json' -d {shlex.quote(body)}"
-        )
-        parsed = json.loads(raw)
-        assert "errors" not in parsed, f"GraphQL errors: {parsed}"
-        return parsed["data"]
-
-
-    def catalog():
-        """{library name: {"path": ..., "pattern": ..., "books": [...]}} straight from the server."""
-        data = graphql("{ libraries { nodes { name path config { libraryPattern } media { name } } } }")
-        return {
-            node["name"]: {
-                "path": node["path"],
-                "pattern": node["config"]["libraryPattern"],
-                "books": sorted(m["name"] for m in node["media"]),
-            }
-            for node in data["libraries"]["nodes"]
-        }
+    ${stump.helpers {
+      node = "origin";
+      inherit owner password port;
+    }}
 
 
     start_all()
