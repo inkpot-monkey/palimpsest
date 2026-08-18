@@ -3,9 +3,11 @@
 # enabled with `custom.profiles.supernote.enable = true` (rk1b, which shares the Nomad's
 # home LAN 192.168.1.0/24). Packaged as `pkgs.supernote` (palimpsest#91).
 #
-# The server is UPSTREAM `allenporter/supernote`, pinned to an explicit rev (palimpsest#112
-# retired the vendored fork this used to track — upstream implemented the device planner and
-# realtime surface the fork existed to add). Six residual upstream gaps are filed rather than
+# The server is the FORK `inkpot-monkey/supernote`, pinned to an explicit rev. palimpsest#112
+# moved this to upstream, on the reasoning that upstream had implemented the device planner and
+# realtime surface the fork existed to add; that held for the planner and not for the realtime
+# channel, so palimpsest#145 moved it back — the pinned rev is upstream 0.21.0 plus the device
+# channel and nothing else. Six residual upstream gaps are filed rather than
 # re-vendored: palimpsest#136 (delete/summary verb), #137 (planner writes), #138 (planner delete
 # tombstones), #139 (planner batch), #140 (upload response path / rogue-root self-heal), and #142
 # (concurrent logins for ONE account race a single-slot login challenge; the loser gets a

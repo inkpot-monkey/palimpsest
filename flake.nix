@@ -142,11 +142,12 @@
       inputs.contract.follows = "contract";
     };
 
-    # The Supernote toolkit (self-hosted Private Cloud Sync server + client) — UPSTREAM,
-    # pinned to an explicit revision (palimpsest#112, retiring the vendored
-    # `inkpot-monkey/supernote` round-trip branch that #91 pinned). Upstream implemented the
-    # device planner/realtime surface the fork existed to add, so there is no branch left to
-    # maintain; the residual gaps are tracked as their own issues rather than re-vendored.
+    # The Supernote toolkit (self-hosted Private Cloud Sync server + client) — the FORK
+    # `inkpot-monkey/supernote`, pinned to an explicit revision. palimpsest#112 moved this to
+    # upstream on the reasoning that upstream had implemented the device planner/realtime surface
+    # the fork existed to add; that held for the planner and NOT for the realtime channel, which
+    # upstream cannot serve to this device at any option setting (palimpsest#145). See the note on
+    # the input below for what the fork carries and how it goes away.
     #
     # A bare `?rev=` rather than a branch ON PURPOSE: this is the device sync endpoint, and an
     # unattended `nix flake update` that drags in an alembic migration would silently migrate
@@ -158,12 +159,32 @@
     # heavy deps from cache.nixos.org rather than compiling.
     #
     # Pinned to the FORK, not upstream (palimpsest#145, ADR-0031 revision 2026-08-18). The rev is
-    # upstream 0.21.0 plus four commits carrying the device's Engine.IO v3 / Socket.IO v2 realtime
-    # channel, which upstream cannot serve at any option setting. Fork `main` is byte-identical to
-    # upstream `main` and stays so; this is a rev pin, not a branch, and it returns to
-    # `github:allenporter/supernote` the day upstream merges the channel.
+    # upstream 0.21.0 plus the device's Engine.IO v3 / Socket.IO v2 realtime channel, which upstream
+    # cannot serve at any option setting. Fork `main` is byte-identical to upstream `main` and stays
+    # so; this is a rev pin, not a branch, and it returns to `github:allenporter/supernote` the day
+    # upstream merges the channel.
+    #
+    # Moved 2026-08-18 from 79d1003 to the tip of `fix/engineio-v3-device-support`, ten commits of
+    # channel refinement. FIVE of them are behavioural: `e96aba2` matches the channel endpoint by
+    # `rstrip("/")` rather than by prefix and `7100eb9` narrows that again to the two exact
+    # spellings; `6996ab5` honours socketio options declared on a base class (startup path only —
+    # if it were wrong the server would not start); `5bd12c4` drops the client-namespace CONNECT
+    # echo (behaviour-preserving for anything observed, since the seed set already held "/"); and
+    # `177f370` enforces the ping timeout the handshake advertises. The rest are tests and docs.
+    #
+    # `177f370` is the one to watch: it introduces a failure mode that did not exist at 79d1003 —
+    # the server now hangs up after pingInterval + pingTimeout (85s) of silence where before it
+    # held forever. That bound is where a real Engine.IO v3 server declares a client dead, not a
+    # chosen number, and the device capture shows pings every 25s, so observed traffic never
+    # approaches it; the device also reopens on its own ladder, making the worst case one extra
+    # reconnect.
+    #
+    # NOTE 79d1003 is the rev #145's hardware pass was run against, so a device sync after this
+    # bump re-establishes that result rather than inheriting it. Rolling this pin back is safe on
+    # its own terms: the ten commits touch only server/{app,realtime,socket}.py and their tests —
+    # no migrations, no schema — so unlike the 0.21.0 move it carries no database implication.
     supernote = {
-      url = "github:inkpot-monkey/supernote?rev=79d1003d6dabd191e00f83fe96ee6a3262cbf5b8";
+      url = "github:inkpot-monkey/supernote?rev=33175b3202647a11c4b748f41fd5d870b8e7ecb3";
       flake = false;
     };
 

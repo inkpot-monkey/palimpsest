@@ -10,7 +10,8 @@
   # vocabsieve = pkgs.libsForQt5.callPackage ./vocabsieve.nix { }; # broken: its dep
   # gst_all_1.gst-vaapi was removed in GStreamer 1.28 (not an in-place upgrade); disabled
   # so it stops failing `nix flake check`. Re-enable once vocabsieve moves off gst-vaapi.
-  # supernote: upstream (github:allenporter/supernote, rev-pinned — palimpsest#112 retired the
+  # supernote: the fork (github:inkpot-monkey/supernote, rev-pinned — #112 moved this to
+  # upstream and palimpsest#145 moved it back for the device realtime channel; the
   # vendored fork), packaged from the `supernote` flake input; buildPythonApplication on
   # python313. See pkgs/supernote.
   supernote = pkgs.callPackage ./supernote { src = inputs.supernote; };

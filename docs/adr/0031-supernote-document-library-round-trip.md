@@ -90,8 +90,12 @@ keeps no state at all.**
 
 - **Scope is the whole device, not a chosen folder — and the narrow version mirrored nothing.**
   The mirror was scoped to `/DOCUMENT/Document/ereader`, inherited from the retired push. Measured
-  on rk1b: the store held **six files — three `.note`, two `.epub`, one `.pdf` — and the mirror
-  held zero**, because every one of them lives elsewhere. That folder existed only because the
+  on rk1b: the device held **two `.note` notebooks and the mirror held zero**, because neither
+  lives in that folder. (The store's blob directory held six files at the time, which is what was
+  counted first and reported as six; four were orphans — two `.epub` from the retired outbox era, a
+  `.pdf` from the acceptance runbook, and a superseded revision of a note, since editing one writes
+  a new blob and orphans the old. Blobs on disk are not live entries, and the store never prunes
+  them.) That folder existed only because the
   outbox created it; books now arrive by OPDS into a folder Private Cloud never syncs, and the
   handwriting this server is *kept for* lives in `NOTE/Note` and `DOCUMENT/Document`. The narrowing
   decided above — "the Private Cloud server stays, narrowed to the handwriting round-trip" — was

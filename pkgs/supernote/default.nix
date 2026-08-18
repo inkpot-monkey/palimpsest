@@ -1,4 +1,4 @@
-# The UPSTREAM Supernote toolkit (github:allenporter/supernote), packaged with nixpkgs
+# The Supernote toolkit, packaged from the rev-pinned fork with nixpkgs
 # `buildPythonApplication` on python313. Rationale and the survey-against-the-real-dep-set
 # is in research/supernote-packaging-approach.md: nearly every runtime dep is already in
 # `python313Packages` (numpy/Pillow/reportlab are aarch64-cached, so rk1b substitutes them
@@ -6,7 +6,8 @@
 # pure-Python universal wheels stubbed below. Upstream's version constraints are all `>=`
 # lower bounds, satisfied by nixpkgs' newer pins.
 #
-# palimpsest#112 retired the vendored `inkpot-monkey/supernote` fork this used to track.
+# `inkpot-monkey/supernote` — upstream 0.21.0 plus the device realtime channel (palimpsest#145;
+# #112 had moved this to upstream, which cannot serve that channel). See flake.nix for the pin.
 # Relative to that fork's `[all]` set, upstream changed the dependency set in three ways:
 #   • + python-socketio (in nixpkgs) — the device realtime channel, replacing the fork's
 #     hand-rolled EIO3 `supernote/server/realtime.py`. The SERVER imports it
@@ -35,12 +36,17 @@
 #     upgrade. It got no further: the Socket.IO layer above still speaks protocol v5 while
 #     the device pairs EIO3 with Socket.IO v2, so the CONNECT packet is never parsed and
 #     `socket.py`'s connect handler never fires (verified on rk1b: zero occurrences of both
-#     its success and its two rejection log lines). Going further would mean downgrading to
-#     python-socketio 4.x + python-engineio 3.x — two EOL majors — to restore a channel that
-#     carries NOTHING: `send_message()` has no callers anywhere in the server, and
-#     `server/app.py` discards `setup_socketio()`'s return value, so the push path is
-#     unreachable dead code. Connected, the channel only echoes heartbeats. Deliberately
-#     left broken; the file sync and planner routes it sits beside are unaffected.
+#     its success and its two rejection log lines).
+#
+#     RESOLVED, and NOT by that route (palimpsest#145). The channel is no longer left broken:
+#     the pin moved back to the fork, whose `server/realtime.py` serves EIO3/Socket.IO v2
+#     beside the modern library rather than downgrading it, and a Nomad A6 X2 completed its
+#     app-data sync against it on hardware. What survives from the paragraph above is the
+#     warning — do not patch python-engineio, and do not downgrade to python-socketio 4.x +
+#     python-engineio 3.x; both were tried or costed and neither is the answer. The claim that
+#     the channel "carries NOTHING" also survives, but only about its PAYLOAD: `send_message()`
+#     is still callerless dead code. The device needs the channel to EXIST and CONNECT, which
+#     is a separate thing and is what #145 restored.
 #   • + ical (in nixpkgs) — the `GET /api/schedule/feed.ics` VTODO export
 #     (services/ical_export.py).
 #   • `mcp>=1.25.0` → `>=2.0.0` — NOT in nixpkgs. The fleet pin ships 1.26.0, whose layout has
@@ -111,7 +117,13 @@ python.pkgs.buildPythonApplication {
   # Display label only; `src` (the rev-pinned flake input) is the real pin. Bump to match
   # upstream's pyproject when the rev in flake.nix crosses a version — a stale label is
   # cosmetic, not a build error.
-  version = "0.17.0";
+  #
+  # It is not purely cosmetic here, though, which is why this was bumped rather than left: the
+  # acceptance runbook identifies the running build by reading this version out of the live
+  # process's argv, and ADR-0031's whole database discussion turns on 0.17.0 versus 0.21.0 (rk1b's
+  # database is migrated past what 0.17.0 can open). A package claiming 0.17.0 while serving
+  # 0.21.0 code makes both of those read backwards.
+  version = "0.21.0";
   pyproject = true;
   inherit src;
 

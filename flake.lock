@@ -1228,17 +1228,17 @@
     "supernote": {
       "flake": false,
       "locked": {
-        "lastModified": 1787062057,
-        "narHash": "sha256-Hj/iXvtjYePKrGza2tC7+Ycg4cNn7syTC+vxH1tt2xo=",
+        "lastModified": 1787084646,
+        "narHash": "sha256-xe3SD/PDXMrvk0PBg/JezEfGBqUiSxGuyxdj3sY1210=",
         "owner": "inkpot-monkey",
         "repo": "supernote",
-        "rev": "79d1003d6dabd191e00f83fe96ee6a3262cbf5b8",
+        "rev": "33175b3202647a11c4b748f41fd5d870b8e7ecb3",
         "type": "github"
       },
       "original": {
         "owner": "inkpot-monkey",
         "repo": "supernote",
-        "rev": "79d1003d6dabd191e00f83fe96ee6a3262cbf5b8",
+        "rev": "33175b3202647a11c4b748f41fd5d870b8e7ecb3",
         "type": "github"
       }
     },

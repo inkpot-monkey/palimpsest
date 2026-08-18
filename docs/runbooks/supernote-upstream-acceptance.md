@@ -1,7 +1,9 @@
 # Runbook: accept the upstream Supernote server with a real Nomad (palimpsest#112)
 
 palimpsest#112 retired the vendored `inkpot-monkey/supernote` fork and pinned **upstream**
-`allenporter/supernote` at an explicit revision. Everything that CI can prove is proven: the
+`allenporter/supernote` at an explicit revision. (That is what this pass tested and is left as
+written. It is **no longer the pin**: palimpsest#145 moved back to a fork rev, because upstream
+cannot serve the device's realtime channel — see ADR-0031's 2026-08-18 revision.) Everything that CI can prove is proven: the
 package builds, and both Private Cloud VM checks (`supernote`, `supernote_mirror`) pass.
 
 **The last acceptance criterion cannot be run by CI or by an agent** — it needs the physical
