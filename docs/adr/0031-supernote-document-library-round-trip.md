@@ -26,12 +26,52 @@ at the cost of two reconcilers bridging the fork's blob store to Stump.
 
 That shape is **no longer the decision**. Everything from "## Decision" down, and the two
 revisions dated 2026-07-24 and 2026-07-25, describe it as it stood and are kept as the record of
-how the design got here — read them as history. The 2026-08-13, 2026-08-16, 2026-08-17 and
-2026-08-18 revisions below govern: the fork is retired for a pin on upstream, books are no longer pushed at
+how the design got here — read them as history. The 2026-08-13, 2026-08-16, 2026-08-17 and the
+two 2026-08-18 revisions below govern: the fork is retired for a pin on upstream, books are no longer pushed at
 all, the device authenticates with Basic auth rather than an API key, and the device runs a
 Tailscale client of its own. Where the older text and the newer
 text disagree, the newer text wins — including between the dated revisions themselves, which are
 ordered newest first.
+
+## Revision — 2026-08-18: the pen assumption, measured — the digitiser is fully available to sideloaded apps (palimpsest#115)
+
+The 2026-08-13 revision below justified keeping the Private Cloud server on this reasoning:
+
+> A sideloaded reader gets ordinary Android stylus input, **not the Supernote pen layer**, and
+> there is no path off the device for `.note`/`.mark` except Private Cloud sync.
+
+It was flagged there as "reasoned rather than measured", with palimpsest#115 to settle it
+hands-on. It has now been measured on the device, and **the conclusion stands while the reason
+needs correcting**.
+
+**The pen is not degraded outside the stock apps — it is fully exposed.** It is a dedicated
+Wacom EMR digitiser on its own input device (`/dev/input/event7 "Wacom-pen"`), separate from the
+two touchscreens, advertising `ABS_PRESSURE` 0–4095 (the touchscreens manage 0–255), `ABS_TILT_X/Y`
+±9000, both barrel buttons, and the eraser end. Android classifies it `Sources: 0x5002` =
+`SOURCE_STYLUS | SOURCE_TOUCHSCREEN`, so a sideloaded app receives full `TOOL_TYPE_STYLUS`
+MotionEvents. Nothing is withheld.
+
+Observed in KOReader, the pen behaves **exactly** like a finger — but that is KOReader's doing,
+not the platform's. It is a reader with no ink surface, so it consumes position and ignores the
+stylus axes (`["highlights"] = 0` in its `.sdr` sidecars).
+
+- **The decision does not change.** Handwriting still stays with the stock Note and Document
+  apps, and the Private Cloud server is still kept for the handwriting round-trip. But the
+  binding constraint is a **format and engine** boundary — only the stock apps write
+  `.note`/`.mark`, and only they run Ratta's handwriting engine — **not** an input-availability
+  one. The original phrasing implied the digitiser was out of reach for sideloaded apps. It
+  is not.
+
+- **What this opens.** A future sideloaded app could offer genuine pressure- and tilt-sensitive
+  ink; what it could never do is produce a Supernote-native notebook that the stock apps and
+  Private Cloud sync understand. Do not rule out a sideloaded pen feature on the belief that the
+  pen is unavailable — that belief is now falsified. The device-side detail is recorded in
+  `docs/runbooks/supernote-koreader-opds.md` §6.
+
+- **Second confirmation of the same lesson.** This is the second assumption in the 2026-08-13
+  revision that a single hour with the device corrected, the other being the realtime channel
+  (see the revision below). Both were reasoned from source and both were wrong in ways no VM
+  check could surface. Where a device observation is available, prefer it.
 
 ## Revision — 2026-08-18: upstream's realtime channel was never a superset — the fork's `realtime.py` was load-bearing (palimpsest#145)
 
