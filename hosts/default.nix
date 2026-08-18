@@ -224,13 +224,14 @@ in
           # firewalled off (v1). See modules/nixos/profiles/supernote.nix. Stump (#93) that turns
           # this into a browsable document library is a separate ticket.
           custom.profiles.supernote.enable = true;
-          # The ereader downward mirror (ADR-0031, #107 as reduced by #117): `library/ereader/`
-          # (/var/cache/library/ereader) materialises what the device holds, as real files, on each
-          # device-initiated sync — durable device-side deletes included. One direction only: books
+          # The downward mirror (ADR-0031, #107 as reduced by #117): `library/supernote/`
+          # (/var/cache/library/supernote) materialises EVERYTHING the device holds — `Note/`,
+          # `Document/` and the rest of the firmware's folders — as real files on each
+          # device-initiated sync, durable device-side deletes included. One direction only: books
           # go OUT by OPDS pull from Stump (#114/#115), so nothing is published through this tree.
           # Couples to the library tree (hosts/rk1/library.nix), which is why it lives behind its
           # own flag — see modules/nixos/profiles/supernote.nix.
-          custom.profiles.supernote.ereader.enable = true;
+          custom.profiles.supernote.mirror.enable = true;
 
           # Stump — the reading catalog over the document library (ADR-0031, #113). Indexes
           # /var/cache/library/{books,papers,notebooks} as three series-priority libraries (the

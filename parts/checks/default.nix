@@ -75,11 +75,12 @@
         supernote = import ./supernote {
           inherit pkgs self inputs;
         };
-        # The ereader downward mirror (ADR-0031, palimpsest#107 as reduced by #117): the store
-        # materialises into library/ereader/ as real files inside a real git-annex tree, with the
-        # Stump catalog running on that same tree; durable device deletes; and no deletion from the
-        # backed-up tree when the store is empty or unreachable — all off device-initiated syncs.
-        supernote_ereader = import ./supernote/ereader.nix {
+        # The Supernote downward mirror (ADR-0031, palimpsest#107 as reduced by #117): everything
+        # the device holds materialises into library/supernote/ as real files inside a real
+        # git-annex tree, with the Stump catalog running on that same tree; durable device deletes;
+        # and no deletion from the backed-up tree when the store is empty or unreachable — all off
+        # device-initiated syncs.
+        supernote_mirror = import ./supernote/mirror.nix {
           inherit pkgs self inputs;
         };
         # The Stump reading catalog (ADR-0031, palimpsest#113): three series-priority libraries

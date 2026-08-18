@@ -1,34 +1,34 @@
-# Acceptance test for the ereader downward mirror (ADR-0031, palimpsest#107 as reduced by #117).
+# Acceptance test for the Supernote downward mirror (ADR-0031, palimpsest#107 as reduced by #117).
 #
-# Drives the mirror end-to-end against the REAL packaged server + reconciler, over a REAL git-annex
+# Drives the mirror end-to-end against the REAL packaged server + mirror unit, over a REAL git-annex
 # `library` tree, with the REAL Stump catalog running on that same tree — the one-node integration
 # originally scoped as palimpsest#95, narrowed to what now exists. A `client` node stands in for the
-# Nomad: it opens sync sessions (the reconcile's only trigger) and, acting as the device's 2-way
+# Nomad: it opens sync sessions (the mirror's only trigger) and, acting as the device's 2-way
 # sync, adds and deletes documents in the store through the client API. There is no upload path to
 # test any more; #117 removed it, along with the outbox and the last-synced baseline.
 #
-#   A. MATERIALISATION. The device puts a PDF in the store's ereader folder and syncs → the
-#      reconcile fires off that sync and materialises it into library/ereader/ as a REAL file
+#   A. MATERIALISATION. The device puts files in TWO different firmware folders (Document/ and
+#      Note/) and syncs → the mirror fires off that sync and materialises both under
+#      library/supernote/ at the device's own relative paths, as REAL files
 #      (content-identical, not a symlink to nowhere and not an opaque blob), inside the git-annex
 #      tree, which then adopts it. Real files are the point: git-annex replicates content and Stump
 #      indexes files, neither of which can be done with the store's UUID blobs.
-#   B. IDEMPOTENCE across restart. Restart the server, reconcile again → downloaded=0 deleted=0.
+#   B. IDEMPOTENCE across restart. Restart the server, run again → downloaded=0 deleted=0.
 #      With the baseline gone this is no longer a claim about persisted state; it is the claim that
 #      the mirror derives entirely from the store, so a restart changes nothing.
-#   C. DURABLE DELETE. The device deletes the document from the store; reconcile → it leaves
-#      library/ereader/ and is NOT resurrected by the next reconcile (nothing can push it back).
-#      It is deliberately the device's LAST document, so the store's listing goes empty and the
-#      delete must still propagate — see D for why that distinction is the whole ballgame.
-#   D. A LOST STORE. A genuinely WIPED store — not merely an empty one — leaves a file sitting in
-#      library/ereader/ untouched. The guard keys on the remote ereader folder being absent, not on
-#      an empty listing, because C proves an empty listing is a legitimate state of a live store;
-#      conflating them would swallow the last delete permanently. Wiped for real here, and the
-#      bootstrap's register path is asserted as proof it was.
-#   E. UNREACHABLE STORE. With the server stopped, the reconcile FAILS (loudly, as a failed unit)
+#   C. DURABLE DELETE. The device deletes a document from the store; the mirror → it leaves the
+#      tree and is NOT resurrected by the next run (nothing can push it back). Other content stays
+#      in the store, so this is the everyday case the guard must not touch.
+#   D. A LOST STORE. A genuinely WIPED store leaves a file sitting in the mirror untouched. At
+#      whole-device scope an empty listing IS the loss signal — it means the device's entire VFS is
+#      empty — which is why C can delete the last file in a folder without tripping it: the store
+#      still lists the device's other content. Wiped for real here, and the bootstrap's register
+#      path is asserted as proof it was.
+#   E. UNREACHABLE STORE. Pointed at a dead port, the mirror FAILS (loudly, as a failed unit)
 #      and deletes nothing — login happens before any library mutation, so there is no path from
 #      "the store is not answering" to "the backup is smaller".
 #   F. THE CATALOG COEXISTS, AND THE MIRROR STAYS OUT OF IT. Stump indexes books/, papers/ and
-#      notebooks/; `ereader/` is a sibling of all three, so handwriting coming back from the device
+#      notebooks/; `supernote/` is a sibling of all three, so content coming back from the device
 #      does not surface as a second copy of a book the catalog already serves. That placement is
 #      what makes it true — no ignore glob — and full-corpus classification into the three roots is
 #      explicitly future work in ADR-0031, so this pins today's shape rather than a permanent one.
@@ -65,7 +65,7 @@ let
   gitAnnex = import (self + /modules/nixos/services/git-annex/tests/lib.nix) { inherit pkgs; };
 
   # A python interpreter with the `supernote` library importable — the same construction the
-  # profile uses for the reconciler (toPythonModule re-exposes the application's modules). Drives
+  # profile uses for the mirror (toPythonModule re-exposes the application's modules). Drives
   # the device APIs (sync_start, list_folder, upload_content, delete_by_path) from the client, as a
   # real device would.
   snpy = pkgs.python313.withPackages (ps: [ (ps.toPythonModule pkgs.supernote) ]);
@@ -90,13 +90,18 @@ let
   # What the device "wrote on" and syncs back — an annotated PDF is the realistic shape of what the
   # Private Cloud carries now that books go out over OPDS.
   annotated = document "field-notes" "A document the device annotated and synced back.";
+  # A stand-in for a `.note` notebook. Its BYTES are arbitrary — nothing here parses the format —
+  # but its PLACEMENT is the whole point: `/NOTE/Note` is where the firmware keeps handwriting, it
+  # is the reason the Private Cloud server is still deployed at all, and the previous
+  # `ereader/`-scoped mirror could never have seen it.
+  scribble = pkgs.writeText "scribble.note" "SUPERNOTE-NOTE stand-in: the pen layer comes home.";
   # A book in a Stump root, so subtest F's negative assertion has a positive control: the same file
   # type IS indexed when it sits in an indexed root.
   shelved = document "clocks-of-the-long-now" "A book in the Books root.";
 
-  # A tiny device driver: `sync` opens a sync session (the reconcile's only trigger); `ls` prints
-  # the ereader folder listing as `<path_display>\t<content_hash>` lines; `put <local> <remote>`
-  # uploads a document as the device's own sync would; `rm <path>` deletes one.
+  # A tiny device driver: `sync` opens a sync session (the mirror's only trigger); `ls` prints the
+  # WHOLE device listing as `<path_display>\t<content_hash>` lines; `put <local> <device-path>`
+  # uploads a document as the device's own sync would; `rm <device-path>` deletes one.
   #
   # It CACHES its access token to a file and reuses it, re-logging-in only when the token is
   # missing or rejected. That is what a real Nomad does — it authenticates once at pairing and then
@@ -106,20 +111,19 @@ let
   # manufacture a login storm no device produces — and upstream keeps only ONE login challenge per
   # account (`challenge:{account}`, palimpsest#142), so a storm makes concurrent logins fail with a
   # misleading 401. Caching keeps the polling honest and tests the sync, not the login endpoint.
-  driver = pkgs.writeText "sn-ereader-driver.py" ''
+  driver = pkgs.writeText "sn-device-driver.py" ''
     import asyncio
     import os
     import sys
     from pathlib import Path
 
     from supernote.client import Supernote
-    from supernote.client.exceptions import NotFoundException, UnauthorizedException
+    from supernote.client.exceptions import UnauthorizedException
 
     URL = os.environ["URL"]
     USER = os.environ["SN_USER"]
     PW = os.environ["SN_PASS"]
     TOKEN_FILE = Path(os.environ.get("SN_TOKEN_FILE", "/tmp/sn-device-token"))
-    REMOTE_DIR = "/DOCUMENT/Document/ereader"
 
 
     def cached_token():
@@ -140,15 +144,12 @@ let
             await sn.device.sync_start("TEST-DEVICE")
             print("sync started")
         elif cmd == "ls":
-            try:
-                listing = await sn.device.list_folder(REMOTE_DIR, recursive=True)
-            except NotFoundException:
-                return
+            listing = await sn.device.list_folder("/", recursive=True)
             for e in listing.entries:
                 print(f"{e.path_display}\t{e.content_hash}")
         elif cmd == "put":
-            local, name = sys.argv[2], sys.argv[3]
-            await sn.device.upload_content(f"{REMOTE_DIR}/{name}", Path(local).read_bytes())
+            local, remote = sys.argv[2], sys.argv[3]
+            await sn.device.upload_content(remote, Path(local).read_bytes())
             print("uploaded")
         elif cmd == "rm":
             await sn.device.delete_by_path(sys.argv[2])
@@ -177,7 +178,7 @@ let
   env = "URL=http://server:8080 SN_USER=${account} SN_PASS=${password}";
 in
 pkgs.testers.nixosTest {
-  name = "supernote-ereader-mirror-test";
+  name = "supernote-mirror-test";
 
   nodes = {
     server =
@@ -201,7 +202,7 @@ pkgs.testers.nixosTest {
 
           custom.profiles.supernote.enable = true;
           # The feature under test.
-          custom.profiles.supernote.ereader = {
+          custom.profiles.supernote.mirror = {
             enable = true;
             inherit libraryPath;
           };
@@ -267,22 +268,22 @@ pkgs.testers.nixosTest {
     import time
 
     LOCAL_STUMP = "http://127.0.0.1:${toString port}"
-    MIRROR = "${libraryPath}/ereader"
+    MIRROR = "${libraryPath}/supernote"
 
 
-    def reconcile_summary():
-        # The newest `downloaded=.. deleted=..` summary line from the reconcile unit.
-        log = server.succeed("journalctl -u supernote-ereader-reconcile --no-pager -o cat")
-        lines = [ln for ln in log.splitlines() if "ereader reconcile: store=" in ln]
-        assert lines, f"no reconcile summary line found:\n{log}"
+    def mirror_summary():
+        # The newest `store=.. downloaded=.. deleted=..` summary line from the mirror unit.
+        log = server.succeed("journalctl -u supernote-mirror --no-pager -o cat")
+        lines = [ln for ln in log.splitlines() if "supernote mirror: store=" in ln]
+        assert lines, f"no mirror summary line found:\n{log}"
         return lines[-1]
 
 
-    def reconcile(expected):
+    def run_mirror(expected):
         # A direct start is a faithful re-run of what the watcher triggers, and sidesteps its
         # debounce window. `systemctl start` on a oneshot blocks until it finishes.
-        server.systemctl("start supernote-ereader-reconcile.service")
-        summary = reconcile_summary()
+        server.systemctl("start supernote-mirror.service")
+        summary = mirror_summary()
         assert expected in summary, f"expected '{expected}', got:\n{summary}"
 
 
@@ -331,10 +332,10 @@ pkgs.testers.nixosTest {
     server.wait_for_unit("supernote-server.service")
     server.wait_for_open_port(8080)
     server.wait_for_unit("supernote-account-bootstrap.service")
-    server.wait_for_unit("supernote-ereader-dir.service")
-    server.wait_for_unit("supernote-ereader-watch.service")
+    server.wait_for_unit("supernote-mirror-dir.service")
+    server.wait_for_unit("supernote-mirror-watch.service")
 
-    # library/ereader/ exists, group `library`, setgid (2770), owned by the tree owner git-annex —
+    # library/supernote/ exists, group `library`, setgid (2770), owned by the tree owner git-annex —
     # the "stays git-annex-owned, group-readable" acceptance criterion, asserted against the real
     # annex repo rather than a stand-in directory.
     perms = server.succeed(f"stat -c '%a %U %G' {MIRROR}").strip()
@@ -342,52 +343,68 @@ pkgs.testers.nixosTest {
     # And the retired one-shot outbox is NOT created — #117 removed it, and the sweep in the same
     # oneshot removes any left by an earlier deploy. It sits inside the BACKED-UP tree, so an
     # abandoned directory would be replicated and carried offsite forever.
-    server.succeed("test ! -e ${libraryPath}/ereader-outbox")
-    # Nor is there any persisted reconcile state left in the server store.
+    for retired in ["ereader-outbox", "ereader"]:
+        server.succeed("test ! -e ${libraryPath}/" + retired)
+    # Nor is there any persisted mirror state left in the server store.
     server.succeed("test ! -e /var/lib/supernote/reconcile")
 
     client.wait_until_succeeds("curl -sf -o /dev/null http://server:8080/api/csrf", timeout=60)
 
-    # ── A. MATERIALISATION ──────────────────────────────────────────────────────────────────────
-    # The device puts an annotated document in its ereader folder and opens a sync — the reconcile's
-    # ONLY trigger. Nothing on the server side put it there; there is no longer a way to.
-    client.succeed("${env} ${snpy}/bin/python ${driver} put ${annotated} field-notes.pdf")
+    # ── A. MATERIALISATION, ACROSS THE WHOLE DEVICE ─────────────────────────────────────────────
+    # The device puts content in TWO different firmware folders and opens a sync — the mirror's ONLY
+    # trigger. Nothing on the server side put either there; there is no longer a way to. Two folders
+    # rather than one is the point of this ticket: mirroring a single chosen folder is what missed
+    # the handwriting entirely, so the test drives the doc root AND the note root.
+    client.succeed(
+        "${env} ${snpy}/bin/python ${driver} put ${annotated} /DOCUMENT/Document/field-notes.pdf"
+    )
+    client.succeed(
+        "${env} ${snpy}/bin/python ${driver} put ${scribble} /NOTE/Note/scribble.note"
+    )
     client.succeed("${env} ${snpy}/bin/python ${driver} sync")
 
-    # It materialises down into library/ereader/, fired by that sync.
-    server.wait_until_succeeds(f"test -f {MIRROR}/field-notes.pdf", timeout=90)
-    # A REAL file with the device's exact bytes — not a blob, not a dangling annex symlink. `-L`
-    # would follow a symlink, so check both: identical content AND a resolvable, non-empty file.
-    server.succeed(f"cmp ${annotated} {MIRROR}/field-notes.pdf")
-    server.succeed(f"test -s {MIRROR}/field-notes.pdf")
+    # Both materialise into library/supernote/ at the device's own relative paths, fired by that
+    # sync. The .note is the one that matters most: it is the pen layer, and the only path off the
+    # device for it is this mirror.
+    server.wait_until_succeeds(f"test -f {MIRROR}/DOCUMENT/Document/field-notes.pdf", timeout=90)
+    server.wait_until_succeeds(f"test -f {MIRROR}/NOTE/Note/scribble.note", timeout=90)
+    # REAL files with the device's exact bytes — not blobs, not dangling annex symlinks. `cmp`
+    # follows symlinks, so also assert each resolves to something non-empty.
+    server.succeed(f"cmp ${annotated} {MIRROR}/DOCUMENT/Document/field-notes.pdf")
+    server.succeed(f"cmp ${scribble} {MIRROR}/NOTE/Note/scribble.note")
+    server.succeed(f"test -s {MIRROR}/DOCUMENT/Document/field-notes.pdf")
+    server.succeed(f"test -s {MIRROR}/NOTE/Note/scribble.note")
 
-    # The trigger really was the sync, and the reconcile downloaded exactly the one document.
-    watch_log = server.succeed("journalctl -u supernote-ereader-watch --no-pager -o cat")
+    # The trigger really was the sync, and the run downloaded exactly the two files.
+    watch_log = server.succeed("journalctl -u supernote-mirror-watch --no-pager -o cat")
     assert "device sync detected" in watch_log, f"watcher never saw the sync:\n{watch_log}"
-    assert "downloaded=1 deleted=0" in reconcile_summary(), (
-        f"the mirror did not materialise the one document:\n{reconcile_summary()}"
+    assert "store=2 downloaded=2 deleted=0" in mirror_summary(), (
+        f"the mirror did not materialise both files:\n{mirror_summary()}"
     )
 
     # git-annex adopts what the mirror wrote, autonomously — no manual command. This is what makes
     # the tree replicated and backed up rather than merely owned by git-annex.
-    server.wait_until_succeeds(
-        "sudo -u git-annex -H env HOME=/var/lib/git-annex "
-        "git -C ${libraryPath} annex whereis ereader/field-notes.pdf",
-        timeout=120,
-    )
+    # Paths are relative to the ANNEX ROOT (${libraryPath}), so they carry the `supernote/` mirror
+    # prefix — not the device-relative paths used against MIRROR above.
+    for adopted in ["supernote/DOCUMENT/Document/field-notes.pdf", "supernote/NOTE/Note/scribble.note"]:
+        server.wait_until_succeeds(
+            "sudo -u git-annex -H env HOME=/var/lib/git-annex "
+            f"git -C ${libraryPath} annex whereis {adopted}",
+            timeout=120,
+        )
 
     # ── B. IDEMPOTENCE across restart ───────────────────────────────────────────────────────────
     # The mirror derives entirely from the store, so restarting the server changes nothing: no
     # re-download (content matches) and no delete (the document is still in the store).
     server.systemctl("restart supernote-server.service")
     server.wait_for_open_port(8080)
-    reconcile("store=1 downloaded=0 deleted=0")
-    server.succeed(f"test -f {MIRROR}/field-notes.pdf")
+    run_mirror("store=2 downloaded=0 deleted=0")
+    server.succeed(f"test -f {MIRROR}/DOCUMENT/Document/field-notes.pdf")
 
     # ── F. THE CATALOG COEXISTS, AND THE MIRROR STAYS OUT OF IT ─────────────────────────────────
     # Stump is up on the same tree, reaching it through the `library` group. A book planted in the
     # Books root IS indexed; the document the device synced back is the same file type but sits in
-    # `ereader/`, a sibling of all three roots, so it is not — placement is what does that, and it
+    # `supernote/`, a sibling of all three roots, so it is not — placement is what does that, and it
     # is why handwriting returning from the device cannot appear as a second copy of a book the
     # catalog already serves. (Classifying the mirror into books/papers/notebooks is explicitly
     # future work in ADR-0031; when that lands, this expectation is what should be revisited.)
@@ -408,43 +425,38 @@ pkgs.testers.nixosTest {
     )
     everything = [name for names in indexed.values() for name in names]
     assert "field-notes" not in everything, (
-        f"the ereader mirror leaked into the catalog: {indexed}"
+        f"the mirror leaked into the catalog: {indexed}"
     )
 
     # ── C. DURABLE DELETE ───────────────────────────────────────────────────────────────────────
-    # The device deletes the document from the store (its 2-way sync propagating a device-side
-    # delete). With no upload path there is no ambiguity left to resolve and no baseline to consult:
-    # absent from the store means gone.
-    #
-    # This is the device's ONLY document, so the store's listing is empty immediately afterwards.
-    # That is deliberate: it is the case a naive "empty store means the store is lost" guard gets
-    # wrong, and it would get it wrong PERMANENTLY, because after the fact nothing distinguishes
-    # "the device emptied its folder" from "the store was wiped". The delete must propagate here.
-    client.succeed("${env} ${snpy}/bin/python ${driver} rm /DOCUMENT/Document/ereader/field-notes.pdf")
-    # `store=0` is the discriminating half: the folder is still there and holds nothing, so the
-    # guard did NOT engage and the delete is a real one. Without this token a passing `deleted=1`
-    # would not distinguish that from a guard that happened to let it through.
-    reconcile("store=0 downloaded=0 deleted=1")
-    server.succeed(f"test ! -e {MIRROR}/field-notes.pdf")
+    # The device deletes the PDF (its 2-way sync propagating a device-side delete). With no upload
+    # path there is no ambiguity to resolve and no baseline to consult: absent from the store means
+    # gone. The .note stays, so this is the everyday case — the store still lists content, and the
+    # guard has no business anywhere near it. `store=1` is what proves that: one file left, so the
+    # delete is a real one rather than a guard that happened to let it through.
+    client.succeed("${env} ${snpy}/bin/python ${driver} rm /DOCUMENT/Document/field-notes.pdf")
+    run_mirror("store=1 downloaded=0 deleted=1")
+    server.succeed(f"test ! -e {MIRROR}/DOCUMENT/Document/field-notes.pdf")
+    # The handwriting is untouched — a delete in one firmware folder must not disturb another.
+    server.succeed(f"test -f {MIRROR}/NOTE/Note/scribble.note")
 
-    # ...and it is NOT resurrected: nothing can push it back, so a second reconcile is a no-op and
-    # the store stays empty.
-    reconcile("store=0 downloaded=0 deleted=0")
-    server.succeed(f"test ! -e {MIRROR}/field-notes.pdf")
+    # ...and it is NOT resurrected: nothing can push it back, so a second run is a no-op.
+    run_mirror("store=1 downloaded=0 deleted=0")
+    server.succeed(f"test ! -e {MIRROR}/DOCUMENT/Document/field-notes.pdf")
     listing = client.succeed("${env} ${snpy}/bin/python ${driver} ls")
     assert "field-notes.pdf" not in listing, f"the deleted document came back in the store:\n{listing}"
 
     # ── D. A LOST STORE ─────────────────────────────────────────────────────────────────────────
-    # Note what subtest C just established: the device's LAST document was deleted, so the store's
-    # listing went empty, and the delete still propagated. Emptiness is therefore not the loss
-    # signal — it cannot be, or that delete would have been swallowed and nothing afterwards could
-    # ever tell the two apart. The signal is the remote ereader folder being ABSENT, which is what a
-    # wiped or not-yet-re-seeded store looks like (the store is rebuildable and deliberately
-    # un-backed-up, ADR-0031). So wipe the store for real rather than merely emptying it.
+    # Subtest C deleted a file and the store still listed content, so the guard stayed out of it.
+    # THIS is the case it exists for: an empty listing at whole-device scope, which means the
+    # device's entire virtual filesystem is empty — a wiped or not-yet-re-seeded store (the store is
+    # rebuildable and deliberately un-backed-up, ADR-0031). Wipe it for real rather than deleting
+    # the remaining file through the API, so the signal is genuine store loss and not a device that
+    # happens to be empty.
     #
-    # The watcher is stopped first on purpose: it fires the reconcile, which `Requires=` the server,
-    # so a sync line arriving mid-wipe would start the server back up underneath us.
-    server.systemctl("stop supernote-ereader-watch.service")
+    # The watcher is stopped first on purpose: it fires the mirror, which `Requires=` the server, so
+    # a sync line arriving mid-wipe would start the server back up underneath us.
+    server.systemctl("stop supernote-mirror-watch.service")
     server.systemctl("stop supernote-account-bootstrap.service")
     server.systemctl("stop supernote-server.service")
     server.succeed("find /var/lib/supernote -mindepth 1 -maxdepth 1 -exec rm -rf {} +")
@@ -463,34 +475,37 @@ pkgs.testers.nixosTest {
     # backed-up one and the store is not.
     server.succeed(f"echo -n 'precious-backup' > {MIRROR}/orphan.txt")
     server.succeed(f"chown git-annex:library {MIRROR}/orphan.txt")
-    reconcile("store=absent downloaded=0 deleted=0")
+    run_mirror("store=0 downloaded=0 deleted=0")
     server.succeed(f"test -f {MIRROR}/orphan.txt")
+    # The handwriting from subtest A is still there too — the guard protects the whole tree, not
+    # just the file planted to observe it.
+    server.succeed(f"test -f {MIRROR}/NOTE/Note/scribble.note")
     body = server.succeed(f"cat {MIRROR}/orphan.txt")
     assert body == "precious-backup", f"the guarded file was clobbered: {body!r}"
-    guard_log = server.succeed("journalctl -u supernote-ereader-reconcile --no-pager -o cat")
-    assert "no /DOCUMENT/Document/ereader in the store" in guard_log, (
-        f"the missing folder was not reported as the reason nothing was deleted:\n{guard_log}"
+    guard_log = server.succeed("journalctl -u supernote-mirror --no-pager -o cat")
+    assert "the store lists NO files at all" in guard_log, (
+        f"the empty store was not reported as the reason nothing was deleted:\n{guard_log}"
     )
-    server.systemctl("start supernote-ereader-watch.service")
+    server.systemctl("start supernote-mirror-watch.service")
 
     # ── E. UNREACHABLE STORE ────────────────────────────────────────────────────────────────────
-    # Point the reconciler at a dead port rather than stopping the server: the reconcile unit
+    # Point the mirror at a dead port rather than stopping the server: the mirror unit
     # Requires= supernote-server, so `systemctl start` on it would pull the server straight back up
     # and there would be nothing unreachable about the store. A refused connection at the URL is the
-    # same thing from the reconciler's side, and it isolates the behaviour under test from systemd's
+    # same thing from the mirror's side, and it isolates the behaviour under test from systemd's
     # dependency handling. A runtime drop-in, so it evaporates with /run.
     server.succeed(
-        "mkdir -p /run/systemd/system/supernote-ereader-reconcile.service.d && "
+        "mkdir -p /run/systemd/system/supernote-mirror.service.d && "
         "printf '[Service]\nEnvironment=SUPERNOTE_URL=http://127.0.0.1:9\n' "
-        "> /run/systemd/system/supernote-ereader-reconcile.service.d/unreachable.conf && "
+        "> /run/systemd/system/supernote-mirror.service.d/unreachable.conf && "
         "systemctl daemon-reload"
     )
-    # It must FAIL — a broken reconcile is a failed unit, not a silent no-op — and must not have
+    # It must FAIL — a broken run is a failed unit, not a silent no-op — and must not have
     # touched the tree, because login happens before any library mutation.
-    server.fail("systemctl start supernote-ereader-reconcile.service")
+    server.fail("systemctl start supernote-mirror.service")
     server.succeed(f"test -f {MIRROR}/orphan.txt")
-    failure = server.succeed("journalctl -u supernote-ereader-reconcile --no-pager -o cat")
-    assert "ereader reconcile: FAILED" in failure, (
+    failure = server.succeed("journalctl -u supernote-mirror --no-pager -o cat")
+    assert "supernote mirror: FAILED" in failure, (
         f"an unreachable store did not fail the unit loudly:\n{failure}"
     )
   '';
