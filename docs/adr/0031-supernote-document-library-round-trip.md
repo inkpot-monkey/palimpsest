@@ -27,11 +27,105 @@ at the cost of two reconcilers bridging the fork's blob store to Stump.
 That shape is **no longer the decision**. Everything from "## Decision" down, and the two
 revisions dated 2026-07-24 and 2026-07-25, describe it as it stood and are kept as the record of
 how the design got here — read them as history. The 2026-08-13, 2026-08-16, 2026-08-17 and the
-two 2026-08-18 revisions below govern: the fork is retired for a pin on upstream, books are no longer pushed at
-all, the device authenticates with Basic auth rather than an API key, and the device runs a
-Tailscale client of its own. Where the older text and the newer
+four 2026-08-18 revisions below govern: the fork is retired for a pin on upstream, books are no longer pushed at
+all, `library/ereader/` is strictly derived from the store, the device authenticates with Basic
+auth rather than an API key, and the device runs a Tailscale client of its own. Where the older text and the newer
 text disagree, the newer text wins — including between the dated revisions themselves, which are
 ordered newest first.
+
+## Revision — 2026-08-18: the mirror is strictly derived, and the store-loss guard survives without state (palimpsest#117)
+
+The 2026-08-13 revision decided that the outbox, the last-synced baseline and the store-loss guard
+all go, and parenthesised the one thing that had to survive them: *"an empty or unreachable store
+must never cause deletions in the backed-up tree."* Building it (palimpsest#117) settled how, and
+the how has consequences worth recording rather than leaving to the code.
+
+**Decision: `library/ereader/` is strictly derived from the store, and the guard is re-expressed
+against the store snapshot rather than against remembered state.**
+
+- **Deletes need no baseline, because local adds no longer exist.** The baseline's only job was
+  telling a fresh local add from a device-side delete. With no upload path the mirror contains
+  exactly what the reconciler put there, so absence from the store is unambiguous. The cost is
+  that the mirror is now strictly derived: a file dropped into `library/ereader/` by hand is
+  **deleted on the next sync**, not adopted. That is the honest reading of "downward mirror", and
+  it is why the folder is no longer described as somewhere to put things.
+
+- **The guard keys on the remote folder's existence, not on the store being empty.** *Unreachable*
+  is unchanged and free: login happens before any library mutation, so a store that is not
+  answering fails the unit having touched nothing. *Lost* is the new rule — if the remote
+  `ereader` folder does not exist at all, deletes are skipped **wholesale**. That is what a wiped
+  or not-yet-re-seeded store looks like: the folder only comes into being when the device puts
+  something there.
+
+  **The first attempt got this wrong, and the VM check caught it**, which is worth recording
+  because the wrong version is the intuitive one. Keying the guard on an *empty snapshot* reads as
+  the safer choice and is strictly worse: the device deleting its **last** remaining document
+  leaves a live store with an empty listing, so the guard swallows exactly the delete this
+  reconciler exists to propagate — and swallows it **permanently**, because after the fact nothing
+  distinguishes "the device emptied its folder" from "the store was wiped". The two acceptance
+  criteria ("a device-side delete propagates" and "an empty store deletes nothing") are in direct
+  conflict in the one-document case, and only the folder-existence reading satisfies both.
+
+  It is a safe discriminator because upstream's delete removes only the addressed node and never
+  prunes its parents (`server/services/file.py` `delete_item` → `vfs.delete_node`), so an emptied
+  folder still exists. **Consequence:** the guard now costs nothing in the ordinary case — there is
+  no stale sync — and the residual risk moves to a store that is rebuilt *and* re-seeded with a
+  partial ereader folder before the reconciler next runs, which the device's own 2-way sync makes
+  self-correcting.
+
+- **The store's sandbox now agrees with the architecture.** The baseline was persisted *inside*
+  the server store, which is why the reconcile unit carried a `StateDirectory`. Removing it makes
+  "the store is reached only over the client API, never its filesystem" a property of the sandbox
+  rather than a claim about the code.
+
+- **Recovery loses a leg, knowingly.** The store's recovery note used to end "device gone → re-send
+  the books from `library/ereader/` via the one-shot outbox". There is no such path now. The
+  handwriting is not lost — `library/ereader/` holds it and is backed up — but it stays in the
+  library rather than returning to a replacement device. Books are unaffected: a new device pulls
+  them from the catalog.
+
+- **The retired state is swept, not just abandoned.** `library/ereader-outbox/` sat inside the
+  git-annex tree, so leaving an empty directory behind would have replicated it to kelpy and
+  carried it offsite forever; the deploy deletes it, and the baseline with it, logging what it
+  removes.
+
+## Revision — 2026-08-18: the `supernote-db-stamp` startup guard is removed (palimpsest#112)
+
+The `supernote-db-stamp` ExecStartPre guard, added after the 2026-08-17 rk1b outage, is being
+removed (see the commit that deletes it). Recorded here because deleting the script deletes the
+only written record of why it existed.
+
+It existed to translate a single alembic stamp: a database created by the vendored fork carries
+`9d2f7b3c1a08`, a revision upstream has never heard of, and upstream's alembic aborts at startup
+rather than warning — which, because `supernote-account-bootstrap` has `Requires=` on the server
+with no start timeout, turned into a deploy that **hung rather than failed**, and cost 35 minutes
+of downtime. The translation was safe because fork and upstream had converged on the same schema
+by independent routes: upstream implemented the device planner surface itself rather than
+cherry-picking the fork, and on the real rk1b database all thirteen of upstream's tables and all
+nine columns of its head migration were already present.
+
+**Decision: the guard is removed.** That translation has happened and cannot be needed again —
+rk1b is the only host running the profile, its database was translated on 2026-08-17, and the fork
+is retired, so no new fork-stamped database can be created. What remained was a hand-maintained
+duplicate of the pinned build's alembic history sitting in the startup path.
+
+- **Its defect is not that it failed loudly — it is that a legitimate pin move and a corrupt
+  database were indistinguishable to it.** On 2026-08-18 a 0.21.0 build migrated the database to
+  `d1e2f3a4b5c6`, a revision the hardcoded allowlist did not know, and the unit refused every
+  subsequent start. That is the guard working exactly as designed; the problem is that the design
+  had no way to fail *quietly and correctly* when the pin moved on purpose. Loud failure was the
+  best available outcome of the shape, not evidence the shape was right.
+
+- **And what it guarded against is something alembic already refuses by itself.** An unknown
+  revision aborts startup with or without the guard. The script was therefore carrying the
+  staleness risk — a second copy of the migration history, maintained by hand — without adding
+  protection over the behaviour underneath it.
+
+**Consequence — a pin revert now needs a database restore.** rk1b's database is at
+`d1e2f3a4b5c6`, ahead of the 0.17.0 fleet pin. Starting 0.17.0 against it aborts inside alembic
+with "Can't locate revision", so reverting the pin is a restore-from-backup operation rather than a
+redeploy. Until the pin moves forward, `just deploy rk1b` is not a safe rollback — including for
+anyone who reaches for it for reasons unrelated to this server.
 
 ## Revision — 2026-08-18: the pen assumption, measured — the digitiser is fully available to sideloaded apps (palimpsest#115)
 
@@ -252,7 +346,8 @@ Cloud server is kept only for the handwriting round-trip.**
   **store-loss guard** — because the baseline's whole job was telling a fresh local add from a
   device-side delete, and with no server-side injection an absence from the store is
   unambiguous. (The guard's *rule* stands on its own: an empty or unreachable store must never
-  cause deletions in the backed-up tree.) Tracked as palimpsest#114 (serve), #115 (device),
+  cause deletions in the backed-up tree — see the 2026-08-18 revision above for how #117
+  re-expressed it without state.) Tracked as palimpsest#114 (serve), #115 (device),
   #117 (reduce the sync).
 
 - **What pull does *not* deliver — and why the Private Cloud server survives.** Native

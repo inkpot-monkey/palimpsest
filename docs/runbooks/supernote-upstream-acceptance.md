@@ -114,6 +114,14 @@ Look for `POST /api/file/2/files/synchronous/start` (the sync opening) and any n
 
 ### 2. A document lands on the device
 
+> **Retired mechanism — this step is a record, not a procedure.** palimpsest#117 removed the
+> one-shot outbox and with it the whole upload direction, so `/var/cache/library/ereader-outbox/`
+> no longer exists (a deploy deletes it) and the reconcile summary no longer carries a `sent=`
+> field. The step is left as written because it is what was measured on 2026-08-18 and the
+> checklist below is signed off against it. To get a book onto the device *now*, pull it from the
+> catalog with the reader app — [`supernote-koreader-opds.md`](supernote-koreader-opds.md). The
+> half of this step that still runs is the mirror-down assertion at the end.
+
 ```bash
 ssh rk1b 'sudo install -o git-annex -g library -m 664 /path/to/book.pdf /var/cache/library/ereader-outbox/'
 ```
@@ -149,6 +157,8 @@ Delete `book.pdf` on the device. Sync. Sync **once more**.
 ```bash
 ssh rk1b journalctl -u supernote-ereader-reconcile -n 20 --no-pager
 # → deleted=1, then sent=0 downloaded=0 deleted=0
+# Since palimpsest#117 the summary has no `sent=` field: `downloaded=0 deleted=1`, then
+# `downloaded=0 deleted=0`. The behaviour asserted here is unchanged.
 ```
 
 ### 4. Annotate a note and sync back
