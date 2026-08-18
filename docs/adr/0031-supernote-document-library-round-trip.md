@@ -27,12 +27,52 @@ at the cost of two reconcilers bridging the fork's blob store to Stump.
 That shape is **no longer the decision**. Everything from "## Decision" down, and the two
 revisions dated 2026-07-24 and 2026-07-25, describe it as it stood and are kept as the record of
 how the design got here — read them as history. The 2026-08-13, 2026-08-16, 2026-08-17 and the
-five 2026-08-18 revisions below govern: the transport is pinned to a fork rev carrying the device
+six 2026-08-18 revisions below govern: the transport is pinned to a fork rev carrying the device
 realtime channel, books are no longer pushed at all, `library/supernote/` is a strictly derived
 mirror of the whole device, the device authenticates with Basic
 auth rather than an API key, and the device runs a Tailscale client of its own. Where the older text and the newer
 text disagree, the newer text wins — including between the dated revisions themselves, which are
 ordered newest first.
+
+## Revision — 2026-08-18: the store stays un-backed-up, but the REASON changes — the mirror carries it, not an offsite backup (palimpsest#148)
+
+palimpsest#148 asked whether the server store deserves a backup, having found it a single copy
+whose only two snapshots predate the 0.21.0 migration. Triaged by measuring rk1b rather than
+re-reading the config. **The decision does not change: no kelpy replica, no offsite backup, and the
+build assertion that keeps restic off the store stays.** What changes is the justification, which
+was false in a load-bearing way.
+
+**The old reason was that the store is "a strict subset of the offsite-backed `library/`".** Half
+of that is not true. `library/` is *intended* to be offsite-backed — ADR-0031 asks for it and the
+2026-08-13 text below repeats it — but no restic path lists it, `backup.enable = false` on every
+host that sets it, and rk1b runs no restic unit at all (palimpsest#147). The store was being left
+un-backed-up on the strength of a backup that does not run. The header of `hosts/rk1/library.nix`
+asserted the backup as fact and now marks it as intent; the `group = "backup"` line in the same
+file is a git-annex repository group, not a backup, and now says so.
+
+**The new reason is the mirror, which does run.** Since the palimpsest#117 revision below widened
+it to the whole device, every live file in the store is materialised into `library/supernote/` on
+the NVMe and git-annex-replicated to kelpy. That is what makes the store rebuildable, and it is
+different physical media from the store, which shares rk1b's eMMC with the rest of `/persistent`.
+
+- **This corrects the governing text above.** The palimpsest#117 revision's
+  recovery note says the handwriting "is backed up"; it is *replicated*, not backed up. Read every
+  "offsite-backed `library/`" in this ADR — including in the historical Decision body — as
+  "intended to be offsite-backed, pending palimpsest#147".
+
+- **What is genuinely store-only is the database**, not documents: the account, the device pairing
+  and the recycle bin. Losing the eMMC therefore costs a re-pair of the Nomad, which is already the
+  documented recovery, and not content. That is why a periodic `sqlite3 .backup` was declined —
+  it would protect a re-pair, at the price of a package, a timer and a monitored unit.
+
+- **`NIXOS_SD` is a label, not a removable card.** palimpsest#148 framed the risk as "the SD card";
+  the media is soldered eMMC (`hosts/rk1/common.nix`). The risk is real but smaller than filed.
+
+- **The two existing snapshots keep their one job.** Both predate `d1e2f3a4b5c6`, so they remain
+  exactly what a revert *below* 0.21.0 needs — the restore-from-backup path the palimpsest#112
+  revision below describes. They are schema artefacts, not state backups, and nothing here changes
+  that. Note `sqlite3` is not installed on rk1b, so taking a fresh one means the runbook's `cp -a`
+  fallback.
 
 ## Revision — 2026-08-18: the transport is pinned to the fork rev that carries the device realtime channel (palimpsest#145)
 

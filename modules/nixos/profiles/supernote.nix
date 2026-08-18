@@ -54,17 +54,36 @@
 # One directory: the server's UUID blob store + SQLite VFS + cache. Owned by the private
 # `supernote` user 0700 and — deliberately — NOT in the `library` group: the mirror
 # reaches content over the client HTTP API, never the FS. Persisted WHOLE via impermanence +
-# StateDirectory (ADR-0004 pattern). It is a strict, REBUILDABLE subset of the offsite-backed
-# `library/` tree (hosts/rk1/library.nix), so — unlike `library/` — it has NO kelpy replica
-# and NO offsite backup, and nothing here adds it to a restic path (restic is off fleet-wide
-# on rk1b anyway; only the telemetry job is declared). Recovery if the store is lost:
+# StateDirectory (ADR-0004 pattern). It has NO kelpy replica and NO offsite backup, and nothing
+# here adds it to a restic path (restic is off fleet-wide on rk1b anyway; only the telemetry job
+# is declared). The reason is that the store is REBUILDABLE, and since #117 that is carried by the
+# MIRROR below: every LIVE file in the store is mirrored down into `library/supernote/`
+# (hosts/rk1/library.nix), which sits on the NVMe and is git-annex-replicated to kelpy — so the
+# handwriting is already on different physical media than this store, which shares rk1b's eMMC
+# with the rest of /persistent (`NIXOS_SD` is a label, not a removable card — hosts/rk1/common.nix).
+# Measured on rk1b 2026-08-18 closing palimpsest#148: six blobs in the store and exactly two live
+# and mirrored. Of the other four, three are recycled (`is_active = 'N'` with rows in
+# `f_recycle_file`: two uploads of one epub, plus 112-acceptance-test.pdf) and the fourth is an
+# ORPHAN with no `f_user_file` row at all — a superseded revision of a note. The orphan is the one
+# thing the mirror structurally cannot carry, since it materialises the VFS and nothing describes
+# that blob; it is also, for the same reason, unreachable debris rather than content.
+#   ⚠ Say REBUILDABLE, not "backed up". `library/` is INTENDED to be offsite-backed (see the header
+#     of hosts/rk1/library.nix) and currently is NOT: no host declares a covering restic path with
+#     backups enabled, and rk1b runs no restic unit at all (palimpsest#147). The case for leaving
+#     the store un-backed-up rests on the mirror, which runs, and never on an offsite backup, which
+#     does not.
+# What is store-ONLY is the database — the account, the device pairing, the recycle bin — so
+# losing the eMMC costs a re-pair, not documents. Recovery if the store is lost:
 #   • device intact → re-pair the Nomad to the server and let Private Cloud Sync re-seed it;
 #   • device gone   → nothing re-seeds the store, and since #117 nothing can — there is no upload
-#     path. The handwriting itself is not lost (`library/supernote/` holds it and IS backed up), but
-#     it stays in the library rather than returning to a replacement device. Books are unaffected:
+#     path. The handwriting itself is not lost (`library/supernote/` holds it), but it stays in
+#     the library rather than returning to a replacement device. Books are unaffected:
 #     a new device pulls them from the catalog (#114/#115), never from here.
-# Before bumping the `supernote` rev in flake.nix (which can alembic-migrate the DB), take a
-# local `sqlite3 .backup` of /var/lib/supernote/system/supernote.db first (ADR-0031 consequence).
+# Before bumping the `supernote` rev in flake.nix (which can alembic-migrate the DB), snapshot
+# /var/lib/supernote/system/supernote.db first (ADR-0031 consequence). `sqlite3` is NOT installed
+# on rk1b, so in practice that is the runbook's fallback — stop the unit, `cp -a` the file (see
+# docs/runbooks/supernote-upstream-acceptance.md); /var/lib/supernote/backups/ holds two such
+# snapshots, both pre-0.21.0 and therefore exactly what a revert BELOW the migration would need.
 # The input is rev-pinned precisely so that migration is never an unattended `nix flake update`.
 #
 # ── The credential (one sops secret, shared with the mirror) ──────────────────────────────
@@ -116,9 +135,9 @@ let
 
   # Paths this design has retired, swept on every start so a pre-existing deploy does not leave
   # them behind. All three sit where abandoning them costs something: the first two are inside the
-  # BACKED-UP library tree, so an orphan would replicate to kelpy and go offsite forever, and the
-  # third is persisted server state. Named rather than inlined so the sweep and this comment cannot
-  # drift apart.
+  # git-annex library tree, so an orphan would replicate to kelpy (and offsite too, once #147 is
+  # closed), and the third is persisted server state. Named rather than inlined so the sweep and
+  # this comment cannot drift apart.
   #   • ereader-outbox/ — the one-shot send inbox, retired with the upload path (#117).
   #   • ereader/        — the old mirror root, when this mirrored ONLY /DOCUMENT/Document/ereader.
   #                       That folder was a vestige of the retired push (the outbox created it) and
@@ -178,8 +197,9 @@ in
         description = ''
           Root of the git-annex library tree (hosts/rk1/library.nix). Its `supernote/` subfolder is
           a strict downward mirror of everything the device holds — `Note/`, `Document/` and the
-          other folders the firmware seeds, at the same relative paths — backed up and replicated,
-          unlike the server store. Nothing is written into it by hand: there is no upload path, so
+          other folders the firmware seeds, at the same relative paths — git-annex-replicated to
+          kelpy, unlike the server store (and offsite too, once palimpsest#147 is closed; it is not
+          today). Nothing is written into it by hand: there is no upload path, so
           a file here that the store lacks is treated as a device-side delete and removed. Books
           reach the device by OPDS pull from Stump, not through this tree.
         '';
@@ -372,7 +392,7 @@ in
 
         # Persist the store WHOLE across the tmpfs-root reboot (ADR-0004). Static user, so this
         # needs its own entry (unlike DynamicUser's /var/lib/private). No kelpy replica, no restic:
-        # rebuildable subset of the offsite-backed library/ (see the header for recovery).
+        # rebuildable, because the mirror holds its live content in library/ (header for recovery).
         environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
           directories = [
             {
@@ -385,8 +405,9 @@ in
         };
 
         # Enforce ADR-0031's "no offsite backup for the store" — the mirror of the library's
-        # must-be-backed-up guard (hosts/kelpy/configuration.nix). The store is a rebuildable
-        # subset of the offsite-backed library/, so a restic job must never sweep it up. Comments
+        # must-be-backed-up guard (hosts/kelpy/configuration.nix). The store is rebuildable from
+        # the device and its live content is mirrored into library/, so a restic job must never
+        # sweep it up: backing it up would carry the blob store offsite to no end. Comments
         # can't stop a future broad path; this fails the build the moment any restic `paths` entry
         # becomes an ancestor of the store (live or persisted). Lazy-safe: with no backups declared,
         # attrValues is [] and the assertion is trivially true.
@@ -402,7 +423,7 @@ in
           [
             {
               assertion = !lib.any covers resticPaths;
-              message = "custom.profiles.supernote: a restic backup now covers the server store (${stateDir}), but ADR-0031 keeps it OUT of any offsite backup (it is a rebuildable subset of the offsite-backed library/). Remove that path or narrow the backup.";
+              message = "custom.profiles.supernote: a restic backup now covers the server store (${stateDir}), but ADR-0031 keeps it OUT of any offsite backup (it is rebuildable from the device, and its live content is already mirrored into library/). Remove that path or narrow the backup.";
             }
           ];
       }
@@ -419,9 +440,10 @@ in
         #
         # The same oneshot sweeps the retired paths (see `retiredPaths`), because all of them
         # outlive a deploy and two sit inside the git-annex tree, where an orphan replicates to
-        # kelpy and goes offsite forever. `rm -rf` rather than a tmpfiles `R` rule for the same
-        # mount-race reason, and because it must run BEFORE the mirror can be fired. Destructive by
-        # intent, and it says what it removed: nothing it deletes has a live writer any more.
+        # kelpy (and offsite too, once #147 is closed). `rm -rf` rather than a tmpfiles `R` rule for
+        # the same mount-race reason, and because it must run BEFORE the mirror can be fired.
+        # Destructive by intent, and it says what it removed: nothing it deletes has a live writer
+        # any more.
         systemd.services.supernote-mirror-dir = {
           description = "Ensure library/supernote/ exists (group-writable, setgid) and sweep the retired paths";
           wantedBy = [ "multi-user.target" ];
