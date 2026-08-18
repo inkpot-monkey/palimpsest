@@ -156,8 +156,14 @@
     # `flake = false`: a plain Python repo, not a flake — packaged here as `pkgs.supernote`
     # (pkgs/supernote) with nixpkgs `buildPythonApplication`, so rk1b (aarch64) substitutes the
     # heavy deps from cache.nixos.org rather than compiling.
+    #
+    # Pinned to the FORK, not upstream (palimpsest#145, ADR-0031 revision 2026-08-18). The rev is
+    # upstream 0.21.0 plus four commits carrying the device's Engine.IO v3 / Socket.IO v2 realtime
+    # channel, which upstream cannot serve at any option setting. Fork `main` is byte-identical to
+    # upstream `main` and stays so; this is a rev pin, not a branch, and it returns to
+    # `github:allenporter/supernote` the day upstream merges the channel.
     supernote = {
-      url = "github:allenporter/supernote?rev=5f55872c7badc16db280e528783312e5f25f3cf8";
+      url = "github:inkpot-monkey/supernote?rev=79d1003d6dabd191e00f83fe96ee6a3262cbf5b8";
       flake = false;
     };
 
