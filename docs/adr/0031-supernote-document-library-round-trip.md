@@ -26,12 +26,63 @@ at the cost of two reconcilers bridging the fork's blob store to Stump.
 
 That shape is **no longer the decision**. Everything from "## Decision" down, and the two
 revisions dated 2026-07-24 and 2026-07-25, describe it as it stood and are kept as the record of
-how the design got here — read them as history. The 2026-08-13, 2026-08-16 and 2026-08-17
-revisions below govern: the fork is retired for a pin on upstream, books are no longer pushed at
+how the design got here — read them as history. The 2026-08-13, 2026-08-16, 2026-08-17 and
+2026-08-18 revisions below govern: the fork is retired for a pin on upstream, books are no longer pushed at
 all, the device authenticates with Basic auth rather than an API key, and the device runs a
 Tailscale client of its own. Where the older text and the newer
 text disagree, the newer text wins — including between the dated revisions themselves, which are
 ordered newest first.
+
+## Revision — 2026-08-18: upstream's realtime channel was never a superset — the fork's `realtime.py` was load-bearing (palimpsest#145)
+
+The 2026-08-13 revision below retired the vendored fork partly on the claim that **"the realtime
+channel is upstream and better"** — that upstream's `server/socket.py`, passing `allow_eio3=True`
+to the real `python-socketio`, was a superset of the fork's hand-rolled
+`server/realtime.py`. **That claim is false**, and the palimpsest#112 hardware acceptance pass is
+what falsified it. It is the one bullet in that revision that was never measured.
+
+`allow_eio3` is an option of the **JavaScript** socket.io server. It does not exist in
+`python-socketio` or `python-engineio` at any version — `grep -r` over the full source trees of
+python-socketio v5.0.0/v5.11.0/v5.16.3 and python-engineio v3.14.1/v4.0.0/v4.13.3 returns zero
+matches, docs included. Both libraries end `__init__` in `**kwargs`, so the argument is forwarded
+socketio → engineio and **silently discarded**. Upstream therefore has no Engine.IO v3 support and
+never has had, at any pin. The Nomad connects with `EIO=3` and is refused at version negotiation,
+before its signature is ever checked:
+
+```
+GET /socket.io/?…&EIO=3&transport=websocket&… HTTP/1.1" 400
+"The client is using an unsupported version of the Socket.IO or Engine.IO protocols"
+```
+
+Note what this means for the opening section's spike finding, "its socket.io realtime channel
+500s" (upstream v0.16.0). **That channel has never worked with this device.** The fork fixed it;
+#112 retired the fix on the belief that upstream had. The bullet's own first sentence — "the fork
+hand-rolled Engine.IO v3 precisely because modern `python-socketio` rejects `EIO=3`" — was
+correct, and then concluded that a keyword argument answered it.
+
+- **The decision does not change.** The fork stays retired and the pin on upstream stands. What
+  is lost is a channel that carries **nothing**: upstream's `send_message()` — the only method
+  that emits a payload to a user room — has no callers anywhere in the server, and
+  `server/app.py:398` discards `setup_socketio()`'s return value, so the push path is unreachable
+  dead code. Connected, the channel only answers a `STATUS` heartbeat, echoes `ratta_ping`, and
+  logs ACKs. The books-out and handwriting-back legs are plain REST and are unaffected — both
+  were proven green on hardware in the same session.
+
+- **Do not re-derive the shim.** Patching python-engineio to accept `EIO=3` (and to answer a
+  client-sent `PING`, since v3 reverses the heartbeat) was built and tested on the real device:
+  it moves the handshake from 400 to a successful **101** upgrade and then stalls one layer up,
+  where `python-socketio` 5.x's Socket.IO v5 meets the device's Socket.IO v2 and the CONNECT
+  packet is never parsed. Full device support needs the socketio 4.x + engineio 3.x pairing —
+  two EOL majors — or a hand-rolled implementation, which is the fork all over again. Reverted;
+  recorded in the header of `pkgs/supernote/default.nix`.
+
+- **The methodological lesson, which is the durable part.** The 2026-08-13 revision states that
+  what changed upstream was "established by **reading both trees** rather than by diffing
+  patches". Reading is how this error was produced: upstream *appears* to configure v3 support,
+  and nothing at import, startup, or in either VM check contradicts it. Every remaining
+  fork-capability disposition in that revision — palimpsest#136–#140, #142 — rests on the same
+  method and none has been exercised against the device. They are plausible; they are not
+  measured. **Prefer a device observation to a source reading wherever one is available.**
 
 ## Revision — 2026-08-17: the device *can* run a Tailscale client (retires the framing constraint above)
 
@@ -217,11 +268,14 @@ fork branch is no longer an input.
 What changed upstream, established by reading both trees rather than by diffing patches (the two
 implementations are independent, so a patch comparison shows no overlap):
 
-- **The realtime channel is upstream and better.** The fork hand-rolled Engine.IO v3 in
-  `server/realtime.py` precisely because modern `python-socketio` rejects `EIO=3`. Upstream now
-  serves socket.io with the real library and `allow_eio3=True` (`server/socket.py`), and adds what
-  the fork's connect-only prototype never had: handshake **signature** verification, `ratta_ping`,
-  and server→client push. This is a superset, not a substitute.
+- **The realtime channel is upstream and better.** ⚠️ **THIS BULLET IS FALSE — see the
+  2026-08-18 revision above (palimpsest#145).** It is kept unedited because it is the claim that
+  authorised retiring `server/realtime.py`, and the failure is more instructive than a silent
+  correction. It read: the fork hand-rolled Engine.IO v3 in `server/realtime.py` precisely
+  because modern `python-socketio` rejects `EIO=3`; upstream now serves socket.io with the real
+  library and `allow_eio3=True` (`server/socket.py`), and adds what the fork's connect-only
+  prototype never had: handshake **signature** verification, `ratta_ping`, and server→client
+  push — a superset, not a substitute.
 - **The device schedule routes are upstream** (`schedule/group/all`, `schedule/task/all`,
   `task/list`) — and the flatten-aware path resolution the fork added to the VFS is there too, with
   the *opposite* precedence (upstream prefers a real root folder over the category container, so it
