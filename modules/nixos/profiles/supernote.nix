@@ -518,8 +518,16 @@ in
                           last=$now
                           echo "ereader watch: device sync detected, firing reconcile"
                           # Keep the follower alive even if the enqueue momentarily fails (set -e
-                          # would otherwise tear down the pipeline and bounce the whole watcher).
-                          ${pkgs.systemd}/bin/systemctl start --no-block supernote-ereader-reconcile.service || true
+                          # would otherwise tear down the pipeline and bounce the whole watcher) —
+                          # but SAY SO. Swallowing it silently left the line above asserting an
+                          # action that may not have happened, which is the same defect the
+                          # reconciler's `store=` token fixes: a log that reads as informative
+                          # while carrying no information. A dropped trigger is invisible from the
+                          # reconcile unit's own journal (it simply has one fewer run), so this
+                          # line is the only place it could ever surface.
+                          if ! ${pkgs.systemd}/bin/systemctl start --no-block supernote-ereader-reconcile.service; then
+                            echo "ereader watch: FAILED to enqueue the reconcile — this sync will NOT be mirrored; the next sync retries"
+                          fi
                         fi
                         ;;
                     esac
