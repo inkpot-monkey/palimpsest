@@ -27,11 +27,56 @@ at the cost of two reconcilers bridging the fork's blob store to Stump.
 That shape is **no longer the decision**. Everything from "## Decision" down, and the two
 revisions dated 2026-07-24 and 2026-07-25, describe it as it stood and are kept as the record of
 how the design got here — read them as history. The 2026-08-13, 2026-08-16, 2026-08-17 and the
-four 2026-08-18 revisions below govern: the fork is retired for a pin on upstream, books are no longer pushed at
-all, `library/ereader/` is strictly derived from the store, the device authenticates with Basic
+five 2026-08-18 revisions below govern: the transport is pinned to a fork rev carrying the device
+realtime channel, books are no longer pushed at all, `library/ereader/` is strictly derived from
+the store, the device authenticates with Basic
 auth rather than an API key, and the device runs a Tailscale client of its own. Where the older text and the newer
 text disagree, the newer text wins — including between the dated revisions themselves, which are
 ordered newest first.
+
+## Revision — 2026-08-18: the transport is pinned to the fork rev that carries the device realtime channel (palimpsest#145)
+
+The 2026-08-13 revision made the transport a **pin on upstream at a revision** rather than a
+maintained branch, and the palimpsest#145 revision below reaffirmed it in terms: *"The decision
+does not change. The fork stays retired and the pin on upstream stands."* The input now moves back
+to `inkpot-monkey/supernote`, at `rev=79d1003d6dabd191e00f83fe96ee6a3262cbf5b8`.
+
+**This does not re-adopt a vendored fork, and it does not overturn the 2026-08-13 reasoning.**
+That revision retired the fork because its price — "a maintained fork to carry" — stopped buying
+anything once upstream implemented the planner surface itself. That price is not being paid again.
+The pinned rev **is** upstream 0.21.0 plus four commits, all of them the device channel and the
+removal of the phantom `allow_eio3`; fork `main` is byte-identical to `upstream/main` and
+deliberately stays so; and the input is a **rev**, not a branch, so it cannot drift under an
+unattended update. The exit condition is explicit: when upstream merges the channel, the input
+returns to `github:allenporter/supernote` and the 2026-08-13 position is restored unedited.
+
+**What changes in the palimpsest#145 revision is the reach of one claim, not its truth.** "The
+channel carries **nothing**" remains correct about its *payload* — `send_message()` is still
+unreachable dead code, nothing pushes to the device, and the channel is connect-and-keepalive
+only. But that claim was supporting a conclusion it cannot bear: that the pin therefore need not
+move. The device requires the channel to **exist and connect**, independently of whether anything
+is ever sent over it, and a server that refuses `EIO=3` at version negotiation cannot give it
+that. Established on hardware on 2026-08-18: with this rev deployed to rk1b, a Nomad A6 X2
+completes its app-data sync and reports "App Data Sync Completed" with no failure banners.
+
+The device's own traffic was captured for the first time in the same session, which settles two
+things that had been inferred from the spec. The device reopens its channel on a 30/60/120/240s
+ladder and **that is normal** — each rung ends with the device sending `41` (Socket.IO DISCONNECT)
+and closing with code 1000, a deliberate hang-up, then immediately opening a fresh channel for its
+next sync, with the full REST cascade following every reconnect. The same ladder is present in the
+archived known-good traces from before upstream was adopted, so it is not a symptom. And
+`42["ratta_ping"]` is **not** liveness: the device emits one alongside every Engine.IO ping and
+held a channel open across nine consecutive unanswered ones.
+
+**Two operational consequences.** First, rk1b's database was migrated to `d1e2f3a4b5c6` by a 0.21.0
+build on 2026-08-18 and is now **ahead of the retired 0.17.0 pin**, so reverting the transport
+*below* 0.21.0 needs a database restore rather than a redeploy. This pin move is also what returns
+the host to a state reproducible from the flake, which it was not while running on
+`--override-input`. Second, `~/code/nixos` **main**'s supernote input still names the deleted
+branch `fix/device-schedule-group-all`; it evaluates only because it is locked to `3d08092`, and
+`nix flake update supernote` on main cannot resolve the ref. Merging this branch **replaces** that
+input rather than repairing it, so the hazard disappears for the wrong reason — recorded here so a
+later reader does not conclude main was sound all along.
 
 ## Revision — 2026-08-18: the mirror is strictly derived, and the store-loss guard survives without state (palimpsest#117)
 
