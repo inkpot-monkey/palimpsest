@@ -29,15 +29,19 @@ Six upstream gaps are already known and filed. Expect to meet some of them:
 | #139 | `PUT task/list` batch is update-only, drops `isDeleted` | planner batch sync error |
 | #140 | Upload response echoes the requested path; no rogue-root self-heal | none expected — dormant on this store |
 | #142 | Concurrent logins for one account race a single-slot challenge | reconcile unit logs a 401 and retries |
+| #145 | Realtime Socket.IO channel refuses every device handshake | none on the device; server logs a 400 loop |
 
 **#142 is worth knowing before you start.** If `supernote-ereader-reconcile` logs
 `login 401 … probably a lost login challenge`, that is the device and the reconciler
 authenticating against the shared account at the same moment — **not** a bad credential. It
 retries and should recover. Only treat it as a credential problem if all five attempts fail.
 
-The **realtime socket** surface is expected to be fine (upstream serves socket.io with the real
-library and `allow_eio3=True`), but note upstream now *verifies the handshake `sign`* where the
-fork accepted any — see step 5.
+The **realtime socket** surface is **known broken and is not a pass criterion** — see step 5.
+This runbook used to say it "is expected to be fine (upstream serves socket.io with the real
+library and `allow_eio3=True`)". That was wrong, and the pass of 2026-08-18 is what proved it:
+`allow_eio3` is a JavaScript socket.io option that does not exist in the Python libraries at any
+version, so it is silently discarded and upstream has never been able to accept an Engine.IO v3
+client. Tracked as #145.
 
 ## Before you start
 
@@ -138,21 +142,38 @@ ssh rk1b journalctl -u supernote-ereader-reconcile -n 20 --no-pager
 Open a `.note` on the device, add a stroke, sync. **Expected:** no banner; the updated file is
 visible in the store.
 
-### 5. The realtime channel connects
+### 5. The realtime channel — known broken, record only
 
-This is the surface most likely to behave differently from the fork, because upstream verifies
-the handshake signature and the fork did not.
+**This is no longer a pass criterion.** It cannot succeed on the current build, so do not spend
+time on it; just record what you see and move on.
 
 ```bash
 ssh rk1b journalctl -u supernote-server | grep -i "socket"
 ```
 
-**Expected:** `Socket.IO connection established for user=…`.
+**Expected — the known failure (#145):** a 400 loop, roughly every 5s while the device is awake:
 
-**If you instead see** `sign verification failed`, the device's signature does not match
-upstream's `compute_handshake_signature` (`supernote/server/socket_auth.py`, pre-shared key
-`SOCKET_IO_KEY`). That is a new gap — file it, with the failing log line and the handshake query
-string, and reference #112.
+```
+GET /socket.io/?…&EIO=3&transport=websocket&… HTTP/1.1" 400
+```
+
+`Socket.IO connection established for user=…` will **not** appear. Upstream passes
+`allow_eio3=True`, which does not exist in python-socketio or python-engineio at any version and
+is silently discarded, so the device's `EIO=3` handshake is refused at version negotiation —
+before the signature is ever checked. The fork's hand-rolled `realtime.py`, retired by #112, was
+carrying this.
+
+**Impact: none.** Upstream's `send_message()` has no callers and `server/app.py:398` discards the
+socket manager, so the push path is unreachable dead code. File sync and the planner routes are
+plain REST and unaffected.
+
+**Do not re-derive the shim.** Patching python-engineio to accept `EIO=3` was tried on hardware
+and reverted; it moves the handshake to a successful `101` and then stalls one layer up, where
+Socket.IO v5 meets the device's v2. The header of `pkgs/supernote/default.nix` records it.
+
+**If you see something other than the 400 loop** — an established connection, or
+`sign verification failed` — that is genuinely new. Capture the log line and the handshake query
+string (redact the `token=`, it is a live JWT) and add it to #145.
 
 ### 6. Planner and summary
 
@@ -177,9 +198,9 @@ still exists; #112 only stopped tracking it.
 - [ ] 2. Outbox document reaches the device and mirrors down
 - [ ] 3. Device-side delete propagates and stays deleted
 - [ ] 4. Annotated note syncs back
-- [ ] 5. Realtime channel connects (`Socket.IO connection established`)
+- [ ] 5. Realtime channel: 400 loop observed and recorded (known broken, #145 — not a pass gate)
 - [ ] 6. Planner/summary behaviour recorded against #136–#139
 
-When 1–5 pass, #112's final criterion is met. Note the date and the device firmware version here:
+When 1–4 pass (5 is a recording step, not a gate), #112's final criterion is met. Note the date and the device firmware version here:
 
 > Accepted on: _(date)_ — firmware _(version)_ — by _(who)_
