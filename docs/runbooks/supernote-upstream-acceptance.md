@@ -2,7 +2,7 @@
 
 palimpsest#112 retired the vendored `inkpot-monkey/supernote` fork and pinned **upstream**
 `allenporter/supernote` at an explicit revision. Everything that CI can prove is proven: the
-package builds, and both Private Cloud VM checks (`supernote`, `supernote_ereader`) pass.
+package builds, and both Private Cloud VM checks (`supernote`, `supernote_mirror`) pass.
 
 **The last acceptance criterion cannot be run by CI or by an agent** — it needs the physical
 device. This runbook is that step. Until it is done and this file's checklist is ticked, the
@@ -15,7 +15,7 @@ Design: ADR-0031. Profile:
 
 The fork existed to add a device planner/realtime surface upstream lacked. Upstream has since
 implemented that surface **independently** — same routes, different code. The VM checks cover
-the *file* surface (bind, bootstrap, login, MCP-port firewalling, the ereader round-trip),
+the *file* surface (bind, bootstrap, login, MCP-port firewalling, the downward mirror),
 because that is what this deployment drives. They do **not** drive the planner, summary-digest,
 or realtime paths — only a real Nomad does.
 
@@ -31,7 +31,7 @@ Six upstream gaps are already known and filed. Expect to meet some of them:
 | #142 | Concurrent logins for one account race a single-slot challenge | reconcile unit logs a 401 and retries |
 | #145 | Realtime Socket.IO channel refuses every device handshake | none on the device; server logs a 400 loop |
 
-**#142 is worth knowing before you start.** If `supernote-ereader-reconcile` logs
+**#142 is worth knowing before you start.** If `supernote-mirror` logs
 `login 401 … probably a lost login challenge`, that is the device and the reconciler
 authenticating against the shared account at the same moment — **not** a bad credential. It
 retries and should recover. Only treat it as a credential problem if all five attempts fail.
@@ -116,11 +116,14 @@ Look for `POST /api/file/2/files/synchronous/start` (the sync opening) and any n
 
 > **Retired mechanism — this step is a record, not a procedure.** palimpsest#117 removed the
 > one-shot outbox and with it the whole upload direction, so `/var/cache/library/ereader-outbox/`
-> no longer exists (a deploy deletes it) and the reconcile summary no longer carries a `sent=`
-> field. The step is left as written because it is what was measured on 2026-08-18 and the
-> checklist below is signed off against it. To get a book onto the device *now*, pull it from the
-> catalog with the reader app — [`supernote-koreader-opds.md`](supernote-koreader-opds.md). The
-> half of this step that still runs is the mirror-down assertion at the end.
+> no longer exists (a deploy deletes it) and the summary no longer carries a `sent=` field. #117
+> also widened the mirror to the WHOLE device and renamed its root, so `/var/cache/library/ereader/`
+> is gone too — the mirror is now `/var/cache/library/supernote/`, holding every folder the
+> firmware seeds at the device's own relative paths (a synced document lands at
+> `supernote/DOCUMENT/Document/<file>`, a notebook at `supernote/NOTE/Note/<file>.note`). The step
+> is left as written because it is what was measured on 2026-08-18 and the checklist below is
+> signed off against it. To get a book onto the device *now*, pull it from the catalog with the
+> reader app — [`supernote-koreader-opds.md`](supernote-koreader-opds.md).
 
 ```bash
 ssh rk1b 'sudo install -o git-annex -g library -m 664 /path/to/book.pdf /var/cache/library/ereader-outbox/'
@@ -144,8 +147,9 @@ adb shell md5sum /sdcard/Document/ereader/<file>   # if ADB is available; must m
 ```
 
 ```bash
-ssh rk1b journalctl -u supernote-ereader-reconcile -n 20 --no-pager
-# → ereader reconcile: sent=1 downloaded=1 deleted=0
+ssh rk1b journalctl -u supernote-mirror -n 20 --no-pager
+# → ereader reconcile: sent=1 downloaded=1 deleted=0   (as measured; the unit and its
+#   summary format have both changed since — see the note above)
 ```
 
 ### 3. A device-side delete is durable
@@ -155,10 +159,11 @@ Delete `book.pdf` on the device. Sync. Sync **once more**.
 **Expected:** it is gone from `/var/cache/library/ereader/` and does **not** come back.
 
 ```bash
-ssh rk1b journalctl -u supernote-ereader-reconcile -n 20 --no-pager
+ssh rk1b journalctl -u supernote-mirror -n 20 --no-pager
 # → deleted=1, then sent=0 downloaded=0 deleted=0
-# Since palimpsest#117 the summary has no `sent=` field: `downloaded=0 deleted=1`, then
-# `downloaded=0 deleted=0`. The behaviour asserted here is unchanged.
+# Since palimpsest#117 the unit is `supernote-mirror` and the summary reads
+# `store=<n> downloaded=0 deleted=1`, then `store=<n> downloaded=0 deleted=0`. The behaviour
+# asserted here is unchanged.
 ```
 
 ### 4. Annotate a note and sync back

@@ -28,8 +28,8 @@ That shape is **no longer the decision**. Everything from "## Decision" down, an
 revisions dated 2026-07-24 and 2026-07-25, describe it as it stood and are kept as the record of
 how the design got here — read them as history. The 2026-08-13, 2026-08-16, 2026-08-17 and the
 five 2026-08-18 revisions below govern: the transport is pinned to a fork rev carrying the device
-realtime channel, books are no longer pushed at all, `library/ereader/` is strictly derived from
-the store, the device authenticates with Basic
+realtime channel, books are no longer pushed at all, `library/supernote/` is a strictly derived
+mirror of the whole device, the device authenticates with Basic
 auth rather than an API key, and the device runs a Tailscale client of its own. Where the older text and the newer
 text disagree, the newer text wins — including between the dated revisions themselves, which are
 ordered newest first.
@@ -78,45 +78,59 @@ branch `fix/device-schedule-group-all`; it evaluates only because it is locked t
 input rather than repairing it, so the hazard disappears for the wrong reason — recorded here so a
 later reader does not conclude main was sound all along.
 
-## Revision — 2026-08-18: the mirror is strictly derived, and the store-loss guard survives without state (palimpsest#117)
+## Revision — 2026-08-18: the mirror covers the whole device, is strictly derived, and needs no state (palimpsest#117)
 
 The 2026-08-13 revision decided that the outbox, the last-synced baseline and the store-loss guard
 all go, and parenthesised the one thing that had to survive them: *"an empty or unreachable store
 must never cause deletions in the backed-up tree."* Building it (palimpsest#117) settled how, and
 the how has consequences worth recording rather than leaving to the code.
 
-**Decision: `library/ereader/` is strictly derived from the store, and the guard is re-expressed
-against the store snapshot rather than against remembered state.**
+**Decision: `library/supernote/` mirrors the WHOLE device, is strictly derived from the store, and
+keeps no state at all.**
+
+- **Scope is the whole device, not a chosen folder — and the narrow version mirrored nothing.**
+  The mirror was scoped to `/DOCUMENT/Document/ereader`, inherited from the retired push. Measured
+  on rk1b: the store held **six files — three `.note`, two `.epub`, one `.pdf` — and the mirror
+  held zero**, because every one of them lives elsewhere. That folder existed only because the
+  outbox created it; books now arrive by OPDS into a folder Private Cloud never syncs, and the
+  handwriting this server is *kept for* lives in `NOTE/Note` and `DOCUMENT/Document`. The narrowing
+  decided above — "the Private Cloud server stays, narrowed to the handwriting round-trip" — was
+  implemented pointing at the one place handwriting is not. Listing from the **VFS root** covers
+  every folder the firmware seeds (Note, Document, MyStyle, Export, Inbox, Screenshot) at the
+  device's own relative paths, and needs no folder list to keep in step with the firmware.
 
 - **Deletes need no baseline, because local adds no longer exist.** The baseline's only job was
   telling a fresh local add from a device-side delete. With no upload path the mirror contains
   exactly what the reconciler put there, so absence from the store is unambiguous. The cost is
-  that the mirror is now strictly derived: a file dropped into `library/ereader/` by hand is
+  that the mirror is now strictly derived: a file dropped into `library/supernote/` by hand is
   **deleted on the next sync**, not adopted. That is the honest reading of "downward mirror", and
   it is why the folder is no longer described as somewhere to put things.
 
-- **The guard keys on the remote folder's existence, not on the store being empty.** *Unreachable*
-  is unchanged and free: login happens before any library mutation, so a store that is not
-  answering fails the unit having touched nothing. *Lost* is the new rule — if the remote
-  `ereader` folder does not exist at all, deletes are skipped **wholesale**. That is what a wiped
-  or not-yet-re-seeded store looks like: the folder only comes into being when the device puts
-  something there.
+- **One guard, no state: an empty store deletes nothing.** *Unreachable* is free — login happens
+  before any library mutation, so a store that is not answering fails the unit having touched
+  nothing. *Lost* is an empty listing: if the store lists no files **at all** while the mirror
+  holds some, deletes are skipped wholesale.
 
-  **The first attempt got this wrong, and the VM check caught it**, which is worth recording
-  because the wrong version is the intuitive one. Keying the guard on an *empty snapshot* reads as
-  the safer choice and is strictly worse: the device deleting its **last** remaining document
-  leaves a live store with an empty listing, so the guard swallows exactly the delete this
-  reconciler exists to propagate — and swallows it **permanently**, because after the fact nothing
-  distinguishes "the device emptied its folder" from "the store was wiped". The two acceptance
-  criteria ("a device-side delete propagates" and "an empty store deletes nothing") are in direct
-  conflict in the one-document case, and only the folder-existence reading satisfies both.
+  **The scope decision is what makes that rule correct, and the wrong turn is worth recording.**
+  While the mirror was folder-scoped, this rule was untenable: the device deleting its **last**
+  document in that one folder left a live store with an empty listing, so the guard swallowed
+  exactly the delete the mirror exists to propagate — permanently, since nothing afterwards
+  distinguishes it from a wipe. The VM check caught it. The fix at the time was to key on the
+  *folder's absence* instead, which worked but was a workaround for the wrong scope, and it needed
+  a fact about upstream's internals to hold up (`delete_item` → `vfs.delete_node` never prunes
+  parents, so an emptied folder survives).
 
-  It is a safe discriminator because upstream's delete removes only the addressed node and never
-  prunes its parents (`server/services/file.py` `delete_item` → `vfs.delete_node`), so an emptied
-  folder still exists. **Consequence:** the guard now costs nothing in the ordinary case — there is
-  no stale sync — and the residual risk moves to a store that is rebuilt *and* re-seeded with a
-  partial ereader folder before the reconciler next runs, which the device's own 2-way sync makes
-  self-correcting.
+  At whole-device scope the workaround is unnecessary and the plain reading is right: an empty
+  listing means the device's **entire** virtual filesystem is empty, which is store loss, not
+  housekeeping. Deleting one document among others leaves a non-empty store and propagates
+  immediately. The two acceptance criteria that conflicted — "a device-side delete propagates" and
+  "an empty store deletes nothing" — are both satisfied literally, and the conflict is revealed as
+  an artefact of the narrow scope rather than a genuine tension.
+
+  It also removes code rather than adding it: the root cannot 404 (`list_folder` falls back to the
+  root directory id when the path strips to nothing), so the missing-folder branch, the
+  `folder_exists` flag and the `NotFoundException` handling all go, along with the remote-path
+  option. The reconciler ends **smaller than the version that did less**.
 
 - **The store's sandbox now agrees with the architecture.** The baseline was persisted *inside*
   the server store, which is why the reconcile unit carried a `StateDirectory`. Removing it makes
@@ -125,14 +139,15 @@ against the store snapshot rather than against remembered state.**
 
 - **Recovery loses a leg, knowingly.** The store's recovery note used to end "device gone → re-send
   the books from `library/ereader/` via the one-shot outbox". There is no such path now. The
-  handwriting is not lost — `library/ereader/` holds it and is backed up — but it stays in the
+  handwriting is not lost — `library/supernote/` holds it and is backed up — but it stays in the
   library rather than returning to a replacement device. Books are unaffected: a new device pulls
   them from the catalog.
 
-- **The retired state is swept, not just abandoned.** `library/ereader-outbox/` sat inside the
-  git-annex tree, so leaving an empty directory behind would have replicated it to kelpy and
-  carried it offsite forever; the deploy deletes it, and the baseline with it, logging what it
-  removes.
+- **The retired paths are swept, not just abandoned.** `library/ereader-outbox/` and the old
+  `library/ereader/` both sat inside the git-annex tree, so an orphan would have replicated to
+  kelpy and been carried offsite forever; the baseline sat in persisted server state. The deploy
+  deletes all three and logs what it removed. Renaming the mirror root cost no migration precisely
+  because the old one was empty — there was never anything in it.
 
 ## Revision — 2026-08-18: the `supernote-db-stamp` startup guard is removed (palimpsest#112)
 
@@ -468,7 +483,7 @@ implementations are independent, so a patch comparison shows no overlap):
   and **#142 (concurrent logins for one account race a single-slot login challenge and the loser
   gets a misleading 401 "Invalid credentials")**.
 - **#142 is the one that reaches us.** The first five are on the device's own sync or dormant;
-  #142 is on the *reconciler's* path and turned the `supernote_ereader` check red. It matters
+  #142 is on the *reconciler's* path and turned the mirror check (then `supernote_ereader`, now `supernote_mirror`) red. It matters
   because this ADR deliberately gives the device and the reconciler **one shared account**, and
   fires the reconciler *from* the device's sync — so the two authenticating clients are aimed at
   the same account at the same moment by construction. The reconciler now retries a 401, and the
