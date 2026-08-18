@@ -206,15 +206,32 @@ still exists; #112 only stopped tracking it.
 
 ## Checklist
 
-- [ ] DB backed up, JWT key noted
-- [ ] Deployed; server on `supernote-0.17.0`; bootstrap took the idempotent path; JWT unchanged
-- [ ] 1. Sync completes with no banner
-- [ ] 2. Outbox document reaches the device and mirrors down
-- [ ] 3. Device-side delete propagates and stays deleted
-- [ ] 4. Annotated note syncs back
+- [x] DB backed up (`/var/lib/supernote/backups/pre-restamp-deploy.db`); JWT prefix NOT captured
+  before the deploy — blocked by the secret classifier, so the before/after comparison was
+  never available. Benign in the event: the device's `login/new` returned 200 throughout.
+- [x] Deployed; server on `supernote-0.17.0`; bootstrap took the idempotent path (`account     present, login OK`)
+- [x] 1. Sync completes with no banner — `synchronous/start` → `list_folder` → `synchronous/end`,
+  all 200, repeated across several syncs
+- [x] 2. Outbox document reaches the device and mirrors down — md5 `a5846e0e…` identical at
+  source, store mirror and `/sdcard/Document/ereader/` (needed two syncs; see step 2)
+- [x] 3. Device-side delete propagates and stays deleted — `deleted=1`, then
+  `sent=0 downloaded=0 deleted=0`; gone from the mirror and the device, no resurrection
+- [x] 4. Annotated note syncs back — two `.note` blobs in the store plus server-rendered page
+  thumbnails, so the content parsed, not merely uploaded
 - [ ] 5. Realtime channel: 400 loop observed and recorded (known broken, #145 — not a pass gate)
-- [ ] 6. Planner/summary behaviour recorded against #136–#139
+- [~] 6. Planner/summary — **deferred to #146**, with one substantive finding banked: creating a
+  task on the device is silently destroyed on sync (`POST /schedule/task` → 200, nothing
+  written, device then deletes its own copy). Recorded against #137. Note this one step
+  was exercised against upstream **0.21.0 + the realtime fix branch**, not the pinned
+  0.17.0 that steps 1–4 ran on.
 
 When 1–4 pass (5 is a recording step, not a gate), #112's final criterion is met. Note the date and the device firmware version here:
 
-> Accepted on: _(date)_ — firmware _(version)_ — by _(who)_
+> Accepted on: **2026-08-18** — firmware **Chauvet.E103.2606141001.2389_release** (Android 11,
+> Supernote Nomad A6 X2) — by **the maintainer**, with an agent driving the server side.
+>
+> Steps 1–4 passed against the pinned upstream build (`supernote-0.17.0`, rev `5f55872`).
+> Step 5 is a recording step and was recorded (#145). Step 6 is deferred to #146 and its
+> partial evidence came from a *different* build — 0.21.0 plus the local
+> `fix/engineio-v3-device-support` branch. The pass therefore spans two builds; that is
+> stated rather than smoothed over.
