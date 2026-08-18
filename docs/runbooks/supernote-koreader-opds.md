@@ -184,6 +184,47 @@ adb shell md5sum "/sdcard/opds/<file>.epub"   # compare against the source
 Proven end-to-end 2026-08-17: a 23 MB epub pulled into `/sdcard/opds` with an MD5 identical to
 the source file.
 
+## 6. The pen in sideloaded apps — measured 2026-08-18
+
+ADR-0031's split of responsibilities (handwriting stays with the stock apps, reading moves to a
+sideloaded reader) rested on an assumption that was reasoned but never measured, and
+palimpsest#115 is the ticket that settled it. The answer is sharper than the assumption.
+
+**The pen is fully available to sideloaded apps.** It is a dedicated Wacom EMR digitiser on its
+own input device, separate from the two touchscreens, and Android exposes it as a first-class
+stylus:
+
+```console
+$ adb shell getevent -pl
+add device 1: /dev/input/event7
+  name:     "Wacom-pen"
+    BTN_DIGI  BTN_TOOL_RUBBER  BTN_TOUCH  BTN_STYLUS  BTN_STYLUS2
+    ABS_PRESSURE : min 0, max 4095        # 12-bit; the touchscreens report 0-255
+    ABS_TILT_X   : min -9000, max 9000
+    ABS_TILT_Y   : min -9000, max 9000
+
+$ adb shell dumpsys input | grep -A6 Wacom-pen
+    Sources: 0x00005002                   # SOURCE_STYLUS | SOURCE_TOUCHSCREEN
+```
+
+So a sideloaded app receives `TOOL_TYPE_STYLUS` MotionEvents carrying pressure, tilt, both barrel
+buttons and the eraser end. Nothing is withheld from it.
+
+**What is *not* available is Ratta's handwriting engine and the `.note`/`.mark` formats.** Those
+are written only by the stock Note and Document apps. This is the real constraint, and it is a
+format/engine boundary rather than an input one.
+
+**In KOReader specifically, the pen behaves exactly like a finger.** That is KOReader's doing,
+not the platform's: it is a reader with no ink surface, so it consumes position only and ignores
+the stylus axes. Confirmed on device 2026-08-18, alongside `["highlights"] = 0` in the `.sdr`
+sidecars.
+
+**Why this matters for future work.** The original phrasing — a sideloaded reader "gets ordinary
+Android stylus input, not the Supernote pen layer" — reads as though the pen is degraded outside
+the stock apps. It is not. A future sideloaded annotation app *could* offer genuine
+pressure-sensitive ink; what it could never do is produce a Supernote-native notebook. Do not
+rule out a sideloaded pen feature on the belief that the digitiser is unavailable.
+
 ## Known limits
 
 - **No e-ink driver.** KOReader has no EPD support for the A6X2
@@ -191,5 +232,7 @@ the source file.
   ghosting, no partial-refresh control, no per-mode tuning. The device's own rotation sensor does
   not drive it either. It is usable, not the KOReader experience you would get on a Kobo.
 - **Freezes** have been reported on long reading sessions (`koreader/koreader#12669`).
+- **The pen works, but KOReader does nothing with it** — see section 6. Not a limit of the
+  device or of sideloading; a limit of KOReader.
 - **Nothing here is declarative.** A factory reset loses all of it; this file is the recovery
   procedure.
