@@ -1,54 +1,61 @@
 #!/usr/bin/env python3
-"""Reconcile the Supernote store's ``ereader/`` folder with ``library/ereader/``.
+"""Mirror the Supernote store's ``ereader/`` folder down into ``library/ereader/``.
 
-The `ereader` round-trip flipped to lean on the server's own 2-way sync (ADR-0031 v2,
-palimpsest#107, superseding the outbound-only push of #94). `library/ereader/` is now a
-**downward mirror** of the server store, not a source that pushes up.
+ADR-0031's governing 2026-08-13 revision moved book delivery to an OPDS pull (the device fetches
+from Stump), so nothing is injected into the store any more. What is left is the half that only the
+Private Cloud can carry: the handwriting coming back. This reconciler is therefore a **pure
+downward mirror** — ``library/ereader/`` is a materialisation of the store, never a source.
 
-RETIRED BUT STILL SHIPPED: ADR-0031's governing 2026-08-13 revision supersedes outbound delivery
-entirely — books reach the device by OPDS pull now. The outbox send and the baseline below exist
-only for that retired path and are scheduled for removal by palimpsest#117, which is sequenced
-after #115 so the replacement is proven on hardware before the working one is deleted. The
-downward mirror is NOT retired; it is how handwriting comes back.
+palimpsest#117 removed the upload half outright, and with it the two pieces of state that existed
+only to serve it (see the "no baseline" note below): the one-shot outbox send, the last-synced
+baseline, and the baseline-gated store-loss guard. The rule the guard expressed is not removed —
+it is re-expressed below against the *existence of the remote folder*.
 
+  * **Downloads.** Files the mirror lacks, or whose content differs from the store's, are
+    ``download_content``ed in as REAL files — which is what the tree is for: git-annex replicates
+    and backs up real content, and Stump (#93) indexes real files, not opaque store blobs.
+  * **Deletes.** Files in the mirror but absent from the store are removed, so a document deleted
+    on the device propagates device -> store -> ``library/`` and *stays gone*.
 
-  * **One-shot send (outbox).** Files dropped in ``library/ereader-outbox/`` are a deliberate
-    inject: each is uploaded once to the store, then *cleared* from the outbox
-    (uploads-once-then-clears). After it lands, the server owns its device lifecycle — the outbox
-    never re-applies it, so a later device-side delete is durable.
-  * **Store -> library mirror.** The store's ``ereader/`` folder is materialised down into the
-    git-annex tree: files the tree lacks (or whose content changed) are ``download_content``ed in,
-    and files the device deleted are removed — so a device delete propagates
-    device -> store -> ``library/`` and *stays gone*. This real-file materialisation is also what
-    Stump (#93) indexes.
+**Why there is no baseline any more.** The delete direction used to be ambiguous: a file present
+in ``library/`` but absent from the store was *either* a fresh local add *or* a device-side delete,
+and a remembered snapshot of the previous sync was what told them apart. With no upload path there
+are no local adds — the mirror only ever contains what this script put there — so absence from the
+store is unambiguous and the snapshot has nothing left to disambiguate.
 
-The delete direction turns on one ambiguity: a file present in ``library/`` but absent from the
-store is *either* a fresh local add *or* a device-side delete. We disambiguate with a **last-synced
-baseline** — the previous sync's store snapshot (``{rel: md5}``). "Was in the baseline, now gone" =
-a real delete -> remove from ``library/``; otherwise it is a fresh add -> leave it. The baseline
-lives *inside* the server store's state dir, so it shares the store's fate: a wiped/rebuilt store
-loses the baseline too, which is exactly the signal the **store-loss guard** needs (an empty store
-with no baseline = "no device sync has completed for this store" -> never delete from the
-backed-up tree).
+**The store-loss guard, restated — and why it keys on the FOLDER, not on emptiness.** An empty or
+unreachable store must never cause deletions in the backed-up tree. Both halves hold without any
+persisted state:
+
+  * *unreachable* — login happens before any library mutation, so an unreachable store fails the
+    unit having touched nothing;
+  * *lost* — the remote ``ereader`` folder does not exist at all. That is what a wiped or freshly
+    rebuilt store looks like (the store is deliberately un-backed-up and rebuildable, ADR-0031):
+    the folder is created by the device putting something there, so a store the device has not
+    re-seeded has no such folder. Deletes are skipped wholesale in that case.
+
+The discriminator is **folder-absent**, not **listing-empty**, and the difference is load-bearing.
+Keying on emptiness looks safer and is actually wrong: the device deleting its *last* remaining
+document leaves a live store whose listing is empty, and treating that as loss would swallow
+precisely the delete this reconciler exists to propagate — permanently, since nothing would ever
+distinguish the two afterwards. A live store the user emptied still HAS the folder, because
+upstream's delete removes only the addressed node and never prunes its parents
+(``server/services/file.py`` ``delete_item`` -> ``vfs.delete_node``). So an empty listing under an
+existing folder is an honest "the device holds nothing", and deletes proceed.
 
 Reads (all via env; secrets arrive as files from systemd LoadCredential, never argv/environ):
   SUPERNOTE_URL            base URL of the local Supernote server (e.g. http://127.0.0.1:8080)
   SUPERNOTE_USER_FILE      file holding the Supernote account email (the shared credential)
   SUPERNOTE_PASSWORD_FILE  file holding the account password
   EREADER_LOCAL_DIR        the downward mirror (e.g. /var/cache/library/ereader)
-  EREADER_OUTBOX_DIR       the one-shot send inbox (e.g. /var/cache/library/ereader-outbox)
-  EREADER_REMOTE_DIR       device VFS destination (e.g. /DOCUMENT/Document/ereader)
-  EREADER_BASELINE         the persisted last-synced snapshot (JSON, inside the server store dir)
+  EREADER_REMOTE_DIR       device VFS source (e.g. /DOCUMENT/Document/ereader)
 
-Fail-loud (non-zero exit) so a broken reconcile shows up as a failed unit. An unreachable store
-fails at login *before* any library mutation, so the guard against nuking the backup holds for the
-"unreachable" case too. Emits a single ``ereader reconcile: sent=<a> downloaded=<b> deleted=<c>``
-summary line the VM check asserts on.
+Fail-loud (non-zero exit) so a broken reconcile shows up as a failed unit. Emits a single
+``ereader reconcile: downloaded=<a> deleted=<b>`` summary line the VM check asserts on.
 """
 
 import asyncio
 import hashlib
-import json
 import os
 import random
 import sys
@@ -77,14 +84,11 @@ LOGIN_ATTEMPTS = 5
 LOGIN_BACKOFF_BASE = 0.7
 
 URL = os.environ["SUPERNOTE_URL"].rstrip("/")
-# The downward mirror (git-annex tree) and the one-shot send inbox.
+# The downward mirror (git-annex tree).
 LOCAL_DIR = Path(os.environ["EREADER_LOCAL_DIR"])
-OUTBOX_DIR = Path(os.environ["EREADER_OUTBOX_DIR"])
-# The device shows uploaded documents under DOCUMENT/Document (the firmware's two-level doc root —
-# supernote/server/services/user.py seeds it); the trailing subfolder is auto-created by the server
-# on first upload (finish_upload -> ensure_directory_path).
+# The device shows documents under DOCUMENT/Document (the firmware's two-level doc root —
+# supernote/server/services/user.py seeds it); the trailing subfolder is created on the device.
 REMOTE_DIR = os.environ["EREADER_REMOTE_DIR"].rstrip("/")
-BASELINE = Path(os.environ["EREADER_BASELINE"])
 
 
 def read_file(path):
@@ -104,46 +108,25 @@ def rel_of(entry):
     return entry.name
 
 
-def load_baseline():
-    """The previous sync's store snapshot ``{rel: md5}``.
-
-    Absent or corrupt reads as ``{}`` — which the store-loss guard treats as "no device sync has
-    completed for this store incarnation". Since the baseline lives inside the server store dir, a
-    wiped store leaves no baseline, so an empty read is the honest signal there.
-    """
-    try:
-        data = json.loads(BASELINE.read_text())
-    except (FileNotFoundError, ValueError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def save_baseline(snapshot):
-    """Persist the post-send store snapshot as the next run's baseline (atomic replace)."""
-    BASELINE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = BASELINE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(snapshot, sort_keys=True))
-    tmp.replace(BASELINE)
-
-
 async def store_snapshot(sn):
-    """``{rel: md5}`` for every file under the remote ereader folder.
+    """``(folder_exists, {rel: md5})`` for the remote ereader folder.
 
     The server's ``content_hash`` IS the file's md5 (``upload_content`` finishes with the same md5
     ``list_folder`` reads back — ADR-0031's "the md5 content_hash is exact"), so these values compare
-    directly against the locally-computed md5s in ``local_snapshot`` / the outbox.
+    directly against the locally-computed md5s in ``local_snapshot``.
 
-    A *missing* folder (nothing ever uploaded, before the server auto-creates it) 404s as
-    NotFoundException, which means an empty store — not an error. Every other failure (auth,
-    transient network, malformed response) propagates and fails the unit *before* any library
-    mutation, so a flaky list can never trigger a spurious delete. Folders carry no content_hash
-    and are skipped; only files count.
+    ``folder_exists`` is returned separately from the snapshot because an empty snapshot has two
+    very different meanings and only one of them is store loss — see the module header. A missing
+    folder 404s as NotFoundException and is reported as ``(False, {})``; a folder that exists and
+    holds nothing is ``(True, {})``. Every other failure (auth, transient network, malformed
+    response) propagates and fails the unit *before* any library mutation, so a flaky list can never
+    trigger a spurious delete. Folders carry no content_hash and are skipped; only files count.
     """
     try:
         listing = await sn.device.list_folder(REMOTE_DIR, recursive=True)
     except NotFoundException:
-        return {}
-    return {rel_of(e): e.content_hash for e in listing.entries if e.content_hash}
+        return False, {}
+    return True, {rel_of(e): e.content_hash for e in listing.entries if e.content_hash}
 
 
 def local_snapshot():
@@ -156,52 +139,23 @@ def local_snapshot():
     return snap
 
 
-async def send_outbox(sn, store):
-    """One-shot send: upload each outbox file into the store, then clear it.
+async def mirror_down(sn, folder_exists, store):
+    """Materialise the store into ``library/ereader/``: download what is new, remove what is gone.
 
-    md5-guarded so a file already present in the store (same content) is not re-uploaded — but it is
-    *always* removed from the outbox, because the outbox is a one-shot inject, not a mirror. Mutates
-    ``store`` in place to include what was sent, so the mirror pass materialises it into
-    ``library/ereader/`` in the same run.
-    """
-    sent = 0
-    if not OUTBOX_DIR.is_dir():
-        return sent
-    for path in sorted(OUTBOX_DIR.rglob("*")):
-        if not path.is_file():
-            continue
-        rel = path.relative_to(OUTBOX_DIR).as_posix()
-        content = path.read_bytes()
-        digest = md5(content)
-        if store.get(rel) != digest:
-            await sn.device.upload_content(f"{REMOTE_DIR}/{rel}", content)
-            store[rel] = digest
-            sent += 1
-            print(f"ereader reconcile: sent {rel}")
-        path.unlink()
-    return sent
+    The store is authoritative in both directions — the mirror holds only what this function put
+    there, so a file it lacks is new and a file the store lacks was deleted on the device.
 
-
-async def mirror_down(sn, store, baseline):
-    """Materialise the store into ``library/ereader/``.
-
-    Downloads files the mirror lacks or whose content changed (the store is authoritative for what
-    the device holds), and removes files the device deleted.
-
-    A file in the mirror but absent from the store is deleted ONLY if it was in the baseline
-    (present last sync) — a durable device-side delete. A file never in the baseline is a fresh
-    local add and is left alone. This baseline gate IS the store-loss guard: the baseline lives
-    inside the server store dir (see the module header), so a wiped/rebuilt store comes up with an
-    EMPTY baseline too — nothing is "in the baseline", so nothing is deleted and the backed-up tree
-    is safe. (An unreachable store never reaches here — login fails first, before any mutation.)
+    The one exception is a store with NO remote ereader folder, which skips deletes entirely: that
+    is what a wiped or not-yet-re-seeded store looks like, and the tree it would delete from is the
+    backed-up one (see the module header for why this keys on the folder rather than on an empty
+    listing). An unreachable store never reaches here — login fails first, before any mutation.
     """
     local = local_snapshot()
     downloaded = 0
     deleted = 0
 
-    # Additions / content updates — the store is authoritative for what the device holds. `digest`
-    # is the store's content_hash, which the server sets to the file's md5 (see store_snapshot), so it
-    # compares directly against the locally-computed md5 in `local`.
+    # Additions / content updates. `digest` is the store's content_hash, which the server sets to
+    # the file's md5 (see store_snapshot), so it compares directly against the md5 in `local`.
     for rel, digest in sorted(store.items()):
         if local.get(rel) == digest:
             continue
@@ -212,10 +166,18 @@ async def mirror_down(sn, store, baseline):
         downloaded += 1
         print(f"ereader reconcile: downloaded {rel}")
 
-    # Deletes — a durable device-side delete: was in the baseline (present last sync), now gone from
-    # the store. The `rel in baseline` gate doubles as the store-loss guard (see the docstring).
+    # Deletes — durable device-side deletes, unless the remote folder is gone entirely (the guard).
+    if not folder_exists:
+        if local:
+            print(
+                f"ereader reconcile: no {REMOTE_DIR} in the store — keeping "
+                f"{len(local)} mirrored file(s); a store with no ereader folder is a wiped or "
+                "not-yet-re-seeded one and must not delete from the backed-up tree"
+            )
+        return downloaded, deleted
+
     for rel in sorted(local):
-        if rel not in store and rel in baseline:
+        if rel not in store:
             (LOCAL_DIR / rel).unlink()
             deleted += 1
             print(f"ereader reconcile: deleted {rel}")
@@ -248,19 +210,14 @@ async def login(user, password):
 async def run():
     user = read_file(os.environ["SUPERNOTE_USER_FILE"])
     password = read_file(os.environ["SUPERNOTE_PASSWORD_FILE"])
-    baseline = load_baseline()
 
     # Login first: an unreachable store fails HERE, before any library mutation — the "unreachable"
     # half of the store-loss guard.
     async with await login(user, password) as sn:
-        store = await store_snapshot(sn)
-        sent = await send_outbox(sn, store)
-        downloaded, deleted = await mirror_down(sn, store, baseline)
-        # The new baseline is the post-send store snapshot: the durable memory of "what the store
-        # held after this sync", so the next run can tell a device delete from a fresh local add.
-        save_baseline(store)
+        folder_exists, store = await store_snapshot(sn)
+        downloaded, deleted = await mirror_down(sn, folder_exists, store)
 
-    print(f"ereader reconcile: sent={sent} downloaded={downloaded} deleted={deleted}")
+    print(f"ereader reconcile: downloaded={downloaded} deleted={deleted}")
 
 
 def main():

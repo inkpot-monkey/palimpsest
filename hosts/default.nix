@@ -224,11 +224,12 @@ in
           # firewalled off (v1). See modules/nixos/profiles/supernote.nix. Stump (#93) that turns
           # this into a browsable document library is a separate ticket.
           custom.profiles.supernote.enable = true;
-          # The ereader round-trip (ADR-0031 v2, #107): `library/ereader/` (/var/cache/library/ereader)
-          # is a downward mirror of what the device holds (durable device-side deletes), and dropping a
-          # PDF/EPUB into the sibling `ereader-outbox/` publishes it once onto the device on the next
-          # device-initiated sync. Couples to the library tree (hosts/rk1/library.nix), which is why it
-          # lives behind its own flag — see modules/nixos/profiles/supernote.nix.
+          # The ereader downward mirror (ADR-0031, #107 as reduced by #117): `library/ereader/`
+          # (/var/cache/library/ereader) materialises what the device holds, as real files, on each
+          # device-initiated sync — durable device-side deletes included. One direction only: books
+          # go OUT by OPDS pull from Stump (#114/#115), so nothing is published through this tree.
+          # Couples to the library tree (hosts/rk1/library.nix), which is why it lives behind its
+          # own flag — see modules/nixos/profiles/supernote.nix.
           custom.profiles.supernote.ereader.enable = true;
 
           # Stump — the reading catalog over the document library (ADR-0031, #113). Indexes
