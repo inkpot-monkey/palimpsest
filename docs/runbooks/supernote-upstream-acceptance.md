@@ -92,6 +92,28 @@ ssh rk1b 'sudo cat /var/lib/supernote/jwt-secret | head -c 8'   # unchanged
 idempotent path. If it logs `account bootstrapped` instead, the DB was reset; stop and
 investigate before touching the device.
 
+If the deploy **fails** on that unit instead, read the message rather than re-running: since
+palimpsest#143 it has a bounded start and names which of the two things went wrong.
+
+- `THE SERVER NEVER CAME UP` — the server did not answer within the bootstrap's 60-second
+  readiness window. The credential was never offered to anything; the fault is the server (a
+  migration, the store, the pinned rev). The tail of `journalctl -u supernote-server` is printed
+  *above* that verdict — the server's own error is the last thing before it, deliberately, so
+  that both survive the ten journal lines `nixos-rebuild` echoes for a failed unit. This is the
+  failure that used to be a silent 35-minute deploy stall.
+- `THE CREDENTIAL WAS REJECTED` — the server is up and answering, and the login did not work.
+  **Re-run the unit once** before touching anything: a concurrent login for the same account
+  401s the loser (palimpsest#142), and the device syncing at the wrong moment is enough to cause
+  it. If it fails again, the account in the store no longer matches the secret — fix the
+  `supernote` sub-map in the library sops bundle (commit, push, `nix flake update secrets`,
+  redeploy), not the server.
+
+One thing the bounded start gave up on purpose: the bootstrap no longer `Requires=` the server,
+so restarting the server alone does not re-run it. A rev bump changes this unit too (its
+ExecStart embeds the package), so the check above stays live for the deploys this runbook is
+about; after a server-only change, `systemctl restart supernote-account-bootstrap` to refresh
+the proof.
+
 ## The device pass
 
 Do these in order, on the Nomad, on the home LAN.

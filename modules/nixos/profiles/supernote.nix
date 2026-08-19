@@ -124,6 +124,31 @@ let
   # `supernote` sub-map — see the header. Shared with the mirror (#107).
   secretsFile = self.lib.getSecretFile "library";
 
+  # ── The bootstrap's start bound (palimpsest#143) ──────────────────────────────────────────
+  # How long the bootstrap waits for the server to answer /api/csrf before declaring it dead, and
+  # the systemd backstop above that. Two numbers, because they have different jobs: the GATE is
+  # the one meant to fire, since it can say WHY (and dump the server's own error); the systemd
+  # timeout only exists so nothing — a wedged curl, a hung CLI — can outlive it. It therefore sits
+  # strictly above the gate plus the register/login round-trips that follow it.
+  #
+  # Anything finite would have prevented #143's 35-minute silent stall; the point is that a server
+  # which will not start makes the deploy FAIL, with an error to read, rather than hang.
+  #
+  # 60s is deliberately the budget this unit ALREADY had (it polled 60 times at one-second
+  # intervals) — #143 asked for a bound, not a tighter one, and nothing here has measured what a
+  # first-boot alembic migration costs on rk1b's eMMC. If a healthy-but-slow server ever does trip
+  # it, the verdict is still accurate rather than misleading: it says the server did not answer
+  # and prints the server's log, which will show the migration still running.
+  bootstrapReadySec = 60;
+  bootstrapTimeoutSec = bootstrapReadySec + 60;
+
+  # The two verdict lines the gate below prints. They are an INTERFACE, not just prose: the VM
+  # check (parts/checks/supernote/default.nix) greps for them to prove the two failures don't read
+  # alike, and docs/runbooks/supernote-upstream-acceptance.md tells the operator what each one
+  # means. Reword them in all three places or not at all.
+  serverDeadVerdict = "THE SERVER NEVER CAME UP";
+  credentialBadVerdict = "THE CREDENTIAL WAS REJECTED";
+
   # ── The downward mirror (#107 as reduced by #117, widened to the whole device) ────────────
   mcfg = cfg.mirror;
   # `library/supernote/` materialises the WHOLE device store — every system folder the firmware
@@ -318,18 +343,56 @@ in
         # Idempotent: if login already succeeds the account exists and we stop; only an empty DB
         # takes the register path. A login failure right after a fresh register means a bad
         # credential and fails the unit LOUD (same spirit as navidrome/HA provisioners).
+        #
+        # ── Bounded, and it fails on its own terms (palimpsest#143) ──────────────────────────
+        # This unit used to `Requires=` the server and carry `TimeoutStartSec=infinity`. When the
+        # server crash-looped (a fork alembic stamp upstream did not have, #112), every restart
+        # tore this oneshot down mid-run and systemd restarted it — 173 cycles — while
+        # `nixos-rebuild switch` waited on a unit that could never time out. The operator saw a
+        # 35-minute silent stall, indistinguishable from a slow build, and no error at all.
+        #
+        # Both halves of that are fixed here, and both are needed:
+        #   • `wants` + `after`, NOT `requires`. Ordering is all this needs — it must run after the
+        #     server has been asked to start, and it pulls the server in. What it must NOT do is
+        #     inherit the server's fate: with `requires`, a failing server SIGTERMs this unit mid-run
+        #     and the only thing the deploy learns is that something was retried. Decoupled, this
+        #     unit survives to run its own health gate and REPORT, which is the whole difference
+        #     between a diagnosable failure and a stall.
+        #   • A finite `TimeoutStartSec`. The gate below is what should fire (it explains itself);
+        #     this is the backstop that guarantees termination regardless.
+        # The gate distinguishes the two failures an operator confuses at 3am — "the server never
+        # came up" (go read the server's journal, which it prints) from "the credential was
+        # rejected" (go look at sops) — because the fix for one is nowhere near the fix for
+        # the other.
         systemd.services.supernote-account-bootstrap = {
           description = "Bootstrap the Supernote account from the credential secret and verify login";
           after = [
             "supernote-server.service"
             "sops-install-secrets.service"
           ];
-          requires = [ "supernote-server.service" ];
-          wants = [ "sops-install-secrets.service" ];
+          # `wants`, not `requires` — see the header above. The server is `wantedBy` multi-user.target
+          # in its own right; this only states that the bootstrap has no business running without it
+          # being asked for, and refuses to be torn down when it fails.
+          #
+          # This gives up one thing knowingly: `Requires=` also propagates an EXPLICIT restart, so
+          # restarting the server used to re-run this unit and refresh its login proof.
+          # `PartOf=` would buy that back, and is not used, because propagated restarts are the
+          # very mechanism #143 is about — a crash-looping server would drag this unit around with
+          # it again. The proof is not actually lost on the deploys that matter: this unit's
+          # ExecStart embeds `${pkgs.supernote}`, so every rev bump — the case the runbook checks
+          # after — changes its definition and re-runs it. A deploy that touches only the server's
+          # own settings leaves the last proof standing; `systemctl restart
+          # supernote-account-bootstrap` refreshes it on demand.
+          wants = [
+            "supernote-server.service"
+            "sops-install-secrets.service"
+          ];
           wantedBy = [ "multi-user.target" ];
+          # systemd for the journalctl that prints the server's own error when the gate times out.
           path = [
             pkgs.coreutils
             pkgs.curl
+            pkgs.systemd
           ];
           environment.HOME = stateDir;
           serviceConfig = {
@@ -337,6 +400,18 @@ in
             RemainAfterExit = true;
             User = "supernote";
             Group = "supernote";
+            # Read the SERVER's journal — the whole value of the timeout message is that it carries
+            # the reason the server would not start, and a unit's log is not readable by an
+            # unprivileged user without this. It is a real widening: `systemd-journal` is
+            # read access to the WHOLE system journal, not just this server's unit, granted to a
+            # user that otherwise only sees its own store. Taken deliberately, because the
+            # alternative to the operator reading the server's error here is the operator not
+            # reading it at all — which is the failure #143 is about. Read-only, and the narrower
+            # option if this ever needs to shrink is a separate root-run reporter unit.
+            SupplementaryGroups = [ "systemd-journal" ];
+            # Bounded start (palimpsest#143). The gate below fires first and says why; this is only
+            # the backstop that guarantees this unit can never hang a deploy again.
+            TimeoutStartSec = bootstrapTimeoutSec;
             # Same StateDirectory as the server (for HOME/$STATE_DIRECTORY). Must repeat the 0700
             # mode: systemd re-applies StateDirectoryMode on every start, and its default (0755)
             # would otherwise loosen the server's 0700 store when this oneshot runs.
@@ -352,11 +427,30 @@ in
               account="$(cat "$CREDENTIALS_DIRECTORY/user")"
               password="$(cat "$CREDENTIALS_DIRECTORY/password")"
 
+              # ── Health gate ────────────────────────────────────────────────────────────────
               # Wait for the server to accept connections and finish DB migrations. /api/csrf is a
-              # public GET that only answers once the app has started.
-              for _ in $(seq 1 60); do
-                if curl -sf -o /dev/null "${localUrl}/api/csrf"; then
-                  break
+              # public GET that only answers once the app has started. A wall-clock deadline, not a
+              # loop count, so the bound holds whatever each attempt costs; `--max-time` keeps a
+              # single hung connection from eating the whole budget on its own.
+              #
+              # Timing out here is the DIAGNOSIS, not a retry hint: nothing this unit does can make
+              # a server that will not start start. So it says so in the terms the operator needs
+              # — this is not the credential — and prints the server's own error, because that is
+              # the thing worth reading and `nixos-rebuild` will not surface it for a unit that is
+              # busy auto-restarting rather than failed.
+              deadline=$(( $(date +%s) + ${toString bootstrapReadySec} ))
+              until curl -sf --max-time 5 -o /dev/null "${localUrl}/api/csrf"; do
+                if [ "$(date +%s)" -ge "$deadline" ]; then
+                  echo "supernote: the server never answered ${localUrl}/api/csrf. Its own log follows (journalctl -u supernote-server):" >&2
+                  journalctl -u supernote-server.service -n 40 --no-pager -o cat >&2 || true
+                  # The verdict goes LAST, after the dump, and that ordering is load-bearing:
+                  # `switch-to-configuration` reports a failed unit by running `systemctl status`,
+                  # which shows only the TAIL of its journal (10 lines). A verdict printed before
+                  # 40 lines of server log scrolls off the deploy's own output and is seen only by
+                  # someone who already knew to go looking — which is the reader this is for.
+                  echo "supernote: ── ${serverDeadVerdict}: no answer within ${toString bootstrapReadySec}s; the log above is why. ──" >&2
+                  echo "supernote: this is NOT a credential problem — the credential was never offered to anything." >&2
+                  exit 1
                 fi
                 sleep 1
               done
@@ -383,8 +477,25 @@ in
               # verify by logging in. `user add` posts the public registration; the login must then
               # succeed or a mis-set credential fails the unit here rather than silently at sync time.
               echo "supernote: no account yet — bootstrapping from the credential secret"
-              ${pkgs.supernote}/bin/supernote admin --url "${localUrl}" user add "$account" --password "$password"
-              ${pkgs.supernote}/bin/supernote cloud login --url "${localUrl}" "$account" --password "$password"
+
+              # The other verdict. Both routes to it carry the palimpsest#142 caveat, because the
+              # ONE that production actually reaches is the `user add` branch below (registration
+              # is refused the moment an account exists), and a transient #142 race arrives there
+              # looking exactly like a bad secret. Telling the operator to go rewrite sops on a
+              # first 401 would send them off to fix something that isn't broken.
+              credential_rejected() {
+                echo "supernote: ── ${credentialBadVerdict}: $1 ──" >&2
+                echo "supernote: the server is UP and answering, so this is NOT the server." >&2
+                echo "supernote: re-run this unit ONCE first — a concurrent login for the same account 401s the loser (palimpsest#142), and the device syncing at the wrong moment is enough to cause it. If it fails again, fix the 'supernote' sub-map (user/password) in the library sops bundle." >&2
+                exit 1
+              }
+
+              if ! ${pkgs.supernote}/bin/supernote admin --url "${localUrl}" user add "$account" --password "$password"; then
+                credential_rejected "the login above failed and the account could not be registered — registration is refused once any account exists, so the credential no longer matches the account already in the store"
+              fi
+              if ! ${pkgs.supernote}/bin/supernote cloud login --url "${localUrl}" "$account" --password "$password"; then
+                credential_rejected "the account was just registered from this credential, yet logging in with it failed"
+              fi
               echo "supernote: account bootstrapped, login OK"
             '';
           };
