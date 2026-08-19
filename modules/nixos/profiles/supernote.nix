@@ -134,12 +134,20 @@ let
   # Anything finite would have prevented #143's 35-minute silent stall; the point is that a server
   # which will not start makes the deploy FAIL, with an error to read, rather than hang.
   #
-  # 60s is deliberately the budget this unit ALREADY had (it polled 60 times at one-second
-  # intervals) — #143 asked for a bound, not a tighter one, and nothing here has measured what a
-  # first-boot alembic migration costs on rk1b's eMMC. If a healthy-but-slow server ever does trip
-  # it, the verdict is still accurate rather than misleading: it says the server did not answer
-  # and prints the server's log, which will show the migration still running.
-  bootstrapReadySec = 60;
+  # This started at 60s — the count the old polling loop used — and 60s was WRONG, which is worth
+  # recording because the mistake is easy to repeat. The old loop's `curl` had no `--max-time`, so
+  # a server that was listening but not yet answering blocked it for as long as the server needed;
+  # "60 iterations" was never a 60-second budget, it was an unbounded one wearing a counter. Giving
+  # each attempt a timeout turned it into a real deadline, and the supernote_mirror check — whose
+  # node also stands up Stump and git-annex — then failed with a HEALTHY server: the bootstrap gave
+  # up at 60s and the server opened its port about ten seconds later.
+  #
+  # So the deadline is sized for the slowest healthy start anyone has measured, not the fastest,
+  # and the fast diagnosis comes from the crash check in the gate instead — a server whose process
+  # has already exited is reported in about a second, which is better than 60s was and enormously
+  # better than the 35-minute stall. Waiting three minutes costs nothing on a deploy that was going
+  # to succeed, and a deploy that was going to fail no longer waits for the clock at all.
+  bootstrapReadySec = 180;
   bootstrapTimeoutSec = bootstrapReadySec + 60;
 
   # The two verdict lines the gate below prints. They are an INTERFACE, not just prose: the VM
@@ -438,19 +446,34 @@ in
               # — this is not the credential — and prints the server's own error, because that is
               # the thing worth reading and `nixos-rebuild` will not surface it for a unit that is
               # busy auto-restarting rather than failed.
+              # The verdict goes LAST, after the server's log, and that ordering is load-bearing:
+              # `switch-to-configuration` reports a failed unit by running `systemctl status`,
+              # which shows only the TAIL of its journal (10 lines). A verdict printed before 40
+              # lines of server log scrolls off the deploy's own output and is seen only by someone
+              # who already knew to go looking — which is the reader this is for.
+              server_never_came_up() {
+                echo "supernote: the server never answered ${localUrl}/api/csrf ($1). Its own log follows (journalctl -u supernote-server):" >&2
+                journalctl -u supernote-server.service -n 40 --no-pager -o cat >&2 || true
+                echo "supernote: ── ${serverDeadVerdict}: $1; the log above is why. ──" >&2
+                echo "supernote: this is NOT a credential problem — the credential was never offered to anything." >&2
+                exit 1
+              }
+
               deadline=$(( $(date +%s) + ${toString bootstrapReadySec} ))
               until curl -sf --max-time 5 -o /dev/null "${localUrl}/api/csrf"; do
+                # Two things look identical from out here — a server still starting up, and a
+                # server that cannot start — and only the first is worth waiting out. A main
+                # process that has ALREADY EXITED non-zero is the second: with `Restart=on-failure`
+                # nothing else makes it exit, so there is nothing to wait for and the deploy gets
+                # its answer in about a second. This is the #112 shape (crash-loop on a migration
+                # the DB cannot satisfy), and it is why the deadline below can afford to be
+                # generous: being slow and being dead are no longer told apart by a stopwatch.
+                if [ "$(systemctl show -p ExecMainExitTimestampMonotonic --value supernote-server.service)" != "0" ] &&
+                   [ "$(systemctl show -p ExecMainStatus --value supernote-server.service)" != "0" ]; then
+                  server_never_came_up "its process has already exited with status $(systemctl show -p ExecMainStatus --value supernote-server.service)"
+                fi
                 if [ "$(date +%s)" -ge "$deadline" ]; then
-                  echo "supernote: the server never answered ${localUrl}/api/csrf. Its own log follows (journalctl -u supernote-server):" >&2
-                  journalctl -u supernote-server.service -n 40 --no-pager -o cat >&2 || true
-                  # The verdict goes LAST, after the dump, and that ordering is load-bearing:
-                  # `switch-to-configuration` reports a failed unit by running `systemctl status`,
-                  # which shows only the TAIL of its journal (10 lines). A verdict printed before
-                  # 40 lines of server log scrolls off the deploy's own output and is seen only by
-                  # someone who already knew to go looking — which is the reader this is for.
-                  echo "supernote: ── ${serverDeadVerdict}: no answer within ${toString bootstrapReadySec}s; the log above is why. ──" >&2
-                  echo "supernote: this is NOT a credential problem — the credential was never offered to anything." >&2
-                  exit 1
+                  server_never_came_up "no answer within ${toString bootstrapReadySec}s"
                 fi
                 sleep 1
               done

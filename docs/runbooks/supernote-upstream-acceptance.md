@@ -95,8 +95,9 @@ investigate before touching the device.
 If the deploy **fails** on that unit instead, read the message rather than re-running: since
 palimpsest#143 it has a bounded start and names which of the two things went wrong.
 
-- `THE SERVER NEVER CAME UP` — the server did not answer within the bootstrap's 60-second
-  readiness window. The credential was never offered to anything; the fault is the server (a
+- `THE SERVER NEVER CAME UP` — the server did not answer. Either its process had already
+  exited (reported within a second or so — the crash-loop case) or it stayed silent for the
+  bootstrap's three-minute readiness window. The credential was never offered to anything; the fault is the server (a
   migration, the store, the pinned rev). The tail of `journalctl -u supernote-server` is printed
   *above* that verdict — the server's own error is the last thing before it, deliberately, so
   that both survive the ten journal lines `nixos-rebuild` echoes for a failed unit. This is the

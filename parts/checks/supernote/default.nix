@@ -35,8 +35,8 @@ let
   # numbers, not just "finite": what makes the failure diagnosable is that the GATE fires and
   # explains itself, and only a bound that sits between the two can tell that apart from the
   # systemd backstop firing over the top of it.
-  readySec = 60;
-  timeoutSec = 120;
+  readySec = 180;
+  timeoutSec = 240;
 
   # The Supernote profile wired for the sandbox. Shared by BOTH server nodes so the broken one
   # below differs in exactly one thing — a server binary that will not start — and its bounded
@@ -258,12 +258,14 @@ pkgs.testers.nixosTest {
         "systemctl is-failed --quiet supernote-account-bootstrap.service", timeout=${toString (timeoutSec + 60)}
     )
 
-    #     And it took the time the DESIGN says, not merely some finite time: systemd records the
+    #     And it reached that verdict by NOTICING, not by outlasting a clock. systemd records the
     #     ExecStart's own start/exit, so the run can be measured rather than inferred from how long
-    #     the driver was willing to wait. Landing between the gate and the backstop is the whole
-    #     claim — below ${toString readySec}s the gate did not really wait for the server, above
-    #     ${toString timeoutSec}s the backstop killed it and the operator gets a bare "timed out"
-    #     instead of the diagnosis.
+    #     the driver was willing to wait: a server whose process has already exited is diagnosed in
+    #     about a second, nowhere near the ${toString readySec}s deadline. That distinction is the
+    #     reason the deadline can be generous. It has to be — sizing it to catch a dead server
+    #     instead sized it below a healthy one, and the supernote_mirror check (whose node also
+    #     stands up Stump and git-annex) duly failed with a server that was merely slow. So this
+    #     asserts the fast path explicitly; the deadline path is what the backstop above bounds.
     ran = (
         int(broken.succeed(
             "systemctl show -p ExecMainExitTimestampMonotonic --value supernote-account-bootstrap.service"
@@ -272,9 +274,10 @@ pkgs.testers.nixosTest {
             "systemctl show -p ExecMainStartTimestampMonotonic --value supernote-account-bootstrap.service"
         ))
     ) / 1e6
-    assert ${toString readySec} <= ran < ${toString timeoutSec}, (
-        f"the bootstrap ran for {ran:.1f}s — outside its own gate (${toString readySec}s) "
-        f"and backstop (${toString timeoutSec}s), so the bound under test is not the one in the module"
+    assert ran < ${toString readySec}, (
+        f"the bootstrap took {ran:.1f}s to call a DEAD server dead — that is the readiness deadline "
+        f"(${toString readySec}s) expiring, not the crash check firing, so a crash-loop is being "
+        f"diagnosed by stopwatch again"
     )
 
     # (c) It failed by REPORTING, not by being killed. `exit-code` is the tell that the unit ran its
@@ -297,6 +300,9 @@ pkgs.testers.nixosTest {
     )
     assert "Can't locate revision identified by" in failure, (
         f"the server's own startup error was not surfaced in the bootstrap's failure:\n{failure}"
+    )
+    assert "process has already exited" in failure, (
+        f"the verdict does not say WHY it gave up early (a dead process, not a slow one):\n{failure}"
     )
 
     # ── 6. THE OTHER FAILURE: THE SERVER IS UP AND THE CREDENTIAL IS WRONG (palimpsest#143) ──
