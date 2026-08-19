@@ -6,8 +6,10 @@
 #
 # UNLIKE the music library these are personal documents, not re-acquirable media, so ADR-0031
 # also asks that they be backed up OFFSITE. ⚠ That half is INTENT, NOT FACT: no restic path
-# lists this tree, `backup.enable = false` on every host that sets it, and rk1b runs no restic
-# unit at all (palimpsest#147). Do not read this header as evidence the documents are backed
+# lists THIS tree, and while the kelpy replica does sit under a covering path (`/persistent`,
+# defended by an assertion there), that path is gated behind `backup.enable = false` on every
+# host that sets it — and rk1b runs no restic unit at all (palimpsest#150). Nothing ships
+# anywhere today. Do not read this header as evidence the documents are backed
 # up — they are REPLICATED, which is the weaker guarantee: it survives a dead disk, but not a
 # delete propagating to both copies, nor losing the house.
 #
@@ -83,7 +85,7 @@
     # rk1b and kelpy both want every file (rk1b authoritative, kelpy full replica).
     # ⚠ `backup` here is a git-annex REPOSITORY GROUP (paired with `wanted` below) — it means
     # "this remote wants every file", i.e. content distribution between rk1b and kelpy. It is NOT
-    # an offsite backup and does not make one run; palimpsest#147 names this exact misreading.
+    # an offsite backup and does not make one run; palimpsest#150 names this exact misreading.
     group = "backup";
     wanted = "standard";
 

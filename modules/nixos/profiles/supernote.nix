@@ -69,7 +69,7 @@
 # that blob; it is also, for the same reason, unreachable debris rather than content.
 #   ⚠ Say REBUILDABLE, not "backed up". `library/` is INTENDED to be offsite-backed (see the header
 #     of hosts/rk1/library.nix) and currently is NOT: no host declares a covering restic path with
-#     backups enabled, and rk1b runs no restic unit at all (palimpsest#147). The case for leaving
+#     backups enabled, and rk1b runs no restic unit at all (palimpsest#150). The case for leaving
 #     the store un-backed-up rests on the mirror, which runs, and never on an offsite backup, which
 #     does not.
 # What is store-ONLY is the database — the account, the device pairing, the recycle bin — so
@@ -135,9 +135,9 @@ let
 
   # Paths this design has retired, swept on every start so a pre-existing deploy does not leave
   # them behind. All three sit where abandoning them costs something: the first two are inside the
-  # git-annex library tree, so an orphan would replicate to kelpy (and offsite too, once #147 is
-  # closed), and the third is persisted server state. Named rather than inlined so the sweep and
-  # this comment cannot drift apart.
+  # git-annex library tree, so an orphan would replicate to kelpy (and offsite too, once offsite
+  # backup lands — palimpsest#150), and the third is persisted server state. Named rather than
+  # inlined so the sweep and this comment cannot drift apart.
   #   • ereader-outbox/ — the one-shot send inbox, retired with the upload path (#117).
   #   • ereader/        — the old mirror root, when this mirrored ONLY /DOCUMENT/Document/ereader.
   #                       That folder was a vestige of the retired push (the outbox created it) and
@@ -198,10 +198,10 @@ in
           Root of the git-annex library tree (hosts/rk1/library.nix). Its `supernote/` subfolder is
           a strict downward mirror of everything the device holds — `Note/`, `Document/` and the
           other folders the firmware seeds, at the same relative paths — git-annex-replicated to
-          kelpy, unlike the server store (and offsite too, once palimpsest#147 is closed; it is not
-          today). Nothing is written into it by hand: there is no upload path, so
-          a file here that the store lacks is treated as a device-side delete and removed. Books
-          reach the device by OPDS pull from Stump, not through this tree.
+          kelpy, unlike the server store (and offsite too, once offsite backup lands —
+          palimpsest#150; it does not run today). Nothing is written into it by hand: there is
+          no upload path, so a file here that the store lacks is treated as a device-side delete
+          and removed. Books reach the device by OPDS pull from Stump, not through this tree.
         '';
       };
 
@@ -440,8 +440,9 @@ in
         #
         # The same oneshot sweeps the retired paths (see `retiredPaths`), because all of them
         # outlive a deploy and two sit inside the git-annex tree, where an orphan replicates to
-        # kelpy (and offsite too, once #147 is closed). `rm -rf` rather than a tmpfiles `R` rule for
-        # the same mount-race reason, and because it must run BEFORE the mirror can be fired.
+        # kelpy (and offsite too, once offsite backup lands — palimpsest#150). `rm -rf` rather
+        # than a tmpfiles `R` rule for the same mount-race reason, and because it must run
+        # BEFORE the mirror can be fired.
         # Destructive by intent, and it says what it removed: nothing it deletes has a live writer
         # any more.
         systemd.services.supernote-mirror-dir = {

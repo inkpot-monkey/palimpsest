@@ -58,7 +58,7 @@ different physical media from the store, which shares rk1b's eMMC with the rest 
 - **This corrects the governing text above.** The palimpsest#117 revision's
   recovery note says the handwriting "is backed up"; it is *replicated*, not backed up. Read every
   "offsite-backed `library/`" in this ADR — including in the historical Decision body — as
-  "intended to be offsite-backed, pending palimpsest#147".
+  "intended to be offsite-backed, pending palimpsest#150".
 
 - **What is genuinely store-only is the database**, not documents: the account, the device pairing
   and the recycle bin. Losing the eMMC therefore costs a re-pair of the Nomad, which is already the
