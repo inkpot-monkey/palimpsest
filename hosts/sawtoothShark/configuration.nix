@@ -37,6 +37,7 @@
     # and excluded via enabledNodes. See modules/nixos/profiles/pi-builder.nix + hosts/rk1/nvme.nix.
     piBuilder.enable = true;
     piBuilder.enabledNodes = [ "rk1b" ];
+    wireless.enable = true;
     tailscale = {
       enable = true;
       acceptDns = true;
