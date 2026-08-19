@@ -31,36 +31,101 @@
 # "public URL" knob — `HostDetails` is derived per-request from `Host` + the proxy scheme header
 # (apps/server/src/middleware/host.rs), which Caddy's `reverse_proxy` sets and preserves by default.
 #
-# ── The credentials (three sops secrets, two accounts) ────────────────────────────────────
-# `stump/user` + `stump/password` are Stump's server-owner account. The server grants owner rights
-# to the FIRST account registered on an empty database and then refuses unauthenticated
-# registration, so this is the account everything else is bootstrapped from — it is what the
-# provisioning oneshot below uses to create the three libraries.
+# ── Reading-progress sync (KOReader, #116) ────────────────────────────────────────────────
+# What is read on the Nomad is reflected here, and position is read back when the book is opened
+# again. Stump ships its own implementation of KOReader's sync protocol, so this is configuration
+# on both ends rather than any bridging code — but it is four things that must ALL line up, and
+# the integration silently does nothing if any one of them is missing.
 #
-# `stump/opds_password` is the DEDICATED, NON-OWNER reader account the device authenticates as
-# (#114). Non-owner because `enforce_permissions` short-circuits on `is_server_owner`, so an owner
-# credential cannot be scoped at all — see the long note in stump-provision.py. Its username is not
-# a secret and is set by `opdsUser` below, not by sops.
+#   1. THE ROUTES ARE OFF BY DEFAULT. `ENABLE_KOREADER_SYNC` (no `STUMP_` prefix — see the note at
+#      the setting itself) mounts them; without it the whole router is absent and every sync call
+#      404s.
+#   2. BOOKS ARE MATCHED BY HASH, AND ONLY BY HASH. Stump does not implement the protocol's
+#      filename strategy. `generateKoreaderHashes` is set on every library at creation, and the
+#      provisioner rescans any library whose books predate it — see ensure_koreader_hashes in
+#      stump-provision.py. A book with no hash answers 404 to the device's PUT.
+#   3. THE DEVICE AUTHENTICATES WITH AN API KEY IN THE URL. `/koreader/{api_key}/...` is the only
+#      auth that router has — Basic auth is gated on `is_opds` and does not reach it. The key is
+#      DECLARED in sops rather than minted (see the credentials section below), so the URL a
+#      device is pointed at is fully determined before anything runs.
+#   4. THE READER MUST MATCH BY BINARY HASH, not by filename — a device-side setting, captured in
+#      docs/runbooks/supernote-koreader-opds.md along with the "log in with any credentials"
+#      step KOReader insists on even when the URL already carries the key.
 #
-# THE DEVICE CREDENTIAL IS THAT ACCOUNT, over HTTP Basic auth at
-# `https://library.<domain>/opds/v1.2/catalog`. Stump accepts Basic auth on OPDS 1.2 and NOWHERE
-# else (`apps/server/src/middleware/auth.rs` gates it on `is_opds`), which is what makes a password
-# safe to type into a reader app: it cannot be replayed against the GraphQL API. Both halves are
-# declared before anything runs — username here, password in sops — so there is nothing to mint,
-# bank, or carry back from the first deploy.
+# WHOSE PROGRESS IT IS. A person's own. Reading sessions are per-user, and a device syncs as the
+# reader account whose key it carries, so what you read on the Nomad is what you see when you log
+# into the web UI as yourself. That is the whole reason the owner account is administrative only:
+# see below.
+#
+# ── The accounts: one administrative owner, N readers ─────────────────────────────────────
+# `stump/user` + `stump/password` are Stump's SERVER OWNER. The server grants owner rights to the
+# FIRST account registered on an empty database and then refuses unauthenticated registration, so
+# this is the account everything else is bootstrapped from — and it is used by the provisioning
+# oneshot below and BY NOTHING ELSE. Do not log into the web UI with it, and never put it on a
+# device.
+#
+# THE OWNER IS DELIBERATELY NOT A PERSON, for two reasons that both bite:
+#   * It cannot hold a device credential safely. `enforce_permissions` returns Ok unconditionally
+#     when `is_server_owner` (crates/graphql/src/data.rs), and `validate_api_key` preserves that
+#     flag when it applies a key's custom permissions — and an API key is accepted as a bearer
+#     token on EVERY route. So an owner's KOReader key is a full administrative credential however
+#     it is scoped, sitting in a plaintext Lua file on a sideloaded Android tablet.
+#   * There is exactly one owner, so a design where the primary human IS the owner has no second
+#     step. With everyone a reader, the next person is one more entry in a map.
+#
+# EACH READER gets an account that is their whole identity here: OPDS Basic auth, the KOReader
+# sync key, the reading progress, and the web-UI login. Both of their credentials are declared, so
+# there is nothing to mint, bank, or carry back from a first deploy — including the sync key, which
+# is imposed on Stump rather than generated by it (stump-provision.py's `impose_key` explains how
+# and what it costs).
 #
 # Stump also serves `/opds/{api_key}/v1.2/...` for clients that cannot set a header. That route is
-# deliberately NOT used: keys are generated server-side and cannot be supplied, so it would force a
-# value to be learned after deploy and hand-copied into sops — the opposite of declarative. If
-# palimpsest#115 finds the device's reader cannot do Basic auth, that path is in git history.
+# deliberately NOT used: #115 proved KOReader speaks Basic auth on the real device, and a password
+# is the simpler credential when one will do.
 #
-# All three live in the shared `profiles/library.yaml` bundle (this stack's secret file, shared
-# with the Supernote server and the ereader reconciler) under a `stump` sub-map alongside
-# `supernote:`:
+# It all lives in the shared `profiles/library.yaml` bundle (this stack's secret file, shared with
+# the Supernote server and the ereader reconciler) under a `stump` sub-map alongside `supernote:`:
 #   stump:
-#     user: reader                 # any username; unlike Supernote's, it need not be an email
-#     password: your-password
-#     opds_password: another-password   # the reader account — this is the device's password
+#     user: catalog-owner          # any username; unlike Supernote's, it need not be an email
+#     password: your-password      # administrative; not for daily use
+#     readers:
+#       thomas:                    # the account name you log into the web UI with
+#         password: another-password        # also the OPDS password typed into the reader app
+#         koreader_key: stump_<short>_<long>
+# Adding a person is another entry under `readers:` and a redeploy — no change here. Generate a
+# key with:
+#   printf '%s_%s_%s\n' stump "$(openssl rand -hex 8)" "$(openssl rand -hex 24)"
+#
+# ── WHY THE KEY LOOKS LIKE THAT, AND WHY THE `stump_` PREFIX STAYS ────────────────────────
+# Asked and answered on 2026-08-20: the prefix is redundant-looking (it is the same six bytes on
+# every key, inside a block already called `stump:`) and it is kept deliberately. Two properties
+# of the value are load-bearing, for different reasons:
+#
+#   * THE THREE `_`-DELIMITED PARTS are required by the sync route. `api_key_middleware` parses
+#     with `PrefixedApiKey::from_string`, which rejects anything that is not exactly three parts.
+#     Validation then compares `short_token` verbatim and `hex(sha256(<long>))` against
+#     `long_token_hash` — see `impose_key` in stump-provision.py, which is what writes those two
+#     columns.
+#
+#   * THE `stump` PREFIX IS NOT CHECKED BY THAT ROUTE AT ALL. `api_key_middleware` never inspects
+#     it and it is not part of the hash, so a key spelled `anything_short_long` would sync
+#     perfectly. It is required by `handle_bearer_auth`, which gates its API-key branch on
+#     `prefix() == API_KEY_PREFIX` and otherwise falls through to JWT parsing and fails.
+#
+#     That bearer path is the ONLY way to read back the permission set the server RESOLVED for a
+#     key — `GET /api/v2/auth/me` with the key as a bearer token — and resolved-versus-recorded is
+#     exactly the distinction this design turns on everywhere else: a scope on the server owner is
+#     recorded and never enforced, and `resolve_permissions` intersects a key's custom set with
+#     its account's. Drop the prefix and the provisioner's verification degrades from measuring
+#     that set to inferring it from two things it checked separately. Six bytes buy a direct
+#     assertion, so they stay.
+#
+# The value in sops is also, deliberately, VERBATIM what the device holds — the profile performs
+# no transformation on it. That is what lets the runbook say "the URL is `…/koreader/<the sops
+# value>`", lets you `curl` the secret straight at the server to test it, and is the reason there
+# is no handoff file. Storing the key without its prefix and prepending one in code was rejected
+# on the same grounds: it would make the secret no longer be the credential.
+#
 # sops files are a SEPARATE repo (stash): add the sub-map there, commit + push, then
 # `nix flake update secrets` HERE before deploying rk1b — otherwise sops-install-secrets cannot
 # extract `stump/user` and activation fails (AGENTS.md gotcha). The file already lists rk1b as a
@@ -165,19 +230,6 @@ in
       '';
     };
 
-    opdsUser = lib.mkOption {
-      type = lib.types.str;
-      default = "opds";
-      description = ''
-        Username of the dedicated, non-owner Stump account the device authenticates as over
-        HTTP Basic auth on the OPDS 1.2 catalog (palimpsest#114). Not a secret — knowing it buys
-        nothing without the password (`stump/opds_password`). It is separate from the owner
-        account because Stump's `enforce_permissions` short-circuits on `is_server_owner`, so an
-        owner credential resolves to full administrative rights however it is scoped; see
-        stump-provision.py.
-      '';
-    };
-
     publicUrl = lib.mkOption {
       type = lib.types.str;
       default = "https://${svcName}.${settings.primaryDomain}";
@@ -185,8 +237,12 @@ in
       description = ''
         The origin an OPDS client reaches this catalog at — i.e. the vhost kelpy's Caddy serves,
         which modules/nixos/profiles/proxy.nix derives as `<service>.<edge's networking.domain>`.
-        Used for one thing: assembling the catalog URL handed to the device. It has to match the
-        edge, because that URL is typed into a reader app on a device that has no other route in.
+        Used for assembling the two URLs handed to the device: the OPDS catalog, and the KOReader
+        sync server (palimpsest#116). It has to match the edge, because those URLs are typed into
+        a reader app. The device can equally reach rk1b directly over the tailnet, and for BOOK
+        DOWNLOADS it should — see docs/runbooks/supernote-koreader-opds.md, which explains why
+        the catalog entry on the Nomad names rk1b while sync, whose payloads are a few hundred
+        bytes, goes through the edge for TLS and a stable name.
       '';
     };
   };
@@ -220,6 +276,13 @@ in
             # VictoriaLogs, so a future change to Stump's default would silently change the log
             # volume arriving there. Raise it to 2/3 only while debugging a scan.
             STUMP_VERBOSITY = "1";
+            # Mount the KOReader sync router (#116). Off by default upstream, and the failure mode
+            # of leaving it off is a 404 on every sync call with nothing else wrong — the routes
+            # are not merged into the axum router at all unless this is true
+            # (apps/server/src/routers/mod.rs). NOTE THE MISSING `STUMP_` PREFIX: unlike every
+            # other key here, upstream's constant is the bare `ENABLE_KOREADER_SYNC`
+            # (core/src/config/stump_config.rs), and a misspelled key is silently ignored.
+            ENABLE_KOREADER_SYNC = "true";
           };
           # We manage the firewall ourselves (tailnet-scoped, below); leave `openFirewall` at its
           # default false — it would open the port on EVERY interface, including the home LAN.
@@ -320,25 +383,44 @@ in
         # Navidrome and Home Assistant provisioners strike. Idempotent + create-only: an existing
         # library is left completely untouched, so hand-made curation in the UI is never clobbered.
         #
-        # It also converges the OPDS reader account (#114) and verifies the catalog answers its
-        # credential over Basic auth. That is here rather than in a unit of its own because it is
-        # the same bootstrap: it needs the owner session this script already holds, and splitting it
-        # out would mean logging in twice and ordering two oneshots against each other for nothing.
-        sops.secrets =
-          lib.genAttrs
+        # It also converges each READER's account, catalog credential and KOReader sync key
+        # (#114/#116) and verifies all three. That is here rather than in a unit of its own
+        # because it is the same bootstrap: it needs the owner session this script already holds,
+        # and splitting it out would mean logging in twice and ordering two oneshots against each
+        # other for nothing.
+        sops.secrets = lib.mkMerge [
+          (lib.genAttrs
             [
               "stump/user"
               "stump/password"
-              "stump/opds_password"
             ]
             (key: {
               sopsFile = self.lib.getSecretFile "library";
               inherit key;
               owner = "stump";
-            });
+            })
+          )
+          {
+            # THE READERS MAP, taken as the WHOLE decrypted file. sops-nix can only extract a
+            # SCALAR value — its `recurseSecretKey` ends in a `.(string)` assertion — so
+            # `key = "stump/readers"` on a YAML map would make sops-install-secrets fail and
+            # install NOTHING (the all-or-nothing trap in AGENTS.md). Taking `key = ""` and
+            # letting the ExecStart wrapper `yq` the map out to JSON keeps the secret file a clean
+            # nested map, and is the shape navidrome's user provisioning already uses here.
+            #
+            # NO `owner` ON PURPOSE, unlike the two above. This blob is the entire `library`
+            # bundle, which also holds the Supernote server's credentials; leaving it root-only
+            # means the `stump` user cannot read those at rest. systemd reads LoadCredential
+            # sources as root before dropping privileges, so the unit still gets it.
+            stump_readers_bundle = {
+              sopsFile = self.lib.getSecretFile "library";
+              key = "";
+            };
+          }
+        ];
 
         systemd.services.stump-provision = {
-          description = "Bootstrap the Stump owner account, the three series-priority libraries and the OPDS catalog credential";
+          description = "Bootstrap the Stump owner account, the three series-priority libraries and each reader's catalog credential and sync key";
           after = [
             "stump.service"
             "stump-library-roots.service"
@@ -353,27 +435,37 @@ in
           environment = {
             STUMP_URL = "http://127.0.0.1:${toString svc.port}";
             STUMP_LIBRARIES = builtins.toJSON libraryPlan;
-            STUMP_OPDS_USER = cfg.opdsUser;
-            # The URL handed to the device has to be the EDGE's, not this loopback one: the
-            # Supernote has no route to the origin except through kelpy's Caddy.
+            # The URLs a reader points a device at are built from the EDGE, not this loopback one.
             STUMP_PUBLIC_URL = cfg.publicUrl;
+            # Stump's own database. Written to for exactly one thing — imposing the declared
+            # KOReader sync key on the row Stump created — which the provisioner explains at
+            # length. Everything else here goes through the API.
+            STUMP_DB = "${configDir}/stump.db";
           };
           serviceConfig = {
             Type = "oneshot";
             RemainAfterExit = true;
             User = "stump";
             Group = "stump";
+            # The readers map is extracted from the bundle into the unit's private tmpfs, not into
+            # the world-readable store and not into the environment.
+            RuntimeDirectory = "stump-provision";
+            RuntimeDirectoryMode = "0700";
             # Credentials land in a per-service tmpfs (CREDENTIALS_DIRECTORY), never argv or environ.
             LoadCredential = [
               "user:${config.sops.secrets."stump/user".path}"
               "password:${config.sops.secrets."stump/password".path}"
-              "opds-password:${config.sops.secrets."stump/opds_password".path}"
+              "bundle:${config.sops.secrets.stump_readers_bundle.path}"
             ];
             ExecStart = pkgs.writeShellScript "stump-provision" ''
               set -euo pipefail
+              # `// {}` so a bundle with no `stump.readers` yields an empty map rather than
+              # `null` — the provisioner then says so plainly instead of dying on a type error.
+              ${pkgs.yq-go}/bin/yq -o=json '.stump.readers // {}' \
+                "$CREDENTIALS_DIRECTORY/bundle" > "$RUNTIME_DIRECTORY/readers.json"
               export STUMP_USER_FILE="$CREDENTIALS_DIRECTORY/user"
               export STUMP_PASSWORD_FILE="$CREDENTIALS_DIRECTORY/password"
-              export STUMP_OPDS_PASSWORD_FILE="$CREDENTIALS_DIRECTORY/opds-password"
+              export STUMP_READERS_FILE="$RUNTIME_DIRECTORY/readers.json"
               exec ${pkgs.python3}/bin/python3 ${./stump-provision.py}
             '';
           };

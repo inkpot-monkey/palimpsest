@@ -26,13 +26,81 @@ at the cost of two reconcilers bridging the fork's blob store to Stump.
 
 That shape is **no longer the decision**. Everything from "## Decision" down, and the two
 revisions dated 2026-07-24 and 2026-07-25, describe it as it stood and are kept as the record of
-how the design got here — read them as history. The 2026-08-13, 2026-08-16, 2026-08-17 and the
-six 2026-08-18 revisions below govern: the transport is pinned to a fork rev carrying the device
-realtime channel, books are no longer pushed at all, `library/supernote/` is a strictly derived
-mirror of the whole device, the device authenticates with Basic
-auth rather than an API key, and the device runs a Tailscale client of its own. Where the older text and the newer
+how the design got here — read them as history. The 2026-08-13, 2026-08-16, 2026-08-17, the six
+2026-08-18 and the 2026-08-19 revisions below govern: the transport is pinned to a fork rev
+carrying the device realtime channel, books are no longer pushed at all, `library/supernote/` is a
+strictly derived mirror of the whole device, the device authenticates with Basic
+auth rather than an API key, the device runs a Tailscale client of its own, and reading position
+round-trips over KOReader's sync protocol. Where the older text and the newer
 text disagree, the newer text wins — including between the dated revisions themselves, which are
 ordered newest first.
+
+## Revision — 2026-08-19: reading position round-trips, and the owner account stops being a person (palimpsest#116)
+
+The 2026-08-13 revision below promised that "reading progress now round-trips" and left it to
+palimpsest#116. It is built. Nothing about the architecture changes — Stump's own implementation
+of KOReader's sync protocol carries it, exactly as that revision said — but three things had to
+be decided that the promise did not anticipate, and each is a decision rather than a detail.
+
+**The catalog runs 0.1.6 again, and this time the reason is not preference.** A revert on
+2026-08-19 dropped the in-repo 0.1.6 package on the grounds that nothing in a binary cache builds
+it, and the checks took forty minutes. That reasoning was sound and the conclusion is now
+overturned by a fact it did not have: **0.1.5's progress *fetch* route is broken, not merely
+older**. `get_progress` builds its query with `reading_session::Entity::find()` and maps the rows
+into `ModelWithDevice`, whose `FromQueryResult` reads prefixed columns — so it answers 500 the
+moment a reading session exists. Position could be pushed and never read back, which is not "a
+round-trip with a bug" but half a round-trip. Upstream stumpapp/stump#1279, fixed by a one-line
+change in #1280 and released in 0.1.6. The build cost is knowingly paid and it has a near exit:
+nixpkgs took 0.1.6 on 2026-08-08, so the next `nix flake update nixpkgs` retires the override and
+restores a cached build.
+
+**The sync key is DECLARED, not minted — Stump is made to accept a key we chose.** The obvious
+reading is that it cannot be: `ApikeyInput` has no field for a key, `createApiKey` always calls
+`create_prefixed_key()`, and only a hash is stored. Taken at face value that forces a value to be
+learned after the first deploy and hand-carried into sops, which is the two-phase deploy the
+2026-08-16 revision retired for OPDS and would have quietly reintroduced here. It is avoidable
+because a key is not opaque: `stump_<short>_<long>` is three `_`-delimited parts, and validation
+compares exactly two stored columns — `short_token` verbatim and `long_token_hash`, which is
+`hex(sha256(<long>))` under prefixed-api-key's `seam_defaults()`. So `createApiKey` writes the row
+(and every column whose format we would otherwise guess), and the provisioner rewrites those two
+TEXT columns to match the sops value.
+
+- **The cost, stated plainly:** one write into Stump's database, coupling this repo to two column
+  names and one hash function. It is bounded by failing LOUDLY — the provisioner authenticates
+  with the declared key over the real sync route immediately afterwards, so a schema or hash
+  change upstream reddens a deploy instead of silently stopping a device from syncing.
+- **What it buys** is the property that made it worth the coupling: a Stump database is a *cache*
+  of the corpus, and rebuilding one must not invalidate a credential a device is holding. The VM
+  check destroys the database outright and requires the same key to work again with no operator
+  step.
+
+**The server owner stops being a person; everyone who reads is a reader.** Reading sessions are
+per-user, so "where am I in this book" belongs to whichever account the device syncs as — and
+that account cannot be the owner. `enforce_permissions` returns `Ok(())` unconditionally when
+`is_server_owner` (crates/graphql/src/data.rs) and `validate_api_key` preserves the flag, while an
+API key is accepted as a bearer token on **every** route: an owner's sync key is therefore a full
+administrative credential, whatever scope it records, living in a plaintext Lua file on a
+sideloaded tablet. **Decision: `stump/user` is administrative only — the provisioner uses it and
+nothing else does — and each human gets a reader account that is their whole identity here: OPDS
+Basic auth, the sync key, the reading progress, and the web-UI login.**
+
+- **This is also the only shape that generalises.** There is exactly one owner, so a design in
+  which the primary human *is* the owner has no second step. With everyone a reader, the next
+  person is one more entry in the `stump.readers` sops map — which is the shape Navidrome's user
+  provisioning already uses in this fleet. The retired single-purpose `opds` role account is
+  folded into it.
+- **Book identity is hash-only, and the hashes are now cross-checked rather than assumed.** Stump
+  does not implement the protocol's filename strategy, so a book with no `koreaderHash` answers
+  404 to the device's push with nothing else wrong. Libraries are created with the hashes on; the
+  provisioner rescans any library whose content predates that, and does nothing once every
+  hashable book has one. Two limits worth knowing: only **PDF and EPUB** can ever acquire a hash
+  (upstream's zip/rar processors have the call commented out), and where the last sampled 1 KiB
+  chunk straddles EOF Stump zero-pads its buffer while KOReader does not, so the two disagree for
+  that narrow band of file sizes.
+- **What is device-side state, and therefore not declarable:** the custom sync server URL, a
+  login step KOReader insists on and Stump does not validate, and *Document matching method →
+  Binary*. All three are in `docs/runbooks/supernote-koreader-opds.md` §5, which is the recovery
+  procedure after a device reset.
 
 ## Revision — 2026-08-18: the store stays un-backed-up, but the REASON changes — the mirror carries it, not an offsite backup (palimpsest#148)
 
@@ -275,7 +343,7 @@ stylus axes (`["highlights"] = 0` in its `.sdr` sidecars).
   ink; what it could never do is produce a Supernote-native notebook that the stock apps and
   Private Cloud sync understand. Do not rule out a sideloaded pen feature on the belief that the
   pen is unavailable — that belief is now falsified. The device-side detail is recorded in
-  `docs/runbooks/supernote-koreader-opds.md` §6.
+  `docs/runbooks/supernote-koreader-opds.md` §7.
 
 - **Second confirmation of the same lesson.** This is the second assumption in the 2026-08-13
   revision that a single hour with the device corrected, the other being the realtime channel
@@ -498,7 +566,9 @@ its own implementation of **KOReader's sync protocol**, so position syncs with n
 matched by **content hash only** (the libraries must generate KOReader-compatible hashes and be
 rescanned), with the sync routes **off by default**. The original architecture had no answer here
 because it was reasoning about the *device*; the answer arrives with the *reader*. Tracked as
-palimpsest#116.
+palimpsest#116 — **built; see the 2026-08-19 revision** for the three decisions it forced
+(the 0.1.6 pin, a sync key declared in sops rather than minted, and the owner account ceasing to
+be a person).
 
 **Consequence — Stump moves onto the critical path, and the device gains hand-configured state.**
 The catalog was a browse/read convenience; it is now how books reach the device, so its

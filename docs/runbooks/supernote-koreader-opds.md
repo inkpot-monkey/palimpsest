@@ -1,11 +1,13 @@
 # Runbook: set the Nomad up as an OPDS reader (KOReader + Tailscale)
 
 How the Supernote Nomad is configured to read the document library. This is the **device half**
-of ADR-0031's books-out leg: Stump serves an OPDS 1.2 catalog (palimpsest#113/#114), and a
-sideloaded KOReader pulls from it. Nothing here is managed by Nix — the device is not a fleet
-host — so this file is the record. Follow it to rebuild the setup after a factory reset.
+of ADR-0031's books-out leg: Stump serves an OPDS 1.2 catalog (palimpsest#113/#114), a sideloaded
+KOReader pulls from it (palimpsest#115), and reading position syncs back (palimpsest#116).
+Nothing here is managed by Nix — the device is not a fleet host — so this file is the record.
+Follow it to rebuild the setup after a factory reset.
 
-Design: ADR-0031, especially the 2026-08-16 (Basic auth) and 2026-08-17 (Tailscale) revisions.
+Design: ADR-0031, especially the 2026-08-16 (Basic auth), 2026-08-17 (Tailscale) and 2026-08-19
+(progress sync) revisions.
 
 ## What the device is
 
@@ -131,8 +133,8 @@ return {
         {
             ["title"]      = "Palimpsest Library",
             ["url"]        = "http://rk1b.tail8596c.ts.net:10001/opds/v1.2/catalog",
-            ["username"]   = "opds",
-            ["password"]   = "<sops: profiles/library.yaml → stump/opds_password>",
+            ["username"]   = "thomas",
+            ["password"]   = "<sops: profiles/library.yaml → stump/readers/thomas/password>",
             ["searchable"] = false,
         },
     },
@@ -161,7 +163,142 @@ else**, so the password cannot be replayed against the GraphQL API.
 The browser path (`https://library.<domain>`) is unchanged and still goes through the edge — so
 `parts/settings.nix`'s `library` entry describes the *browser's* delivery path, not this one.
 
-## 5. Verify
+## 5. Reading-progress sync
+
+Where you are in a book is kept on the server, so position follows the book rather than the
+device. Stump implements KOReader's sync protocol itself — this is configuration on both ends,
+not a bridge (palimpsest#116, ADR-0031).
+
+**The URL is a sops value, not something the server hands you.** It is
+`https://library.palebluebytes.space/koreader/<key>`, where `<key>` is
+`stump/readers/<you>/koreader_key` in the `library` secret file. Nothing is minted and nothing has
+to be read back off rk1b: the provisioner *imposes* that key on Stump. If it could not, the
+`stump-provision` unit is red and says which reader and why.
+
+Unlike the catalog, this one goes **through the edge**, not direct to rk1b. Sync payloads are a
+few hundred bytes each, so the VPS round-trip costs nothing measurable, and in exchange the
+credential travels under TLS with a stable name. (Both work; the direct form is
+`http://rk1b.tail8596c.ts.net:10001/koreader/<key>`.)
+
+### On the device
+
+The menu only exists with a book open — the plugin is `is_doc_only`, so you will not find it from
+the file browser. Open a book, tap the top of the screen, then: ***Tools* (wrench tab) → Progress
+sync**.
+
+1. **Custom sync server** → paste the URL above, exactly as printed. It ends at the key; KOReader
+   appends `/users/auth` and `/syncs/progress` itself.
+1. **Register / Login** → enter **anything** — `x` / `x` will do. This step feels wrong and is
+   required: KOReader will not sync until it believes it has logged in, and Stump does not
+   validate the credentials at all (the key in the URL is the real credential). It sends an MD5 of
+   whatever you type; Stump ignores it.
+1. **Document matching method** → **Binary**. Stump matches books by content hash and has no
+   filename fallback, so a reader set to *Filename* will push progress that matches nothing. This
+   is KOReader's default on current builds, but it is per-install state that a migration can move,
+   so set it explicitly.
+1. Optionally turn on **auto-sync**; otherwise position is pushed on document close and on the
+   *Push progress* menu item.
+
+Written to `/sdcard/koreader/settings/kosync.lua`:
+
+```lua
+return {
+    ["settings"] = {
+        ["custom_server"]   = "https://library.palebluebytes.space/koreader/<key>",
+        ["checksum_method"] = 0,      -- 0 = BINARY, 1 = FILENAME. Must be 0.
+        ["username"]        = "x",    -- not validated by Stump
+        ["userkey"]         = "<md5 of whatever you typed>",
+        ["auto_sync"]       = true,
+    },
+}
+```
+
+As with `settings.reader.lua`, **force-stop KOReader before editing this by hand** — it rewrites
+the file on exit.
+
+### Verify
+
+Open a book, turn a few pages, close it. Then on rk1b:
+
+```bash
+# The device's own view — this is the fetch route, and it is what "position round-trips" means.
+curl -s "http://127.0.0.1:10001/koreader/<your key>/syncs/progress/<book hash>" | jq
+# → {"document":"…","progress":"42","percentage":0.42,"device":"…"}
+```
+
+The book hash is Stump's `koreaderHash` for that book. If a push 404s, the book has no hash: see
+*Books with no hash* below.
+
+### Whose progress it is
+
+Your own. The device syncs as **your reader account** — the same one you log into the web UI with
+— so what you read on the Nomad is what you see in the browser.
+
+Note which account that is *not*. `stump/user` is the **server owner**: it exists to bootstrap and
+administer the catalog, the provisioner is the only thing that uses it, and you should not log in
+with it. That is not fussiness. Stump's `enforce_permissions` returns OK unconditionally for the
+owner, and an API key is accepted as a bearer token on every route — so an owner's sync key would
+be a full administrative credential sitting in a plaintext Lua file on the tablet, no matter what
+scope it recorded. Readers are non-owner accounts precisely so that the key on the device is
+worth exactly one thing.
+
+Adding someone else is another entry under `stump.readers` in the secret file and a redeploy:
+their own account, their own password, their own key, their own progress.
+
+### Books with no hash
+
+Stump only generates KOReader hashes for **PDF and EPUB** — upstream's zip/rar processors have
+the call commented out, so comics can never sync. Beyond that, a book indexed before the library
+had `KoReader-compatible hashes` turned on has no hash and answers 404 to the device's push.
+`stump-provision` detects that and enqueues a hash-regenerating rescan on every deploy, so the
+fix is usually just `systemctl restart stump-provision`. It names the books it is scanning for —
+the same names on run after run mean a file the hasher cannot read at all, which no further
+scanning will fix. If it instead warns that a *library* does not generate hashes, turn the setting
+on in that library's settings page first — the provisioner will not rewrite a library config,
+because doing so replaces the whole config and would erase hand curation.
+
+### One book that never syncs while the rest do
+
+If a book *has* a `koreaderHash` and still 404s, suspect the hash itself. KOReader samples 1 KiB
+at offsets 0, 1 KiB, 4 KiB, 16 KiB, 64 KiB … and stops past EOF; where that last sample straddles
+the end of the file, KOReader hashes the bytes it got while Stump hashes a zero-padded 1 KiB
+buffer, so the two disagree. It only bites files whose size lands just above a sample offset, and
+there is nothing to configure — the device is right and the server is wrong. Confirm by computing
+`util.partialMD5` over the file yourself and comparing with Stump's `koreaderHash`; if they
+differ, that is this, and it wants an upstream fix rather than a local one.
+
+### Choosing a key
+
+Both of a reader's credentials are declared, so there is nothing to bank and no second deploy.
+Generate a key like this and paste it into the secret file:
+
+```bash
+printf '%s_%s_%s\n' stump "$(openssl rand -hex 8)" "$(openssl rand -hex 24)"
+```
+
+Both the three `_`-delimited parts and the `stump` prefix are required, for different reasons —
+the sync route needs the shape, and the prefix is what lets the provisioner verify the key's
+resolved scope. `modules/nixos/profiles/stump.nix` explains which is which; don't trim either.
+
+```yaml
+# the `library` sops file
+stump:
+  user: catalog-owner
+  password: <administrative; not for daily use>
+  readers:
+    thomas:
+      password: <your OPDS + web UI password>
+      koreader_key: stump_9f3a1c7e_4b6d2a...
+```
+
+Commit + push the secrets repo, `nix flake update secrets`, redeploy.
+
+Because the key is declared rather than minted, **rebuilding the catalog database does not break
+the device.** The Stump DB is a cache of the corpus; wipe it and the next `stump-provision` run
+recreates the account and re-imposes the same key from sops. Reading *progress* does not survive
+that — it lived in the database — but nothing has to be re-typed on the Nomad.
+
+## 6. Verify the catalog
 
 ```bash
 # From a tailnet host — 401 with a challenge means the endpoint is live and gated.
@@ -184,7 +321,7 @@ adb shell md5sum "/sdcard/opds/<file>.epub"   # compare against the source
 Proven end-to-end 2026-08-17: a 23 MB epub pulled into `/sdcard/opds` with an MD5 identical to
 the source file.
 
-## 6. The pen in sideloaded apps — measured 2026-08-18
+## 7. The pen in sideloaded apps — measured 2026-08-18
 
 ADR-0031's split of responsibilities (handwriting stays with the stock apps, reading moves to a
 sideloaded reader) rested on an assumption that was reasoned but never measured, and
@@ -232,7 +369,7 @@ rule out a sideloaded pen feature on the belief that the digitiser is unavailabl
   ghosting, no partial-refresh control, no per-mode tuning. The device's own rotation sensor does
   not drive it either. It is usable, not the KOReader experience you would get on a Kobo.
 - **Freezes** have been reported on long reading sessions (`koreader/koreader#12669`).
-- **The pen works, but KOReader does nothing with it** — see section 6. Not a limit of the
+- **The pen works, but KOReader does nothing with it** — see section 7. Not a limit of the
   device or of sideloading; a limit of KOReader.
 - **Nothing here is declarative.** A factory reset loses all of it; this file is the recovery
   procedure.

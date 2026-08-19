@@ -46,13 +46,14 @@ let
   account = "device@example.com";
   password = "sync-secret-123";
 
-  # The Stump owner account its provisioner claims, plus the non-owner OPDS account it creates.
-  # Neither is exercised as a credential here (palimpsest#113's check does that); they exist because
-  # the catalog cannot start without them.
-  stumpOwner = "reader";
+  # The Stump owner account its provisioner claims, plus the one reader it creates. Neither is
+  # exercised as a credential here (palimpsest#113's check does that); they exist because the
+  # catalog cannot finish provisioning without them.
+  stumpOwner = "catalog-owner";
   stumpPassword = "catalog-secret-123";
-  stumpOpdsUser = "opds";
-  stumpOpdsPassword = "opds-secret-456";
+  stumpReader = "thomas";
+  stumpReaderPassword = "reader-secret-456";
+  stumpReaderKey = "stump_9f3a1c7e_4b6d2a8f0e5c1937d84b2a6f0c7e315984d2b6a0";
 
   # rk1b's tree lives on the NVMe /var/cache subtree; there is no such mount here, but the path is
   # kept so the git-annex repository, the mirror and the Stump roots sit in the same relationship.
@@ -200,7 +201,6 @@ pkgs.testers.nixosTest {
           custom.profiles.stump = {
             enable = true;
             inherit libraryPath;
-            opdsUser = stumpOpdsUser;
             publicUrl = "https://library.example.com";
           };
 
@@ -233,12 +233,24 @@ pkgs.testers.nixosTest {
           sops.secrets."supernote/password".path = lib.mkForce "/etc/mock-supernote-password";
           sops.secrets."stump/user".path = lib.mkForce "/etc/mock-stump-user";
           sops.secrets."stump/password".path = lib.mkForce "/etc/mock-stump-password";
-          sops.secrets."stump/opds_password".path = lib.mkForce "/etc/mock-stump-opds-password";
+
+          # The readers map, as the WHOLE decrypted bundle — the profile takes `key = ""` and
+          # `yq`s `.stump.readers` out of it. It MUST be present and well-formed even though this
+          # check exercises no reader credential: `stump-provision` loads it as a systemd
+          # credential, and LoadCredential= on a missing path fails the unit at step CREDENTIALS
+          # before the script runs at all.
+          sops.secrets.stump_readers_bundle.path = lib.mkForce "/etc/mock-stump-bundle";
           environment.etc."mock-supernote-user".text = account;
           environment.etc."mock-supernote-password".text = password;
           environment.etc."mock-stump-user".text = stumpOwner;
           environment.etc."mock-stump-password".text = stumpPassword;
-          environment.etc."mock-stump-opds-password".text = stumpOpdsPassword;
+          environment.etc."mock-stump-bundle".text = ''
+            stump:
+              readers:
+                ${stumpReader}:
+                  password: ${stumpReaderPassword}
+                  koreader_key: ${stumpReaderKey}
+          '';
 
           environment.systemPackages = [ pkgs.curl ];
           # Two servers, an annex assistant, and Stump's first-scan PDF thumbnailing.

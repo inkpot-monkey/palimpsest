@@ -10,7 +10,7 @@
 # for callers that only read the names — one shape to keep in step with Stump's schema, which is
 # the part that will actually drift.
 { pkgs }:
-{
+let
   # A real PDF, not a stub. Stump dispatches on content type and only handles zip/rar/epub/pdf, so
   # a stub file never becomes a catalog entry and any read-path assertion over it is vacuous. groff
   # emits a valid PDF from a tiny troff source without dragging in a document toolchain.
@@ -30,12 +30,37 @@
         printf '.SH\n%s\n.PP\n%s\n' ${pkgs.lib.escapeShellArg name} ${pkgs.lib.escapeShellArg text} \
           | groff -T pdf -ms > $out
       '';
+in
+{
+  inherit book;
 
-  # Python helpers for a testScript: `graphql`, `catalog`, `wait_for_catalog`.
+  # The same book, sized so that KOReader's hash sampler never reads a SHORT chunk — which is the
+  # whole point of it. `util.partialMD5` samples 1 KiB at offsets 0, 1 KiB, 4 KiB, 16 KiB, 64 KiB …
+  # and stops at the first offset past EOF; where the LAST sampled chunk straddles EOF, KOReader
+  # hashes the bytes it got while Stump hashes a zero-padded 1 KiB buffer
+  # (core/src/filesystem/hash.rs reads into a fixed vec and consumes all of it), and the two
+  # disagree. Only file sizes that avoid a straddle let a test cross-check Stump's hash against
+  # KOReader's algorithm rather than against a re-implementation of Stump's own.
+  #
+  # 4000 distinct tokens compress to roughly 12.7 KiB of PDF, which sits inside the safe band
+  # [5 KiB, 16 KiB) with margin at both ends. The band is narrow, so the consumer ASSERTS the
+  # no-short-chunk property rather than trusting this comment — if groff's output ever drifts out
+  # of the band, the check says so instead of quietly comparing two implementations of the same
+  # bug.
+  bigBook =
+    name: book name (pkgs.lib.concatStringsSep " " (pkgs.lib.genList (i: "w${toString i}") 4000));
+
+  # Python helpers for a testScript: `graphql`, `catalog`, `wait_for_catalog`, `koreader_hash`.
   #
   # `node` is the test-driver machine running Stump; `owner`/`password` are the account the
   # provisioner claimed; `port` is the catalog port. Interpolated into the testScript at the top
   # level — the caller must also `import json`, `shlex` and `time`.
+  #
+  # The two imports below belong to `koreader_hash` and are carried HERE rather than left to the
+  # caller: the test driver type-checks the assembled testScript, so a consumer that never calls
+  # that helper would still fail to build with `Name 'base64' used when not defined`. Duplicating
+  # an import a caller already has is free; making a shared helper depend on the caller's import
+  # list is not.
   helpers =
     {
       node,
@@ -44,6 +69,9 @@
       port,
     }:
     ''
+      import base64
+      import hashlib
+
       STUMP_LOCAL = "http://127.0.0.1:${toString port}"
 
 
@@ -76,6 +104,33 @@
               }
               for n in data["libraries"]["nodes"]
           }
+
+
+      def koreader_hash(path):
+          """KOReader's `util.partialMD5` (frontend/util.lua), computed in the test driver over
+          bytes read out of the VM — an INDEPENDENT implementation of the algorithm, not a port of
+          Stump's. That is the whole point: it is what makes "Stump's hash is the one the device
+          will send" an assertion rather than a hope.
+
+          1 KiB samples at offsets 0, 1 KiB, 4 KiB, 16 KiB … stopping at the first offset past
+          EOF. The assertion on the chunk length is a FIXTURE GUARD, not a property of the
+          algorithm: where the last sample straddles EOF the two implementations diverge (Stump
+          zero-pads its buffer, KOReader does not), so a fixture in that regime would be comparing
+          Stump against itself. `bigBook` exists to stay out of it."""
+          raw = base64.b64decode(${node}.succeed(f"base64 -w0 {shlex.quote(path)}"))
+          digest = hashlib.md5()
+          for i in range(-1, 11):
+              offset = 0 if i == -1 else 1024 << (2 * i)
+              if offset >= len(raw):
+                  break
+              chunk = raw[offset:offset + 1024]
+              assert len(chunk) == 1024, (
+                  f"{path} is {len(raw)} bytes, so KOReader's sample at offset {offset} is short "
+                  f"({len(chunk)} bytes) and Stump's zero-padded hash cannot be cross-checked "
+                  "against it — resize the fixture (see bigBook in parts/checks/lib/stump-catalog.nix)"
+              )
+              digest.update(chunk)
+          return digest.hexdigest()
 
 
       def wait_for_catalog(predicate, what, tries=60):
