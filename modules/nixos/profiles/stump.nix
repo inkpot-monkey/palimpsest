@@ -3,7 +3,7 @@
 # node, which is where the library tree lives). Supersedes the browse-only catalog #93 specified:
 # after the OPDS pivot (#110) this is the DELIVERY path to the Supernote, not a convenience.
 #
-# Runs `pkgs.stump` (TEMPORARILY 0.1.6, ahead of nixpkgs — pkgs/stump, #111) through the UPSTREAM
+# Runs nixpkgs' `pkgs.stump` through the UPSTREAM
 # `services.stump` module. Everything below is the delta between that module's defaults and what
 # this fleet needs; each one is load-bearing, so read the reason before dropping one.
 #
@@ -27,7 +27,7 @@
 # client's, and — worse — generate self-referencing links from the WRONG scheme/host, which is
 # exactly what an OPDS client follows to traverse the catalog (#114). `STUMP_TRUST_PROXY_HEADERS`
 # turns it back on. Safe here because the port is open on `tailscale0` only, so the only thing that
-# can set those headers is the edge (see the firewall note below). Stump 0.1.6 has no separate
+# can set those headers is the edge (see the firewall note below). Stump has no separate
 # "public URL" knob — `HostDetails` is derived per-request from `Host` + the proxy scheme header
 # (apps/server/src/middleware/host.rs), which Caddy's `reverse_proxy` sets and preserves by default.
 #
@@ -68,9 +68,9 @@
 #
 # ── BEFORE BUMPING THE VERSION: snapshot the database ─────────────────────────────────────
 # Stump migrates its schema on start, and one of those migrations has already destroyed data once
-# upstream (0.1.5 consolidated reading sessions and shipped an explicit backup warning). Standing
-# this up fresh on 0.1.6 sidesteps that particular migration, but the NEXT one is a coin flip. So,
-# on rk1b, before `nix flake update nixpkgs` lands a new `pkgs.stump` or pkgs/stump's pin moves:
+# upstream: the reading-session consolidation, which shipped with an explicit backup warning and is
+# in the version this fleet runs. The NEXT one is a coin flip too. So, on rk1b, before
+# `nix flake update nixpkgs` lands a new `pkgs.stump`:
 #
 #   systemctl stop stump
 #   install -d -o stump -g stump -m 0700 /var/cache/stump/backups

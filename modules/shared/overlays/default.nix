@@ -29,6 +29,24 @@ let
       });
     };
 
+    # Stump comes from nixpkgs, which declares it x86_64-only — and the host that runs it
+    # (rk1b, hosts/default.nix) is aarch64, so without this the catalog profile does not even
+    # evaluate there. Nothing about the package is x86-specific: it is a Rust server plus a
+    # yarn-built web frontend, and the restriction is upstream's untested-platform caution
+    # rather than a known incompatibility. Widening `meta.platforms` is the whole override —
+    # the derivation itself is nixpkgs' own, unmodified.
+    #
+    # It does mean rk1b compiles Stump from source: cache.nixos.org has no aarch64 build of a
+    # package nixpkgs says cannot run there. Budget for that on a first deploy, or build it on
+    # the fleet's aarch64 remote builder.
+    stump = _final: prev: {
+      stump = prev.stump.overrideAttrs (old: {
+        meta = old.meta // {
+          platforms = old.meta.platforms ++ [ "aarch64-linux" ];
+        };
+      });
+    };
+
     tree-sitter = final: prev: {
       tree-sitter-grammars = prev.tree-sitter-grammars // {
         tree-sitter-quint = final.tree-sitter.buildGrammar {
@@ -86,6 +104,7 @@ in
   # Using composeManyExtensions is more robust than manual attribute merging
   default = inputs.nixpkgs.lib.composeManyExtensions [
     additions
+    modifications.stump
     modifications.tree-sitter
     modifications.snapcast
     # modifications.antigravity
