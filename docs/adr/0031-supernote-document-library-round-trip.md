@@ -782,7 +782,7 @@ tree.**
   before it starts. `STUMP_TRUST_PROXY_HEADERS` is the switch; it is safe only because the
   port is open on `tailscale0` alone, so nothing but the edge can set those headers.
   Finally: **take a `sqlite3 .backup` of `/var/cache/stump/stump.db` before every version
-  bump** — the reading-session consolidation shipped with an explicit data-loss warning,
+  bump** — 0.1.5's reading-session consolidation shipped with an explicit data-loss warning,
   and the next migration is a coin flip. The step is written out in
   `modules/nixos/profiles/stump.nix`'s header.
 - **Reuses established patterns.** git-annex owning the tree so the authoritative node
