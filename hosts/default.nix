@@ -251,8 +251,9 @@ in
           # dirs redirect to /var/cache (NVMe) via BindPaths. See ADR-0021.
           custom.profiles.monitoring-server.enable = true;
           custom.profiles.monitoring-client.enable = true;
-          # Off while rsync.net is unreachable fleet-wide (meant to return); reportJobs
-          # keeps the telemetry backup visible on the Backups board as a disabled edge.
+          # Off fleet-wide: DEFERRED, not blocked (palimpsest#150 — rsync.net is reachable;
+          # this is a scheduling decision). reportJobs keeps the telemetry backup visible on
+          # the Backups board as a disabled edge.
           custom.profiles.backup.monitoringTelemetry.enable = false;
           custom.profiles.backup.reportJobs = [ "telemetry" ];
 

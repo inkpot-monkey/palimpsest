@@ -28,9 +28,18 @@
     # the sudo password as defense-in-depth. `just deploy kelpy` supplies it via
     # --ask-sudo-password (prompted once, up front).
     proxy.enable = true;
-    # Temporarily disabled: the restic repo (zh2046.rsync.net) is unreachable and
-    # holds a stale exclusive lock from stargazer, failing every activation.
-    # Re-enable once the lock is cleared and the host is reachable.
+    # DEFERRED, not blocked — the reason this is off is a scheduling decision, not an
+    # obstacle. The older note here said rsync.net was unreachable and held a stale
+    # exclusive lock from stargazer; both halves have decayed:
+    #   • zh2046.rsync.net is REACHABLE — TCP 22 connects from this host (checked
+    #     2026-08-19). "Unreachable" has not been true for some time.
+    #   • stargazer no longer configures backup at all, so nothing there can still be
+    #     taking a lock. Whether the repo carries a leftover one is untested, and is only
+    #     testable by running restic.
+    # Turning this on is what ships the document library replica offsite (see the paths /
+    # exclude / assertion below — the wiring is already correct and needs no path change).
+    # Tracked in palimpsest#150, which carries the fleet-wide picture and the open
+    # questions. Until then the library lives on two git-annex replicas and nowhere else.
     backup.enable = false;
     # Still surface this host's off-site job on the Backups board — as a known-off edge.
     backup.reportJobs = [ "daily" ];
@@ -136,9 +145,9 @@
     # personal documents — and once seeded it is by far the largest thing on this 90G
     # host. This is not hypothetical housekeeping: `paths` is /persistent wholesale,
     # and hosts/kelpy/git-annex.nix persists /var/lib/git-annex into it, so the day
-    # `backup.enable` flips true (see the note above — it is off only because the
-    # rsync.net repo is unreachable, and is meant to come back) the entire library
-    # would ship to rsync.net. `thin` makes the worktree files hardlinks to the annex
+    # `backup.enable` flips true (see the note above — it is off by deferral, and is meant
+    # to come back) the entire library would ship to rsync.net. `thin` makes the worktree
+    # files hardlinks to the annex
     # objects, which restic reads as full content, so it would go twice over.
     #
     # Scoped to `music` deliberately: the `pictures` repo alongside it is personal
@@ -146,7 +155,7 @@
     # Supernote document library replica (`/var/lib/git-annex/library`, ADR-0031 /
     # palimpsest#90) lives there too and is DELIBERATELY included offsite (personal
     # documents, not re-acquirable media), so it must stay out of this exclude list.
-    # NOTE: `backup.enable` is currently false above (rsync.net unreachable), so nothing
+    # NOTE: `backup.enable` is currently false above (deferred — palimpsest#150), so nothing
     # ships until it returns; when it does, `library` goes offsite via the /persistent path.
     #
     # slskd's own downloads (ADR-0029) are the same category — bulk, re-acquirable data

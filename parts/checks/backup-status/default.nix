@@ -6,7 +6,7 @@
 }:
 
 # Restic backup status metrics (modules/nixos/profiles/backup.nix). Restic is switched off
-# fleet-wide while rsync.net is unreachable, so the load-bearing behaviour is that a host
+# fleet-wide — DEFERRED, not blocked (palimpsest#150) — so the load-bearing behaviour is that a host
 # which OWNS an off-site job still publishes it as a known-DISABLED edge — the Backups
 # board must show "off", not "no data". This pins that: a host with reportJobs but the
 # jobs disabled emits backup_restic_enabled = 0 for each, plus a check heartbeat.
