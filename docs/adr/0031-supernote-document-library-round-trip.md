@@ -149,6 +149,14 @@ maintained branch, and the palimpsest#145 revision below reaffirmed it in terms:
 does not change. The fork stays retired and the pin on upstream stands."* The input now moves back
 to `inkpot-monkey/supernote`, at `rev=79d1003d6dabd191e00f83fe96ee6a3262cbf5b8`.
 
+> **That rev is the pin AS OF THIS REVISION (2026-08-18), not a statement of current config.**
+> `flake.lock` is the only authority on what is pinned today, and it has since moved — the commit
+> that moved it (`9920b64`, to the fork branch tip) edited this ADR for an unrelated correction and
+> left this sentence untouched, which is exactly how a value duplicated out of a lockfile rots.
+> The DECISION recorded here — pin a **rev**, not a branch, so the input cannot drift under an
+> unattended update — is unchanged and still in force. Dated entries are not rewritten when the
+> value moves; check `flake.lock` instead of trusting a rev quoted in prose.
+
 **This does not re-adopt a vendored fork, and it does not overturn the 2026-08-13 reasoning.**
 That revision retired the fork because its price — "a maintained fork to carry" — stopped buying
 anything once upstream implemented the planner surface itself. That price is not being paid again.

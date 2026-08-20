@@ -280,3 +280,22 @@ When 1–4 pass (5 is a recording step, not a gate), #112's final criterion is m
 > partial evidence came from a *different* build — 0.21.0 plus the local
 > `fix/engineio-v3-device-support` branch. The pass therefore spans two builds; that is
 > stated rather than smoothed over.
+
+> **⚠ SUPERSEDED BY A DEPLOY — this pass no longer describes what runs (checked 2026-08-20).**
+> rk1b now serves **`supernote-0.21.0`**, read from the live process's argv, not the 0.17.0 that
+> steps 1–4 were measured against. The transport pin moved twice after this pass was accepted.
+> The record above is left exactly as written because it is a dated observation and remains true
+> of the build it names — but it is **not** evidence about the build in production, and should not
+> be cited as such.
+>
+> Re-establishing it means re-running steps 1, 3, 4 and 5 (step 2 is a retired mechanism) and
+> adding a second dated block below this one. Step 1 is already most of the way there: 13 sync
+> cycles were observed on 2026-08-20 with `synchronous/start` and `/end` perfectly matched and no
+> abandoned syncs.
+>
+> One thing this deploy *helps*: step 6's partial evidence came from 0.21.0 plus the realtime fix
+> branch, which is the surface rk1b now runs. The "two builds" caveat above no longer applies to
+> step 6 — #146's tests can be run directly against the deployed server and compared like for like.
+>
+> **Do not edit the accepted block above to say 0.21.0.** It records what was measured, on the
+> date it was measured. Add, do not rewrite.
