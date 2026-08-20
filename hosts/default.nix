@@ -243,6 +243,16 @@ in
           # parts/settings.nix; the pre-version-bump DB snapshot step is in the profile header.
           custom.profiles.stump.enable = true;
 
+          # Book filer (#144): a 2-minute timer files EPUBs dropped in
+          # /var/cache/books-inbox/<Subject>/ into /var/cache/library/books/<Subject>/, named
+          # `<Title> - <Author>.epub` from the EPUB's own OPF metadata — no network lookup, the
+          # good name is already in the file. The git-annex assistant adopts what appears in the
+          # tree and Stump's watcher scans it in, so this is only the hop in between. Runs as
+          # git-annex so filed books are library-owned; anything it cannot name is LEFT in the
+          # inbox and counted in `books_inbox_stuck_files`. See
+          # modules/nixos/profiles/book-filer.nix and docs/runbooks/book-filing.md.
+          custom.profiles.book-filer.enable = true;
+
           # Off-host uptime watcher (Gatus): rk1b is always-on and not kelpy, so it
           # can observe kelpy failing. Probes the fleet + alerts to #infra-alerts.
           # See ADR-0019 / modules/nixos/profiles/monitoring/watcher.nix.

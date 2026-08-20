@@ -18,6 +18,14 @@
         annas_opds = import ./annas-opds {
           inherit pkgs;
         };
+        # The book filer (palimpsest#144): EPUBs dropped in books-inbox/<Subject>/ are renamed
+        # from their own OPF metadata and filed into the library tree. Covers the happy path,
+        # missing metadata, collisions, unsupported formats, a drop with no subject folder, and
+        # the quiescence window — plus the default ACL and the copy-then-rename that a plain
+        # `mv` would silently get wrong.
+        book_filer = import ./book-filer {
+          inherit pkgs self;
+        };
         # Claude relay (ADR-0018) slice 01: allowlist-gated echo over a minimal
         # tuwunel homeserver. The relay's mechanics are proven here (stub-driven in
         # later slices) so an AFK agent can verify via `nix flake check`.
