@@ -86,6 +86,13 @@ let
     # are not, so temperature panels carry no threshold bands. Disk/SSD wear is absent
     # and tracked as palimpsest#162. Graduated from map #30's fog (#160).
     ln -s ${./dashboards/hardware-health.json} $out/hardware-health.json
+    # Watchers: is the watching machinery itself still running? Every other board asks
+    # whether the WATCHED thing is healthy; this one ranks the curated watcher timers by
+    # OVERDUE FACTOR (time since last trigger / the tier's expected cadence) so a 60s and
+    # a daily watcher compare directly, cross-checks the three that publish their own run
+    # timestamp, and carries the book-filer stuck-file metrics. Not an alert console —
+    # the stack is collection-only, so no metric records that an alert fired (#161).
+    ln -s ${./dashboards/watchers.json} $out/watchers.json
   '';
 
   # "Advanced" folder: deep-dive boards kept available but off the primary nav. The

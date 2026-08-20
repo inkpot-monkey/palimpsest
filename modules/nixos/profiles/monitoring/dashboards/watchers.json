@@ -1,0 +1,999 @@
+{
+  "id": null,
+  "uid": "watchers",
+  "title": "Watchers",
+  "description": "Is the watching machinery itself still running? Every other board asks whether the WATCHED thing is healthy; this one asks whether the watchers are alive. Built on node_systemd_timer_last_trigger_seconds plus the textfile run-timestamp family. NOT an alert console: the stack is collection-only (no vmalert, no alertmanager), so nothing here records that an alert FIRED — only that the machinery that would have fired it is still turning.",
+  "tags": ["fleet", "monitoring"],
+  "timezone": "browser",
+  "editable": true,
+  "graphTooltip": 1,
+  "schemaVersion": 39,
+  "version": null,
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Data source",
+        "type": "datasource",
+        "query": "prometheus",
+        "refresh": 1,
+        "hide": 0,
+        "current": {},
+        "options": [],
+        "regex": "",
+        "multi": false,
+        "includeAll": false
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Glance",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Watchers overdue",
+      "description": "Curated watcher timers whose overdue factor (time since last trigger ÷ the tier's expected cadence) has reached 3×. Healthy watchers sit at or below 1×, so any count here means a watcher has stopped firing. Green at 0; amber at the first, red at the second. Read together with “Watchers not writing”: overdue here means the timer itself stopped.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(\n  (label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"monitoring-unit-state-check[.]timer|monitoring-git-annex-alert-check[.]timer\"} > 0)) / 60, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"60s\")\n  or label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"book-filer[.]timer|deadman-heartbeat[.]timer|git-annex-metrics-.*[.]timer|backup-restic-status[.]timer|beets-import[.]timer\"} > 0)) / 300, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"5m\")\n  or label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"music-sync[.]timer|blocky-service-hosts[.]timer\"} > 0)) / 1800, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"30m\")\n  or label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"monitoring-dmarc-alert-check[.]timer|monitoring-tlsrpt-alert-check[.]timer|monitoring-tlsrpt-poll[.]timer\"} > 0)) / 3600, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"1h\")\n  or label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"monitoring-secret-expiry-check[.]timer|nixos-metrics[.]timer\"} > 0)) / 86400, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"1d\"))\n  >= 3\n) or vector(0)",
+          "instant": true
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#0ca30c",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 1
+              },
+              {
+                "color": "#d03b3b",
+                "value": 2
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Watchers not writing",
+      "description": "Of the three watchers that publish their own run timestamp (git-annex-metrics, backup-restic-status, book-filer), how many last wrote more than 15 minutes ago — 3× their 5-minute cadence. A count here with “Watchers overdue” at 0 is the diagnostic case: the timer is firing but the job is failing before it writes. The other 18 of the 27 tracked timer series have no such cross-check.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(\n  (label_set(label_replace(time() - git_annex_check_timestamp_seconds{user=\"git-annex\"}, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"watcher\", \"git-annex-metrics\")\n  or label_set(label_replace(time() - backup_restic_check_timestamp_seconds, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"watcher\", \"backup-restic-status\")\n  or label_set(label_replace(time() - books_inbox_last_run_timestamp_seconds, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"watcher\", \"book-filer\"))\n  >= 900\n) or vector(0)",
+          "instant": true
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#0ca30c",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 1
+              },
+              {
+                "color": "#d03b3b",
+                "value": 2
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Books stuck in inbox",
+      "description": "Files the #144 book filer could not file, summed across all four reasons (bad-path, collision, no-metadata, unsupported-format). Each one sits in the inbox until a human intervenes — the filer keeps running, so no other panel goes red. Amber at the first, red at five. Breakdown in the Book filer row below.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(books_inbox_stuck_files) or vector(0)",
+          "instant": true
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#0ca30c",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 1
+              },
+              {
+                "color": "#d03b3b",
+                "value": 5
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "type": "stat",
+      "title": "Watchers reporting",
+      "description": "How many curated watcher timers are currently reporting at all. Deliberately unthresholded — the expected count is not a constant: it moves when a host is added, when an on-demand host is asleep, or when a profile is enabled. Today it is 27. A sustained DROP is the signal (a watcher that vanished rather than went stale); watch it against the tier trend below.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "count(\n  label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"monitoring-unit-state-check[.]timer|monitoring-git-annex-alert-check[.]timer\"} > 0)) / 60, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"60s\")\n  or label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"book-filer[.]timer|deadman-heartbeat[.]timer|git-annex-metrics-.*[.]timer|backup-restic-status[.]timer|beets-import[.]timer\"} > 0)) / 300, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"5m\")\n  or label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"music-sync[.]timer|blocky-service-hosts[.]timer\"} > 0)) / 1800, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"30m\")\n  or label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"monitoring-dmarc-alert-check[.]timer|monitoring-tlsrpt-alert-check[.]timer|monitoring-tlsrpt-poll[.]timer\"} > 0)) / 3600, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"1h\")\n  or label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"monitoring-secret-expiry-check[.]timer|nixos-metrics[.]timer\"} > 0)) / 86400, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"1d\")\n) or vector(0)",
+          "instant": true
+        }
+      ],
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#0ca30c",
+                "value": null
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "type": "row",
+      "title": "Watcher liveness",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
+      "panels": []
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Watcher freshness — overdue factor",
+      "description": "Every curated watcher timer on the fleet, ranked by how far past its expected cadence it is. Overdue factor = time since last trigger ÷ the cadence constant for its tier, so a 60-second watcher and a daily one are directly comparable and the worst offender always sorts to the top. Bands: green below 3×, amber at 3×, red at 6×. Healthy watchers read at or below 1×. The cadence shown is the SLOWEST declared interval in the tier, so the factor is conservative and never over-flags. GOTCHA: only SYSTEM timers appear here — sawtoothShark runs git-annex-metrics as a home-manager USER timer, which node-exporter's systemd collector cannot see, so it is absent by design rather than dead. A host missing a row for a watcher it never ran (porcupineFish and rk1a run no monitoring-* alerters) is likewise normal.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"monitoring-unit-state-check[.]timer|monitoring-git-annex-alert-check[.]timer\"} > 0)) / 60, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"60s\")\n  or label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"book-filer[.]timer|deadman-heartbeat[.]timer|git-annex-metrics-.*[.]timer|backup-restic-status[.]timer|beets-import[.]timer\"} > 0)) / 300, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"5m\")\n  or label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"music-sync[.]timer|blocky-service-hosts[.]timer\"} > 0)) / 1800, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"30m\")\n  or label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"monitoring-dmarc-alert-check[.]timer|monitoring-tlsrpt-alert-check[.]timer|monitoring-tlsrpt-poll[.]timer\"} > 0)) / 3600, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"1h\")\n  or label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"monitoring-secret-expiry-check[.]timer|nixos-metrics[.]timer\"} > 0)) / 86400, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"1d\")",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"monitoring-unit-state-check[.]timer|monitoring-git-annex-alert-check[.]timer\"} > 0)), \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"60s\")\n  or label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"book-filer[.]timer|deadman-heartbeat[.]timer|git-annex-metrics-.*[.]timer|backup-restic-status[.]timer|beets-import[.]timer\"} > 0)), \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"5m\")\n  or label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"music-sync[.]timer|blocky-service-hosts[.]timer\"} > 0)), \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"30m\")\n  or label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"monitoring-dmarc-alert-check[.]timer|monitoring-tlsrpt-alert-check[.]timer|monitoring-tlsrpt-poll[.]timer\"} > 0)), \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"1h\")\n  or label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"monitoring-secret-expiry-check[.]timer|nixos-metrics[.]timer\"} > 0)), \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"1d\")",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "pattern": "^(host|name|cadence|Value #A|Value #B)$"
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "host": 0,
+              "name": 1,
+              "cadence": 2,
+              "Value #A": 3,
+              "Value #B": 4
+            },
+            "renameByName": {
+              "host": "Host",
+              "name": "Watcher",
+              "cadence": "Cadence",
+              "Value #A": "Overdue factor",
+              "Value #B": "Last run"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": "",
+            "sort": [
+              {
+                "field": "Overdue factor",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Overdue factor"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 2
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#0ca30c",
+                      "value": null
+                    },
+                    {
+                      "color": "#fab219",
+                      "value": 3
+                    },
+                    {
+                      "color": "#d03b3b",
+                      "value": 6
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Last run"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Overdue factor by tier",
+      "description": "The worst overdue factor in each cadence tier over time — the trend view behind the table above. Cardinality is deliberately reduced from 27 watchers to five tiers so every series can hold a pinned house colour (the style forbids a 9th hue). A tier riding at or just above 1× is healthy; a line that ramps and never comes back down is a watcher that has stopped. GOTCHA: at raw resolution this panel is an unreadable picket fence — the factor resets to 0 on every trigger, so a 60-second watcher draws ~1400 teeth across a 24-hour window (the same trap #160 hit with the Pi's bang-bang fans). Taking max_over_time over a 10-minute window keeps the peak, which is the whole signal, and drops the teeth. The dashed line marks the 3× amber cutoff; the axis is soft-capped there so a healthy board is not drawn on a degenerate scale.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max by (cadence) (\n  max_over_time(\n    (\nlabel_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"monitoring-unit-state-check[.]timer|monitoring-git-annex-alert-check[.]timer\"} > 0)) / 60, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"60s\")\n  or label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"book-filer[.]timer|deadman-heartbeat[.]timer|git-annex-metrics-.*[.]timer|backup-restic-status[.]timer|beets-import[.]timer\"} > 0)) / 300, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"5m\")\n  or label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"music-sync[.]timer|blocky-service-hosts[.]timer\"} > 0)) / 1800, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"30m\")\n  or label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"monitoring-dmarc-alert-check[.]timer|monitoring-tlsrpt-alert-check[.]timer|monitoring-tlsrpt-poll[.]timer\"} > 0)) / 3600, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"1h\")\n  or label_set(label_replace((time() - (node_systemd_timer_last_trigger_seconds{name=~\"monitoring-secret-expiry-check[.]timer|nixos-metrics[.]timer\"} > 0)) / 86400, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"cadence\", \"1d\")\n    )[10m]\n  )\n)",
+          "legendFormat": "{{cadence}}"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 6,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisSoftMin": 0,
+            "axisSoftMax": 3,
+            "thresholdsStyle": {
+              "mode": "dashed"
+            }
+          },
+          "unit": "none",
+          "decimals": 2,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#0ca30c",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 3
+              },
+              {
+                "color": "#d03b3b",
+                "value": 6
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "60s"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "5m"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#199e70"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "30m"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#c98500"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "1h"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#008300"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "1d"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#9085e9"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Watchers that publish their own run time",
+      "description": "The three watchers that write a run timestamp of their own, so their WORK can be checked independently of their TIMER: git-annex-metrics, backup-restic-status and book-filer. All three run on a 5-minute cadence, so one absolute band serves them all — green below 15 minutes, amber at 15 (3×), red at 30 (6×). The diagnostic read is the cross-check against the table above: a watcher that is FRESH there but stale here is firing on schedule and failing before it writes — a failure no other board can see. Only 9 of the 27 tracked timer series can be checked this way; the other 18 publish no run timestamp of their own. GOTCHA: filtered to user=\"git-annex\", so sawtoothShark's home-manager pictures repo is excluded here for the same reason it is absent above.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 18
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "label_set(label_replace(time() - git_annex_check_timestamp_seconds{user=\"git-annex\"}, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"watcher\", \"git-annex-metrics\")\n  or label_set(label_replace(time() - backup_restic_check_timestamp_seconds, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"watcher\", \"backup-restic-status\")\n  or label_set(label_replace(time() - books_inbox_last_run_timestamp_seconds, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"watcher\", \"book-filer\")",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "pattern": "^(host|watcher|repo|Value)$"
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "host": 0,
+              "watcher": 1,
+              "repo": 2,
+              "Value": 3
+            },
+            "renameByName": {
+              "host": "Host",
+              "watcher": "Watcher",
+              "repo": "Repo",
+              "Value": "Last write"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": "",
+            "sort": [
+              {
+                "field": "Last write",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Last write"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#0ca30c",
+                      "value": null
+                    },
+                    {
+                      "color": "#fab219",
+                      "value": 900
+                    },
+                    {
+                      "color": "#d03b3b",
+                      "value": 1800
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 10,
+      "type": "row",
+      "title": "Book filer",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
+      "panels": []
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Stuck files by reason",
+      "description": "Why the #144 book filer could not file a dropped book, one tile per reason. bad-path = the file landed somewhere the filer will not touch; collision = a book of that name already exists; no-metadata = no usable EPUB metadata to file by; unsupported-format = Stump cannot index it (MOBI is the known case — PDF is fine). Green at 0, amber at the first, red at five. Empty is healthy, and all four read 0 today.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 27
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "books_inbox_stuck_files",
+          "instant": true,
+          "legendFormat": "{{reason}}"
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#0ca30c",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 1
+              },
+              {
+                "color": "#d03b3b",
+                "value": 5
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Stuck files over time",
+      "description": "Stuck-file count per reason as a trend, so a slow accumulation is visible rather than only the instantaneous total in the glance. A flat zero is the healthy shape — the axis is soft-capped at 5 so a healthy board does not render on a degenerate scale. A step that never comes back down means nobody has cleared the inbox.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 27
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (reason) (books_inbox_stuck_files{reason=\"bad-path\"})",
+          "legendFormat": "{{reason}}"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (reason) (books_inbox_stuck_files{reason=\"collision\"})",
+          "legendFormat": "{{reason}}"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (reason) (books_inbox_stuck_files{reason=\"no-metadata\"})",
+          "legendFormat": "{{reason}}"
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum by (reason) (books_inbox_stuck_files{reason=\"unsupported-format\"})",
+          "legendFormat": "{{reason}}"
+        }
+      ],
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 6,
+            "showPoints": "never",
+            "spanNulls": true,
+            "axisSoftMin": 0,
+            "axisSoftMax": 5
+          },
+          "unit": "none",
+          "decimals": 0,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#0ca30c",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "bad-path"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "collision"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#199e70"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "no-metadata"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#c98500"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "unsupported-format"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#008300"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
