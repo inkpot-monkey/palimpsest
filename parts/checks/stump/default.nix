@@ -94,6 +94,16 @@
 #      this module's code — the durable configLocation and the idempotent provisioner — is what
 #      the restart subtest exercises.
 #
+#   8. A BOOK THAT ARRIVES BY `rename(2)` IS INDEXED (palimpsest#144). The watcher case is proven
+#      twice, because the two arrivals are not the same event. The reconciler WRITES into a root
+#      (IN_CLOSE_WRITE); the book filer, which must never let the git-annex assistant catch a
+#      partial file, stages its copy outside the tree and RENAMES the finished file in
+#      (IN_MOVED_TO). A watcher handling only the first would leave every filed book absent from
+#      the catalog with no error anywhere, so the rename gets its own assertion. This also carries
+#      an acceptance criterion for #144 that its own check could not honestly meet: that check is
+#      deliberately Stump-free, and a second server there would have tripled its runtime to
+#      re-prove a property this test already has a server standing up for.
+#
 # sops is bypassed exactly as parts/checks/supernote/default.nix does: dummy age key + forced
 # secret paths pointing at plain /etc files, so no real decryption happens in the sandbox.
 {
@@ -411,6 +421,31 @@ pkgs.testers.nixosTest {
     assert after["Notebooks"]["books"] == ["2026-08-13"], after["Notebooks"]
     journal = origin.succeed("journalctl -u stump-provision --no-pager -o cat")
     assert "already present" in journal, f"the newest provisioner run re-created libraries:\n{journal}"
+
+    # 8b. A BOOK THAT ARRIVES BY `rename(2)` IS INDEXED (palimpsest#144). Subtest 7 proves the
+    #     watcher notices a file WRITTEN into a root; the book filer does not write into the tree.
+    #     It copies into a staging directory outside the tree and RENAMES the finished file in,
+    #     precisely so the git-annex assistant can never catch a partial file — and a rename is a
+    #     different inotify event (IN_MOVED_TO) from a close-after-write (IN_CLOSE_WRITE). A
+    #     watcher that handled only the latter would leave every filed book out of the catalog
+    #     while every unit stayed green, so the distinction is asserted rather than assumed.
+    #
+    #     This is also the acceptance criterion #144 could not honestly meet on its own: the
+    #     filer's own check is deliberately Stump-free, and standing a second server up there to
+    #     prove someone else's property would have tripled its runtime. It is cheap here.
+    STAGE = "/var/lib/stump-filer-stage"
+    origin.succeed(f"install -d -o git-annex -g library -m 2770 {STAGE}")
+    origin.succeed(
+        "install -m 0640 -o git-annex -g library "
+        "${book "filed-by-rename" "A book the filer moved into place, rather than wrote."} "
+        f"{STAGE}/scratch.pdf"
+    )
+    origin.succeed(f"install -d -o git-annex -g library -m 2770 {shlex.quote(BOOKS + '/Fuchsia Dunlop')}")
+    origin.succeed(f"mv {STAGE}/scratch.pdf {shlex.quote(BOOKS + '/Fuchsia Dunlop/Invitation to a Banquet.pdf')}")
+    wait_for_catalog(
+        lambda c: "Invitation to a Banquet" in c["Books"]["books"],
+        "the watcher indexes a book RENAMED into the books root, as the filer files it",
+    )
 
     # ── 9. THE READER'S CATALOG CREDENTIAL (#114) ────────────────────────────────────────────
     # Every credential in this profile is declared, none is minted: the reader's password and sync
