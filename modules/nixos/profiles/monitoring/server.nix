@@ -77,6 +77,15 @@ let
     # plus the git-annex inventory ACROSS HOSTS AND USERS (git_annex_repo_info + health
     # gauges) and the off-site status table (backup_restic_enabled, off ≠ missing).
     ln -s ${./dashboards/backups.json} $out/backups.json
+    # Hardware Health: the physical layer beneath the OS — temperature, thermal
+    # throttling, fans and derived power across the BARE-METAL fleet (kelpy is a
+    # container with no hwmon/thermal/cooling devices and is deliberately absent).
+    # Forensic by design — cross-host comparison on a shared crosshair to answer "was
+    # that slowdown thermal?" — with a preventative glance row on top. Throttle state
+    # (node_cooling_device_cur_state) is the fleet-comparable verdict; absolute temps
+    # are not, so temperature panels carry no threshold bands. Disk/SSD wear is absent
+    # and tracked as palimpsest#162. Graduated from map #30's fog (#160).
+    ln -s ${./dashboards/hardware-health.json} $out/hardware-health.json
   '';
 
   # "Advanced" folder: deep-dive boards kept available but off the primary nav. The
