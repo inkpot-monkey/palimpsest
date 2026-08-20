@@ -199,22 +199,72 @@ sync**.
 1. Optionally turn on **auto-sync**; otherwise position is pushed on document close and on the
    *Push progress* menu item.
 
-Written to `/sdcard/koreader/settings/kosync.lua`:
+Written to `/sdcard/koreader/settings/kosync.lua`. The plugin's full key set, from its own
+`default_settings` table upstream — the first five are the ones this setup depends on, the rest
+are listed so a hand-edited file is not silently missing something the menu would have written:
 
 ```lua
 return {
     ["settings"] = {
-        ["custom_server"]   = "https://library.palebluebytes.space/koreader/<key>",
-        ["checksum_method"] = 0,      -- 0 = BINARY, 1 = FILENAME. Must be 0.
-        ["username"]        = "x",    -- not validated by Stump
-        ["userkey"]         = "<md5 of whatever you typed>",
-        ["auto_sync"]       = true,
+        ["custom_server"]       = "https://library.palebluebytes.space/koreader/<key>",
+        ["checksum_method"]     = 0,     -- 0 = BINARY, 1 = FILENAME. Must be 0 (see above).
+        ["username"]            = "x",   -- not validated by Stump
+        ["userkey"]             = "<md5 of whatever you typed>",
+        ["auto_sync"]           = true,  -- push on close; otherwise use "Push progress"
+        ["sync_forward"]        = 1,     -- 1 = PROMPT, 2 = SILENT, 3 = DISABLE
+        ["sync_backward"]       = 3,     -- same scale; DISABLE avoids being dragged backwards
+        ["pages_before_update"] = nil,   -- integer > 0: push mid-read every N pages
+        ["send_metadata"]       = true,
+        ["kosync_hostname"]     = nil,   -- device name reported to the server
     },
 }
 ```
 
+`sync_forward` / `sync_backward` are the ones worth understanding, because they govern the PULL
+and their absence is not neutral — the plugin falls back to its defaults, and "why did my device
+not move to where the other one got to" is decided here. FORWARD is the normal case (the server is
+ahead of this device); BACKWARD is the server being behind, which usually means another device is
+mid-read further back and you do not want to be yanked to it.
+
+Writing this file by hand is enough on its own — **verified 2026-08-20**: pushing exactly the
+first five keys over `adb` and force-stopping KOReader first produced a working round-trip with no
+in-app configuration at all. `adb push … /sdcard/koreader/settings/kosync.lua`, then re-launch.
+
 As with `settings.reader.lua`, **force-stop KOReader before editing this by hand** — it rewrites
 the file on exit.
+
+### The web reader will not resume where the device left off
+
+Expected, and not a misconfiguration: **progress crosses as a percentage, but the position only
+crosses in one direction.**
+
+Stump stores a position as an *epubcfi* or a page number. KOReader pushes an *x-pointer*
+(`/body/DocFragment[17]/body/div.0`). Upstream's handler
+(`apps/server/src/routers/koreader/sync.rs`, `parse_progress`) accepts `epubcfi(…)` or an integer
+and treats everything else as an x-pointer it cannot use — its own comment says *"Stump does not
+support x-pointers"*. That arm stores nothing but the percentage, logging at `debug`.
+
+So after a push from the Nomad:
+
+```
+percentageCompleted  0.8356     <- stored, and shown in the UI
+epubcfi              null       <- nothing to derive it from
+```
+
+and clicking **Read** in the web UI opens at the beginning, because there is no location to
+restore. The 83% on the card is a number, not a place.
+
+The asymmetry is one-directional and each leg has been confirmed on hardware (2026-08-20):
+
+| Direction | Position | Percentage |
+|---|---|---|
+| Nomad → Nomad | ✅ x-pointer round-trips intact | ✅ |
+| Nomad → web reader | ❌ dropped | ✅ shown |
+| web reader → Nomad | ✅ Stump writes a real epubcfi, KOReader accepts it | ✅ |
+
+A push from the device also CLEARS any `epubcfi` the web reader had written, so the two readers
+take turns rather than coexisting. Nothing to fix here: translating x-pointers to epubcfi is
+upstream work the code comment already contemplates and declines.
 
 ### Verify
 

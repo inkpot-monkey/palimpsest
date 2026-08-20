@@ -57,6 +57,20 @@
 # into the web UI as yourself. That is the whole reason the owner account is administrative only:
 # see below.
 #
+# WHAT CROSSES, AND WHAT DOES NOT. The percentage crosses both ways; the POSITION only crosses
+# one way. Stump stores a location as an epubcfi or a page number, and KOReader pushes an
+# x-pointer (`/body/DocFragment[17]/body/div.0`). Upstream's `parse_progress`
+# (apps/server/src/routers/koreader/sync.rs) matches `epubcfi(…)` or an integer and treats
+# anything else as an x-pointer it cannot use — its own comment says "Stump does not support
+# x-pointers" — so that arm stores the percentage and nothing else. The visible consequence:
+# after reading on the Nomad the web UI shows 83% and still opens the book at page one, because
+# `epubcfi` is null and there is no location to restore. The reverse direction DOES work (Stump
+# writes a real epubcfi and KOReader accepts it), and device-to-device round-trips intact. A push
+# from the device also clears any epubcfi the web reader had written, so the two readers take
+# turns rather than coexisting. All three legs confirmed on hardware 2026-08-20; the operator-
+# facing version is in docs/runbooks/supernote-koreader-opds.md. Not a defect in this config and
+# not fixable here — translating x-pointers is upstream work that code comment already declines.
+#
 # ── The accounts: one administrative owner, N readers ─────────────────────────────────────
 # `stump/user` + `stump/password` are Stump's SERVER OWNER. The server grants owner rights to the
 # FIRST account registered on an empty database and then refuses unauthenticated registration, so
