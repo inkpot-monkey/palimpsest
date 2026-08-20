@@ -216,13 +216,15 @@ in
           # navidrome `users` map. See modules/nixos/profiles/music-assistant.nix.
           custom.profiles.music-assistant.enable = true;
 
-          # Supernote fork Private Cloud server (ADR-0031, #92): the device sync endpoint the
-          # Nomad binds over plain HTTP on the home LAN (rk1b shares 192.168.1.0/24). Runs as a
-          # private `supernote` user with a persisted, rebuildable store (/var/lib/supernote), and
+          # Supernote Private Cloud server (ADR-0031, #92): the device sync endpoint the Nomad
+          # binds over plain HTTP, on the home LAN (rk1b shares 192.168.1.0/24) or over the
+          # tailnet — the device picks, and both reach the same port. Runs as a private
+          # `supernote` user with a persisted, rebuildable store (/var/lib/supernote), and
           # bootstraps the single account from the shared credential secret (profiles/library.yaml).
-          # LAN-direct, so it is NOT in settings.services / not Caddy-fronted; the MCP port is
-          # firewalled off (v1). See modules/nixos/profiles/supernote.nix. Stump (#93) that turns
-          # this into a browsable document library is a separate ticket.
+          # Not Caddy-fronted, so it is NOT in settings.services. This comment used to say the MCP
+          # port is "firewalled off"; it is not — this host trusts `tailscale0`, so the LLM port is
+          # reachable from the tailnet and is gated by the MCP server's own auth instead. See the
+          # header of modules/nixos/profiles/supernote.nix.
           custom.profiles.supernote.enable = true;
           # The downward mirror (ADR-0031, #107 as reduced by #117): `library/supernote/`
           # (/var/cache/library/supernote) materialises EVERYTHING the device holds — `Note/`,

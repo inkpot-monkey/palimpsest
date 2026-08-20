@@ -117,13 +117,18 @@ the proof.
 
 ## The device pass
 
-Do these in order, on the Nomad, on the home LAN.
+Do these in order, on the Nomad.
 
-> **The device *can* use Tailscale** — this runbook previously said it could not, which was true
-> of the firmware the original spike ran but not since Ratta shipped sideloading (ADR-0031,
-> revision 2026-08-17; the node is `supernote-nomad`). It changes nothing here: Private Cloud
-> sync targets rk1b on the LAN, and the Android client does not capture LAN routes, so the pass
-> below is the same whether the tunnel is up or down. Leave it however you find it.
+> **Over the LAN or over the tailnet — either works, and it is the device's choice.** This runbook
+> previously said the device could not use Tailscale at all (true of the firmware the original
+> spike ran, not since Ratta shipped sideloading — ADR-0031, revision 2026-08-17, node
+> `supernote-nomad`). A later revision then said sync "targets rk1b on the LAN" regardless. Both
+> are retired: the server binds `0.0.0.0` and rk1b trusts `tailscale0`, so the sync port answers
+> on both paths. Verified 2026-08-20 from a tailnet peer: `http://<rk1b-tailnet-ip>:8080/` → 200.
+>
+> Whichever you use, **record it in the pass** — it is part of what was tested. And if you sync
+> over the tunnel, Tailscale must be doze-whitelisted on the device or Android will suspend it and
+> sync will stop with no error on the server side; the LAN path had no such dependency.
 
 ### 1. Sync completes at all
 

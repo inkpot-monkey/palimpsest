@@ -39,16 +39,35 @@
 # scope an empty listing means the device's entire filesystem is empty, which is store loss rather
 # than housekeeping; deleting one document among others still propagates immediately.
 #
-# Plain HTTP on the LAN — no TLS, no Caddy edge, no tailnet. The device is a locked-down
-# Android tablet that can't run Tailscale, so it reaches rk1b directly on the LAN; that is
-# why this service is NOT in `settings.services` (which is the Caddy-fronted, uptime-probed
-# registry) and gets no vhost/monitor entry. The mirror (#107) reaches the store over
-# this same HTTP API, never the filesystem, so the store below stays private.
+# Plain HTTP, no TLS and no Caddy edge, so this service is NOT in `settings.services` (the
+# Caddy-fronted, uptime-probed registry) and gets no vhost/monitor entry. The mirror (#107)
+# reaches the store over this same HTTP API, never the filesystem, so the store below stays
+# private.
 #
-# The server ALSO starts an MCP server (its LLM surface) on a second port — LLM features are
-# out of v1, so that port is deliberately left OUT of the firewall allow-list (the server has
-# no flag to disable it; it always binds `config.host`). Firewalling it off is what
-# satisfies "do not expose the MCP port".
+# The device reaches it EITHER on the LAN or over the tailnet — its choice, set by the address
+# typed into Private Cloud. This once said the Nomad "can't run Tailscale"; that was true of the
+# firmware the original spike ran and has not been true since Ratta shipped sideloading (ADR-0031,
+# revision 2026-08-17 — the node is `supernote-nomad`). Nothing here depends on which it picks:
+# the server binds 0.0.0.0 and both paths reach the same port. If you point it at the tailnet, note
+# that sync then depends on Tailscale surviving Android's doze, which the LAN path did not.
+#
+# ── The MCP port is NOT closed by this module, and never was ──────────────────────────────
+# The server ALSO starts an MCP server (its LLM surface) on a second port, with no flag to disable
+# it — it always binds `config.host`. This module leaves that port out of `allowedTCPPorts` below,
+# and the comment there USED TO CLAIM that is what "keeps the LLM surface off the network".
+#
+# ⚠ IT IS NOT, on any host that trusts the tailnet. rk1b sets
+# `networking.firewall.trustedInterfaces = [ "tailscale0" "lo" ]`, which accepts EVERYTHING from a
+# tailnet peer before `allowedTCPPorts` is ever consulted — so the MCP port is reachable from every
+# node on the tailnet. Measured 2026-08-20 from kelpy: `GET :8081/mcp` answers, it does not time
+# out. What actually gates it is the MCP server's OWN authentication (that request answers 401),
+# which is a real control but a different one from the one this module was taking credit for.
+#
+# Leaving the port out of the allow-list is still right — it is what limits the surface on a host
+# that does NOT trust the tailnet, and costs nothing here. It is simply not sufficient on rk1b, and
+# "do not expose the MCP port" is therefore satisfied by the server's auth, not by this firewall.
+# Closing it to tailnet peers as well would need an explicit reject rule ordered ahead of the
+# trusted-interface accept; that is a change to the host's firewall posture, not to this profile.
 #
 # ── The store (`/var/lib/supernote`) ─────────────────────────────────────────────────────
 # One directory: the server's UUID blob store + SQLite VFS + cache. Owned by the private
@@ -296,8 +315,9 @@ in
             pkgs.openssl
           ];
           environment = {
-            # Bind all interfaces so the device reaches rk1b on the LAN; the firewall (below)
-            # is what keeps the MCP port private. Storage under the StateDirectory.
+            # Bind all interfaces so the device reaches rk1b by whichever address it is pointed
+            # at — LAN or tailnet. NB: the firewall below does NOT keep the MCP port private on a
+            # host that trusts the tailnet; see the header. Storage under the StateDirectory.
             SUPERNOTE_HOST = "0.0.0.0";
             SUPERNOTE_PORT = toString port;
             SUPERNOTE_MCP_PORT = toString mcpPort;
@@ -338,12 +358,15 @@ in
           // hardening;
         };
 
-        # Open ONLY the sync port. It goes on all interfaces (not scoped to `tailscale0` like the
-        # tailnet services — the Nomad is LAN-only and can't run Tailscale, and rk1's physical NIC
-        # isn't statically named here to scope to); the tailnet is trusted and every request is
-        # login-gated, so the extra reach is harmless. The MCP port (${toString mcpPort}) is
-        # deliberately absent — the server always binds it to the same host, so leaving it out of the
-        # allow-list is what keeps the LLM surface off the network (v1-out).
+        # Open ONLY the sync port, on all interfaces rather than scoped to one: the device may
+        # arrive over the LAN or the tailnet, and rk1's physical NIC is not statically named here
+        # to scope to. Every request is login-gated, so the extra reach is acceptable.
+        #
+        # The MCP port (${toString mcpPort}) is deliberately absent — but READ THE HEADER before
+        # trusting that to close it. On a host with `trustedInterfaces = [ "tailscale0" ]` (rk1b
+        # does) this allow-list is not consulted for tailnet peers at all, so the LLM surface IS
+        # reachable from the tailnet and is gated by the MCP server's own auth instead. Omitting it
+        # here still limits the surface on hosts that do not trust the tailnet.
         networking.firewall.allowedTCPPorts = [ port ];
 
         # Bootstrap the single account from the credential, and prove login works — the server's
