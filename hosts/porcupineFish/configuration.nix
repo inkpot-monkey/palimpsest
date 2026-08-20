@@ -35,8 +35,9 @@
     };
     monitoring-client.enable = true;
     monitoring-smartctl.enable = true;
-    # Off since rsync.net is unreachable fleet-wide (mirrors kelpy's note); meant to
-    # return. reportJobs keeps it on the Backups board as a known-disabled edge.
+    # Off fleet-wide: DEFERRED, not blocked (mirrors kelpy's note — rsync.net is reachable,
+    # this is a scheduling decision; palimpsest#150). reportJobs keeps it on the Backups
+    # board as a known-disabled edge.
     backup.enable = false;
     backup.reportJobs = [ "daily" ];
     # blocky removed (ADR-0023): this audio node's recovery is a cold power-cycle,

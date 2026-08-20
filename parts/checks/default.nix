@@ -18,10 +18,12 @@
         annas_opds = import ./annas-opds {
           inherit pkgs;
         };
-        # Operator-read helper (users/inkpotmonkey/home/secret.nix): pure-derivation
-        # regression over the key->extract logic + `-l` listing. Guards the dotted-key
-        # bug (the `.`->`/` rewrite that made apikey@api.example.com unreachable).
-        secret_read = import ./secret-read {
+        # The book filer (palimpsest#144): EPUBs dropped in books-inbox/<Subject>/ are renamed
+        # from their own OPF metadata and filed into the library tree. Covers the happy path,
+        # missing metadata, collisions, unsupported formats, a drop with no subject folder, and
+        # the quiescence window — plus the default ACL and the copy-then-rename that a plain
+        # `mv` would silently get wrong.
+        book_filer = import ./book-filer {
           inherit pkgs self;
         };
         # Claude relay (ADR-0018) slice 01: allowlist-gated echo over a minimal
@@ -36,20 +38,25 @@
         matrix_dm_provision = import ./dm-provision {
           inherit pkgs self;
         };
+        # The pre-built binding path (bindContractPackage, ADR-0016) is proven generically by the
+        # contract's OWN conformance (`contract_conformance` below); the fleet-side external-bind
+        # rig (`prebuilt_bind_external` + its gui-eval sibling) was retired with ADR-0026, which
+        # moved `bindContractPackage` to the contract's `internal` surface and made the turnkey
+        # `bindContractUser` (hosts/default.nix) the sole public consumer bind.
         # jmap_bridge VM check moved to the bridge's own repo
         # (inputs.jmap-bridge.checks); its CI owns the round-trip test now.
         # The contract's OWN conformance suite (contract ADR-0004 Q5), surfaced from the contract
         # flake so this repo's `nix flake check` runs it too. Synthetic users × the
         # contract umbrella, no host repo — the generic proof of the contract's promises.
         contract_conformance = inputs.contract.checks.${system}.conformance;
-        # Host INTEGRATION (contract ADR-0001): the host bindings realize the contract on the real
-        # manifest — display rendering, emacs glue, platform resolver, the gui union.
-        host_user_contract = import ./host-user-contract {
-          inherit pkgs self;
-        };
+        # The former `host_user_contract` integration check bound the in-tree inline-user
+        # `self.users.inkpotmonkey.manifest` (the mkHostFacts host-side eval path) and the retired
+        # `workstation` grant — both removed by the ADR-0024/0026 turnkey cutover. Hosts now bind the
+        # external `users` flake via `bindContractUser`, and the contract's own conformance owns the
+        # grant→feature proofs, so the inline-user path and this check are retired.
         # The gui-union runtime VM moved into the contract's own suite (contract ADR-0004:
         # checks.<system>.conformance-vm there). It uses a test-only display binding, so
-        # it no longer covers this fleet's gui-desktop.nix; re-surface it from
+        # it no longer covers this fleet's gui.nix display binding; re-surface it from
         # inputs.contract.checks once the contract is published with that check if a
         # fleet-side runtime smoke is wanted.
         # The host-side COHERENCE GATE (contract ADR-0004 Q5): the real fleet ties back to the
@@ -76,10 +83,19 @@
         supernote = import ./supernote {
           inherit pkgs self inputs;
         };
-        # The outbound ereader push (ADR-0031, palimpsest#94): plants a file in library/ereader/,
-        # drives a device-initiated sync, and proves the file lands reachable to the device and
-        # that a re-run transfers nothing (md5-idempotent).
-        supernote_ereader = import ./supernote/ereader.nix {
+        # The Supernote downward mirror (ADR-0031, palimpsest#107 as reduced by #117): everything
+        # the device holds materialises into library/supernote/ as real files inside a real
+        # git-annex tree, with the Stump catalog running on that same tree; durable device deletes;
+        # and no deletion from the backed-up tree when the store is empty or unreachable — all off
+        # device-initiated syncs.
+        supernote_mirror = import ./supernote/mirror.nix {
+          inherit pkgs self inputs;
+        };
+        # The Stump reading catalog (ADR-0031, palimpsest#113): three series-priority libraries
+        # over a real 2770 git-annex:library corpus (the PrivateUsers group-read trap), the
+        # unindexed `_originals/` sibling, tailnet-only reachability, and correct OPDS
+        # self-referencing links through a real Caddy edge.
+        stump = import ./stump {
           inherit pkgs self inputs;
         };
       };

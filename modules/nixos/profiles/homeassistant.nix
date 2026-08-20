@@ -226,9 +226,18 @@ in
             HA_URL = "http://127.0.0.1:${toString haPort}";
             HA_OWNER_NAME = cfg.provision.ownerName;
           };
+          # Self-heal transient boot races (e.g. assist_pipeline's WS API not yet
+          # registered, HA restarting mid-provision): retry a few times, spaced
+          # out, over a 10min window, then give up visibly rather than silently
+          # sitting failed. The window must exceed RestartSec * burst or systemd
+          # rate-limits the retries away instantly.
+          startLimitIntervalSec = 600;
+          startLimitBurst = 6;
           serviceConfig = {
             Type = "oneshot";
             RemainAfterExit = true;
+            Restart = "on-failure";
+            RestartSec = 30;
             # LoadCredential drops each secret into a per-service tmpfs, not the env of
             # unrelated processes; the wrapper reads them into HA_OWNER_USERNAME/PASSWORD.
             LoadCredential = [

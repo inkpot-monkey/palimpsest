@@ -9,8 +9,11 @@
 - **Lint (statix):** `statix check .`
 - **Lint (deadnix):** `deadnix .`
 - **Nix packages:** `nix build .#<name>`
-- **Deploy host:** `nixos-rebuild --target-host <host> --sudo --ask-sudo-password switch --flake .#<host>`
-- **Everything:** `just check` / `just build [host]` / `just switch [host]`
+- **Deploy host:** `just deploy <host>` (switch now) or `just deployBoot <host>`
+  (next boot). Wraps `nixos-rebuild` with SSH keepalives and adds
+  `--ask-sudo-password` *only* for kelpy — other hosts have passwordless wheel
+  sudo, so don't pass it yourself (it hangs waiting on stdin non-interactively).
+- **Everything:** `just check` / `just build [host]` / `just switch [host]` (local)
 
 ## Code style
 
@@ -39,6 +42,18 @@ touching secrets:
 - **Some components live in their own repos**, consumed as flake inputs — e.g.
   `jmap-matrix-bridge` and `host-user-contract` (ADR-0016). Only host glue lives
   here; change behaviour in the upstream repo, then `nix flake update <input>`.
+- **Re-locking `jmap-bridge` needs a CI-built revision.** Its cache hit depends on
+  the bridge's CI having pushed that exact rev to `palebluebytes.cachix.org`
+  (ADR-0016 amendment). `nix flake update jmap-bridge` can land on a tip CI never
+  built, and then a deploy silently compiles matrix-sdk/sqlx from source — no
+  error, just half an hour. Check first:
+  `gh run list --repo palebluebytes/jmap-matrix-bridge --commit <rev>`.
+- **`nix flake update` gets rate-limited** (`429: Too Many Requests`) because it
+  calls the GitHub API anonymously. Add
+  `--option access-tokens github.com=$(gh auth token)`.
+- **A new file must be `git add`ed before the flake can see it.** The source is
+  git-tracked-files-only, so an untracked file fails at *eval* with
+  `error: Path '…' is not tracked by Git` rather than as a missing file.
 - **Raspberry Pi kernel pin:** `nixos-raspberrypi` must pin a rev whose *default*
   kernel is stable; unstable/next kernels hang in initrd and aren't cached.
 - **Services are monitored by default (ADR-0019).** Every `settings.services` entry

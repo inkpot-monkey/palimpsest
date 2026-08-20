@@ -18,7 +18,7 @@
     base.enable = true;
     audio.enable = true;
     wireless.enable = true;
-    gui-base.enable = true;
+    gui.enable = true;
     kanata.enable = true; # keyboard remap, host-side (contract ADR-0002 slice 11)
     bluetooth.enable = true;
     sops.enable = true;
@@ -61,8 +61,6 @@
 
   networking.hostName = "weedySeadragon";
 
-  # Give weedySeadragon the power to cross compile for raspberry pis
-  boot.binfmt.emulatedSystems = [ "aarch64-linux" ];
   nixpkgs.buildPlatform.system = "x86_64-linux";
 
   # Power management for Framework laptop

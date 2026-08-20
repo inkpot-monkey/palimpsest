@@ -21,6 +21,10 @@ pkgs.testers.nixosTest {
       ];
 
       config = {
+        # The wireless profile reads `self.lib.getSecretPath`; nixosTest nodes do
+        # not inherit the flake's specialArgs, so pass it in explicitly.
+        _module.args.self = self;
+
         # Satisfy sops assertion
         sops.age.keyFile = "/etc/dummy-sops-key";
         system.activationScripts.create-dummy-sops-key = ''
@@ -48,6 +52,11 @@ pkgs.testers.nixosTest {
         '';
         sops.validateSopsFiles = false;
 
+        # Without this the profile's `mkIf` gate leaves ensureProfiles empty, so
+        # NetworkManager-ensure-profiles.service is never generated and the test
+        # asserts against a switched-off module.
+        custom.profiles.wireless.enable = true;
+
         networking.networkmanager.enable = true;
 
         # Disable nix-command/flakes in the VM to speed up and avoid issues
@@ -72,5 +81,18 @@ pkgs.testers.nixosTest {
 
     # Verify the profile exists in NM runtime path
     machine.succeed("ls /run/NetworkManager/system-connections/home.nmconnection")
+
+    # Home pins the burned-in MAC: a host that silently moved to a synthesised
+    # address could fail to match a router DHCP reservation, which on the
+    # headless pi costs physical recovery.
+    machine.succeed(
+        "grep -x 'cloned-mac-address=permanent' "
+        "/run/NetworkManager/system-connections/home.nmconnection"
+    )
+
+    # Every other SSID defaults to a per-network pseudorandom MAC.
+    machine.succeed(
+        "grep -x 'wifi.cloned-mac-address=stable-ssid' /etc/NetworkManager/NetworkManager.conf"
+    )
   '';
 }

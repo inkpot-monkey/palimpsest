@@ -41,6 +41,11 @@ in
       networkmanager = {
         enable = true;
         wifi.powersave = false;
+        # Default every *other* SSID (cafes, airports, hotels) to a per-network
+        # pseudorandom MAC: each network sees one consistent address that is
+        # unlinkable to the hardware MAC or to this host on any other network.
+        # `home` below opts back out — see the comment there.
+        wifi.macAddress = "stable-ssid";
         ensureProfiles = {
           # 4. Point to the rendered template's path
           environmentFiles = [ config.sops.templates."wifi_home_env".path ];
@@ -53,6 +58,10 @@ in
               wifi = {
                 mode = "infrastructure";
                 ssid = "$WIFI_SSID";
+                # Home keeps the burned-in MAC so router DHCP reservations and
+                # MAC-keyed rules survive. Matters most on porcupineFish, where a
+                # changed address that fails to get a lease costs physical recovery.
+                cloned-mac-address = "permanent";
               };
               wifi-security = {
                 auth-alg = "open";

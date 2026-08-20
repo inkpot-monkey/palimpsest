@@ -16,13 +16,6 @@ let
   helpers = lib // {
     inherit overlays;
 
-    # Recipients-from-grants applied to THIS fleet (contract ADR-0001 slice 06, contract ADR-0004 Q4): the
-    # contract owns the algorithm (inputs.contract.lib.mkFeatureRecipients); the host
-    # applies it to its own nixosConfigurations. The single source of truth for the
-    # stash's .sops.yaml recipients, so they can never drift from the grants.
-    #   { "<stash-relative sops file>" = [ "<hostname>" ... ]; }
-    featureRecipients = inputs.contract.lib.mkFeatureRecipients self.nixosConfigurations;
-
     mkPkgs =
       system:
       import inputs.nixpkgs {

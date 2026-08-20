@@ -1,9 +1,20 @@
-# rk1b's Supernote document library as a git-annex repository — the corpus tree the
-# bidirectional reconciler (palimpsest#94) writes and Stump (palimpsest#93) indexes,
-# replicated to kelpy and — UNLIKE the music library — backed up offsite, because these
-# are personal documents, not re-acquirable media. The storage / placement / backup
-# decision is ADR-0031 (built by palimpsest#90); it deliberately reuses the ADR-0028
-# git-annex ownership model (read that before changing the ownership here).
+# rk1b's Supernote document library as a git-annex repository — the corpus tree holding the
+# handwriting the Supernote mirror materialises (palimpsest#117) and the books/papers Stump
+# indexes (palimpsest#93), replicated to kelpy. This once said "the bidirectional reconciler
+# (palimpsest#94) writes"; #94 is closed and there is no upward path any more, so the mirror is
+# the only writer of `supernote/`.
+#
+# UNLIKE the music library these are personal documents, not re-acquirable media, so ADR-0031
+# also asks that they be backed up OFFSITE. ⚠ That half is INTENT, NOT FACT: no restic path
+# lists THIS tree, and while the kelpy replica does sit under a covering path (`/persistent`,
+# defended by an assertion there), that path is gated behind `backup.enable = false` on every
+# host that sets it — and rk1b runs no restic unit at all (palimpsest#150). Nothing ships
+# anywhere today. Do not read this header as evidence the documents are backed
+# up — they are REPLICATED, which is the weaker guarantee: it survives a dead disk, but not a
+# delete propagating to both copies, nor losing the house.
+#
+# The storage / placement / backup decision is ADR-0031 (built by palimpsest#90); it deliberately
+# reuses the ADR-0028 git-annex ownership model (read that before changing the ownership here).
 #
 # Imported by rk1b only (hosts/default.nix), ALONGSIDE hosts/rk1/git-annex.nix, which
 # already enables services.git-annex and installs the annex SSH identity + sops key. This
@@ -39,8 +50,8 @@
   users.groups.library.gid = 977;
 
   # git-annex joins `library` so the tree it owns is group-readable to future members (the
-  # reconciler, Stump) and — via the setgid mode below — its own inbound-sync writes land in
-  # `library` too, readable by them. Merges with the `music` membership hosts/rk1/git-annex.nix
+  # Supernote mirror, Stump) and — via the setgid mode below — its own inbound-sync writes land
+  # in `library` too, readable by them. Merges with the `music` membership hosts/rk1/git-annex.nix
   # adds (list options concatenate across modules).
   users.users.git-annex.extraGroups = [ "library" ];
 
@@ -58,20 +69,23 @@
     # same user, so — as with music on rk1b — `.git` needs no group-write and git's dubious-
     # ownership check never fires (no `shared`, no `safe.directory` needed).
     ownerGroup = "library";
-    # setgid: everything any identity creates in the tree inherits `library`, so the reconciler's
+    # setgid: everything any identity creates in the tree inherits `library`, so the mirror's
     # writes stay reachable by git-annex and git-annex's inbound-sync writes stay readable by the
-    # reconciler and Stump. Same seam as music's 2770.
+    # mirror and Stump. Same seam as music's 2770.
     mode = "2770";
 
-    # rk1b is authoritative and owns the tree; the assistant adopts whatever the reconciler
+    # rk1b is authoritative and owns the tree; the assistant adopts whatever the mirror
     # writes without waiting for a timer. `unlock` + `thin` so the working tree holds REAL,
-    # editable files hardlinked to the annex object (1x disk) — Stump and the reconciler need
+    # editable files hardlinked to the annex object (1x disk) — Stump and the mirror need
     # real files, not symlinks into .git/annex/objects.
     unlock = true;
     thin = true;
     assistant = true;
 
     # rk1b and kelpy both want every file (rk1b authoritative, kelpy full replica).
+    # ⚠ `backup` here is a git-annex REPOSITORY GROUP (paired with `wanted` below) — it means
+    # "this remote wants every file", i.e. content distribution between rk1b and kelpy. It is NOT
+    # an offsite backup and does not make one run; palimpsest#150 names this exact misreading.
     group = "backup";
     wanted = "standard";
 

@@ -44,8 +44,6 @@
   # =========================================
   # System Architecture & Firmware
   # =========================================
-  # Give stargazer the power to cross compile for raspberry pis
-  boot.binfmt.emulatedSystems = [ "aarch64-linux" ];
   nixpkgs.buildPlatform.system = "x86_64-linux";
 
   # Firmware updates

@@ -29,10 +29,16 @@ in
     services.prometheus.exporters = {
       node = {
         enable = true;
+        # NOTE: `enabledCollectors` ADDS to node-exporter's built-in defaults, it does not
+        # restrict them. Anything unwanted must be switched off explicitly with a
+        # `--no-collector.<name>` flag below.
         enabledCollectors = [
           "systemd"
           "textfile"
         ];
+        # `extraFlags` merges by list concatenation, so a host may switch off a default
+        # collector that misbehaves on its particular hardware without disturbing the fleet
+        # (see hosts/sawtoothShark/configuration.nix for the powersupplyclass case).
         extraFlags = [ "--collector.textfile.directory=/var/lib/prometheus-node-exporter-text-files" ];
       };
     };

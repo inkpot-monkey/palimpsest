@@ -1,45 +1,123 @@
-# The Supernote fork's Private Cloud server (ADR-0031, palimpsest#92) — the device sync
+# The Supernote Private Cloud server (ADR-0031, palimpsest#92) — the device sync
 # endpoint the Nomad binds via *Settings → Sync → Private Cloud*. A host-agnostic profile,
 # enabled with `custom.profiles.supernote.enable = true` (rk1b, which shares the Nomad's
 # home LAN 192.168.1.0/24). Packaged as `pkgs.supernote` (palimpsest#91).
 #
-# Plain HTTP on the LAN — no TLS, no Caddy edge, no tailnet. The device is a locked-down
-# Android tablet that can't run Tailscale, so it reaches rk1b directly on the LAN; that is
-# why this service is NOT in `settings.services` (which is the Caddy-fronted, uptime-probed
-# registry) and gets no vhost/monitor entry. The reconciler (#94) reaches the store over
-# this same HTTP API, never the filesystem, so the store below stays private.
+# The server is the FORK `inkpot-monkey/supernote`, pinned to an explicit rev. palimpsest#112
+# moved this to upstream, on the reasoning that upstream had implemented the device planner and
+# realtime surface the fork existed to add; that held for the planner and not for the realtime
+# channel, so palimpsest#145 moved it back — the pinned rev is upstream 0.21.0 plus the device
+# channel and nothing else. Six residual upstream gaps are filed rather than
+# re-vendored: palimpsest#136 (delete/summary verb), #137 (planner writes), #138 (planner delete
+# tombstones), #139 (planner batch), #140 (upload response path / rogue-root self-heal), and #142
+# (concurrent logins for ONE account race a single-slot login challenge; the loser gets a
+# misleading 401 "Invalid credentials"). #136-#139 are on the DEVICE's own sync, so a device
+# banner after a rev bump is likely one of them; #140 is dormant on our store.
 #
-# The fork ALSO starts an MCP server (its LLM surface) on a second port — LLM features are
-# out of v1, so that port is deliberately left OUT of the firewall allow-list (the fork has
-# no flag to disable it; it always binds `config.host`). Firewalling it off is what
-# satisfies "do not expose the MCP port".
+# #142 is the one that reaches THIS profile: the device and the mirror share one account (see
+# the credential section) and the mirror is fired BY the device's sync, so their logins can
+# collide. The mirror retries a 401 for exactly that reason — if you ever see it log
+# "probably a lost login challenge", that is #142 and NOT a bad credential.
+# Hardware acceptance is a manual pass: docs/runbooks/supernote-upstream-acceptance.md.
+#
+# ── The server carries the device's own content only (ADR-0031, palimpsest#117) ────────────
+# Books reach the device by OPDS pull from Stump (palimpsest#114/#115), so nothing is injected into
+# this store at all. #117 removed the outbound half accordingly — the one-shot outbox send, the
+# last-synced baseline and the state they needed are gone, and the sweep below deletes what a
+# pre-#117 deploy left behind. What remains is the DOWNWARD mirror: store → `library/supernote/`,
+# the only path off the device for the pen layer.
+#
+# It mirrors the WHOLE device, not a chosen folder. It once mirrored only
+# `/DOCUMENT/Document/ereader`, which was inherited from the retired push and turned out to mirror
+# nothing at all: that folder existed only because the outbox created it, books now land in a
+# folder Private Cloud never syncs, and the handwriting this server is kept for lives in `Note/`
+# and `Document/`. Listing from the VFS root fixes that and needs no list of folders to maintain.
+#
+# The mirror is a STRICT materialisation: nothing is added to it locally, so a file it holds that
+# the store does not is unambiguously a device-side delete. One guard, and no state behind it — if
+# the store lists NO files at all while the mirror holds some, nothing is deleted. At whole-device
+# scope an empty listing means the device's entire filesystem is empty, which is store loss rather
+# than housekeeping; deleting one document among others still propagates immediately.
+#
+# Plain HTTP, no TLS and no Caddy edge, so this service is NOT in `settings.services` (the
+# Caddy-fronted, uptime-probed registry) and gets no vhost/monitor entry. The mirror (#107)
+# reaches the store over this same HTTP API, never the filesystem, so the store below stays
+# private.
+#
+# The device reaches it EITHER on the LAN or over the tailnet — its choice, set by the address
+# typed into Private Cloud. This once said the Nomad "can't run Tailscale"; that was true of the
+# firmware the original spike ran and has not been true since Ratta shipped sideloading (ADR-0031,
+# revision 2026-08-17 — the node is `supernote-nomad`). Nothing here depends on which it picks:
+# the server binds 0.0.0.0 and both paths reach the same port. If you point it at the tailnet, note
+# that sync then depends on Tailscale surviving Android's doze, which the LAN path did not.
+#
+# ── The MCP port is NOT closed by this module, and never was ──────────────────────────────
+# The server ALSO starts an MCP server (its LLM surface) on a second port, with no flag to disable
+# it — it always binds `config.host`. This module leaves that port out of `allowedTCPPorts` below,
+# and the comment there USED TO CLAIM that is what "keeps the LLM surface off the network".
+#
+# ⚠ IT IS NOT, on any host that trusts the tailnet. rk1b sets
+# `networking.firewall.trustedInterfaces = [ "tailscale0" "lo" ]`, which accepts EVERYTHING from a
+# tailnet peer before `allowedTCPPorts` is ever consulted — so the MCP port is reachable from every
+# node on the tailnet. Measured 2026-08-20 from kelpy: `GET :8081/mcp` answers, it does not time
+# out. What actually gates it is the MCP server's OWN authentication (that request answers 401),
+# which is a real control but a different one from the one this module was taking credit for.
+#
+# Leaving the port out of the allow-list is still right — it is what limits the surface on a host
+# that does NOT trust the tailnet, and costs nothing here. It is simply not sufficient on rk1b, and
+# "do not expose the MCP port" is therefore satisfied by the server's auth, not by this firewall.
+# Closing it to tailnet peers as well would need an explicit reject rule ordered ahead of the
+# trusted-interface accept; that is a change to the host's firewall posture, not to this profile.
 #
 # ── The store (`/var/lib/supernote`) ─────────────────────────────────────────────────────
-# One directory: the fork's UUID blob store + SQLite VFS + cache. Owned by the private
-# `supernote` user 0700 and — deliberately — NOT in the `library` group: the reconciler
+# One directory: the server's UUID blob store + SQLite VFS + cache. Owned by the private
+# `supernote` user 0700 and — deliberately — NOT in the `library` group: the mirror
 # reaches content over the client HTTP API, never the FS. Persisted WHOLE via impermanence +
-# StateDirectory (ADR-0004 pattern). It is a strict, REBUILDABLE subset of the offsite-backed
-# `library/` tree (hosts/rk1/library.nix), so — unlike `library/` — it has NO kelpy replica
-# and NO offsite backup, and nothing here adds it to a restic path (restic is off fleet-wide
-# on rk1b anyway; only the telemetry job is declared). Recovery if the store is lost:
-#   • device intact  → re-pair the Nomad to the server and let Private Cloud Sync re-seed it;
-#   • device gone     → the importer (#94 outbound pass) re-pushes from `library/`.
-# Before a `nix flake update supernote` (which can alembic-migrate the DB), take a local
-# `sqlite3 .backup` of /var/lib/supernote/system/supernote.db first (ADR-0031 consequence).
+# StateDirectory (ADR-0004 pattern). It has NO kelpy replica and NO offsite backup, and nothing
+# here adds it to a restic path (restic is off fleet-wide on rk1b anyway; only the telemetry job
+# is declared). The reason is that the store is REBUILDABLE, and since #117 that is carried by the
+# MIRROR below: every LIVE file in the store is mirrored down into `library/supernote/`
+# (hosts/rk1/library.nix), which sits on the NVMe and is git-annex-replicated to kelpy — so the
+# handwriting is already on different physical media than this store, which shares rk1b's eMMC
+# with the rest of /persistent (`NIXOS_SD` is a label, not a removable card — hosts/rk1/common.nix).
+# Measured on rk1b 2026-08-18 closing palimpsest#148: six blobs in the store and exactly two live
+# and mirrored. Of the other four, three are recycled (`is_active = 'N'` with rows in
+# `f_recycle_file`: two uploads of one epub, plus 112-acceptance-test.pdf) and the fourth is an
+# ORPHAN with no `f_user_file` row at all — a superseded revision of a note. The orphan is the one
+# thing the mirror structurally cannot carry, since it materialises the VFS and nothing describes
+# that blob; it is also, for the same reason, unreachable debris rather than content.
+#   ⚠ Say REBUILDABLE, not "backed up". `library/` is INTENDED to be offsite-backed (see the header
+#     of hosts/rk1/library.nix) and currently is NOT: no host declares a covering restic path with
+#     backups enabled, and rk1b runs no restic unit at all (palimpsest#150). The case for leaving
+#     the store un-backed-up rests on the mirror, which runs, and never on an offsite backup, which
+#     does not.
+# What is store-ONLY is the database — the account, the device pairing, the recycle bin — so
+# losing the eMMC costs a re-pair, not documents. Recovery if the store is lost:
+#   • device intact → re-pair the Nomad to the server and let Private Cloud Sync re-seed it;
+#   • device gone   → nothing re-seeds the store, and since #117 nothing can — there is no upload
+#     path. The handwriting itself is not lost (`library/supernote/` holds it), but it stays in
+#     the library rather than returning to a replacement device. Books are unaffected:
+#     a new device pulls them from the catalog (#114/#115), never from here.
+# Before bumping the `supernote` rev in flake.nix (which can alembic-migrate the DB), snapshot
+# /var/lib/supernote/system/supernote.db first (ADR-0031 consequence). `sqlite3` is NOT installed
+# on rk1b, so in practice that is the runbook's fallback — stop the unit, `cp -a` the file (see
+# docs/runbooks/supernote-upstream-acceptance.md); /var/lib/supernote/backups/ holds two such
+# snapshots, both pre-0.21.0 and therefore exactly what a revert BELOW the migration would need.
+# The input is rev-pinned precisely so that migration is never an unattended `nix flake update`.
 #
-# ── The credential (one sops secret, shared with the reconciler) ──────────────────────────
+# ── The credential (one sops secret, shared with the mirror) ──────────────────────────────
 # The Supernote account user (email) + password. The server binary itself reads no
 # user/password env var; the credential's server-side consumer is the `supernote-account-bootstrap`
-# oneshot below, which registers the single account (the fork bootstraps the first user when
+# oneshot below, which registers the single account (the server bootstraps the first user when
 # the DB is empty, then locks registration) and proves login works. The SAME secret is what
-# the device authenticates with and what the reconciler's client logs in with — one account,
+# the device authenticates with and what the mirror's client logs in with — one account,
 # no second auth surface. sops files are a separate repo (stash): create the secret, then
 # `nix flake update secrets` here BEFORE deploy or activation fails (AGENTS.md gotcha).
 #
 # Lives in the shared `profiles/library.yaml` (this stack's secret bundle, shared with the
-# reconciler/#94) under a `supernote` sub-map:
+# mirror/#107) under a `supernote` sub-map:
 #   supernote:
-#     user: you@example.com        # the Supernote account — MUST be a valid email (the fork
+#     user: you@example.com        # the Supernote account — MUST be a valid email (the server
 #     password: your-password      # validates EMAIL_REGEX on register)
 # The file needs rk1b's host key as a recipient (sops is all-or-nothing per host) — its
 # `.sops.yaml` creation rule must be `key_groups: [ age: [ *admin, *rk1b ] ]`.
@@ -53,7 +131,7 @@
 let
   cfg = config.custom.profiles.supernote;
 
-  # The device binds the sync endpoint here; the MCP port is the fork's always-on LLM
+  # The device binds the sync endpoint here; the MCP port is the server's always-on LLM
   # surface, kept off the firewall (v1-out). Plain integers, not a settings.services entry
   # (this service is LAN-direct, not Caddy-fronted — see the header).
   port = 8080;
@@ -62,28 +140,81 @@ let
   stateDir = "/var/lib/supernote";
   localUrl = "http://127.0.0.1:${toString port}";
   # The credential lives in the shared library-stack bundle (profiles/library.yaml), under a
-  # `supernote` sub-map — see the header. Shared with the reconciler (#94).
+  # `supernote` sub-map — see the header. Shared with the mirror (#107).
   secretsFile = self.lib.getSecretFile "library";
 
-  # ── The ereader push (#94) ────────────────────────────────────────────────────────────────
-  ecfg = cfg.ereader;
-  # The folder pushed onto the device, and where it lands on the device VFS. The device shows
-  # documents under /DOCUMENT/Document (the firmware's two-level doc root, seeded per-account by
-  # the fork — supernote/server/services/user.py); the trailing `ereader/` is auto-created by the
-  # server on first upload. A constant, not an option — the device's doc root is fixed firmware.
-  ereaderLocalDir = "${ecfg.libraryPath}/ereader";
-  ereaderRemoteDir = "/DOCUMENT/Document/ereader";
+  # ── The bootstrap's start bound (palimpsest#143) ──────────────────────────────────────────
+  # How long the bootstrap waits for the server to answer /api/csrf before declaring it dead, and
+  # the systemd backstop above that. Two numbers, because they have different jobs: the GATE is
+  # the one meant to fire, since it can say WHY (and dump the server's own error); the systemd
+  # timeout only exists so nothing — a wedged curl, a hung CLI — can outlive it. It therefore sits
+  # strictly above the gate plus the register/login round-trips that follow it.
+  #
+  # Anything finite would have prevented #143's 35-minute silent stall; the point is that a server
+  # which will not start makes the deploy FAIL, with an error to read, rather than hang.
+  #
+  # This started at 60s — the count the old polling loop used — and 60s was WRONG, which is worth
+  # recording because the mistake is easy to repeat. The old loop's `curl` had no `--max-time`, so
+  # a server that was listening but not yet answering blocked it for as long as the server needed;
+  # "60 iterations" was never a 60-second budget, it was an unbounded one wearing a counter. Giving
+  # each attempt a timeout turned it into a real deadline, and the supernote_mirror check — whose
+  # node also stands up Stump and git-annex — then failed with a HEALTHY server: the bootstrap gave
+  # up at 60s and the server opened its port about ten seconds later.
+  #
+  # So the deadline is sized for the slowest healthy start anyone has measured, not the fastest,
+  # and the fast diagnosis comes from the crash check in the gate instead — a server whose process
+  # has already exited is reported in about a second, which is better than 60s was and enormously
+  # better than the 35-minute stall. Waiting three minutes costs nothing on a deploy that was going
+  # to succeed, and a deploy that was going to fail no longer waits for the clock at all.
+  bootstrapReadySec = 180;
+  bootstrapTimeoutSec = bootstrapReadySec + 60;
+
+  # The two verdict lines the gate below prints. They are an INTERFACE, not just prose: the VM
+  # check (parts/checks/supernote/default.nix) greps for them to prove the two failures don't read
+  # alike, and docs/runbooks/supernote-upstream-acceptance.md tells the operator what each one
+  # means. Reword them in all three places or not at all.
+  serverDeadVerdict = "THE SERVER NEVER CAME UP";
+  credentialBadVerdict = "THE CREDENTIAL WAS REJECTED";
+
+  # ── The downward mirror (#107 as reduced by #117, widened to the whole device) ────────────
+  mcfg = cfg.mirror;
+  # `library/supernote/` materialises the WHOLE device store — every system folder the firmware
+  # seeds (Note, Document, MyStyle, Export, Inbox, Screenshot), each appearing under the same
+  # relative path the device uses. There is no remote path option and no per-folder list: the
+  # mirror lists from the VFS root, so a folder the firmware adds later is picked up without a
+  # change here.
+  mirrorDir = "${mcfg.libraryPath}/supernote";
+
+  # Paths this design has retired, swept on every start so a pre-existing deploy does not leave
+  # them behind. All three sit where abandoning them costs something: the first two are inside the
+  # git-annex library tree, so an orphan would replicate to kelpy (and offsite too, once offsite
+  # backup lands — palimpsest#150), and the third is persisted server state. Named rather than
+  # inlined so the sweep and this comment cannot drift apart.
+  #   • ereader-outbox/ — the one-shot send inbox, retired with the upload path (#117).
+  #   • ereader/        — the old mirror root, when this mirrored ONLY /DOCUMENT/Document/ereader.
+  #                       That folder was a vestige of the retired push (the outbox created it) and
+  #                       nothing writes there: books arrive by OPDS into a folder Private Cloud
+  #                       never syncs, and the handwriting lives in Note/ and Document/. It
+  #                       mirrored nothing, so there is no content to migrate — only a dead
+  #                       directory to remove.
+  #   • reconcile/      — the last-synced baseline's directory, retired with the baseline (#117).
+  retiredPaths = [
+    "${mcfg.libraryPath}/ereader-outbox"
+    "${mcfg.libraryPath}/ereader"
+    "${stateDir}/reconcile"
+  ];
 
   # A python interpreter with the `supernote` LIBRARY importable (the package is a
-  # buildPythonApplication, so `toPythonModule` re-exposes its modules to withPackages). The push
-  # script drives `supernote.client` directly — client HTTP API only, never the fork's FS store.
-  pushPython = pkgs.python313.withPackages (ps: [ (ps.toPythonModule pkgs.supernote) ]);
+  # buildPythonApplication, so `toPythonModule` re-exposes its modules to withPackages). The
+  # mirror drives `supernote.client` directly — client HTTP API only, never the server's FS store.
+  mirrorPython = pkgs.python313.withPackages (ps: [ (ps.toPythonModule pkgs.supernote) ]);
 
-  # Shared systemd hardening for the supernote units (server + ereader push) — one source so the
-  # two can't drift. Both only need outbound TCP + loopback, and both keep their writable state
+  # Shared systemd hardening for the supernote units (server + mirror) — one source so
+  # the two can't drift. Both only need outbound TCP + loopback, and both keep their writable state
   # under a systemd-managed dir (StateDirectory / RuntimeDirectory), so ProtectSystem=strict (whole
   # hierarchy read-only, reads intact) and ProtectHome (each unit's HOME is under /var/lib or /run,
-  # never /home or /root) are both safe.
+  # never /home or /root) are both safe. The mirror unit additionally opens `library/supernote/`
+  # via ReadWritePaths — the one path it writes, and the only path in the library tree it touches.
   hardening = {
     NoNewPrivileges = true;
     ProtectSystem = "strict";
@@ -104,20 +235,25 @@ let
 in
 {
   options.custom.profiles.supernote = {
-    enable = lib.mkEnableOption "the Supernote fork Private Cloud server (device sync endpoint, ADR-0031)";
+    enable = lib.mkEnableOption "the Supernote Private Cloud server (device sync endpoint, ADR-0031)";
 
-    # The outbound `ereader` push (ADR-0031, palimpsest#94) — off by default because it couples
-    # to the git-annex `library` tree, which only exists on the media node (rk1b). The base server
-    # profile above stays host-agnostic; a host with the library turns this on.
-    ereader = {
-      enable = lib.mkEnableOption "the outbound ereader push — send library/ereader/ files to the device on each device-initiated sync (ADR-0031, palimpsest#94)";
+    # The downward mirror (ADR-0031, palimpsest#107 as reduced by #117) — off by default because it
+    # couples to the git-annex `library` tree, which only exists on the media node (rk1b). The base
+    # server profile above stays host-agnostic; a host with the library turns this on.
+    mirror = {
+      enable = lib.mkEnableOption "the downward mirror — materialise everything the device holds into library/supernote/ as real files, with durable device-side deletes, on each device-initiated sync (ADR-0031, palimpsest#117)";
 
       libraryPath = lib.mkOption {
         type = lib.types.str;
         default = "/var/cache/library";
         description = ''
-          Root of the git-annex library tree (hosts/rk1/library.nix). Its `ereader/` subfolder is
-          what gets pushed onto the device — drop a PDF/EPUB there to queue it for the Supernote.
+          Root of the git-annex library tree (hosts/rk1/library.nix). Its `supernote/` subfolder is
+          a strict downward mirror of everything the device holds — `Note/`, `Document/` and the
+          other folders the firmware seeds, at the same relative paths — git-annex-replicated to
+          kelpy, unlike the server store (and offsite too, once offsite backup lands —
+          palimpsest#150; it does not run today). Nothing is written into it by hand: there is
+          no upload path, so a file here that the store lacks is treated as a device-side delete
+          and removed. Books reach the device by OPDS pull from Stump, not through this tree.
         '';
       };
 
@@ -125,8 +261,8 @@ in
         type = lib.types.str;
         default = "library";
         description = ''
-          Group owning the library tree (setgid, so drops stay group-readable). The `supernote`
-          user joins it to read `ereader/`, and the folder is created owned by this group.
+          Group owning the library tree (setgid, so writes stay group-readable). The `supernote`
+          user joins it to read and write `supernote/`, which is created owned by this group.
         '';
       };
     };
@@ -146,17 +282,17 @@ in
           uid = 982;
           home = stateDir;
           description = "Supernote Private Cloud server";
-          # When the ereader push is on, join the library group so the push (which runs as this user)
-          # can read library/ereader/ (setgid'd to `group`). Empty otherwise — the base server never
+          # When the mirror is on, join the library group so it (running as this user) can read and
+          # write library/supernote/ (setgid'd to `group`). Empty otherwise — the base server never
           # touches the library tree.
-          extraGroups = lib.optional ecfg.enable ecfg.group;
+          extraGroups = lib.optional mcfg.enable mcfg.group;
         };
         users.groups.supernote.gid = 982;
 
         # The one shared credential, split into two scalar sops secrets from the `supernote` sub-map
         # of profiles/library.yaml (sops extracts scalars, not maps; the `a/b` key path descends
         # into the map). Owned by `supernote` so the service user — which runs both this server's
-        # bootstrap oneshot and, later, the reconciler (#94) — can read them.
+        # bootstrap oneshot and, later, the mirror (#107) — can read them.
         sops.secrets."supernote/user" = {
           sopsFile = secretsFile;
           key = "supernote/user";
@@ -169,7 +305,7 @@ in
         };
 
         systemd.services.supernote-server = {
-          description = "Supernote fork Private Cloud server (device sync endpoint)";
+          description = "Supernote Private Cloud server (device sync endpoint)";
           wantedBy = [ "multi-user.target" ];
           after = [ "network-online.target" ];
           wants = [ "network-online.target" ];
@@ -179,16 +315,17 @@ in
             pkgs.openssl
           ];
           environment = {
-            # Bind all interfaces so the device reaches rk1b on the LAN; the firewall (below)
-            # is what keeps the MCP port private. Storage under the StateDirectory.
+            # Bind all interfaces so the device reaches rk1b by whichever address it is pointed
+            # at — LAN or tailnet. NB: the firewall below does NOT keep the MCP port private on a
+            # host that trusts the tailnet; see the header. Storage under the StateDirectory.
             SUPERNOTE_HOST = "0.0.0.0";
             SUPERNOTE_PORT = toString port;
             SUPERNOTE_MCP_PORT = toString mcpPort;
             SUPERNOTE_STORAGE_DIR = stateDir;
-            # Self-service registration stays disabled; the fork still allows the FIRST user on an
+            # Self-service registration stays disabled; the server still allows the FIRST user on an
             # empty DB (the bootstrap oneshot uses that), then this keeps it locked afterwards.
             SUPERNOTE_ENABLE_REGISTRATION = "false";
-            # `supernote cloud login` (bootstrap + reconciler) caches its token under $HOME/.cache;
+            # `supernote cloud login` (bootstrap + mirror) caches its token under $HOME/.cache;
             # point HOME at the persisted store so the cache survives reboots.
             HOME = stateDir;
           };
@@ -200,8 +337,8 @@ in
             StateDirectoryMode = "0700";
             WorkingDirectory = stateDir;
 
-            # A stable JWT signing key so device + reconciler access tokens survive a server
-            # restart (the fork otherwise generates a throwaway in-memory key each start, which
+            # A stable JWT signing key so device + mirror access tokens survive a server
+            # restart (the server otherwise generates a throwaway in-memory key each start, which
             # would invalidate the device's long-lived token on every deploy). Generated ONCE into
             # the persisted store — an auto-generated local infra key, not a credential, so the
             # "one secret / no second auth surface" invariant still holds. $STATE_DIRECTORY is set
@@ -221,12 +358,15 @@ in
           // hardening;
         };
 
-        # Open ONLY the sync port. It goes on all interfaces (not scoped to `tailscale0` like the
-        # tailnet services — the Nomad is LAN-only and can't run Tailscale, and rk1's physical NIC
-        # isn't statically named here to scope to); the tailnet is trusted and every request is
-        # login-gated, so the extra reach is harmless. The MCP port (${toString mcpPort}) is
-        # deliberately absent — the fork always binds it to the same host, so leaving it out of the
-        # allow-list is what keeps the LLM surface off the network (v1-out).
+        # Open ONLY the sync port, on all interfaces rather than scoped to one: the device may
+        # arrive over the LAN or the tailnet, and rk1's physical NIC is not statically named here
+        # to scope to. Every request is login-gated, so the extra reach is acceptable.
+        #
+        # The MCP port (${toString mcpPort}) is deliberately absent — but READ THE HEADER before
+        # trusting that to close it. On a host with `trustedInterfaces = [ "tailscale0" ]` (rk1b
+        # does) this allow-list is not consulted for tailnet peers at all, so the LLM surface IS
+        # reachable from the tailnet and is gated by the MCP server's own auth instead. Omitting it
+        # here still limits the surface on hosts that do not trust the tailnet.
         networking.firewall.allowedTCPPorts = [ port ];
 
         # Bootstrap the single account from the credential, and prove login works — the server's
@@ -234,18 +374,56 @@ in
         # Idempotent: if login already succeeds the account exists and we stop; only an empty DB
         # takes the register path. A login failure right after a fresh register means a bad
         # credential and fails the unit LOUD (same spirit as navidrome/HA provisioners).
+        #
+        # ── Bounded, and it fails on its own terms (palimpsest#143) ──────────────────────────
+        # This unit used to `Requires=` the server and carry `TimeoutStartSec=infinity`. When the
+        # server crash-looped (a fork alembic stamp upstream did not have, #112), every restart
+        # tore this oneshot down mid-run and systemd restarted it — 173 cycles — while
+        # `nixos-rebuild switch` waited on a unit that could never time out. The operator saw a
+        # 35-minute silent stall, indistinguishable from a slow build, and no error at all.
+        #
+        # Both halves of that are fixed here, and both are needed:
+        #   • `wants` + `after`, NOT `requires`. Ordering is all this needs — it must run after the
+        #     server has been asked to start, and it pulls the server in. What it must NOT do is
+        #     inherit the server's fate: with `requires`, a failing server SIGTERMs this unit mid-run
+        #     and the only thing the deploy learns is that something was retried. Decoupled, this
+        #     unit survives to run its own health gate and REPORT, which is the whole difference
+        #     between a diagnosable failure and a stall.
+        #   • A finite `TimeoutStartSec`. The gate below is what should fire (it explains itself);
+        #     this is the backstop that guarantees termination regardless.
+        # The gate distinguishes the two failures an operator confuses at 3am — "the server never
+        # came up" (go read the server's journal, which it prints) from "the credential was
+        # rejected" (go look at sops) — because the fix for one is nowhere near the fix for
+        # the other.
         systemd.services.supernote-account-bootstrap = {
           description = "Bootstrap the Supernote account from the credential secret and verify login";
           after = [
             "supernote-server.service"
             "sops-install-secrets.service"
           ];
-          requires = [ "supernote-server.service" ];
-          wants = [ "sops-install-secrets.service" ];
+          # `wants`, not `requires` — see the header above. The server is `wantedBy` multi-user.target
+          # in its own right; this only states that the bootstrap has no business running without it
+          # being asked for, and refuses to be torn down when it fails.
+          #
+          # This gives up one thing knowingly: `Requires=` also propagates an EXPLICIT restart, so
+          # restarting the server used to re-run this unit and refresh its login proof.
+          # `PartOf=` would buy that back, and is not used, because propagated restarts are the
+          # very mechanism #143 is about — a crash-looping server would drag this unit around with
+          # it again. The proof is not actually lost on the deploys that matter: this unit's
+          # ExecStart embeds `${pkgs.supernote}`, so every rev bump — the case the runbook checks
+          # after — changes its definition and re-runs it. A deploy that touches only the server's
+          # own settings leaves the last proof standing; `systemctl restart
+          # supernote-account-bootstrap` refreshes it on demand.
+          wants = [
+            "supernote-server.service"
+            "sops-install-secrets.service"
+          ];
           wantedBy = [ "multi-user.target" ];
+          # systemd for the journalctl that prints the server's own error when the gate times out.
           path = [
             pkgs.coreutils
             pkgs.curl
+            pkgs.systemd
           ];
           environment.HOME = stateDir;
           serviceConfig = {
@@ -253,6 +431,18 @@ in
             RemainAfterExit = true;
             User = "supernote";
             Group = "supernote";
+            # Read the SERVER's journal — the whole value of the timeout message is that it carries
+            # the reason the server would not start, and a unit's log is not readable by an
+            # unprivileged user without this. It is a real widening: `systemd-journal` is
+            # read access to the WHOLE system journal, not just this server's unit, granted to a
+            # user that otherwise only sees its own store. Taken deliberately, because the
+            # alternative to the operator reading the server's error here is the operator not
+            # reading it at all — which is the failure #143 is about. Read-only, and the narrower
+            # option if this ever needs to shrink is a separate root-run reporter unit.
+            SupplementaryGroups = [ "systemd-journal" ];
+            # Bounded start (palimpsest#143). The gate below fires first and says why; this is only
+            # the backstop that guarantees this unit can never hang a deploy again.
+            TimeoutStartSec = bootstrapTimeoutSec;
             # Same StateDirectory as the server (for HOME/$STATE_DIRECTORY). Must repeat the 0700
             # mode: systemd re-applies StateDirectoryMode on every start, and its default (0755)
             # would otherwise loosen the server's 0700 store when this oneshot runs.
@@ -268,16 +458,62 @@ in
               account="$(cat "$CREDENTIALS_DIRECTORY/user")"
               password="$(cat "$CREDENTIALS_DIRECTORY/password")"
 
+              # ── Health gate ────────────────────────────────────────────────────────────────
               # Wait for the server to accept connections and finish DB migrations. /api/csrf is a
-              # public GET that only answers once the app has started.
-              for _ in $(seq 1 60); do
-                if curl -sf -o /dev/null "${localUrl}/api/csrf"; then
-                  break
+              # public GET that only answers once the app has started. A wall-clock deadline, not a
+              # loop count, so the bound holds whatever each attempt costs; `--max-time` keeps a
+              # single hung connection from eating the whole budget on its own.
+              #
+              # Timing out here is the DIAGNOSIS, not a retry hint: nothing this unit does can make
+              # a server that will not start start. So it says so in the terms the operator needs
+              # — this is not the credential — and prints the server's own error, because that is
+              # the thing worth reading and `nixos-rebuild` will not surface it for a unit that is
+              # busy auto-restarting rather than failed.
+              # The verdict goes LAST, after the server's log, and that ordering is load-bearing:
+              # `switch-to-configuration` reports a failed unit by running `systemctl status`,
+              # which shows only the TAIL of its journal (10 lines). A verdict printed before 40
+              # lines of server log scrolls off the deploy's own output and is seen only by someone
+              # who already knew to go looking — which is the reader this is for.
+              server_never_came_up() {
+                echo "supernote: the server never answered ${localUrl}/api/csrf ($1). Its own log follows (journalctl -u supernote-server):" >&2
+                journalctl -u supernote-server.service -n 40 --no-pager -o cat >&2 || true
+                echo "supernote: ── ${serverDeadVerdict}: $1; the log above is why. ──" >&2
+                echo "supernote: this is NOT a credential problem — the credential was never offered to anything." >&2
+                exit 1
+              }
+
+              deadline=$(( $(date +%s) + ${toString bootstrapReadySec} ))
+              until curl -sf --max-time 5 -o /dev/null "${localUrl}/api/csrf"; do
+                # Two things look identical from out here — a server still starting up, and a
+                # server that cannot start — and only the first is worth waiting out. A main
+                # process that has ALREADY EXITED non-zero is the second: with `Restart=on-failure`
+                # nothing else makes it exit, so there is nothing to wait for and the deploy gets
+                # its answer in about a second. This is the #112 shape (crash-loop on a migration
+                # the DB cannot satisfy), and it is why the deadline below can afford to be
+                # generous: being slow and being dead are no longer told apart by a stopwatch.
+                if [ "$(systemctl show -p ExecMainExitTimestampMonotonic --value supernote-server.service)" != "0" ] &&
+                   [ "$(systemctl show -p ExecMainStatus --value supernote-server.service)" != "0" ]; then
+                  server_never_came_up "its process has already exited with status $(systemctl show -p ExecMainStatus --value supernote-server.service)"
+                fi
+                if [ "$(date +%s)" -ge "$deadline" ]; then
+                  server_never_came_up "no answer within ${toString bootstrapReadySec}s"
                 fi
                 sleep 1
               done
 
               # Idempotent health/login proof: succeeds whenever the account already exists.
+              #
+              # Deliberately NOT retried, unlike the mirror (palimpsest#142). This probe is
+              # exposed to the same lost-login-challenge race, and a collision here would send us
+              # down the register path below, which then fails on an already-existing account —
+              # a confusing deploy failure that reads like a bad secret. It is left alone anyway
+              # because the cure is worse: every login attempt, failed ones included, counts
+              # against upstream's per-account limit of 10 per 60s (server/utils/rate_limit.py,
+              # checked BEFORE credentials are verified), so a retry loop here plus the
+              # register+verify pair could trip a 429 on a FRESH install — trading a rare race for
+              # a reliable one. The exposure is small (this runs at boot/deploy, not per sync),
+              # and the mirror — which fires on EVERY device sync — is the hardened one.
+              # If this unit fails with "Invalid credentials", re-run it before suspecting sops.
               if ${pkgs.supernote}/bin/supernote cloud login --url "${localUrl}" "$account" --password "$password"; then
                 echo "supernote: account present, login OK"
                 exit 0
@@ -287,8 +523,25 @@ in
               # verify by logging in. `user add` posts the public registration; the login must then
               # succeed or a mis-set credential fails the unit here rather than silently at sync time.
               echo "supernote: no account yet — bootstrapping from the credential secret"
-              ${pkgs.supernote}/bin/supernote admin --url "${localUrl}" user add "$account" --password "$password"
-              ${pkgs.supernote}/bin/supernote cloud login --url "${localUrl}" "$account" --password "$password"
+
+              # The other verdict. Both routes to it carry the palimpsest#142 caveat, because the
+              # ONE that production actually reaches is the `user add` branch below (registration
+              # is refused the moment an account exists), and a transient #142 race arrives there
+              # looking exactly like a bad secret. Telling the operator to go rewrite sops on a
+              # first 401 would send them off to fix something that isn't broken.
+              credential_rejected() {
+                echo "supernote: ── ${credentialBadVerdict}: $1 ──" >&2
+                echo "supernote: the server is UP and answering, so this is NOT the server." >&2
+                echo "supernote: re-run this unit ONCE first — a concurrent login for the same account 401s the loser (palimpsest#142), and the device syncing at the wrong moment is enough to cause it. If it fails again, fix the 'supernote' sub-map (user/password) in the library sops bundle." >&2
+                exit 1
+              }
+
+              if ! ${pkgs.supernote}/bin/supernote admin --url "${localUrl}" user add "$account" --password "$password"; then
+                credential_rejected "the login above failed and the account could not be registered — registration is refused once any account exists, so the credential no longer matches the account already in the store"
+              fi
+              if ! ${pkgs.supernote}/bin/supernote cloud login --url "${localUrl}" "$account" --password "$password"; then
+                credential_rejected "the account was just registered from this credential, yet logging in with it failed"
+              fi
               echo "supernote: account bootstrapped, login OK"
             '';
           };
@@ -296,7 +549,7 @@ in
 
         # Persist the store WHOLE across the tmpfs-root reboot (ADR-0004). Static user, so this
         # needs its own entry (unlike DynamicUser's /var/lib/private). No kelpy replica, no restic:
-        # rebuildable subset of the offsite-backed library/ (see the header for recovery).
+        # rebuildable, because the mirror holds its live content in library/ (header for recovery).
         environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
           directories = [
             {
@@ -309,8 +562,9 @@ in
         };
 
         # Enforce ADR-0031's "no offsite backup for the store" — the mirror of the library's
-        # must-be-backed-up guard (hosts/kelpy/configuration.nix). The store is a rebuildable
-        # subset of the offsite-backed library/, so a restic job must never sweep it up. Comments
+        # must-be-backed-up guard (hosts/kelpy/configuration.nix). The store is rebuildable from
+        # the device and its live content is mirrored into library/, so a restic job must never
+        # sweep it up: backing it up would carry the blob store offsite to no end. Comments
         # can't stop a future broad path; this fails the build the moment any restic `paths` entry
         # becomes an ancestor of the store (live or persisted). Lazy-safe: with no backups declared,
         # attrValues is [] and the assertion is trivially true.
@@ -326,86 +580,127 @@ in
           [
             {
               assertion = !lib.any covers resticPaths;
-              message = "custom.profiles.supernote: a restic backup now covers the fork store (${stateDir}), but ADR-0031 keeps it OUT of any offsite backup (it is a rebuildable subset of the offsite-backed library/). Remove that path or narrow the backup.";
+              message = "custom.profiles.supernote: a restic backup now covers the server store (${stateDir}), but ADR-0031 keeps it OUT of any offsite backup (it is rebuildable from the device, and its live content is already mirrored into library/). Remove that path or narrow the backup.";
             }
           ];
       }
 
-      # ── The outbound ereader push (ADR-0031, palimpsest#94) ─────────────────────────────────
-      (lib.mkIf ecfg.enable {
-        # Make library/ereader/ exist (AC #1): group-readable + setgid, owned by the tree owner
-        # (git-annex, like the rest of the library) so drops the user/git-annex place there stay
-        # readable to the push. A oneshot rather than a tmpfiles rule so it can wait for the
+      # ── The downward mirror (ADR-0031, palimpsest#107 as reduced by #117) ──────────────────
+      (lib.mkIf mcfg.enable {
+        # Make library/supernote/ exist: group-writable + setgid, owned by the tree owner
+        # (git-annex, like the rest of the library) so the mirror (supernote user, via the library
+        # group) can write it and git-annex can adopt what it writes. 2770 not 2775 — the tree is
+        # not world-readable. A oneshot rather than a tmpfiles rule so it can wait for the
         # /var/cache NVMe mount — the git-annex module avoids a plain tmpfiles rule here for exactly
         # that mount-race reason. `install -d` is idempotent and applies the same owner/group/mode
         # git-annex would, so ordering against git-annex-init is immaterial (both converge).
-        systemd.services.supernote-ereader-dir = {
-          description = "Ensure the library ereader/ folder exists (group-readable, setgid)";
+        #
+        # The same oneshot sweeps the retired paths (see `retiredPaths`), because all of them
+        # outlive a deploy and two sit inside the git-annex tree, where an orphan replicates to
+        # kelpy (and offsite too, once offsite backup lands — palimpsest#150). `rm -rf` rather
+        # than a tmpfiles `R` rule for the same mount-race reason, and because it must run
+        # BEFORE the mirror can be fired.
+        # Destructive by intent, and it says what it removed: nothing it deletes has a live writer
+        # any more.
+        systemd.services.supernote-mirror-dir = {
+          description = "Ensure library/supernote/ exists (group-writable, setgid) and sweep the retired paths";
           wantedBy = [ "multi-user.target" ];
-          unitConfig.RequiresMountsFor = [ ecfg.libraryPath ];
+          unitConfig.RequiresMountsFor = [ mcfg.libraryPath ];
           serviceConfig = {
             Type = "oneshot";
             RemainAfterExit = true;
-            ExecStart = "${pkgs.coreutils}/bin/install -d -o git-annex -g ${ecfg.group} -m 2770 ${ereaderLocalDir}";
+            ExecStart = pkgs.writeShellScript "supernote-mirror-dir" ''
+              set -euo pipefail
+              ${pkgs.coreutils}/bin/install -d -o git-annex -g ${mcfg.group} -m 2770 ${mirrorDir}
+
+              # Say what is being removed rather than removing it silently, so a deploy that
+              # discards something leaves a trace in the journal.
+              for retired in ${lib.concatStringsSep " " retiredPaths}; do
+                if [ -e "$retired" ]; then
+                  echo "supernote mirror: removing retired path $retired, containing:"
+                  ${pkgs.coreutils}/bin/ls -A "$retired" || true
+                  ${pkgs.coreutils}/bin/rm -rf "$retired"
+                fi
+              done
+            '';
           };
         };
 
-        # The push oneshot — fired by the watcher on each device-initiated sync, never on a timer.
-        # Logs in with the shared credential and md5-idempotently uploads new ereader/ files to the
-        # device VFS (client HTTP API only; never deletes, never pulls — enforced by the script).
-        # Trigger-only: no wantedBy, so it runs solely when the watcher `systemctl start`s it.
-        systemd.services.supernote-ereader-push = {
-          description = "Push library/ereader/ files onto the Supernote (outbound, palimpsest#94)";
+        # The mirror oneshot — fired by the watcher on each device-initiated sync, never on a
+        # timer. Logs in with the shared credential and materialises everything the device holds
+        # into library/supernote/, propagating device-side deletes. Client HTTP API only; it never
+        # touches the server's FS store — note there is no StateDirectory here, so the sandbox does
+        # not even make the store writable to it. Trigger-only: no wantedBy, so it runs solely when
+        # the watcher `systemctl start`s it.
+        systemd.services.supernote-mirror = {
+          description = "Mirror the Supernote device down into library/supernote/ (palimpsest#117)";
           after = [
             "supernote-server.service"
-            "supernote-ereader-dir.service"
+            "supernote-mirror-dir.service"
           ];
-          requires = [ "supernote-server.service" ];
+          requires = [
+            "supernote-server.service"
+            "supernote-mirror-dir.service"
+          ];
+          # Wait for the NVMe library mount too — ReadWritePaths below binds paths under it, which
+          # fails the namespace setup if the mount is not yet up.
+          unitConfig.RequiresMountsFor = [ mcfg.libraryPath ];
           environment = {
             SUPERNOTE_URL = localUrl;
-            EREADER_LOCAL_DIR = ereaderLocalDir;
-            EREADER_REMOTE_DIR = ereaderRemoteDir;
+            MIRROR_DIR = mirrorDir;
             # A writable HOME under the unit's private runtime dir (some libs consult $HOME); the
-            # push itself caches nothing — it logs in fresh each run.
-            HOME = "/run/supernote-ereader-push";
+            # mirror itself caches nothing else — it logs in fresh each run.
+            HOME = "/run/supernote-mirror";
           };
           serviceConfig = {
             Type = "oneshot";
             User = "supernote";
             Group = "supernote";
-            RuntimeDirectory = "supernote-ereader-push";
+            RuntimeDirectory = "supernote-mirror";
             RuntimeDirectoryMode = "0700";
+            # It downloads into supernote/, so that one path is writable under
+            # ProtectSystem=strict; everything else — including the server store — stays read-only.
+            # (Before #117 this unit also carried StateDirectory=supernote, to persist the baseline
+            # inside the store. With the baseline gone the declaration went with it, which is what
+            # makes "the store is reached only over the client API" true of the sandbox and not just
+            # of the code.)
+            ReadWritePaths = [ mirrorDir ];
+            # Downloaded files must be group-writable (0664) so git-annex (in the library group) can
+            # manage/replicate/drop them — the same reach beets has into the music tree (ADR-0028).
+            UMask = "0002";
             # Credentials land in a private tmpfs (CREDENTIALS_DIRECTORY), never argv/environ — same
             # shape as the server bootstrap; the same one account, no second auth surface.
             LoadCredential = [
               "user:${config.sops.secrets."supernote/user".path}"
               "password:${config.sops.secrets."supernote/password".path}"
             ];
-            ExecStart = pkgs.writeShellScript "supernote-ereader-push-start" ''
+            ExecStart = pkgs.writeShellScript "supernote-mirror-start" ''
               set -euo pipefail
               export SUPERNOTE_USER_FILE="$CREDENTIALS_DIRECTORY/user"
               export SUPERNOTE_PASSWORD_FILE="$CREDENTIALS_DIRECTORY/password"
-              exec ${pushPython}/bin/python ${./supernote-ereader-push.py}
+              exec ${mirrorPython}/bin/python ${./supernote-mirror.py}
             '';
           }
           // hardening;
         };
 
-        # The sync-coupled trigger (AC #3): NOT a timer and NOT a file-watcher (the owner
-        # constraint). It follows the fork server's journal and fires the push the moment the device
-        # opens a sync — POST /api/file/2/files/synchronous/start, which the server's aiohttp access
-        # log records (%r request line). Debounced so a burst of starts coalesces into one push.
-        # Runs as root: it reads the server unit's journal and `systemctl start`s the push. On
-        # restart it follows from the tail (-n0), so historical sync lines are never replayed.
-        systemd.services.supernote-ereader-watch = {
-          description = "Fire the ereader push when the Supernote starts a sync (palimpsest#94)";
+        # The sync-coupled trigger: NOT a timer and NOT a file-watcher (the owner constraint,
+        # carried over from #94, and unchanged by #117 — reducing the sync removed a direction, not
+        # the trigger). It follows the server's journal and fires the reconcile the
+        # moment the device opens a sync — POST /api/file/2/files/synchronous/start, which the
+        # server's aiohttp access log records (%r request line). Debounced so a burst of starts
+        # coalesces into one run. Runs as root: it reads the server unit's journal and
+        # `systemctl start`s the mirror. On restart it follows from the tail (-n0), so historical
+        # sync lines are never replayed.
+        systemd.services.supernote-mirror-watch = {
+          description = "Fire the mirror when the Supernote starts a sync (palimpsest#107)";
           wantedBy = [ "multi-user.target" ];
           after = [ "supernote-server.service" ];
           wants = [ "supernote-server.service" ];
           serviceConfig = {
             Restart = "always";
             RestartSec = 5;
-            ExecStart = pkgs.writeShellScript "supernote-ereader-watch-start" ''
+            ExecStart = pkgs.writeShellScript "supernote-mirror-watch-start" ''
               set -eu
               last=0
               debounce=15
@@ -416,10 +711,18 @@ in
                         now=$(${pkgs.coreutils}/bin/date +%s)
                         if [ $((now - last)) -ge "$debounce" ]; then
                           last=$now
-                          echo "ereader watch: device sync detected, firing push"
+                          echo "supernote mirror watch: device sync detected, firing the mirror"
                           # Keep the follower alive even if the enqueue momentarily fails (set -e
-                          # would otherwise tear down the pipeline and bounce the whole watcher).
-                          ${pkgs.systemd}/bin/systemctl start --no-block supernote-ereader-push.service || true
+                          # would otherwise tear down the pipeline and bounce the whole watcher) —
+                          # but SAY SO. Swallowing it silently left the line above asserting an
+                          # action that may not have happened, which is the same defect the
+                          # mirror's `store=` token fixes: a log that reads as informative
+                          # while carrying no information. A dropped trigger is invisible from the
+                          # reconcile unit's own journal (it simply has one fewer run), so this
+                          # line is the only place it could ever surface.
+                          if ! ${pkgs.systemd}/bin/systemctl start --no-block supernote-mirror.service; then
+                            echo "supernote mirror watch: FAILED to enqueue the mirror — this sync will NOT be mirrored; the next sync retries"
+                          fi
                         fi
                         ;;
                     esac

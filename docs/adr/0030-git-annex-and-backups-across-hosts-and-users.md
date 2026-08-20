@@ -8,7 +8,7 @@ the workstation's `~/Pictures` assistant — a *user* repo — published nothing
 replication link with no second observer (kelpy's `pictures` repo is a passive receiver)
 was invisible. And there was no view of *backups* as a whole: restic off-site
 ([ADR-0021](0021-telemetry-durable-disk-capped-retention.md)) sat in a different mechanism
-entirely, currently switched off because rsync.net is unreachable — an off backup that
+entirely, currently switched off (deferred — palimpsest#150) — an off backup that
 vanishes from monitoring being exactly the silent gap #60 exists to close.
 
 This ADR records how git-annex usage — and the wider backup story — is surfaced **across

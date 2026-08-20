@@ -4,7 +4,7 @@
 # stays here is the fleet-specific tie-back: that THIS fleet's real hosts are coherent
 # with the contract. Two light, real-host properties:
 #   1. wherever the contract decides a display surface is needed (custom.gui.surface),
-#      the host's display binding (gui-desktop.nix) actually renders it (sddm) — proof
+#      the host's display binding (gui.nix) actually renders it (sddm) — proof
 #      the binding is wired fleet-wide, the host's half of the contract's gui decision;
 #   2. every real host's exposed-trait is one the contract's archetypes cover, so
 #      "the conformance suite passes" implies the real fleet's pairings are sound.

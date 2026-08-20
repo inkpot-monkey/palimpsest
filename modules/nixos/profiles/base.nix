@@ -2,6 +2,7 @@
   config,
   lib,
   pkgs,
+  inputs,
   ...
 }:
 let
@@ -9,12 +10,19 @@ let
 in
 {
   imports = [
-    ../../../users/identity.nix
-    # The host's display binding for the contract's gui-session decision (contract ADR-0005
-    # review): the contract decides which sessions to offer, this renders them with
-    # SDDM + Plasma 6. Swap this module to change desktop environment; the contract is
-    # unchanged. Self-gated on custom.gui.surface, so it's inert on non-gui hosts.
-    ./gui-desktop.nix
+    # Host-side system wiring for the contract (its ADR-0004): import the contract's umbrella
+    # nixos kit (the custom.users schema, realization, feature modules, insecure aggregator,
+    # exposed-host ban — all closed over the registry). The contract leaves only the platform
+    # binding to the host, and that seam is home-side now (modules/homeManager/options.nix), so
+    # this is pure glue. (Was users/identity.nix, inlined here when the in-tree users/ dir went.)
+    inputs.contract.nixosModules.default
+    # The host's display binding. The contract is display-server-agnostic (contract ADR-0021):
+    # it only says a gui surface is needed (custom.gui.surface.enabled); this host renders a
+    # WAYLAND SDDM + Plasma 6 seat. Swap this module to change desktop environment / session type;
+    # the contract is unchanged. Self-gated on custom.gui.surface.enabled, so inert on non-gui hosts.
+    # (Also carries the host-opt-in desktop plumbing behind custom.profiles.gui.enable — see
+    # the header of gui.nix for why the two gates stay separate.)
+    ./gui.nix
   ];
 
   options.custom.profiles = {

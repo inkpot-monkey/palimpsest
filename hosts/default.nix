@@ -5,10 +5,42 @@
 }:
 let
   inherit (self.lib) mkSystem mkPiSystem;
-  # Grant-as-data (contract ADR-0002, slice 16): a host grants a user's features here, as data,
-  # next to where it binds the user — never by importing a self-granting variant. This
-  # is the fleet's grant matrix; `granted.*` is host-write-only, the user never sets it.
-  grant = user: features: { custom.users.${user}.granted = features; };
+
+  # Turnkey host-side bind (contract ADR-0025): a host declares its `contract.affordances` ONCE
+  # and binds each user BY NAME; the contract derives the grant as `affordances ∩ offer` (the
+  # user's offer is published in the pinned `users` flake's `contractUsers` index), selects the
+  # maximal baked variant, and delegates to bindContractPackage. This replaces the hand-rolled
+  # bindContractPackage + loadIdentity + per-host grant matrix — the host holds ZERO users-repo
+  # internals (no package names, variant labels or identity paths). Named `bindUserTurnkey` (NOT
+  # `bindContractUser` — that is the contract's public consumer bind this delegates to; `traceUser`
+  # is its distinct headless inspector).
+  bindUserTurnkey =
+    username:
+    inputs.contract.lib.bindContractUser {
+      inherit username;
+      usersFlake = inputs.users;
+    };
+
+  # Server seat — inkpotmonkey administers it (sudo) and runs containers, no gui. Intersected with
+  # inkpotmonkey's offer this selects the base variant and confers wheel + docker/podman (the atomic
+  # capabilities that replaced the retired `workstation` role, ADR-0024). The contract adds the login
+  # account, groups and authorized keys; nothing else is needed host-side — the pre-built home carries
+  # its own packages and the login shell defaults to bashInteractive.
+  serverAffordances.contract.affordances = {
+    sudo.enable = true;
+    containers.enable = true;
+  };
+
+  # GUI workstation seat — the server affordances plus gui, so the intersection with inkpotmonkey's
+  # offer selects the gui variant and turns on the shared display surface + input groups (the DE is
+  # the seat's own binding, modules/nixos/profiles/gui.nix; the contract's realization links
+  # the XDG portal/desktop dirs). virtualization is intentionally absent — inkpotmonkey's offer no
+  # longer includes it.
+  guiAffordances.contract.affordances = {
+    gui.enable = true;
+    sudo.enable = true;
+    containers.enable = true;
+  };
 in
 {
   flake.nixosConfigurations = {
@@ -16,13 +48,8 @@ in
 
       modules = [
         ./stargazer/configuration.nix
-        self.users.inkpotmonkey.manifest
-        (grant "inkpotmonkey" {
-          gui.enable = true;
-          workstation.enable = true;
-          virtualization.enable = true;
-          signing.enable = true;
-        })
+        guiAffordances
+        (bindUserTurnkey "inkpotmonkey")
       ];
     };
 
@@ -30,24 +57,19 @@ in
 
       modules = [
         ./weedySeadragon/configuration.nix
-        self.users.inkpotmonkey.manifest
-        self.users.eyeofalligator
-        (grant "inkpotmonkey" {
-          gui.enable = true;
-          workstation.enable = true;
-          virtualization.enable = true;
-        })
-        # eyeofalligator co-administers this laptop and had sudo pre-clamp (its identity
-        # declares wheel); the clamp drops untrusted identity groups, so its sudo must be
-        # an explicit grant now (contract ADR-0001 threat model; cloud-review finding).
-        (grant "eyeofalligator" {
-          gui.enable = true;
-          sudo.enable = true;
-        })
-        # The break-glass admin account (declared in ./weedySeadragon/configuration.nix)
-        # is a contract user too, so its wheel is also clamped unless granted. Grant sudo
-        # so the recovery account keeps root if the primary login breaks.
-        (grant "admin" { sudo.enable = true; })
+        guiAffordances
+        # inkpotmonkey (gui variant) and eyeofalligator, both bound turnkey from the `users`
+        # flake. eyeofalligator co-administers this laptop; the clamp drops the wheel it declares
+        # in its identity, so its offer includes sudo and the host affords it ⇒ wheel is conferred
+        # by the grant (contract ADR-0001 threat model). eyeofalligator's HOST-side setup (steam,
+        # flatpak, printing, …) — which the pre-built home cannot carry — lives in the module below.
+        (bindUserTurnkey "inkpotmonkey")
+        (bindUserTurnkey "eyeofalligator")
+        ./weedySeadragon/eyeofalligator.nix
+        # The break-glass admin account (declared in ./weedySeadragon/configuration.nix) is a
+        # contract user too but is NOT in the `users` flake, so it is not turnkey-bound; its wheel
+        # is clamped unless granted, so grant sudo directly to keep root if the primary login breaks.
+        { custom.users.admin.granted.sudo.enable = true; }
       ];
     };
 
@@ -55,45 +77,8 @@ in
 
       modules = [
         ./sawtoothShark/configuration.nix
-        self.users.inkpotmonkey.manifest
-        (grant "inkpotmonkey" {
-          gui.enable = true;
-          workstation.enable = true;
-          virtualization.enable = true;
-          signing.enable = true;
-        })
-        # Photo-sync client: the home git-annex assistant backs inkpotmonkey's
-        # ~/Pictures up to kelpy's `pictures` repo over SSH (git-annex@kelpy:~/pictures,
-        # server in hosts/kelpy/git-annex.nix). Opt-in per host; the client decrypts
-        # git-annex.yaml through the user's own home sops (the admin key), so no host
-        # re-key is needed on this workstation.
-        #
-        # metrics.enable makes that sync visible on the fleet Backups board. The three
-        # lines below travel together and only make sense together: the home writer runs
-        # as inkpotmonkey but publishes into the node-exporter-owned textfile dir, so the
-        # user needs node-exporter group write, and that dir only exists where the
-        # monitoring exporters run — asserted, so a mis-wiring fails the build loudly
-        # rather than silently publishing nowhere.
-        (
-          { config, ... }:
-          {
-            home-manager.users.inkpotmonkey.custom.home.profiles.git-annex = {
-              enable = true;
-              metrics.enable = true;
-              # User-level replication alert (option C): pages #infra-alerts when the sync
-              # breaks while the laptop is in use. Its webhook secret is the user's own
-              # sops (admin key already here) — no host re-key, no host secret.
-              alert.enable = true;
-            };
-            users.users.inkpotmonkey.extraGroups = [ "node-exporter" ];
-            assertions = [
-              {
-                assertion = config.custom.profiles.monitoring-exporters.enable;
-                message = "sawtoothShark enables the home git-annex metrics writer, which publishes into the node-exporter textfile dir — enable custom.profiles.monitoring-exporters (via monitoring-client) or drop metrics.enable.";
-              }
-            ];
-          }
-        )
+        guiAffordances
+        (bindUserTurnkey "inkpotmonkey")
       ];
     };
 
@@ -108,8 +93,11 @@ in
       };
       modules = [
         ./porcupineFish/configuration.nix
-        self.users.inkpotmonkey.manifest
-        (grant "inkpotmonkey" { workstation.enable = true; })
+        # Turnkey base bind: the contractPackage is a pre-built activate script, home-manager-
+        # version-agnostic, so the Pi's separate home-manager-25_11 pin (specialArgs above) is
+        # irrelevant for inkpotmonkey.
+        serverAffordances
+        (bindUserTurnkey "inkpotmonkey")
         # blocky removed here (ADR-0023) — the Pi-only module swap it needed went with it.
       ];
     };
@@ -123,11 +111,8 @@ in
 
       modules = [
         ./kelpy/configuration.nix
-        self.users.inkpotmonkey.manifest
-        # kelpy is exposed: it gets workstation (docker/podman/wheel) but no
-        # secret-bearing feature. Now that the grant is explicit here, dropping it is a
-        # one-line change (see the exposed-host note in contract/realization.nix).
-        (grant "inkpotmonkey" { workstation.enable = true; })
+        serverAffordances
+        (bindUserTurnkey "inkpotmonkey")
       ];
     };
 
@@ -135,8 +120,8 @@ in
 
       modules = [
         ./potbelliedSeahorse/configuration.nix
-        self.users.inkpotmonkey.manifest
-        (grant "inkpotmonkey" { workstation.enable = true; })
+        serverAffordances
+        (bindUserTurnkey "inkpotmonkey")
       ];
 
     };
@@ -150,8 +135,8 @@ in
     rk1a = mkSystem {
       modules = [
         ./rk1/common.nix
-        self.users.inkpotmonkey.manifest
-        (grant "inkpotmonkey" { workstation.enable = true; })
+        serverAffordances
+        (bindUserTurnkey "inkpotmonkey")
         {
           networking.hostName = "rk1a";
           custom.profiles.monitoring-client.enable = true;
@@ -186,8 +171,8 @@ in
         # git-annex owns the corpus tree, replicated to kelpy and — unlike music — backed up
         # offsite. Adds to the same services.git-annex enabled by git-annex.nix above.
         ./rk1/library.nix
-        self.users.inkpotmonkey.manifest
-        (grant "inkpotmonkey" { workstation.enable = true; })
+        serverAffordances
+        (bindUserTurnkey "inkpotmonkey")
         ({ config, ... }: {
           networking.hostName = "rk1b";
           # rk1b is the media + monitoring node (ADR-0027). The local llama.cpp LLM stack is
@@ -231,19 +216,44 @@ in
           # navidrome `users` map. See modules/nixos/profiles/music-assistant.nix.
           custom.profiles.music-assistant.enable = true;
 
-          # Supernote fork Private Cloud server (ADR-0031, #92): the device sync endpoint the
-          # Nomad binds over plain HTTP on the home LAN (rk1b shares 192.168.1.0/24). Runs as a
-          # private `supernote` user with a persisted, rebuildable store (/var/lib/supernote), and
+          # Supernote Private Cloud server (ADR-0031, #92): the device sync endpoint the Nomad
+          # binds over plain HTTP, on the home LAN (rk1b shares 192.168.1.0/24) or over the
+          # tailnet — the device picks, and both reach the same port. Runs as a private
+          # `supernote` user with a persisted, rebuildable store (/var/lib/supernote), and
           # bootstraps the single account from the shared credential secret (profiles/library.yaml).
-          # LAN-direct, so it is NOT in settings.services / not Caddy-fronted; the MCP port is
-          # firewalled off (v1). See modules/nixos/profiles/supernote.nix. Stump (#93) that turns
-          # this into a browsable document library is a separate ticket.
+          # Not Caddy-fronted, so it is NOT in settings.services. This comment used to say the MCP
+          # port is "firewalled off"; it is not — this host trusts `tailscale0`, so the LLM port is
+          # reachable from the tailnet and is gated by the MCP server's own auth instead. See the
+          # header of modules/nixos/profiles/supernote.nix.
           custom.profiles.supernote.enable = true;
-          # The outbound ereader push (#94): drop a PDF/EPUB into the git-annex library's
-          # `ereader/` folder (/var/cache/library/ereader) and it is uploaded to the device on the
-          # next device-initiated sync. Couples to the library tree (hosts/rk1/library.nix), which
-          # is why it lives behind its own flag — see modules/nixos/profiles/supernote.nix.
-          custom.profiles.supernote.ereader.enable = true;
+          # The downward mirror (ADR-0031, #107 as reduced by #117): `library/supernote/`
+          # (/var/cache/library/supernote) materialises EVERYTHING the device holds — `Note/`,
+          # `Document/` and the rest of the firmware's folders — as real files on each
+          # device-initiated sync, durable device-side deletes included. One direction only: books
+          # go OUT by OPDS pull from Stump (#114/#115), so nothing is published through this tree.
+          # Couples to the library tree (hosts/rk1/library.nix), which is why it lives behind its
+          # own flag — see modules/nixos/profiles/supernote.nix.
+          custom.profiles.supernote.mirror.enable = true;
+
+          # Stump — the reading catalog over the document library (ADR-0031, #113). Indexes
+          # /var/cache/library/{books,papers,notebooks} as three series-priority libraries (the
+          # scan pattern is immutable, so it is set at creation by the provisioning oneshot) and
+          # leaves the `_originals/` sibling unindexed by physical placement. Reads the tree as a
+          # member of the `library` group; DB + thumbnails on the NVMe /var/cache/stump. Tailnet-
+          # only, fronted by kelpy's Caddy at library.<domain> — DEPLOY KELPY TOO or the tailnet
+          # gets a TLS error. See modules/nixos/profiles/stump.nix and the `library` entry in
+          # parts/settings.nix; the pre-version-bump DB snapshot step is in the profile header.
+          custom.profiles.stump.enable = true;
+
+          # Book filer (#144): a 2-minute timer files EPUBs dropped in
+          # /var/cache/books-inbox/<Subject>/ into /var/cache/library/books/<Subject>/, named
+          # `<Title> - <Author>.epub` from the EPUB's own OPF metadata — no network lookup, the
+          # good name is already in the file. The git-annex assistant adopts what appears in the
+          # tree and Stump's watcher scans it in, so this is only the hop in between. Runs as
+          # git-annex so filed books are library-owned; anything it cannot name is LEFT in the
+          # inbox and counted in `books_inbox_stuck_files`. See
+          # modules/nixos/profiles/book-filer.nix and docs/runbooks/book-filing.md.
+          custom.profiles.book-filer.enable = true;
 
           # Off-host uptime watcher (Gatus): rk1b is always-on and not kelpy, so it
           # can observe kelpy failing. Probes the fleet + alerts to #infra-alerts.
@@ -253,8 +263,9 @@ in
           # dirs redirect to /var/cache (NVMe) via BindPaths. See ADR-0021.
           custom.profiles.monitoring-server.enable = true;
           custom.profiles.monitoring-client.enable = true;
-          # Off while rsync.net is unreachable fleet-wide (meant to return); reportJobs
-          # keeps the telemetry backup visible on the Backups board as a disabled edge.
+          # Off fleet-wide: DEFERRED, not blocked (palimpsest#150 — rsync.net is reachable;
+          # this is a scheduling decision). reportJobs keeps the telemetry backup visible on
+          # the Backups board as a disabled edge.
           custom.profiles.backup.monitoringTelemetry.enable = false;
           custom.profiles.backup.reportJobs = [ "telemetry" ];
 
