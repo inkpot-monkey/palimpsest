@@ -52,11 +52,12 @@ in
 
         services.blocky = {
           enable = true;
-          # Use the unstable nixpkgs' blocky (0.30) on every host. The pinned pi toolchain's
-          # nixpkgs ships an older 0.27 whose hostsFile handling differs (it doesn't serve
-          # local hostsFile entries the same way), which would break the dynamic service
-          # resolution below. Pulling it from inputs.nixpkgs keeps blocky consistent across
-          # the fleet (kelpy already tracks unstable; this aligns the Pi).
+          # Use the unstable nixpkgs' blocky on every host. The pinned pi toolchain's nixpkgs
+          # ships an older blocky whose hostsFile handling differs (it doesn't serve local
+          # hostsFile entries the same way), which would break the dynamic service resolution
+          # below. Pulling it from inputs.nixpkgs keeps blocky consistent across the fleet
+          # (kelpy already tracks unstable; this aligns the Pi). For the version actually
+          # running, read blocky_build_info — the DNS Resolvers board surfaces it per host.
           package = inputs.nixpkgs.legacyPackages.${config.nixpkgs.hostPlatform.system}.blocky;
           settings = {
             # Bind a wildcard rather than the host's (per-reflash, drift-prone) Tailscale
@@ -106,7 +107,8 @@ in
 
             # Tailscale-targeted services come from a hosts file regenerated at runtime
             # with current IPs (blocky-service-hosts.service). The minimal `sources`-only
-            # schema stays valid across blocky 0.27 (pi nixpkgs) and 0.30 (unstable).
+            # schema is the one form that stays valid across BOTH the pi toolchain's older
+            # blocky and the unstable one the fleet pins above — keep it that way.
             hostsFile.sources = lib.mkIf hasTailscale [ servicesHostsFile ];
 
             prometheus.enable = true;
