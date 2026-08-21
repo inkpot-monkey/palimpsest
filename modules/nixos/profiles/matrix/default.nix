@@ -334,6 +334,7 @@ in
     ./jmap-bridge.nix
     ./hookshot.nix
     ./hookshot-notifications-room.nix
+    ./hookshot-github-token.nix
     ./infra-alerts.nix
   ];
 

@@ -106,6 +106,15 @@
         # and in its own room, so the DM stays a command surface. `github login`
         # (per-user OAuth) is still run by hand, once, in the DM.
         notificationsRoom.enable = true;
+        # `github login` cannot drive the notification feed: GET /notifications
+        # rejects GitHub App tokens outright and only takes a classic PAT. Store one
+        # from sops rather than pasting it into the (unencrypted) admin DM. Reuses
+        # the fleet `github_token` declared by nixConfig.nix — classic, `repo` scope,
+        # which is what makes private-repo notifications render.
+        personalToken = {
+          enable = true;
+          secretName = "github_token";
+        };
       };
       infraAlerts = {
         enable = true;
