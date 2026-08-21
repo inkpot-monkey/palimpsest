@@ -133,6 +133,28 @@ _Avoid_: channel, chat.
 **Double-puppet**:
 Logging the bridge in *as the real user* (not a ghost) so the user's own Matrix account appears to send bridged messages and auto-joins rooms. Established with a one-time login token, never declaratively.
 
+### Agent sessions
+
+**Server-side session**:
+An agent session that runs inside the **opencode** server's instance on `rk1b` and is owned by that server rather than by whichever client started it. It outlives every client — a command can be sent, the laptop closed, the work continues — and any client (phone browser, Emacs, `opencode attach` over ssh) can reach the same session afterwards. Its working tree is on `rk1b`, addressed by the `x-opencode-directory` header; its status is read from the server's event stream, because there is no local process to watch.
+_Avoid_: detached session (names a transient state, not where it runs — see **Detached**), remote session (true from the laptop, false from the phone).
+
+**Laptop-local session**:
+An agent session that *is* a process in an Emacs buffer on `sawtoothShark` — today a `claude` CLI in a `ghostel` PTY. It cannot outlive its client, because the process is the session. Retained as the fallback for trees `rk1b` does not have, for work needing a seat or a GUI, and for `claude`-only affordances.
+_Avoid_: local session (a **server-side session** is local to `rk1b`), interactive session (both kinds are interactive).
+
+**Detached**:
+The state of a **server-side session** that has no client attached right now. It is a condition a session moves in and out of, not a kind of session: attaching Emacs makes a session un-detached without making it any less server-side. A **laptop-local session** can never be detached.
+_Avoid_: backgrounded, headless, orphaned (nothing is unowned — the server owns it).
+
+**Server-side tree**:
+A working tree on `rk1b` that a **server-side session** can be started in. Trees are drawn from a small declared set rather than from every repository the operator owns, because a session is only findable if a client already knows the directory to ask about — an undeclared tree yields sessions nobody can get back to. A server-side tree carries the **same path as the laptop's tree for the same repository**, so one directory string names the same tree from every client.
+_Avoid_: remote tree (true from the laptop, false from the phone), checkout (a session's tree is usually a worktree of one).
+
+**Session branch**:
+The branch a **server-side session**'s commits land on, named for the session itself. It is what makes a session's work identifiable after the fact and lets concurrent sessions share a repository without contending. A session branch always starts from an **explicitly named ref**, never from whatever its tree happened to be on, so a stale tree cannot silently become the basis of new work.
+_Avoid_: agent branch (names the actor, not the unit of work), feature branch (a session branch is neither scoped to a feature nor meant to be long-lived).
+
 ### Local LLMs
 
 **RK1 node** (or just **node**):
@@ -195,6 +217,10 @@ _Avoid_: MagicDNS toggle (`acceptDns` is broader than MagicDNS).
 **Service FQDN**:
 The full `<service>.palebluebytes.space` name a service is reached by. Kept full (never bare `<service>`) because Caddy fronts services with public **Let's Encrypt** certs and a browser validates the cert against the typed name — no public CA issues for a bare single-label name, so shortening breaks HTTPS. Host **codenames** are already bare via **MagicDNS** (`ssh rk1b`); only *service* names are constrained.
 _Avoid_: short name, hostname (a service FQDN is not a host).
+
+**Tailnet-scoped**:
+The access posture of a **private service**: reachable only from the tailnet, enforced at the Caddy edge by refusing any request whose source address is outside the tailnet's range. It is a **membership** boundary, not an **identity** one — it admits *every* node on the tailnet with no per-user granularity, and the tailnet is deliberately not single-person (friends join it to reach the **friends' music platform**, [ADR-0027](docs/adr/0027-navidrome-friends-music-platform.md)). So "tailnet-scoped" answers *how the service is reached*, never *who may use it*: a service whose exposure is privileged (code execution, credential writes) needs its own authentication as well, and each new private service must decide that for itself rather than inheriting it.
+_Avoid_: private (says which registry half it sits in, not what guards it), internal-only (names the mechanism), authenticated, secured (it is neither).
 
 ### Monitoring & alerting
 
