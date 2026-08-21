@@ -112,6 +112,10 @@ pkgs.testers.nixosTest {
           default = admin;
         };
         custom.profiles.matrix.hookshot.enable = lib.mkEnableOption "hookshot (stub)";
+        # The module chains its ordering off this; it is declared by the sibling
+        # notifications-room module, which this check has no reason to stand up.
+        custom.profiles.matrix.hookshot.notificationsRoom.enable =
+          lib.mkEnableOption "notifications room (stub)";
         custom.profiles.matrix.resetState = lib.mkOption {
           type = lib.types.listOf (lib.types.attrsOf lib.types.anything);
           default = [ ];

@@ -109,8 +109,9 @@ let
       fi
       rid="$(curl "''${auth[@]}" -X POST "$url/_matrix/client/v3/createRoom" \
         -H 'content-type: application/json' \
-        -d "$(jq -nc --arg b "$bot" \
-          '{name:"Infra Alerts",topic:"Fleet uptime alerts (ADR-0019)",preset:"private_chat",invite:[$b]}')" \
+        -d "$(jq -nc --arg b "$bot" --arg a "@${adminLocalpart}:${domain}" \
+          '{name:"Infra Alerts",topic:"Fleet uptime alerts (ADR-0019)",preset:"private_chat",invite:[$b],
+            power_level_content_override:{users:{($a):100,($b):50}}}')" \
         | jq -r '.room_id // empty')"
       [ -n "$rid" ] || { echo "infra-alerts: createRoom failed" >&2; exit 1; }
       printf '%s' "$rid" > "$marker"; chmod 644 "$marker"
@@ -128,8 +129,33 @@ let
         -H 'content-type: application/json' -d "$(jq -nc --arg b "$bot" '{user_id:$b}')" >/dev/null || true
       curl -H "Authorization: Bearer $astoken" \
         -X POST "$url/_matrix/client/v3/rooms/$ridenc/join?user_id=$uid" >/dev/null || true
+      # Verify rather than assume. Both calls above are best-effort (an invite is
+      # idempotent and 403s when already sent), but a bot that is not IN the room
+      # cannot carry a connection at all — and this module's whole history is of
+      # reporting success while the room end of it was broken.
+      ismember="$(curl "''${auth[@]}" "$url/_matrix/client/v3/rooms/$ridenc/joined_members" \
+        | jq -r --arg b "$bot" '(.joined // {}) | has($b)' 2>/dev/null || echo false)"
+      [ "$ismember" = "true" ] || {
+        echo "infra-alerts: @hookshot is not a member of $rid — cannot provision the connection" >&2
+        exit 1
+      }
       echo "infra-alerts: @hookshot invited + joined $rid"
       changed=1
+    fi
+
+    # The bot writes its own connection as a state event, and m.room.power_levels
+    # defaults state_default to 50 while an invited member joins at 0 — so without
+    # this the PUT below 403s. Creation sets it via power_level_content_override;
+    # an adopted room needs it applied after the fact, by the admin who made it.
+    pl="$(curl "''${auth[@]}" "$url/_matrix/client/v3/rooms/$ridenc/state/m.room.power_levels")"
+    botpl="$(jq -r --arg b "$bot" '.users[$b] // 0' <<<"$pl" 2>/dev/null || echo 0)"
+    if [ "$botpl" -lt 50 ]; then
+      newpl="$(jq -c --arg b "$bot" '.users[$b] = 50' <<<"$pl")"
+      curl -f "''${auth[@]}" -X PUT \
+        "$url/_matrix/client/v3/rooms/$ridenc/state/m.room.power_levels" \
+        -H 'content-type: application/json' -d "$newpl" >/dev/null \
+        && echo "infra-alerts: promoted @hookshot so it can write its connection" \
+        || { echo "infra-alerts: could not promote @hookshot" >&2; exit 1; }
     fi
 
     # 1. The hookId -> stateKey map, in the BOT's room account data. Written before
@@ -143,9 +169,10 @@ let
     [ -n "$curdata" ] || curdata="{}"
     want="$(jq -nc --argjson c "$curdata" --arg h "$hookid" '$c + {($h): $h}')"
     if [ "$(jq -Sc . <<<"$curdata")" != "$(jq -Sc . <<<"$want")" ]; then
-      curl -f "''${asauth[@]}" -X PUT \
+      code="$(curl -o /dev/null -w '%{http_code}' "''${asauth[@]}" -X PUT \
         "$url/_matrix/client/v3/user/$uid/rooms/$ridenc/account_data/${connectionType}?user_id=$uid" \
-        -H 'content-type: application/json' -d "$want" >/dev/null
+        -H 'content-type: application/json' -d "$want")"
+      [ "$code" = "200" ] || { echo "infra-alerts: writing the hookId map failed (HTTP $code)" >&2; exit 1; }
       echo "infra-alerts: wrote the hookId map"
       changed=1
     fi
@@ -156,10 +183,11 @@ let
       "$url/_matrix/client/v3/rooms/$ridenc/state/${connectionType}/$hookid?user_id=$uid" \
       | jq -r '.name // empty' 2>/dev/null || echo "")"
     if [ "$curstate" != "${connectionName}" ]; then
-      curl -f "''${asauth[@]}" -X PUT \
+      code="$(curl -o /dev/null -w '%{http_code}' "''${asauth[@]}" -X PUT \
         "$url/_matrix/client/v3/rooms/$ridenc/state/${connectionType}/$hookid?user_id=$uid" \
         -H 'content-type: application/json' \
-        -d "$(jq -nc --arg n "${connectionName}" '{name:$n}')" >/dev/null
+        -d "$(jq -nc --arg n "${connectionName}" '{name:$n}')")"
+      [ "$code" = "200" ] || { echo "infra-alerts: writing the connection failed (HTTP $code)" >&2; exit 1; }
       echo "infra-alerts: wrote the generic-hook connection"
       changed=1
     fi

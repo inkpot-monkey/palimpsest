@@ -71,6 +71,14 @@
         hookshot_github_token = import ./hookshot/token.nix {
           inherit pkgs self;
         };
+        # The #infra-alerts room + connection provisioner (infra-alerts.nix). This module
+        # hid a four-week outage — the room was wiped, its id stayed pinned, and every curl
+        # being `|| true` kept it reporting success while the fleet's alerters POSTed into a
+        # 404. Asserts a dead pin and a stale marker are both refused, and that the
+        # connection resolves the way hookshot resolves it (account data, not just state).
+        hookshot_infra_alerts = import ./hookshot/infra-alerts.nix {
+          inherit pkgs self;
+        };
         # The pre-built binding path (bindContractPackage, ADR-0016) is proven generically by the
         # contract's OWN conformance (`contract_conformance` below); the fleet-side external-bind
         # rig (`prebuilt_bind_external` + its gui-eval sibling) was retired with ADR-0026, which
