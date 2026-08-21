@@ -445,13 +445,16 @@ in
       {
         service = "matrix-hookshot.service";
         paths = [ stateDir ];
-        # The one manual step a wipe leaves behind. `github login` is per-user OAuth,
-        # and the token lives in the bot's Matrix account data, so it goes with the
-        # homeserver every time — everything else about the feed is reprovisioned.
+        # What a wipe actually leaves for the operator. NOT `github login`: the
+        # notification feed's credential is stored from sops by
+        # matrix-hookshot-github-token, and `github login` mints an App token,
+        # which GET /notifications rejects outright — so the feed reprovisions
+        # itself completely. Only the bot-command-driven connections are lost,
+        # because those live in room state that went with the homeserver.
         postResetNote =
-          "run 'github login' in the @hookshot DM to re-auth GitHub (the OAuth token went with the homeserver)"
-          + lib.optionalString notificationsRoom.enable "; notifications will resume in the ${notificationsRoom.name} room, no toggle needed"
-          + ", then re-add any webhook/feed connections (send 'help' in the DM — those are room state and were wiped)";
+          "re-add any hookshot webhook/feed connections (send 'help' in the @hookshot DM — they are room state and were wiped)"
+          + lib.optionalString notificationsRoom.enable "; the GitHub notification feed needs nothing — room, markers, stream position and credential are all reprovisioned"
+          + ". `github login` is only needed for the repo/project commands, and only if the GitHub App is installed somewhere";
       }
       {
         service = "matrix-dm-hookshot.service";
