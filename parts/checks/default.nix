@@ -15,6 +15,11 @@
         networking = import ./networking {
           inherit pkgs inputs self;
         };
+        # blocky_* collection (palimpsest#39): blocky's metrics endpoint is real, and every
+        # declared fleet resolver's series reaches VictoriaMetrics.
+        blocky_metrics = import ./blocky-metrics {
+          inherit pkgs inputs self;
+        };
         annas_opds = import ./annas-opds {
           inherit pkgs;
         };

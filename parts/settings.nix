@@ -194,6 +194,12 @@ in
       "rk1b"
     ];
 
+    # blocky's HTTP port: its API and, since `prometheus.enable` is on, its `/metrics`
+    # endpoint (blocky.nix). Declared here rather than in the profile because the
+    # monitoring server scrapes resolvers it does not itself build (server.nix), so it
+    # has no config to read the port back off.
+    dns.httpPort = 4001;
+
     # `presence` is a host's operational cadence (CONTEXT.md → Always-on / On-demand
     # host): `always-on` runs 24/7, `on-demand` runs only when in use. It is plumbed
     # into the node scrape targets as a label (server.nix) so a host's monitoring

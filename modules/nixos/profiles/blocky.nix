@@ -110,19 +110,23 @@ in
             hostsFile.sources = lib.mkIf hasTailscale [ servicesHostsFile ];
 
             prometheus.enable = true;
-            ports.http = 4001;
+            # The HTTP port carries blocky's API and its /metrics endpoint. It comes from
+            # settings because the monitoring server scrapes every resolver (ADR-0023) —
+            # including hosts whose config it cannot read (server.nix).
+            ports.http = settings.dns.httpPort;
           };
         };
 
-        # blocky's DNS (53) and HTTP API/metrics (4001) are only for the host itself and
+        # blocky's DNS (53) and its HTTP API/metrics port are only for the host itself and
         # tailnet clients. Scope BOTH to tailscale0 so neither is exposed on a public
-        # interface (e.g. kelpy's WAN — a global allowedTCPPorts=[4001] made the blocky
+        # interface (e.g. kelpy's WAN — a global allowedTCPPorts entry once made the blocky
         # API + /metrics reachable from the internet). Loopback is always allowed, so a
-        # same-host prometheus still scrapes :4001 fine; remote scrapes go over tailscale.
+        # same-host prometheus still scrapes fine; the monitoring server scrapes the OTHER
+        # resolver over tailscale, which is what this opening is for (server.nix).
         networking.firewall.interfaces."tailscale0" = {
           allowedTCPPorts = [
             53
-            4001
+            settings.dns.httpPort
           ];
           allowedUDPPorts = [ 53 ];
         };

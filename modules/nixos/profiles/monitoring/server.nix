@@ -15,18 +15,34 @@ let
   # case-insensitive, so the camelCase node names resolve fine.
   #
   # One static_config per host so each carries a `presence` label (always-on /
-  # on-demand, from settings.nodes — CONTEXT.md). That label rides onto `up` and
-  # every `node_*` series, letting boards derive alert-worthiness by presence
-  # (an on-demand host being unreachable is expected, never a fault). A node without
-  # an explicit presence defaults to on-demand (fail-safe-quiet).
+  # on-demand, from settings.nodes — CONTEXT.md, ADR-0026). That label rides onto `up`
+  # and every series the target emits, letting boards derive alert-worthiness by
+  # presence (an on-demand host being unreachable is expected, never a fault). A node
+  # without an explicit presence defaults to on-demand (fail-safe-quiet).
+  #
+  # `presence` is a property of the HOST, not of the job, so it rides EVERY host-scoped
+  # job — ADR-0026 named the node job only because it was then the only one.
+  #
+  # Takes the host list rather than always walking settings.nodes: the host-scoped jobs
+  # below cover different subsets (every node for node-exporter, the fleet resolvers for
+  # blocky) and must label their targets identically, or the boards' instance→host
+  # rewrite would work on one job and not the other. A host that isn't a registered node
+  # has no MagicDNS name to scrape, so say that rather than dying on a missing attribute.
   makeTargets =
-    port:
-    lib.mapAttrsToList (name: node: {
-      targets = [ "${name}.${settings.tailnet}:${toString port}" ];
-      labels = {
-        presence = node.presence or "on-demand";
-      };
-    }) settings.nodes;
+    port: hosts:
+    map (
+      name:
+      assert lib.assertMsg (settings.nodes ? ${name})
+        "monitoring: scrape target `${name}` is not a registered node (settings.nodes), so it has no MagicDNS name to scrape";
+      {
+        targets = [ "${name}.${settings.tailnet}:${toString port}" ];
+        labels = {
+          presence = settings.nodes.${name}.presence or "on-demand";
+        };
+      }
+    ) hosts;
+
+  allNodes = lib.attrNames settings.nodes;
 
   dashboards = {
     node-exporter = pkgs.fetchurl {
@@ -173,7 +189,28 @@ in
             scrape_configs = [
               {
                 job_name = "node";
-                static_configs = makeTargets config.services.prometheus.exporters.node.port;
+                static_configs = makeTargets config.services.prometheus.exporters.node.port allNodes;
+              }
+              # blocky has always exposed the full `blocky_*` series (queries, cache
+              # hit/miss, block counts, upstream resolver timings) on its HTTP port; until
+              # this job nothing collected them. It is the only self-hosted app on the
+              # fleet already emitting app-level metrics.
+              #
+              # EVERY declared resolver is scraped, not just this host's own blocky: fleet
+              # DNS is deliberately dual (ADR-0023), so "one resolver is degraded" and "DNS
+              # is down" are different incidents and only a per-resolver series separates
+              # them. Hence MagicDNS names rather than the 127.0.0.1 a local-only job would
+              # use — `instance` then carries the host name the boards rewrite into `host`,
+              # where a loopback target would flatten both resolvers onto one nameless
+              # series. The remote scrape reaches blocky over the tailnet, which is what
+              # blocky.nix's tailscale0 firewall opening is for.
+              #
+              # Unconditional, unlike the dmarc/gatus jobs below: those scrape a co-located
+              # loopback exporter and so must be gated on the profile that provides it,
+              # whereas these targets are remote — the monitoring host need not run blocky.
+              {
+                job_name = "blocky";
+                static_configs = makeTargets settings.dns.httpPort settings.dns.nameserverHosts;
               }
             ]
             ++ lib.optionals (config.custom.profiles.monitoring-dmarc.enable or false) [
