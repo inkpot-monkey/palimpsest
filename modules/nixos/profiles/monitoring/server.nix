@@ -34,6 +34,8 @@ let
       name:
       assert lib.assertMsg (settings.nodes ? ${name})
         "monitoring: scrape target `${name}` is not a registered node (settings.nodes), so it has no MagicDNS name to scrape";
+      assert lib.assertMsg (settings.nodes.${name}.onTailnet or true)
+        "monitoring: scrape target `${name}` is a registered node but declares onTailnet = false, so `${name}.${settings.tailnet}` resolves to nothing — every scrape becomes a silent resolver error, not a `down` target (palimpsest#165)";
       {
         targets = [ "${name}.${settings.tailnet}:${toString port}" ];
         labels = {
@@ -42,7 +44,16 @@ let
       }
     ) hosts;
 
-  allNodes = lib.attrNames settings.nodes;
+  # Every node the monitoring plane can actually ADDRESS, which is not every declared
+  # node. Targets are MagicDNS names (makeTargets), so a node that is not on the tailnet
+  # has no name to resolve: scraping it does not produce a `down` target, it produces a
+  # DNS error on whichever resolver serves this host, once per scrape, forever — and
+  # blocky logs none of them (palimpsest#165). `presence` is deliberately NOT the
+  # discriminator here: an on-demand host that is merely powered off still has a MagicDNS
+  # name, still resolves, and is *meant* to read `up == 0` (ADR-0026).
+  allNodes = lib.filter (name: settings.nodes.${name}.onTailnet or true) (
+    lib.attrNames settings.nodes
+  );
 
   dashboards = {
     node-exporter = pkgs.fetchurl {
