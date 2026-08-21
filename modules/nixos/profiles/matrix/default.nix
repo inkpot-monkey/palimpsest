@@ -333,6 +333,7 @@ in
     ./mautrix-whatsapp.nix
     ./jmap-bridge.nix
     ./hookshot.nix
+    ./hookshot-notifications-room.nix
     ./infra-alerts.nix
   ];
 

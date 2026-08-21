@@ -100,7 +100,13 @@
       enable = true;
       whatsapp.enable = true;
       jmap-bridge.enable = true;
-      hookshot.enable = true;
+      hookshot = {
+        enable = true;
+        # Keep the personal GitHub notification feed out of the @hookshot admin DM
+        # and in its own room, so the DM stays a command surface. `github login`
+        # (per-user OAuth) is still run by hand, once, in the DM.
+        notificationsRoom.enable = true;
+      };
       infraAlerts = {
         enable = true;
         # Pinned from the matrix-infra-alerts-room oneshot's first run (a static

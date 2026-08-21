@@ -155,12 +155,31 @@ let
         echo "hookshot-space: filed #infra-alerts under the Space"
       ''
     }
+    ${lib.optionalString notificationsRoom.enable ''
+      # File the GitHub Notifications room under the Space too. Its id is
+      # server-assigned, so it comes from the room oneshot's marker (0644 in a
+      # 0755 StateDirectory precisely so this DynamicUser oneshot can read it).
+      if [ -s "${notificationsRoom.roomIdFile}" ]; then
+        notif="$(cat "${notificationsRoom.roomIdFile}")"
+        notifenc="$(${pkgs.jq}/bin/jq -rn --arg r "$notif" '$r|@uri')"
+        ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
+          "$url/_matrix/client/v3/rooms/$spaceenc/state/m.space.child/$notifenc" \
+          -H 'content-type: application/json' -d "$(${pkgs.jq}/bin/jq -nc --arg d "${domain}" '{via:[$d]}')" >/dev/null || true
+        ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
+          "$url/_matrix/client/v3/rooms/$notifenc/state/m.space.parent/$spaceenc" \
+          -H 'content-type: application/json' \
+          -d "$(${pkgs.jq}/bin/jq -nc --arg d "${domain}" '{via:[$d],canonical:true}')" >/dev/null || true
+        echo "hookshot-space: filed the notifications room under the Space"
+      fi
+    ''}
   '';
 
   # The DM provisioner's marker (its StateDirectory), read by the admin-room
   # oneshot to learn which room to mark.
   dmMarker = "/var/lib/private/matrix-dm-hookshot/dm-created";
   adminRoomStateDir = "matrix-hookshot-adminroom";
+  inherit (cfg) notificationsRoom;
+  notificationsAdminRoomStateDir = "matrix-hookshot-notifications-adminroom";
 
   # Builder for the admin-room marker + notification-stream seed (split out so the
   # VM check can drive the real script — see hookshot-adminroom.nix).
@@ -368,7 +387,30 @@ in
       bridgeService = "matrix-hookshot.service";
       dmService = "matrix-dm-hookshot.service";
       stateDirectory = adminRoomStateDir;
+      # The DM keeps its admin-room powers either way; it only surrenders the
+      # notification feed when a dedicated room claims it. `false` asserts the
+      # feed OFF (so the single per-user watcher can't land here); `null` leaves
+      # the toggle unmanaged, so the DM stays the feed's home as it always was.
+      notifications = if notificationsRoom.enable then false else null;
     };
+
+    # The dedicated notifications room (hookshot-notifications-room.nix) is marked
+    # by the SAME builder, pointed at that room's persisted id instead of the DM
+    # marker — and it is the one instance that asserts the feed ON.
+    systemd.services."matrix-hookshot-notifications-adminroom" =
+      lib.mkIf notificationsRoom.enable
+        (mkAdminRoomService {
+          bot = "hookshot";
+          label = "notifications room";
+          notifications = true;
+          dmMarker = notificationsRoom.roomIdFile;
+          asTokenPath = config.sops.secrets.hookshot_as_token.path;
+          bridgeService = "matrix-hookshot.service";
+          dmService = "matrix-hookshot-notifications-room.service";
+          # Both instances restart the bridge; serialise them.
+          extraAfter = [ "matrix-hookshot-adminroom.service" ];
+          stateDirectory = notificationsAdminRoomStateDir;
+        });
 
     # Create a "Hookshot" Space grouping the @hookshot rooms (see hookshotSpace).
     # Runs as @inkpotmonkey (admin token), after the DM exists so m.direct resolves.
@@ -381,7 +423,9 @@ in
       ]
       # Order after the #infra-alerts room exists + admin is joined, so the
       # m.space.parent state event below can be set in it.
-      ++ lib.optional config.custom.profiles.matrix.infraAlerts.enable "matrix-infra-alerts-room.service";
+      ++ lib.optional config.custom.profiles.matrix.infraAlerts.enable "matrix-infra-alerts-room.service"
+      # ...and after the notifications room, so its id marker exists to file it.
+      ++ lib.optional notificationsRoom.enable "matrix-hookshot-notifications-room.service";
       requires = [ "tuwunel.service" ];
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
@@ -406,6 +450,7 @@ in
         # homeserver every time — everything else about the feed is reprovisioned.
         postResetNote =
           "run 'github login' in the @hookshot DM to re-auth GitHub (the OAuth token went with the homeserver)"
+          + lib.optionalString notificationsRoom.enable "; notifications will resume in the ${notificationsRoom.name} room, no toggle needed"
           + ", then re-add any webhook/feed connections (send 'help' in the DM — those are room state and were wiped)";
       }
       {
@@ -428,7 +473,14 @@ in
         isDm = true;
         paths = [ "/var/lib/private/matrix-hookshot-space" ];
       }
-    ];
+    ]
+    ++ lib.optional notificationsRoom.enable {
+      # The notifications room's own restart-once marker, on the same lifetime as
+      # the room id it is keyed on (that id is wiped by the room module's entry).
+      service = "matrix-hookshot-notifications-adminroom.service";
+      isDm = true;
+      paths = [ "/var/lib/${notificationsAdminRoomStateDir}" ];
+    };
 
     # --- Persistence ---
     # passkey.pem encrypts the stored GitHub/OAuth tokens; lose it and every
@@ -449,7 +501,16 @@ in
         # The Hookshot Space id marker — persisted so the Space isn't recreated
         # every boot; wiped with the homeserver on matrix-reset.
         "/var/lib/private/matrix-hookshot-space"
-      ];
+      ]
+      ++ lib.optional notificationsRoom.enable {
+        # Explicit, not a bare path: impermanence would otherwise create the source
+        # dir root:root 0755 (warning on first deploy) and systemd won't tighten an
+        # already-mounted dir to its 0700 StateDirectoryMode.
+        directory = "/var/lib/${notificationsAdminRoomStateDir}";
+        user = "root";
+        group = "root";
+        mode = "0700";
+      };
     };
   };
 }
