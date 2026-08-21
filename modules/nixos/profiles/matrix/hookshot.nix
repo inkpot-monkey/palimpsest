@@ -429,6 +429,12 @@ in
       {
         service = "matrix-hookshot.service";
         paths = [ stateDir ];
+        # PLAIN ASCII, NO BACKTICKS OR $: this becomes a single-quoted word in the
+        # `matrix-reset` shell application. Non-ASCII crashes shellcheck's reporter
+        # in the build sandbox, and a backtick or $ trips SC2016 — either one fails
+        # the whole system build, blamed on matrix-reset. See the assertion in
+        # matrix/default.nix.
+        #
         # What a wipe actually leaves for the operator. NOT `github login`: the
         # notification feed's credential is stored from sops by
         # matrix-hookshot-github-token, and `github login` mints an App token,
@@ -436,9 +442,9 @@ in
         # itself completely. Only the bot-command-driven connections are lost,
         # because those live in room state that went with the homeserver.
         postResetNote =
-          "re-add any hookshot webhook/feed connections (send 'help' in the @hookshot DM — they are room state and were wiped)"
-          + lib.optionalString notificationsRoom.enable "; the GitHub notification feed needs nothing — room, markers, stream position and credential are all reprovisioned"
-          + ". `github login` is only needed for the repo/project commands, and only if the GitHub App is installed somewhere";
+          "re-add any hookshot webhook/feed connections (send 'help' in the @hookshot DM; they are room state and were wiped)"
+          + lib.optionalString notificationsRoom.enable "; the GitHub notification feed needs nothing: room, markers, stream position and credential are all reprovisioned"
+          + ". 'github login' is only needed for the repo/project commands, and only if the GitHub App is installed somewhere";
       }
       {
         service = "matrix-dm-hookshot.service";

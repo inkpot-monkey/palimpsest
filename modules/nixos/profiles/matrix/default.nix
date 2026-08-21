@@ -158,6 +158,18 @@ let
   # can restore (re-pair WhatsApp, re-add hookshot connections, …). Printed at the
   # end of the run so the aftermath is never a surprise.
   resetNotes = map (e: e.postResetNote) (lib.filter (e: e.postResetNote != null) cfg.resetState);
+
+  # Reset notes become single-quoted words in the `matrix-reset` shell
+  # application, which nixpkgs runs shellcheck over. Two ways that bites, both
+  # fatal to the WHOLE system build and both blamed on matrix-reset rather than on
+  # the note: non-ASCII crashes shellcheck's reporter in the build sandbox
+  # (`commitBuffer: invalid argument`), and a backtick or $ trips SC2016. Neither
+  # shows up under `nix build --dry-run`, which only evaluates — so catch it during
+  # eval instead, naming the offender.
+  badNotes = lib.filter (
+    n: builtins.match "[ -~[:space:]]*" n == null || builtins.match ".*[$`].*" n != null
+  ) resetNotes;
+
   # For selective reset (`matrix-reset <bridge>`): one "service:::space-joined-paths"
   # token per resetState entry, so the script can stop/wipe/restart just the matches.
   resetEntryStrings = map (
@@ -431,6 +443,20 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = badNotes == [ ];
+        message = ''
+          custom.profiles.matrix.resetState: postResetNote must be plain ASCII with no backticks or $.
+          These notes are spliced into the `matrix-reset` shell application, and
+          shellcheck runs over it: non-ASCII crashes its reporter in the build
+          sandbox and a backtick or $ trips SC2016, either of which fails the
+          whole system build and blames matrix-reset. Offending note(s):
+          ${lib.concatMapStringsSep "\n" (n: "  - ${n}") badNotes}
+        '';
+      }
+    ];
+
     # Via the contract aggregator (the sole writer of permittedInsecurePackages), so
     # this merges with any other permit on the host instead of clobbering it.
     custom.insecurePackages = [ "olm-3.2.16" ];
