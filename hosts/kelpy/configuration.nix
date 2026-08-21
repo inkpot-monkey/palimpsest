@@ -110,9 +110,6 @@
     };
     paperless.enable = true;
     litellm.enable = true;
-    # The Claude relay (ADR-0018) is the Matrix interface to persistent `claude`
-    # sessions — it replaced AionUi (now removed). Reuses inkpotmonkey's ~/.claude.
-    claude-relay.enable = true;
     blocky.enable = true;
     media = {
       enable = true;
@@ -123,9 +120,11 @@
     };
   };
 
-  # kelpy runs the Claude relay's code-executing `claude` sessions (claude-relay
-  # above) — mark it exposed so the contract refuses any secret-bearing user-feature
-  # grant (contract ADR-0001).
+  # kelpy is internet-facing (public Caddy edge, a federated homeserver) and runs
+  # services that reach out on the operator's behalf — mark it exposed so the contract
+  # refuses any secret-bearing user-feature grant (contract ADR-0001). Set originally
+  # for the Claude relay's code-executing `claude` sessions (ADR-0018, since removed);
+  # kept because the posture is the host's, not that one service's.
   custom.host.exposed = true;
   # NOTE: signing is intentionally NOT granted here. It is now a home-sops feature
   # (contract ADR-0002, slice 13) decryptable only by the user's own key, which a headless

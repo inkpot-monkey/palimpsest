@@ -41,9 +41,8 @@ let
   '';
 
   # Idempotently register the admin Matrix account via the shared registration
-  # token (UIA token flow). Other account-creating services (e.g. claude-relay-
-  # register) order themselves AFTER this so `grant_admin_to_first_user` makes this
-  # account the homeserver admin.
+  # token (UIA token flow). Any other account-creating service orders itself AFTER
+  # this so `grant_admin_to_first_user` makes this account the homeserver admin.
   registerAdmin = pkgs.writeShellScript "tuwunel-register-admin" ''
     set -eu
     url="http://${address}:${toString matrixPort}"

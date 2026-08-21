@@ -51,12 +51,6 @@
         book_filer = import ./book-filer {
           inherit pkgs self;
         };
-        # Claude relay (ADR-0018) slice 01: allowlist-gated echo over a minimal
-        # tuwunel homeserver. The relay's mechanics are proven here (stub-driven in
-        # later slices) so an AFK agent can verify via `nix flake check`.
-        claude_relay = import ./claude-relay {
-          inherit pkgs self;
-        };
         # Per-bridge management-DM auto-provisioning (dm-provision.nix): room
         # creation + invite + m.direct + welcome (unencrypted) / encryption
         # (encrypted) + idempotency, against a minimal tuwunel.

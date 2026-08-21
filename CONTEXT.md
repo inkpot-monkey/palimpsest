@@ -23,7 +23,7 @@ A toggleable feature bundle enabled through the `custom.*` namespace, composing 
 _Avoid_: role, preset.
 
 **Service module**:
-A bespoke long-running program packaged and wired by this repo under `modules/nixos/services/` (e.g. the jmap bridge, the Claude relay). Distinct from a profile, which only toggles and configures.
+A bespoke long-running program packaged and wired by this repo under `modules/nixos/services/` (e.g. the git-annex module, the music-sync drain). Distinct from a profile, which only toggles and configures.
 _Avoid_: daemon, app.
 
 **`custom.*`**:
@@ -128,19 +128,6 @@ _Avoid_: channel, chat.
 
 **Double-puppet**:
 Logging the bridge in *as the real user* (not a ghost) so the user's own Matrix account appears to send bridged messages and auto-joins rooms. Established with a one-time login token, never declaratively.
-
-### Claude-in-Matrix
-
-**Claude relay**:
-The bespoke service that runs persistent `claude` CLI sessions on a host (in `tmux`) and exposes them *through Matrix* as the primary interface — posting each turn into Matrix and injecting Matrix messages back into the session. It is **not** an appservice bridge in the jmap sense; "the bridge" stays reserved for jmap. (It replaced the former AionUi WebUI + notifier, now removed.)
-_Avoid_: bridge (reserved for jmap), gateway.
-
-**Control room**:
-The single persistent Matrix room where the operator drives the relay — starting (`new <cwd>`), listing, and killing sessions. One per host, not per session.
-
-**Session room**:
-The dedicated Matrix room the relay creates for one `claude` session — a 1:1 chat with that agent. Operator messages there are injected into *that* session; the session's turns and permission/choice **polls** are posted there. Room-per-session mirrors the jmap bridge's room-per-thread idiom (see **Contact room / Thread room**).
-_Avoid_: channel, chat, thread (a session is its own room, not a thread).
 
 ### Local LLMs
 
