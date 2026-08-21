@@ -212,7 +212,13 @@ pkgs.testers.nixosTest {
       # the deployed one. Its siblings (hookshot.nix, impermanence) are stubbed
       # below rather than imported — they'd drag in sops, the bridge package and
       # the GitHub App for no added coverage.
-      imports = [ (self + /modules/nixos/profiles/matrix/hookshot-notifications-room.nix) ];
+      imports = [
+        (self + /modules/nixos/profiles/matrix/hookshot-notifications-room.nix)
+        # Not to test the credential store (parts/checks/hookshot/token.nix owns
+        # that) but because it is the THIRD unit that restarts the bridge, and the
+        # one-transaction phase below is only representative with all three in it.
+        (self + /modules/nixos/profiles/matrix/hookshot-github-token.nix)
+      ];
 
       options = {
         custom.profiles.matrix.adminLocalpart = lib.mkOption {
@@ -236,7 +242,19 @@ pkgs.testers.nixosTest {
         sops.secrets = lib.mkOption {
           default = { };
           type = lib.types.attrsOf (
-            lib.types.submodule { options.path = lib.mkOption { type = lib.types.str; }; }
+            lib.types.submodule {
+              options = {
+                path = lib.mkOption { type = lib.types.str; };
+                sopsFile = lib.mkOption {
+                  type = lib.types.nullOr lib.types.path;
+                  default = null;
+                };
+                restartUnits = lib.mkOption {
+                  type = lib.types.listOf lib.types.str;
+                  default = [ ];
+                };
+              };
+            }
           );
         };
       };
@@ -295,6 +313,11 @@ pkgs.testers.nixosTest {
           serviceConfig = {
             Type = "oneshot";
             RemainAfterExit = true;
+            StateDirectory = "matrix-hookshot";
+            ExecStartPre = pkgs.writeShellScript "stub-genkey" ''
+              [ -f /var/lib/matrix-hookshot/passkey.pem ] \
+                || ${pkgs.openssl}/bin/openssl genrsa -out /var/lib/matrix-hookshot/passkey.pem 4096
+            '';
             ExecStart = pkgs.writeShellScript "stub-bridge-start" ''
               echo start >> /var/lib/hookshot-starts
             '';
@@ -309,14 +332,33 @@ pkgs.testers.nixosTest {
 
         custom.profiles.matrix.hookshot = {
           enable = true;
+          personalToken = {
+            enable = true;
+            secretName = "hookshot_github_personal_token";
+          };
           notificationsRoom = {
             enable = true;
             name = notifRoomName;
             topic = notifRoomTopic;
           };
         };
+        sops.secrets.hookshot_github_personal_token.path = "/run/hookshot-github-token";
+        systemd.services.seed-token-secret = {
+          wantedBy = [ "multi-user.target" ];
+          before = [ "matrix-hookshot-github-token.service" ];
+          serviceConfig = {
+            Type = "oneshot";
+            RemainAfterExit = true;
+            ExecStart = pkgs.writeShellScript "seed-token-secret" ''
+              printf 'not-a-real-token-0000000000000000000000\n' > /run/hookshot-github-token
+              chmod 0400 /run/hookshot-github-token
+            '';
+          };
+        };
+
         # The room provisioner is real; just don't let it race the test at boot.
         systemd.services.matrix-hookshot-notifications-room.wantedBy = lib.mkForce [ ];
+        systemd.services.matrix-hookshot-github-token.wantedBy = lib.mkForce [ ];
 
         # Both instances, wired exactly as hookshot.nix wires them.
         systemd.services."matrix-hookshot-adminroom" = manual (mkAdminRoom {
@@ -530,7 +572,8 @@ pkgs.testers.nixosTest {
         " matrix-dm-hookshot.service"
         " matrix-hookshot-notifications-room.service"
         " matrix-hookshot-adminroom.service"
-        " matrix-hookshot-notifications-adminroom.service",
+        " matrix-hookshot-notifications-adminroom.service"
+        " matrix-hookshot-github-token.service",
         timeout=120,
     )
     for unit in [
@@ -538,6 +581,7 @@ pkgs.testers.nixosTest {
         "matrix-hookshot-notifications-room",
         "matrix-hookshot-adminroom",
         "matrix-hookshot-notifications-adminroom",
+        "matrix-hookshot-github-token",
     ]:
         machine.succeed(f"systemctl is-active {unit}.service")
     #     ...and the declared state is intact on the other side.

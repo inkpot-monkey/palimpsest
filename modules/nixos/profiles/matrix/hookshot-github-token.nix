@@ -266,8 +266,19 @@ in
     systemd.services.matrix-hookshot-github-token = {
       description = "Store the GitHub personal access token in hookshot's token store";
       # after+wants, never before/requires: it restarts hookshot, and it needs the
-      # passkey that hookshot's preStart generates.
-      after = [ "matrix-hookshot.service" ];
+      # key that hookshot's preStart generates.
+      #
+      # Ordered after the admin-room oneshots as well, because all three restart
+      # the bridge and `matrix-reset` starts the whole set in ONE systemd
+      # transaction — concurrent restarts of a unit the transaction also orders on
+      # is the shape that deadlocks, and it would hang the reset with no obvious
+      # culprit. Last in the chain on purpose: by then the feed is already enabled,
+      # so the restart this unit triggers is the one that starts the watcher.
+      after = [
+        "matrix-hookshot.service"
+        "matrix-hookshot-adminroom.service"
+      ]
+      ++ lib.optional hookshotCfg.notificationsRoom.enable "matrix-hookshot-notifications-adminroom.service";
       wants = [ "matrix-hookshot.service" ];
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
