@@ -380,15 +380,6 @@
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "potbelliedSeahorse" },
-            "properties": [
-              {
-                "id": "color",
-                "value": { "mode": "fixed", "fixedColor": "#c98500" }
-              }
-            ]
-          },
-          {
             "matcher": { "id": "byName", "options": "rk1a" },
             "properties": [
               {
@@ -494,15 +485,6 @@
               {
                 "id": "color",
                 "value": { "mode": "fixed", "fixedColor": "#199e70" }
-              }
-            ]
-          },
-          {
-            "matcher": { "id": "byName", "options": "potbelliedSeahorse" },
-            "properties": [
-              {
-                "id": "color",
-                "value": { "mode": "fixed", "fixedColor": "#c98500" }
               }
             ]
           },

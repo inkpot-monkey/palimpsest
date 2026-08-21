@@ -1,8 +1,15 @@
 ______________________________________________________________________
 
-## status: accepted
+## status: withdrawn
 
 # Claude relay: Matrix is the primary interface to persistent `claude` sessions
+
+> **Withdrawn (2026-08-21):** the relay was removed from the fleet — the service module,
+> the profile, its VM check and kelpy's `claude-relay.enable` are all gone, and kelpy's
+> relay state and `@claude-relay` account were wiped with it. The decision below is kept
+> as the record of why it was built and what it superseded; ADR-0005 and ADR-0008 still
+> point here for that history, and AionUi is *not* revived by this withdrawal — it stays
+> removed. Nothing in this repo implements what follows.
 
 AionUi (ADR-0005/0008) gave a phone-accessible Claude frontend plus one-way Matrix
 alerts, but its WebUI is clunky and its Matrix side is read-only. We replace it with a

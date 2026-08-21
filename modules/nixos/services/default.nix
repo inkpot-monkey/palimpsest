@@ -14,6 +14,5 @@
     # is TEMPORARILY overridden to 0.1.6 in pkgs/stump (#111) — see the removal
     # condition there; the option is unaffected either way.
     dmarc-metrics-exporter = ./dmarc-metrics-exporter;
-    claude-relay = ./claude-relay;
   };
 }

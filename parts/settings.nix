@@ -205,6 +205,20 @@ in
     # into the node scrape targets as a label (server.nix) so a host's monitoring
     # alert-worthiness is *derived* — an on-demand host being unreachable is expected,
     # never a fault, so it never colours a fleet health signal red.
+    #
+    # `onTailnet` is the separate question of whether the node is REGISTERED on the
+    # tailnet and so has a MagicDNS name (`<hostName>.${tailnet}`) at all. Defaults to
+    # true — nearly every node is — and only a node running no tailscale sets it false.
+    # It is not a monitoring policy either: the `node` scrape job addresses targets BY
+    # MagicDNS name (server.nix), so a node without one is not an unreachable target but
+    # an *unresolvable* one. MagicDNS SERVFAILs a name it does not own and blocky's
+    # conditional upstream has nothing to fall back to, so every such scrape is counted
+    # as a resolver error — silently, since blocky does not log an upstream SERVFAIL
+    # (palimpsest#165, where one undeclared node produced ~16% of rk1b's query errors).
+    # Do NOT conflate it with `presence`: an on-demand host that is merely powered off
+    # still HAS a MagicDNS name, still resolves, and is *meant* to read `up == 0`
+    # (ADR-0026). The value is tied back to each host's real `services.tailscale.enable`
+    # by the host_fleet_coherence check, so it cannot drift from the machine it describes.
     nodes.kelpy = {
       hostName = "kelpy";
       domain = "palebluebytes.space";
@@ -243,10 +257,17 @@ in
       presence = "on-demand";
     };
 
-    nodes.potbelliedSeahorse = {
-      hostName = "potbelliedSeahorse";
-      presence = "on-demand";
-    };
+    # RETIRED 2026-08-21: `potbelliedSeahorse`, the nebula lighthouse. Its config is kept
+    # (hosts/potbelliedSeahorse/, modules/nixos/profiles/nebula.nix) and still builds, but it
+    # is no longer fleet MEMBERSHIP — nothing addresses, scrapes, probes or labels it. It had
+    # gone quiet without anyone noticing: absent from the tailnet AND from the LAN (an ARP
+    # sweep found every other machine and no second Pi), silent on its own lighthouse address
+    # 192.168.100.1, `up == 0` for the whole 3-month retention window, and holding no age key
+    # in secrets/identities.nix — so sops installs nothing on it and it could not decrypt the
+    # nebula certs its one role needs even if it did boot. It is also the only host that ever
+    # enabled `nebula`, and its mesh lists no other members: a lighthouse for an empty mesh.
+    # To bring it back, restore an entry here (`onTailnet` false unless it gains tailscale) —
+    # the host_fleet_coherence check will hold the declaration to the machine.
 
     nodes.rk1a = {
       hostName = "rk1a";

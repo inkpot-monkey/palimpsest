@@ -153,6 +153,11 @@ in
           path = [
             pkgs.tailscale
             pkgs.coreutils
+            # `cmp` is diffutils, NOT coreutils. Without it the compare below fails open
+            # (`! cmp` is true when cmp cannot be run at all) and every timer tick restarts
+            # blocky — a ~1s fleet-DNS gap every 30 minutes, with blocky's counters reset
+            # each time (palimpsest#165).
+            pkgs.diffutils
             config.systemd.package
           ];
           serviceConfig.Type = "oneshot";

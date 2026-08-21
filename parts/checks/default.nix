@@ -27,6 +27,12 @@
         blocky_metrics = import ./blocky-metrics {
           inherit pkgs inputs self;
         };
+        # The tailscale-service hosts generator (palimpsest#165): it restarts blocky only
+        # when the resolved IPs actually changed. Restarting unconditionally bounces fleet
+        # DNS every 30 minutes and resets blocky's counters with it.
+        blocky_service_hosts = import ./blocky-service-hosts {
+          inherit pkgs inputs self;
+        };
         # DISABLED — fails on an untouched tree, so it gates every unrelated change.
         # The VM boots but never reaches the target the script waits on:
         #   RequestedAssertionFailed: unit "network-online.target" is inactive and there
@@ -43,12 +49,6 @@
         # the quiescence window — plus the default ACL and the copy-then-rename that a plain
         # `mv` would silently get wrong.
         book_filer = import ./book-filer {
-          inherit pkgs self;
-        };
-        # Claude relay (ADR-0018) slice 01: allowlist-gated echo over a minimal
-        # tuwunel homeserver. The relay's mechanics are proven here (stub-driven in
-        # later slices) so an AFK agent can verify via `nix flake check`.
-        claude_relay = import ./claude-relay {
           inherit pkgs self;
         };
         # Per-bridge management-DM auto-provisioning (dm-provision.nix): room

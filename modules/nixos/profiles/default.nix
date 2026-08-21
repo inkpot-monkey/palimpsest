@@ -37,7 +37,6 @@
     affine = ./affine;
     litellm = ./litellm.nix;
     openclaw = ./openclaw.nix;
-    claude-relay = ./claude-relay.nix;
     homeassistant = ./homeassistant.nix;
     navidrome = ./navidrome.nix;
     music-assistant = ./music-assistant.nix;
