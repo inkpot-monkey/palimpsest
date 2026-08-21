@@ -157,72 +157,14 @@ let
     }
   '';
 
-  # Work around a conduwuit/tuwunel gap: the homeserver doesn't stamp `is_direct`
-  # onto DM invite m.room.member events, so hookshot never recognises the @hookshot
-  # DM as an *admin room* — the only place `github login` / `github notifications
-  # toggle` (personal-notification feed) etc. exist. Hookshot designates an admin
-  # room by the bot's room account-data `uk.half-shot.matrix-hookshot.github.room`
-  # carrying an admin_user (normally written from the is_direct invite, Bridge.ts).
-  # We write it ourselves by masquerading as the bot with the appservice token,
-  # then restart hookshot so it loads the room as an admin room on startup
-  # (setUpAdminRoom). Idempotent: only writes + restarts when not already marked.
-  adminRoomType = "uk.half-shot.matrix-hookshot.github.room";
+  # The DM provisioner's marker (its StateDirectory), read by the admin-room
+  # oneshot to learn which room to mark.
   dmMarker = "/var/lib/private/matrix-dm-hookshot/dm-created";
-  markAdminRoom = pkgs.writeShellScript "matrix-hookshot-adminroom" ''
-    set -eu
-    url="${homeserverUrl}"
-    bot="@hookshot:${domain}"
-    me="@${adminLocalpart}:${domain}"
-    as_token="$(cat "$CREDENTIALS_DIRECTORY/as_token")"
+  adminRoomStateDir = "matrix-hookshot-adminroom";
 
-    [ -s "${dmMarker}" ] || { echo "hookshot-adminroom: no DM marker yet, nothing to do"; exit 0; }
-    rid="$(cat "${dmMarker}")"
-    botenc="$(${pkgs.jq}/bin/jq -rn --arg b "$bot" '$b|@uri')"
-    ridenc="$(${pkgs.jq}/bin/jq -rn --arg r "$rid" '$r|@uri')"
-    auth=(-H "Authorization: Bearer $as_token")
-    # Masquerade as the appservice bot for the account-data + membership reads.
-    q="user_id=$botenc"
-
-    for _ in $(seq 1 30); do
-      ${pkgs.curl}/bin/curl -sf "$url/_matrix/client/versions" >/dev/null && break
-      sleep 2
-    done
-
-    # The bot's room account-data only sticks once it has joined the DM.
-    for _ in $(seq 1 30); do
-      joined="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" \
-        "$url/_matrix/client/v3/rooms/$ridenc/joined_members?$q" \
-        | ${pkgs.jq}/bin/jq -r --arg b "$bot" '.joined // {} | has($b)' 2>/dev/null || echo false)"
-      [ "$joined" = "true" ] && break
-      sleep 2
-    done
-
-    # Ensure the admin-room marker exists (idempotent write).
-    cur="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" \
-      "$url/_matrix/client/v3/user/$botenc/rooms/$ridenc/account_data/${adminRoomType}?$q" \
-      | ${pkgs.jq}/bin/jq -r '.admin_user // empty' 2>/dev/null || echo "")"
-    if [ "$cur" != "$me" ]; then
-      ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
-        "$url/_matrix/client/v3/user/$botenc/rooms/$ridenc/account_data/${adminRoomType}?$q" \
-        -H 'content-type: application/json' \
-        -d "$(${pkgs.jq}/bin/jq -nc --arg u "$me" '{admin_user:$u}')"
-      echo "hookshot-adminroom: wrote admin marker for $rid"
-    fi
-
-    # Hookshot only *loads* an admin room from this account-data on startup (the
-    # is_direct invite path is what tuwunel breaks), so the marker existing isn't
-    # enough — hookshot must have (re)started since it was set. Restart once per
-    # room id, tracked in our (persisted) state, so a marker set after hookshot's
-    # last start still takes effect, without restarting on every boot/deploy.
-    act="$STATE_DIRECTORY/activated"
-    if [ "$(cat "$act" 2>/dev/null || true)" = "$rid" ]; then
-      echo "hookshot-adminroom: $rid already active as an admin room"
-      exit 0
-    fi
-    echo "hookshot-adminroom: restarting hookshot to load admin room $rid"
-    ${pkgs.systemd}/bin/systemctl restart matrix-hookshot.service
-    printf '%s' "$rid" > "$act"
-  '';
+  # Builder for the admin-room marker + notification-stream seed (split out so the
+  # VM check can drive the real script — see hookshot-adminroom.nix).
+  mkAdminRoomService = import ./hookshot-adminroom.nix { inherit pkgs config; };
 in
 {
   options.custom.profiles.matrix.hookshot = {
@@ -415,31 +357,17 @@ in
       topic = "Hookshot admin room — `!hookshot help` for commands; `github login` then `github notifications toggle` to bridge your GitHub notifications here.";
     };
 
-    # Mark that DM as a hookshot admin room (see markAdminRoom — works around the
-    # tuwunel is_direct gap), after the DM exists and the bot has joined. Runs as
-    # root so it can read the DM-provisioner's (DynamicUser) marker and restart
-    # hookshot to pick the room up.
-    systemd.services."matrix-hookshot-adminroom" = {
-      description = "Mark the @hookshot management DM as a hookshot admin room";
-      after = [
-        "matrix-hookshot.service"
-        "matrix-dm-hookshot.service"
-      ];
-      wants = [
-        "matrix-hookshot.service"
-        "matrix-dm-hookshot.service"
-      ];
-      wantedBy = [ "multi-user.target" ];
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-        # Records the room id we've restarted hookshot for, so we restart only when
-        # the admin room is new — survives reboots (persisted below).
-        StateDirectory = "matrix-hookshot-adminroom";
-        StateDirectoryMode = "0700";
-        LoadCredential = [ "as_token:${config.sops.secrets.hookshot_as_token.path}" ];
-        ExecStart = markAdminRoom;
-      };
+    # Mark that DM as a hookshot admin room and seed its notification stream
+    # position (see hookshot-adminroom.nix), after the DM exists and the bot has
+    # joined. Runs as root so it can read the DM-provisioner's (DynamicUser)
+    # marker and restart hookshot to pick the room up.
+    systemd.services."matrix-hookshot-adminroom" = mkAdminRoomService {
+      bot = "hookshot";
+      inherit dmMarker;
+      asTokenPath = config.sops.secrets.hookshot_as_token.path;
+      bridgeService = "matrix-hookshot.service";
+      dmService = "matrix-dm-hookshot.service";
+      stateDirectory = adminRoomStateDir;
     };
 
     # Create a "Hookshot" Space grouping the @hookshot rooms (see hookshotSpace).
@@ -473,7 +401,12 @@ in
       {
         service = "matrix-hookshot.service";
         paths = [ stateDir ];
-        postResetNote = "re-add hookshot connections in the @hookshot DM (send '!hookshot help'; GitHub/webhook/feed subscriptions are stored as room state and were wiped)";
+        # The one manual step a wipe leaves behind. `github login` is per-user OAuth,
+        # and the token lives in the bot's Matrix account data, so it goes with the
+        # homeserver every time — everything else about the feed is reprovisioned.
+        postResetNote =
+          "run 'github login' in the @hookshot DM to re-auth GitHub (the OAuth token went with the homeserver)"
+          + ", then re-add any webhook/feed connections (send 'help' in the DM — those are room state and were wiped)";
       }
       {
         service = "matrix-dm-hookshot.service";
@@ -486,7 +419,7 @@ in
         # by its After=. Restarts hookshot itself when it (re)writes the marker.
         service = "matrix-hookshot-adminroom.service";
         isDm = true;
-        paths = [ "/var/lib/matrix-hookshot-adminroom" ];
+        paths = [ "/var/lib/${adminRoomStateDir}" ];
       }
       {
         # Recreate the Hookshot Space after a wipe (its room id, like the DM, is
@@ -512,7 +445,7 @@ in
         "/var/lib/private/matrix-dm-hookshot"
         # The admin-room "activated" marker — same lifetime as the DM marker so a
         # matrix-reset (new DM id) re-triggers the one-time hookshot restart.
-        "/var/lib/matrix-hookshot-adminroom"
+        "/var/lib/${adminRoomStateDir}"
         # The Hookshot Space id marker — persisted so the Space isn't recreated
         # every boot; wiped with the homeserver on matrix-reset.
         "/var/lib/private/matrix-hookshot-space"
