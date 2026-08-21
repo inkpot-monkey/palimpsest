@@ -57,6 +57,20 @@
         matrix_dm_provision = import ./dm-provision {
           inherit pkgs self;
         };
+        # Hookshot's admin-room oneshot (hookshot-adminroom.nix): the admin-room marker
+        # that works around tuwunel's missing is_direct, and the notification stream
+        # position that works around upstream #965 — seeded in ms, healing a room that is
+        # already activated, and never rewinding a live position.
+        hookshot_adminroom = import ./hookshot {
+          inherit pkgs self;
+        };
+        # The declarative GitHub token store (hookshot-github-token.nix): it reimplements
+        # hookshot's UserTokenStore write, so the check DECRYPTS what it wrote with the real
+        # private key rather than trusting the shape — plus rotation of both the value and
+        # the encryption key, and the sops trailing-newline trap.
+        hookshot_github_token = import ./hookshot/token.nix {
+          inherit pkgs self;
+        };
         # The pre-built binding path (bindContractPackage, ADR-0016) is proven generically by the
         # contract's OWN conformance (`contract_conformance` below); the fleet-side external-bind
         # rig (`prebuilt_bind_external` + its gui-eval sibling) was retired with ADR-0026, which
