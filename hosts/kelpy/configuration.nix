@@ -116,12 +116,11 @@
           secretName = "github_token";
         };
       };
-      infraAlerts = {
-        enable = true;
-        # Pinned from the matrix-infra-alerts-room oneshot's first run (a static
-        # hookshot connection needs the server-assigned roomId at build time).
-        roomId = "!oHttFPAVTE9qwcYCjp:matrix.palebluebytes.space";
-      };
+      # The room id is no longer a build-time input: the connection is provisioned
+      # into room state at runtime, so the oneshot creates the room and persists
+      # its id. The previously pinned id was wiped by a July matrix-reset and had
+      # been dead for weeks, which is precisely the failure mode that removed it.
+      infraAlerts.enable = true;
     };
     paperless.enable = true;
     litellm.enable = true;

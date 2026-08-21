@@ -135,15 +135,13 @@ let
         -d "$(${pkgs.jq}/bin/jq -nc --arg d "${domain}" '{via:[$d],canonical:true}')" >/dev/null || true
       echo "hookshot-space: filed @hookshot DM under the Space"
     fi
-    ${lib.optionalString
-      (
-        config.custom.profiles.matrix.infraAlerts.enable
-        && config.custom.profiles.matrix.infraAlerts.roomId != ""
-      )
-      ''
-        # File #infra-alerts under the Space (child + parent). Its roomId is pinned
-        # in config and the admin created the room, so it can set m.space.parent there.
-        infra="${config.custom.profiles.matrix.infraAlerts.roomId}"
+    ${lib.optionalString config.custom.profiles.matrix.infraAlerts.enable ''
+      # File #infra-alerts under the Space. Its id is server-assigned now that the
+      # connection is dynamic, so it comes from the room oneshot's marker rather
+      # than from config (0644 in a 0755 StateDirectory so this DynamicUser can
+      # read it). The admin created the room, so it can set m.space.parent there.
+      if [ -s "${config.custom.profiles.matrix.infraAlerts.roomIdFile}" ]; then
+        infra="$(cat "${config.custom.profiles.matrix.infraAlerts.roomIdFile}")"
         infraenc="$(${pkgs.jq}/bin/jq -rn --arg r "$infra" '$r|@uri')"
         ${pkgs.curl}/bin/curl -sf "''${auth[@]}" -X PUT \
           "$url/_matrix/client/v3/rooms/$spaceenc/state/m.space.child/$infraenc" \
@@ -153,8 +151,8 @@ let
           -H 'content-type: application/json' \
           -d "$(${pkgs.jq}/bin/jq -nc --arg d "${domain}" '{via:[$d],canonical:true}')" >/dev/null || true
         echo "hookshot-space: filed #infra-alerts under the Space"
-      ''
-    }
+      fi
+    ''}
     ${lib.optionalString notificationsRoom.enable ''
       # File the GitHub Notifications room under the Space too. Its id is
       # server-assigned, so it comes from the room oneshot's marker (0644 in a
@@ -280,20 +278,6 @@ in
             services:
               - service: "*"
                 level: admin
-        ${lib.optionalString
-          (
-            config.custom.profiles.matrix.infraAlerts.enable
-            && config.custom.profiles.matrix.infraAlerts.roomId != ""
-          )
-          ''
-            connections:
-              - connectionType: uk.half-shot.matrix-hookshot.generic.hook
-                stateKey: ${config.sops.placeholder.infra_alerts_hook_id}
-                roomId: "${config.custom.profiles.matrix.infraAlerts.roomId}"
-                state:
-                  name: infra-alerts
-          ''
-        }
       '';
     };
 

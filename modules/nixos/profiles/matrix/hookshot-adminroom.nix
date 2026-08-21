@@ -52,8 +52,12 @@
   bridgeService,
   # DM provisioner unit; we can only mark a DM that exists.
   dmService,
-  # Extra ordering. Two instances both restart the bridge, so the second must be
-  # ordered after the first or their restarts race.
+  # Extra ordering. INVARIANT: every oneshot that restarts the bridge must be
+  # chained after the previous one. They are all isDm, so `matrix-reset` starts the
+  # whole set in ONE systemd transaction, and concurrent restarts of a unit the
+  # transaction also orders on is the shape that deadlocks. The chain today is
+  # adminroom -> notifications-adminroom -> github-token -> infra-alerts-room; a new
+  # bridge-restarting unit belongs on the end of it.
   extraAfter ? [ ],
   stateDirectory ? "matrix-hookshot-adminroom",
 }:
