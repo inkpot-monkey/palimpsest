@@ -27,6 +27,12 @@
         blocky_metrics = import ./blocky-metrics {
           inherit pkgs inputs self;
         };
+        # The tailscale-service hosts generator (palimpsest#165): it restarts blocky only
+        # when the resolved IPs actually changed. Restarting unconditionally bounces fleet
+        # DNS every 30 minutes and resets blocky's counters with it.
+        blocky_service_hosts = import ./blocky-service-hosts {
+          inherit pkgs inputs self;
+        };
         # DISABLED — fails on an untouched tree, so it gates every unrelated change.
         # The VM boots but never reaches the target the script waits on:
         #   RequestedAssertionFailed: unit "network-online.target" is inactive and there
