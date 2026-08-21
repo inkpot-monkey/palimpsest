@@ -255,7 +255,7 @@
       "id": 4,
       "type": "timeseries",
       "title": "Temperature by host",
-      "description": "Warmest sensor per host over time, one line per machine, host colours matching Fleet Overview. This is the board's main forensic instrument: with the shared crosshair on, a spike that appears on one host alone is that machine's own load, while a spike across all of them is the room. Hosts appear only while they are reporting — the on-demand machines (sawtoothShark, stargazer, weedySeadragon, potbelliedSeahorse) leave gaps when powered off, which is expected and never a fault.",
+      "description": "Warmest sensor per host over time, one line per machine, host colours matching Fleet Overview. This is the board's main forensic instrument: with the shared crosshair on, a spike that appears on one host alone is that machine's own load, while a spike across all of them is the room. Hosts appear only while they are reporting — the on-demand machines (sawtoothShark, stargazer, weedySeadragon) leave gaps when powered off, which is expected and never a fault.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -334,21 +334,6 @@
                 "value": {
                   "mode": "fixed",
                   "fixedColor": "#199e70"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "potbelliedSeahorse"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "mode": "fixed",
-                  "fixedColor": "#c98500"
                 }
               }
             ]

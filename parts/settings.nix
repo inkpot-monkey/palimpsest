@@ -257,14 +257,17 @@ in
       presence = "on-demand";
     };
 
-    nodes.potbelliedSeahorse = {
-      hostName = "potbelliedSeahorse";
-      presence = "on-demand";
-      # A nebula lighthouse, not a tailscale node — hosts/potbelliedSeahorse/configuration.nix
-      # enables `nebula` and never `tailscale`, so there is no `<host>.<tailnet>` name for
-      # anything to resolve. The only node on the fleet for which this is true.
-      onTailnet = false;
-    };
+    # RETIRED 2026-08-21: `potbelliedSeahorse`, the nebula lighthouse. Its config is kept
+    # (hosts/potbelliedSeahorse/, modules/nixos/profiles/nebula.nix) and still builds, but it
+    # is no longer fleet MEMBERSHIP — nothing addresses, scrapes, probes or labels it. It had
+    # gone quiet without anyone noticing: absent from the tailnet AND from the LAN (an ARP
+    # sweep found every other machine and no second Pi), silent on its own lighthouse address
+    # 192.168.100.1, `up == 0` for the whole 3-month retention window, and holding no age key
+    # in secrets/identities.nix — so sops installs nothing on it and it could not decrypt the
+    # nebula certs its one role needs even if it did boot. It is also the only host that ever
+    # enabled `nebula`, and its mesh lists no other members: a lighthouse for an empty mesh.
+    # To bring it back, restore an entry here (`onTailnet` false unless it gains tailscale) —
+    # the host_fleet_coherence check will hold the declaration to the machine.
 
     nodes.rk1a = {
       hostName = "rk1a";
