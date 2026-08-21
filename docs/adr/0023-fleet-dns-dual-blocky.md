@@ -34,6 +34,17 @@ beyond `custom.profiles.blocky.enable = true` — it is built with `mkSystem`
 (`mkPiSystem`). Both DNS hosts keep `acceptDns = false` and resolve through their
 own local blocky (`nameservers = 127.0.0.1`), so each is self-sufficient.
 
+> **That version is the one shipping AS OF THIS ADR (2026-07-07), not a statement of what
+> runs today.** The `nixpkgs` pin is the only authority on which blocky a host builds, and
+> `blocky_build_info` — surfaced per resolver on the DNS Resolvers board (palimpsest#164) — is
+> the only authority on which one is actually running; both resolvers have since moved to
+> 0.33.0. `blocky.nix` used to repeat this same pair of version numbers in a code comment and
+> rotted the same way, which is why it no longer names a version at all. The DECISION recorded
+> here — `rk1b` needs no code beyond the enable flag, because `mkSystem` builds it against main
+> `nixpkgs` where the blocky module is already present, and only the Pi needs the
+> `disabledModules`/`imports` swap — is unchanged and still in force. Dated entries are not
+> rewritten when the value moves; read the pin, not the prose.
+
 **No public fail-open nameserver.** We do *not* add `1.1.1.1` as a third global
 nameserver. Under parallel-query, a raw-UDP anycast resolver beats blocky's DoH
 upstreams on nearly every race, so it would (a) bypass ad-block wholesale, not
