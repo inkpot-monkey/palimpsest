@@ -1,0 +1,1681 @@
+{
+  "id": null,
+  "uid": "dns-resolvers",
+  "version": null,
+  "title": "DNS Resolvers",
+  "description": "The fleet's two blocky resolvers, kelpy and rk1b, compared against each other. Its organising idea is TWIN AGREEMENT: under ADR-0023 tailscale queries both nameservers in parallel and takes the quickest answer, so both resolvers see the same traffic and run the same config — which makes any divergence between them the signal, and absolute query rate nearly meaningless as a health measure. Read it top-down: the glance row says whether both are answering, armed, clean and fast; Twin divergence says where they disagree; Traffic & cache says how queries are being answered and by whom; Denylist & faults says whether the blocking machinery is still updating. The resolver set is deliberately always-on, so this board carries no presence-aware suppression — ADR-0023 keeps laptops as clients precisely so no roaming host ever runs a resolver. Alerting is out of scope (ADR-0019). Generic liveness for blocky as a process lives on Per-Service Health; this board is the cross-resolver comparison no per-service row can hold.",
+  "tags": ["fleet", "dns"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "graphTooltip": 1,
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "liveNow": false,
+  "refresh": "1m",
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "weekStart": "",
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Data source",
+        "type": "datasource",
+        "query": "prometheus",
+        "refresh": 1,
+        "hide": 0,
+        "current": {},
+        "options": [],
+        "regex": "",
+        "multi": false,
+        "includeAll": false,
+        "skipUrlSync": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Resolvers answering",
+      "description": "How many of the fleet's two blocky resolvers (kelpy, rk1b — ADR-0023) answered a scrape in the last 5 minutes. Green at 2, amber at 1, red at 0. Uses max_over_time(up[5m]) rather than raw up ON PURPOSE: every rk1b deploy produces exactly one up=0 sample, because blocky-service-hosts try-restarts blocky on each activation while VictoriaMetrics is scraping it. max_over_time reads 1 if ANY scrape in the window succeeded, so a routine deploy never turns this tile red, while a real outage still does after 5 minutes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "count(max_over_time(up{job=\"blocky\"}[5m]) == 1) or vector(0)",
+          "range": false,
+          "instant": true,
+          "refId": "A",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#d03b3b",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 1
+              },
+              {
+                "color": "#0ca30c",
+                "value": 2
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Denylist armed",
+      "description": "Resolvers that are BOTH blocking-enabled and carrying a full-size denylist — the two ways ad-blocking dies quietly. Counts resolvers where blocky_blocking_enabled == 1 AND their denylist entry count equals the fleet maximum, so a resolver that silently fell behind on a list refresh drops this tile to 1 even though nothing is 'down'. Green at 2, amber at 1, red at 0. It does NOT mean anything is being blocked in practice — see the Response types panel, where BLOCKED is a flat zero on this fleet.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "count(blocky_blocking_enabled == 1 and on(instance) (sum by (instance)(blocky_denylist_cache_entries) == scalar(max(sum by (instance)(blocky_denylist_cache_entries))))) or vector(0)",
+          "range": false,
+          "instant": true,
+          "refId": "A",
+          "legendFormat": ""
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#d03b3b",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 1
+              },
+              {
+                "color": "#0ca30c",
+                "value": 2
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "auto",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Queries erroring",
+      "description": "The worse of the two resolvers by share of requests returning response_type=err, over a 1h window, named. Bands: good below 1%, warning at 1%, critical at 5% — errors are unambiguously bad for a resolver, so unlike latency this shape gets absolute bands. A twin erroring while the other is clean is the divergence this board exists to catch; under ADR-0023's parallel-query both resolvers see the same traffic, so there is no benign explanation for one erroring and the other not. rk1b is currently sitting around 16% — tracked as palimpsest#165.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "topk(1, 100 * sum by (host)(label_replace(rate(blocky_request_duration_seconds_count{response_type=\"err\"}[1h]), \"host\", \"$1\", \"instance\", \"([^.:]+).*\")) / sum by (host)(label_replace(rate(blocky_request_duration_seconds_count[1h]), \"host\", \"$1\", \"instance\", \"([^.:]+).*\")))",
+          "range": false,
+          "instant": true,
+          "refId": "A",
+          "legendFormat": "{{host}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#0ca30c",
+                "value": null
+              },
+              {
+                "color": "#fab219",
+                "value": 1
+              },
+              {
+                "color": "#d03b3b",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Slowest resolver",
+      "description": "Whichever resolver has the higher p95 on the upstream-resolution path (response_type=RESOLVED), named, over a 1h window. This matters because ADR-0023's tailscale setup queries both nameservers in PARALLEL and takes the quickest answer — so the slower twin wins fewer races and drifts towards being a warm standby rather than a co-equal resolver. Deliberately UNCOLOURED: the house latency band (warn 1s / crit 3s) is 100-1000x above anything this fleet produces (p95 is single-to-double-digit milliseconds), and no honest absolute band for this hardware has been established. Read it as who-and-how-much, not pass/fail.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "topk(1, histogram_quantile(0.95, sum by (host, le)(label_replace(rate(blocky_request_duration_seconds_bucket{response_type=\"RESOLVED\"}[1h]), \"host\", \"$1\", \"instance\", \"([^.:]+).*\"))))",
+          "range": false,
+          "instant": true,
+          "refId": "A",
+          "legendFormat": "{{host}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 1,
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "textMode": "value_and_name",
+        "wideLayout": true,
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 100,
+      "type": "row",
+      "title": "Twin divergence",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
+      "panels": []
+    },
+    {
+      "id": 5,
+      "type": "bargauge",
+      "title": "Upstream split",
+      "description": "Share of upstream-resolved queries each resolver sent to each DoH upstream, over the board window. Both resolvers run the IDENTICAL upstreams.groups.default (cloudflare + quad9, blocky.nix), so identical bars would be the naive expectation — in practice they diverge sharply, because blocky races its upstreams and a VPS and a home node sit on very different network paths. That divergence is structural, not a fault. Bars are coloured by RESOLVER (kelpy blue, rk1b violet) with the upstream named in the label, so the pairing reads at a glance. Only the RESOLVED path appears here; CONDITIONAL queries (*.ts.net -> MagicDNS) and cache hits never touch an upstream.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "100 * sum by (host, upstream)(label_replace(label_replace(increase(blocky_response_total{response_type=\"RESOLVED\"}[$__range]), \"host\", \"$1\", \"instance\", \"([^.:]+).*\"), \"upstream\", \"$1\", \"reason\", \"RESOLVED \\\\(https://([^/]+)/.*\")) / on(host) group_left() sum by (host)(label_replace(increase(blocky_response_total{response_type=\"RESOLVED\"}[$__range]), \"host\", \"$1\", \"instance\", \"([^.:]+).*\"))",
+          "range": false,
+          "instant": true,
+          "refId": "A",
+          "legendFormat": "{{host}} · {{upstream}}"
+        }
+      ],
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "showUnfilled": true,
+        "minVizHeight": 10,
+        "minVizWidth": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "decimals": 0,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "kelpy · cloudflare-dns.com"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "kelpy · dns.quad9.net"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rk1b · cloudflare-dns.com"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#9085e9"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rk1b · dns.quad9.net"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#9085e9"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Upstream resolution latency",
+      "description": "p50 (dashed) and p95 (solid) of the upstream-resolution path per resolver, over a rolling 1h window. Scoped to response_type=RESOLVED deliberately: the local paths are 30x faster (CONDITIONAL ~0.6ms, CACHED ~0.1ms) and averaging them in would flatten the only interesting signal on the panel. The 1h rate window is the shortest honest one — this is a quiet resolver pair at roughly 400 requests/hour each, so a [5m] window would compute quantiles from about 30 samples and jump around meaninglessly. UNCOLOURED by design (see the Slowest resolver tile): the comparison between the two lines is the signal, not any absolute threshold.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 8,
+        "y": 5
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.50, sum by (host, le)(label_replace(rate(blocky_request_duration_seconds_bucket{response_type=\"RESOLVED\"}[1h]), \"host\", \"$1\", \"instance\", \"([^.:]+).*\")))",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "legendFormat": "{{host}} p50"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, sum by (host, le)(label_replace(rate(blocky_request_duration_seconds_bucket{response_type=\"RESOLVED\"}[1h]), \"host\", \"$1\", \"instance\", \"([^.:]+).*\")))",
+          "range": true,
+          "instant": false,
+          "refId": "B",
+          "legendFormat": "{{host}} p95"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 3,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "gradientMode": "opacity",
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "kelpy p50"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [10, 10]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "kelpy p95"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rk1b p50"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#9085e9"
+                }
+              },
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [10, 10]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rk1b p95"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#9085e9"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Error share over time",
+      "description": "Percentage of each resolver's requests returning response_type=err, over a rolling 1h window. A resolver with no err series at all is drawn explicitly at zero (the 'or ... * 0' term) rather than vanishing from the panel, so a clean twin reads as a flat green-field zero line instead of an absent line the eye can mistake for missing data. No threshold bands here — the Queries erroring glance tile carries the verdict (warning 1%, critical 5%); this panel is for seeing WHEN it started and whether it is sustained or bursty. NOTE this is not the same number as blocky_error_total in the Faults table; see that panel's description. rk1b's standing error rate is tracked as palimpsest#165.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 13
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "100 * (sum by (host)(label_replace(rate(blocky_request_duration_seconds_count{response_type=\"err\"}[1h]), \"host\", \"$1\", \"instance\", \"([^.:]+).*\")) or sum by (host)(label_replace(rate(blocky_request_duration_seconds_count[1h]), \"host\", \"$1\", \"instance\", \"([^.:]+).*\")) * 0) / sum by (host)(label_replace(rate(blocky_request_duration_seconds_count[1h]), \"host\", \"$1\", \"instance\", \"([^.:]+).*\"))",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "legendFormat": "{{host}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 2,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "gradientMode": "opacity",
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "kelpy"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rk1b"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#9085e9"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 101,
+      "type": "row",
+      "title": "Traffic & cache",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "panels": []
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Cache hit ratio",
+      "description": "hits / (hits + misses) per resolver, over a rolling 1h window — the number that moves when caching degrades. Both twins should track together, since ADR-0023's parallel-query sends them the same traffic; a persistent gap means one of them is not caching what the other is. GOTCHA, unresolved: this disagrees with the CACHED series on the Response types panel by two orders of magnitude — blocky_cache_hits_total yields a ~55% ratio in windows where response_type=CACHED fires a handful of times. The likeliest explanation is that cache_hits_total also counts hits on paths that never surface as a CACHED response type, but that has NOT been verified against blocky's source. The ratio is the one that tracks cache behaviour; treat the absolute CACHED count as a different question.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 22
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "100 * sum by (host)(label_replace(rate(blocky_cache_hits_total[1h]), \"host\", \"$1\", \"instance\", \"([^.:]+).*\")) / (sum by (host)(label_replace(rate(blocky_cache_hits_total[1h]), \"host\", \"$1\", \"instance\", \"([^.:]+).*\")) + sum by (host)(label_replace(rate(blocky_cache_misses_total[1h]), \"host\", \"$1\", \"instance\", \"([^.:]+).*\")))",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "legendFormat": "{{host}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "gradientMode": "opacity",
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "min": 0,
+          "max": 100
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "kelpy"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rk1b"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#9085e9"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Response types",
+      "description": "How fleet DNS queries are being answered, as queries/sec by response type. AVERAGED across the two resolvers, not summed: under ADR-0023 tailscale queries both nameservers in parallel, so every client query is answered by BOTH and summing would double-count it — the average is the rate a single resolver sees, which is the real query rate. CONDITIONAL dominates because most fleet traffic is *.ts.net forwarded to MagicDNS. BLOCKED is carried as an explicit 'or vector(0)' series and is a FLAT ZERO on this fleet: a 93k-entry denylist is loaded and armed, but the only clients are the resolver hosts themselves plus one workstation, and nothing has been blocked in the entire collected history. The zero line is the honest reading, not a broken query. Colours avoid the two host hues used elsewhere on this board.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 22
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "avg by (response_type)(sum by (instance, response_type)(rate(blocky_response_total[1h])))",
+          "range": true,
+          "instant": false,
+          "refId": "A",
+          "legendFormat": "{{response_type}}"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum(rate(blocky_response_total{response_type=\"BLOCKED\"}[1h])) or vector(0)",
+          "range": true,
+          "instant": false,
+          "refId": "B",
+          "legendFormat": "BLOCKED"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "decimals": 3,
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "gradientMode": "opacity",
+            "pointSize": 5,
+            "axisPlacement": "auto",
+            "axisLabel": "",
+            "axisSoftMin": 0,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CONDITIONAL"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#199e70"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "RESOLVED"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#c98500"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "CACHED"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#008300"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "BLOCKED"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#e66767"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true,
+          "calcs": []
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "table",
+      "title": "Clients",
+      "description": "Who actually resolves through each blocky, and how much, over the board window. This is where the board's query-rate signal lives — broken down by asker, which is the part that can change, rather than as a fleet total that ADR-0023 makes near-identical on both twins by construction. READ THE ABSENCES: per ADR-0023 the operator's phone, stargazer, sawtoothShark and weedySeadragon are all meant to resolve through these two nameservers. A client that should be here and is not has either left the tailnet or stopped using the fleet resolvers — which is exactly how ad-blocking and split-horizon silently stop applying to a device. 127.0.0.1 is the resolver host querying its own blocky, which is expected and constant. Queries is the count over the board window and Queries/s the same figure averaged across that window, so both follow the time picker — which also means Queries/s reads far below the live rate until blocky history is at least as long as the selected window (collection started 2026-08-21).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (host, client)(label_replace(increase(blocky_query_total[$__range]), \"host\", \"$1\", \"instance\", \"([^.:]+).*\"))",
+          "range": false,
+          "instant": true,
+          "refId": "A",
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (host, client)(label_replace(rate(blocky_query_total[$__range]), \"host\", \"$1\", \"instance\", \"([^.:]+).*\"))",
+          "range": false,
+          "instant": true,
+          "refId": "B",
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "host": "Resolver",
+              "client": "Client",
+              "Value #A": "Queries",
+              "Value #B": "Queries/s"
+            },
+            "indexByName": {
+              "host": 0,
+              "client": 1,
+              "Value #A": 2,
+              "Value #B": 3
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Queries",
+                "desc": true
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": false,
+            "inspect": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Queries/s"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "reqps"
+              },
+              {
+                "id": "decimals",
+                "value": 3
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": ["sum"],
+          "countRows": false,
+          "fields": ""
+        }
+      }
+    },
+    {
+      "id": 102,
+      "type": "row",
+      "title": "Denylist & faults",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 38
+      },
+      "panels": []
+    },
+    {
+      "id": 11,
+      "type": "table",
+      "title": "Denylist freshness",
+      "description": "Whether ad-blocking is still armed and still updating, per resolver. Blocking: ON/OFF from blocky_blocking_enabled — OFF means blocking was switched off and forgotten, which nothing else on this board would reveal. Entries: denylist size summed across groups (one group, 'ads', on this fleet); the two rows should carry the SAME number, and a gap between them is list drift between twins. Last refresh: age of the newest list refresh — blocky's default refresh period is 4h, so bands are good below 5h, warning at 5h, critical at 25h (a full day stale means refreshes have stopped, not that one was late). Failed downloads: cumulative denylist fetch failures, expected 0; any non-zero value is amber.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 39
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (host)(label_replace(blocky_blocking_enabled, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"))",
+          "range": false,
+          "instant": true,
+          "refId": "A",
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (host)(label_replace(blocky_denylist_cache_entries, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"))",
+          "range": false,
+          "instant": true,
+          "refId": "B",
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (host)(label_replace(time() - blocky_last_list_group_refresh_timestamp_seconds, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"))",
+          "range": false,
+          "instant": true,
+          "refId": "C",
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (host)(label_replace(blocky_failed_downloads_total, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"))",
+          "range": false,
+          "instant": true,
+          "refId": "D",
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "host": "Resolver",
+              "Value #A": "Blocking",
+              "Value #B": "Entries",
+              "Value #C": "Last refresh",
+              "Value #D": "Failed downloads"
+            },
+            "indexByName": {
+              "host": 0,
+              "Value #A": 1,
+              "Value #B": 2,
+              "Value #C": 3,
+              "Value #D": 4
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Resolver",
+                "desc": false
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": false,
+            "inspect": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Blocking"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "OFF",
+                        "color": "#d03b3b",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "ON",
+                        "color": "#0ca30c",
+                        "index": 1
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Last refresh"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#0ca30c",
+                      "value": null
+                    },
+                    {
+                      "color": "#fab219",
+                      "value": 18000
+                    },
+                    {
+                      "color": "#d03b3b",
+                      "value": 90000
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Failed downloads"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#0ca30c",
+                      "value": null
+                    },
+                    {
+                      "color": "#fab219",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": ["sum"],
+          "countRows": false,
+          "fields": ""
+        }
+      }
+    },
+    {
+      "id": 12,
+      "type": "table",
+      "title": "Faults & version",
+      "description": "The counters that should read zero, and the build each resolver is running. Errors: blocky_error_total, cumulative since process start, amber at 1 — this is NOT the same number as the Error share panel, which derives its rate from response_type=err in the latency histogram; the two counts disagree for the same host and window and the discrepancy has not been reconciled against blocky's source, so both are shown rather than one being quietly picked (palimpsest#165 covers both the reconciliation and rk1b's standing error rate). dnstap drops and redis drops are expected to sit at exactly 0 forever: neither dnstap nor redis is configured in blocky.nix, so a non-zero value means something changed. Version: blocky is pinned from a single nixpkgs input fleet-wide (blocky.nix), so the two rows should always match — differing versions mean one host deployed and the other did not.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 39
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (host)(label_replace(blocky_error_total, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"))",
+          "range": false,
+          "instant": true,
+          "refId": "A",
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (host)(label_replace(blocky_dnstap_frames_dropped_total, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"))",
+          "range": false,
+          "instant": true,
+          "refId": "B",
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (host)(label_replace(blocky_redis_cache_buffer_drops_total, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"))",
+          "range": false,
+          "instant": true,
+          "refId": "C",
+          "format": "table"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "code",
+          "expr": "sum by (host, version)(label_replace(blocky_build_info, \"host\", \"$1\", \"instance\", \"([^.:]+).*\"))",
+          "range": false,
+          "instant": true,
+          "refId": "D",
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true
+            },
+            "renameByName": {
+              "host": "Resolver",
+              "Value #A": "Errors",
+              "Value #B": "dnstap drops",
+              "Value #C": "redis drops",
+              "version": "Version"
+            },
+            "indexByName": {
+              "host": 0,
+              "version": 1,
+              "Value #A": 2,
+              "Value #B": 3,
+              "Value #C": 4
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Resolver",
+                "desc": false
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "mappings": [],
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": false,
+            "inspect": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Errors"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#0ca30c",
+                      "value": null
+                    },
+                    {
+                      "color": "#fab219",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "dnstap drops"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#0ca30c",
+                      "value": null
+                    },
+                    {
+                      "color": "#fab219",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "redis drops"
+            },
+            "properties": [
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#0ca30c",
+                      "value": null
+                    },
+                    {
+                      "color": "#fab219",
+                      "value": 1
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Value #D"
+            },
+            "properties": [
+              {
+                "id": "custom.hidden",
+                "value": true
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false,
+          "reducer": ["sum"],
+          "countRows": false,
+          "fields": ""
+        }
+      }
+    }
+  ]
+}

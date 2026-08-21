@@ -109,6 +109,17 @@ let
     # timestamp, and carries the book-filer stuck-file metrics. Not an alert console —
     # the stack is collection-only, so no metric records that an alert fired (#161).
     ln -s ${./dashboards/watchers.json} $out/watchers.json
+    # DNS Resolvers: the fleet's two blocky resolvers (kelpy, rk1b) compared against each
+    # other. Organised around TWIN AGREEMENT — ADR-0023's tailscale setup queries both
+    # nameservers in PARALLEL and takes the quickest answer, so both see the same traffic
+    # and run the same config, which makes divergence between them the signal and absolute
+    # query rate nearly meaningless as health. Glance (answering/armed/erroring/slowest),
+    # twin divergence (upstream split, upstream p50-p95 latency, error share), traffic &
+    # cache (hit ratio, response types, per-client table), and denylist freshness + fault
+    # counters. Latency carries NO threshold bands: the house band (1s/3s) is 100-1000x
+    # above this fleet's single-digit-millisecond p95, so the comparison is the verdict.
+    # Consumes the blocky_* scrape job from #39, previously collected and unused (#164).
+    ln -s ${./dashboards/dns-resolvers.json} $out/dns-resolvers.json
   '';
 
   # "Advanced" folder: deep-dive boards kept available but off the primary nav. The
