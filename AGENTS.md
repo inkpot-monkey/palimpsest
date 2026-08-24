@@ -42,12 +42,15 @@ touching secrets:
 - **Some components live in their own repos**, consumed as flake inputs — e.g.
   `jmap-matrix-bridge` and `host-user-contract` (ADR-0016). Only host glue lives
   here; change behaviour in the upstream repo, then `nix flake update <input>`.
-- **Re-locking `jmap-bridge` needs a CI-built revision.** Its cache hit depends on
-  the bridge's CI having pushed that exact rev to `palebluebytes.cachix.org`
-  (ADR-0016 amendment). `nix flake update jmap-bridge` can land on a tip CI never
-  built, and then a deploy silently compiles matrix-sdk/sqlx from source — no
-  error, just half an hour. Check first:
-  `gh run list --repo palebluebytes/jmap-matrix-bridge --commit <rev>`.
+- **`jmap-bridge` is pinned to a release tag, so `nix flake update jmap-bridge`
+  is a no-op.** Bump it by editing the tag in `flake.nix` by hand
+  (`gh release list --repo palebluebytes/jmap-matrix-bridge`). The pin exists
+  because the input's cache hit depends on the bridge's CI having pushed that
+  exact rev to `palebluebytes.cachix.org` (ADR-0016 amendment); tracking `main`
+  could re-lock onto a tip CI never built, and a deploy would then silently
+  compile matrix-sdk/sqlx from source — no error, just half an hour. A tag is
+  always a released, CI-built rev. If you ever do point it at a raw rev, check
+  first: `gh run list --repo palebluebytes/jmap-matrix-bridge --commit <rev>`.
 - **`nix flake update` gets rate-limited** (`429: Too Many Requests`) because it
   calls the GitHub API anonymously. Add
   `--option access-tokens github.com=$(gh auth token)`.

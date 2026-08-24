@@ -105,7 +105,15 @@
     # rebuild on every bump. We consume `inputs.jmap-bridge.packages.<system>`
     # directly (see matrix/jmap-bridge.nix) so kelpy substitutes the prebuilt
     # binary instead of compiling matrix-sdk/sqlx from source.
-    jmap-bridge.url = "github:palebluebytes/jmap-matrix-bridge";
+    #
+    # Pinned to a RELEASE TAG, not `main`. A tag is by construction a revision
+    # release-plz cut and CI already built and pushed, which removes the
+    # "re-locked onto a tip CI never built" trap (see AGENTS.md) structurally
+    # rather than by remembering to check. The cost is that the tag is immutable,
+    # so `nix flake update jmap-bridge` is a NO-OP: bumping the bridge means
+    # editing the tag below by hand. `gh release list --repo
+    # palebluebytes/jmap-matrix-bridge` shows what is available.
+    jmap-bridge.url = "github:palebluebytes/jmap-matrix-bridge/v0.5.6";
 
     secrets = {
       url = "git+ssh://git@github.com/inkpot-monkey/stash.git";

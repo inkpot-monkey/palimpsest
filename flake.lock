@@ -144,11 +144,11 @@
     },
     "crane": {
       "locked": {
-        "lastModified": 1785782307,
-        "narHash": "sha256-MPaRdVkf6zZP5fCPxYCi8Dr4pZzgmXzg8T9nVEbp3Mw=",
+        "lastModified": 1787326676,
+        "narHash": "sha256-lWhBbBvC05/xwivKBBiM2YNizpmgqCgyOIzomvRuwxs=",
         "owner": "ipetkov",
         "repo": "crane",
-        "rev": "2c71e194474d13de031d729b729c968ddbe3507f",
+        "rev": "692f7e9ef2ece8125b466f66f2af532b3edaed0d",
         "type": "github"
       },
       "original": {
@@ -541,15 +541,16 @@
         "sops-nix": "sops-nix"
       },
       "locked": {
-        "lastModified": 1786814225,
-        "narHash": "sha256-LQHPdJC6OoQVz0tHLUQG8+CofZ6Sw5irjChPzWe/Wec=",
+        "lastModified": 1787585890,
+        "narHash": "sha256-5KyBG0nIYk2rUEmLZ1IfemR75F+Y+t+S+OZ6+GhCs4w=",
         "owner": "palebluebytes",
         "repo": "jmap-matrix-bridge",
-        "rev": "bf01b0d096169dafcb0a175a69f99b9a7217f5cf",
+        "rev": "09177d906daf439ca0ef490d6a683fe674383f42",
         "type": "github"
       },
       "original": {
         "owner": "palebluebytes",
+        "ref": "v0.5.6",
         "repo": "jmap-matrix-bridge",
         "type": "github"
       }
@@ -947,11 +948,11 @@
     },
     "nixpkgs_3": {
       "locked": {
-        "lastModified": 1786599213,
-        "narHash": "sha256-yNJd40f11EzXBjSByCB7IPpeFFAdeoSKKM67dGkfFoU=",
+        "lastModified": 1787360063,
+        "narHash": "sha256-dt4WdcvsA8/RCe+VZZwqU0X+XMM3wBbGCWA0/sFWzGo=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "0e251e24a4f24e036a084b6b4b2d2491af4167f4",
+        "rev": "2c423e03bbafcff28bfadc6781a4a8257f205cb5",
         "type": "github"
       },
       "original": {
