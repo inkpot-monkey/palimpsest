@@ -65,6 +65,13 @@ in
 
     zramSwap.enable = true;
 
+    # /tmp is disk-backed on every host with a real root filesystem, and NixOS does not reap it
+    # by default — so it is persistent storage that only ever grows. sawtoothShark had 6,151
+    # entries there going back three months (30 GiB, one runaway file accounting for 23 GiB of
+    # it) before anyone noticed. Reaping at boot is the cheapest possible guard; it is a no-op
+    # on the hosts whose root is already a tmpfs (the impermanence Pis, kelpy's container).
+    boot.tmp.cleanOnBoot = true;
+
     # Trusted backup targets fleet-wide
     programs.ssh.knownHosts."zh2046.rsync.net".publicKey =
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJtclizeBy1Uo3D86HpgD3LONGVH0CJ0NT+YfZlldAJd";
