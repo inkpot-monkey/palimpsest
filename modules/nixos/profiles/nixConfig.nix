@@ -3,11 +3,20 @@
   lib,
   inputs,
   self,
+  settings ? null,
   ...
 }:
 
 let
   cfg = config.custom.profiles.nixConfig;
+
+  # The host's declared minimum headroom, from the fleet registry (parts/settings.nix).
+  # Guarded so this profile still evaluates standalone, where no settings are threaded in.
+  declaredFloor =
+    if settings != null then
+      (settings.nodes.${config.networking.hostName}.diskFloorGiB or null)
+    else
+      null;
 in
 {
   options.custom.profiles.nixConfig = {
@@ -15,14 +24,19 @@ in
 
     # The daemon's mid-build emergency GC, in GiB. It is the only thing standing between a
     # long build and a full store filesystem — the weekly `gc` timer below is far too coarse
-    # to catch a store that fills in an afternoon. These MUST be scaled to the host's store
+    # to catch a store that fills in an afternoon. It MUST be scaled to the host's store
     # rather than set fleet-wide: the floor has to sit comfortably below a host's steady-state
-    # free space or the daemon collects on every single build. rk1a's store is 29G with ~11G
-    # free and kelpy's is 30G with ~19G free, so the defaults here are sized for them; the
-    # workstation, whose store is an order of magnitude bigger, raises them in its host file.
+    # free space or the daemon collects on every single build.
+    #
+    # The number comes from the fleet registry's `diskFloorGiB` (parts/settings.nix), which
+    # is where it is measured and justified. Deliberately the SAME number the disk-space
+    # watcher alerts on, so "the host must never have less than X free" is declared once and
+    # both defended (here) and reported on (monitoring/disk-space.nix) — they cannot drift
+    # into disagreeing about what counts as dangerously full.
     freeSpaceFloor = lib.mkOption {
       type = lib.types.ints.positive;
-      default = 5;
+      default = if declaredFloor != null then declaredFloor else 5;
+      defaultText = lib.literalExpression "settings.nodes.\${hostName}.diskFloorGiB, else 5";
       description = "GiB of free space below which the nix daemon starts collecting mid-build.";
     };
 

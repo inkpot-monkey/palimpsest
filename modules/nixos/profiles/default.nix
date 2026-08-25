@@ -61,6 +61,7 @@
     monitoring-unit-state = ./monitoring/unit-state.nix;
     monitoring-secret-expiry = ./monitoring/secret-expiry.nix;
     monitoring-git-annex-alert = ./monitoring/git-annex-alert.nix;
+    monitoring-disk-space = ./monitoring/disk-space.nix;
     media = ./media;
 
     # --- Hardware Specific (Pi) ---

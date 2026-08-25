@@ -219,10 +219,34 @@ in
     # still HAS a MagicDNS name, still resolves, and is *meant* to read `up == 0`
     # (ADR-0026). The value is tied back to each host's real `services.tailscale.enable`
     # by the host_fleet_coherence check, so it cannot drift from the machine it describes.
+    #
+    # `diskFloorGiB` is the host's declared minimum free space, in GiB, on any real
+    # filesystem it owns. It has two consumers and is deliberately ONE number: the nix
+    # daemon's mid-build emergency GC uses it as `min-free` (profiles/nixConfig.nix), and
+    # the disk-space watcher alerts when a device sits under it (monitoring/disk-space.nix).
+    # So it reads as a single claim — "this host must never have less than X free" — that
+    # the machine both defends and reports on.
+    #
+    # The values are MEASURED, not guessed, from 48 days of retained node_filesystem_*
+    # history; monitoring/disk-space-backtest.py re-derives them from VictoriaMetrics and
+    # should be re-run before changing any of them. What the measurement settled:
+    #
+    #   * A percentage threshold is unusable on this fleet. Devices span 29 GiB to 451 GiB,
+    #     so the same percentage means wildly different risk — at 80%, sawtoothShark still
+    #     has ~90 GiB free while rk1a has 5.8 GiB and is one build from death. Backtested,
+    #     a flat >=80% rule had sawtoothShark in alarm for 441 of its 498 observed hours.
+    #   * A free-SPACE floor separates the real squeezes from the comfortable devices
+    #     cleanly: every genuinely dangerous episode in the window sat under ~10 GiB free,
+    #     and no comfortable device ever did.
+    #   * The floor cannot be fleet-wide either. rk1b's SD card idles at 13.6 GiB free
+    #     quite happily, so a 15 GiB floor would have alarmed on it for 930 of 1155 hours,
+    #     while sawtoothShark needs tens of GiB just to build a system closure.
     nodes.kelpy = {
       hostName = "kelpy";
       domain = "palebluebytes.space";
       presence = "always-on";
+      # 90 GiB vpsAdminOS container. Dipped to 9.2 GiB free once in the window.
+      diskFloorGiB = 5;
       tailscale = {
         ip4 = getMeta "kelpy" [ "tailscale" "ip4" ] "100.64.0.1";
         ip6 = getMeta "kelpy" [ "tailscale" "ip6" ] "fd7a:115c:a1e0::1";
@@ -240,21 +264,33 @@ in
     nodes.porcupineFish = {
       hostName = "porcupineFish";
       presence = "always-on";
+      # 117 GiB card, ~100 GiB free and near-flat (it moved 3.5 points in 48 days).
+      diskFloorGiB = 5;
     };
 
     nodes.stargazer = {
       hostName = "stargazer";
       presence = "on-demand";
+      # UNMEASURED: on-demand and off for the whole retention window, so it published no
+      # filesystem series to backtest against. Holds the fleet default until it does.
+      diskFloorGiB = 5;
     };
 
     nodes.sawtoothShark = {
       hostName = "sawtoothShark";
       presence = "on-demand";
+      # The fleet's builder: 451 GiB ext4 root, and the one host that needs tens of GiB
+      # free just to realise a system closure. It spent 441 of 498 observed hours above
+      # 80% used while perfectly healthy, and its one real incident bottomed out at
+      # 9.3 GiB free — which is why this is a space floor and not a percentage.
+      diskFloorGiB = 20;
     };
 
     nodes.weedySeadragon = {
       hostName = "weedySeadragon";
       presence = "on-demand";
+      # UNMEASURED, as stargazer.
+      diskFloorGiB = 5;
     };
 
     # RETIRED 2026-08-21: `potbelliedSeahorse`, the nebula lighthouse. Its config is kept
@@ -272,11 +308,20 @@ in
     nodes.rk1a = {
       hostName = "rk1a";
       presence = "always-on";
+      # The tightest host on the fleet: a 29 GiB eMMC card that spent 141 hours under
+      # 5 GiB free and bottomed out at 1.9 GiB. The floor is deliberately not raised to
+      # match — at 10.5 GiB free today it would then alert permanently, which is a
+      # capacity problem to fix on the host, not a threshold to tune around.
+      diskFloorGiB = 5;
     };
 
     nodes.rk1b = {
       hostName = "rk1b";
       presence = "always-on";
+      # Three devices: a 29 GiB SD card that idles at 13.6 GiB free, plus the NVMe pair
+      # (/nix and /var/cache) which never dropped below 69 GiB. The SD card is why the
+      # floor stays at 5 — see the rk1b note in the header.
+      diskFloorGiB = 5;
       tailscale = {
         ip4 = getMeta "rk1b" [ "tailscale" "ip4" ] "100.64.0.5";
         ip6 = getMeta "rk1b" [ "tailscale" "ip6" ] "fd7a:115c:a1e0::5";

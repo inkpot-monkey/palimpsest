@@ -112,6 +112,13 @@
         git_annex_alert = import ./git-annex-alert {
           inherit pkgs self inputs;
         };
+        # Fleet disk-space alerting: pins the two properties that make it usable rather
+        # than noise — the floor is per host (the same 15 GiB is healthy on a Pi and
+        # critical on the builder), and the PromQL deduplicates by device and drops tmpfs,
+        # without which one full disk on kelpy would arrive as 30 separate alerts.
+        disk_space = import ./disk-space {
+          inherit pkgs self;
+        };
         # Restic backup status metrics (Workstream D): a disabled-but-owned off-site job
         # still publishes backup_restic_enabled=0 so the Backups board shows it off, not
         # missing.

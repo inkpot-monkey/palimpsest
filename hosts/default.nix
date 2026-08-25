@@ -321,6 +321,15 @@ in
             ];
           };
 
+          # Fleet disk-space watcher: rk1b already scrapes every node's node_filesystem_*
+          # series, so one check here covers the whole fleet without keying the webhook
+          # secret onto five more hosts. Thresholds come from each node's diskFloorGiB in
+          # the fleet registry. Same webhook story as the checks above.
+          custom.profiles.monitoring-disk-space = {
+            enable = true;
+            webhookUrlFile = config.custom.profiles.monitoring-watcher.webhookUrlFile;
+          };
+
           # git-annex replication watcher (palimpsest#60): rk1b is authoritative for the
           # music library, so a silent stop here means nothing beets files ever reaches
           # kelpy for slskd to seed. Same webhook story as the checks above.
