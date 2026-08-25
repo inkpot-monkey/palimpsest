@@ -63,6 +63,27 @@ in
       sopsFile = self.lib.getSecretFile "media";
     };
 
+    # qbittorrent-app has no network stack of its own — it lives inside gluetun's
+    # namespace. When gluetun restarts, podman tears that namespace down and builds a
+    # new one, so qbittorrent-app must go with it. `dependsOn` alone only generates
+    # Requires=/After=, which order startup but do not propagate a restart: qBittorrent
+    # would keep running, still `active`, holding sockets bound to addresses that no
+    # longer exist. That is exactly what happened when gluetun's tunnel collapsed —
+    # qBittorrent sat DHT-flat at 0 nodes with every torrent frozen in metaDL, and
+    # restarting gluetun on its own would not have recovered it. BindsTo makes it follow
+    # gluetun's lifecycle, PartOf makes a gluetun restart restart it. Guarded by the
+    # netns-container-binding check.
+    systemd.services.podman-qbittorrent-app = {
+      bindsTo = [ "podman-gluetun.service" ];
+      partOf = [ "podman-gluetun.service" ];
+      # Wait for tun0 to actually have an address before qBittorrent starts. libtorrent
+      # enumerates interfaces once, at startup: if it wins the race against wireguard it
+      # binds eth0/lo only and never rebinds, leaving the UDP DHT socket on the bridge
+      # where the kill-switch drops it (dht_nodes stuck at 0) while outbound TCP still
+      # works and hides the problem.
+      serviceConfig.ExecStartPre = [ "${cfg.gluetunWatchdog.readyCheck}" ];
+    };
+
     systemd.services.qbittorrent = {
       after = [ "podman-gluetun.service" ];
       requires = [ "podman-gluetun.service" ];

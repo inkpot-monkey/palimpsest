@@ -22,6 +22,13 @@
         networking = import ./networking {
           inherit pkgs inputs self;
         };
+        # The shared-network-namespace binding guard: a container joining another's
+        # netns (`--network=container:X`) must BindsTo/PartOf that container's unit.
+        # `dependsOn` only orders startup, so without this a gluetun restart leaves
+        # qbittorrent-app and slskd `active` but attached to a destroyed netns.
+        netns_container_binding = import ./netns-container-binding {
+          inherit pkgs self;
+        };
         # blocky_* collection (palimpsest#39): blocky's metrics endpoint is real, and every
         # declared fleet resolver's series reaches VictoriaMetrics.
         blocky_metrics = import ./blocky-metrics {
