@@ -12,6 +12,25 @@ in
 {
   options.custom.profiles.nixConfig = {
     enable = lib.mkEnableOption "Nix and global package configuration";
+
+    # The daemon's mid-build emergency GC, in GiB. It is the only thing standing between a
+    # long build and a full store filesystem — the weekly `gc` timer below is far too coarse
+    # to catch a store that fills in an afternoon. These MUST be scaled to the host's store
+    # rather than set fleet-wide: the floor has to sit comfortably below a host's steady-state
+    # free space or the daemon collects on every single build. rk1a's store is 29G with ~11G
+    # free and kelpy's is 30G with ~19G free, so the defaults here are sized for them; the
+    # workstation, whose store is an order of magnitude bigger, raises them in its host file.
+    freeSpaceFloor = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 5;
+      description = "GiB of free space below which the nix daemon starts collecting mid-build.";
+    };
+
+    freeSpaceCeiling = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 10;
+      description = "GiB of free space the daemon collects up to once the floor is breached.";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -85,9 +104,9 @@ in
         connect-timeout = 5;
         log-lines = 25;
 
-        # Auto-GC when low on space
-        min-free = toString (100 * 1024 * 1024);
-        max-free = toString (1024 * 1024 * 1024);
+        # Auto-GC when low on space (see freeSpaceFloor/freeSpaceCeiling above)
+        min-free = toString (cfg.freeSpaceFloor * 1024 * 1024 * 1024);
+        max-free = toString (cfg.freeSpaceCeiling * 1024 * 1024 * 1024);
 
         narinfo-cache-positive-ttl = 3600;
 

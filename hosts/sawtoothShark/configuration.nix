@@ -20,6 +20,12 @@
 
   custom.profiles = {
     base.enable = true;
+    # This host's store is ~260 GiB on a single 451 GiB root, and it is the one machine that
+    # builds the whole fleet — so the fleet defaults (5/10 GiB, sized for the Pis) leave the
+    # daemon's emergency GC dormant until the disk is essentially dead. Give it real headroom:
+    # below 20 GiB free, collect until 60 GiB is free. See profiles/nixConfig.nix.
+    nixConfig.freeSpaceFloor = 20;
+    nixConfig.freeSpaceCeiling = 60;
     sudo.enable = true;
     audio.enable = true;
     gui.enable = true;
