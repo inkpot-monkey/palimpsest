@@ -159,6 +159,21 @@ in
       "127.0.0.1:${toString webPort}:${toString webPort}/tcp"
     ];
 
+    # slskd has no network stack of its own — it lives inside gluetun's namespace. When
+    # gluetun restarts, podman tears that namespace down and builds a new one, so slskd
+    # must go with it. `dependsOn` alone only generates Requires=/After=, which order
+    # startup but do not propagate a restart: slskd would keep running, still `active`,
+    # attached to a destroyed netns with no route to anywhere. BindsTo makes it follow
+    # gluetun's lifecycle, PartOf makes a gluetun restart restart it. Guarded by the
+    # netns-container-binding check.
+    systemd.services.podman-slskd = {
+      bindsTo = [ "podman-gluetun.service" ];
+      partOf = [ "podman-gluetun.service" ];
+      # Same startup race as qbittorrent-app: gluetun's container being up does not mean
+      # its tunnel is. Wait for the interface to carry an address before binding sockets.
+      serviceConfig.ExecStartPre = [ "${cfg.gluetunWatchdog.readyCheck}" ];
+    };
+
     virtualisation.oci-containers.containers.slskd = {
       image = slskdImage;
       dependsOn = [ "gluetun" ];

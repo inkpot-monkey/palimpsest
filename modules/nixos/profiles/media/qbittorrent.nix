@@ -63,6 +63,27 @@ in
       sopsFile = self.lib.getSecretFile "media";
     };
 
+    # qbittorrent-app has no network stack of its own — it lives inside gluetun's
+    # namespace. When gluetun restarts, podman tears that namespace down and builds a
+    # new one, so qbittorrent-app must go with it. `dependsOn` alone only generates
+    # Requires=/After=, which order startup but do not propagate a restart: qBittorrent
+    # would keep running, still `active`, holding sockets bound to addresses that no
+    # longer exist. That is exactly what happened when gluetun's tunnel collapsed —
+    # qBittorrent sat DHT-flat at 0 nodes with every torrent frozen in metaDL, and
+    # restarting gluetun on its own would not have recovered it. BindsTo makes it follow
+    # gluetun's lifecycle, PartOf makes a gluetun restart restart it. Guarded by the
+    # netns-container-binding check.
+    systemd.services.podman-qbittorrent-app = {
+      bindsTo = [ "podman-gluetun.service" ];
+      partOf = [ "podman-gluetun.service" ];
+      # Wait for tun0 to actually have an address before qBittorrent starts. libtorrent
+      # enumerates interfaces once, at startup: if it wins the race against wireguard it
+      # binds eth0/lo only and never rebinds, leaving the UDP DHT socket on the bridge
+      # where the kill-switch drops it (dht_nodes stuck at 0) while outbound TCP still
+      # works and hides the problem.
+      serviceConfig.ExecStartPre = [ "${cfg.gluetunWatchdog.readyCheck}" ];
+    };
+
     systemd.services.qbittorrent = {
       after = [ "podman-gluetun.service" ];
       requires = [ "podman-gluetun.service" ];
@@ -139,10 +160,24 @@ in
               # SELECTION; it does not enable the port-forwarding feature itself.)
               PORT_FORWARD_ONLY = "on";
             };
+        # ONLY the WebUI is published, and only to loopback (Caddy fronts it) — the same
+        # rule slskd follows for its listen port, and for the same reason.
+        #
+        # The BitTorrent listen port is deliberately NOT published on the host. qBittorrent's
+        # traffic exits via the VPN, so trackers and peers are told the VPN exit IP; a host
+        # publish binds 0.0.0.0:6881 on kelpy's real address instead, and anything that
+        # reaches it gets a BitTorrent handshake revealing which torrents this host is on.
+        # That was not theoretical: with `6881:6881` published, peers were arriving on
+        # 10.88.0.7 (the podman bridge) from the open internet while every outbound
+        # connection went out over 10.2.0.2 — one peer saw both addresses.
+        #
+        # Seeding still works without an inbound port (peers broker connections we initiate
+        # outbound). Real inbound would need ProtonVPN port forwarding — gluetun's
+        # VPN_PORT_FORWARDING, plus plumbing its dynamically assigned port into qBittorrent's
+        # listener. Note PORT_FORWARD_ONLY below only filters server SELECTION; it does not
+        # turn forwarding on, so publishing 6881 never bought working inbound over the VPN.
         ports = [
           "127.0.0.1:${toString settings.services.private.torrent.port}:${toString cfg.qbittorrent.webuiPort}/tcp" # WebUI
-          "6881:6881/tcp" # Torrent
-          "6881:6881/udp" # Torrent
         ];
         extraOptions = [
           "--cap-add=NET_ADMIN"

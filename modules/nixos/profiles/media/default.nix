@@ -11,6 +11,7 @@ in
 {
   imports = [
     ./qbittorrent.nix
+    ./gluetun-watchdog.nix
     ./jellyfin.nix
     ./slskd.nix
   ];
