@@ -68,8 +68,17 @@ in
 
         # Performance & Optimization
         auto-optimise-store = true;
-        keep-outputs = true;
-        keep-derivations = true;
+        # Both deliberately OFF. Together they form a retention loop that no `gc` policy can
+        # break: a live output keeps its .drv (keep-derivations), which keeps the outputs of
+        # every one of its inputs (keep-outputs), which keep *their* .drvs, and so on — so the
+        # complete build graph of everything ever built and still rooted stays alive, not just
+        # what is runtime-reachable. Measured on sawtoothShark with them on: 214,298 store
+        # paths of which 170,028 were .drv files, against a runtime-reachable set of 28,981
+        # paths — ~49 GiB held by the build graph alone, and only 10 GiB actually collectable.
+        # The payoff they buy (not re-fetching sources when rebuilding a derivation you have
+        # already built) is not worth that on any host here, least of all the small-store Pis.
+        keep-outputs = false;
+        keep-derivations = false;
         accept-flake-config = true;
         max-jobs = "auto";
         http-connections = 50;
