@@ -88,9 +88,14 @@ let
   # The check body is shared with the home-manager alert (a user unit on the workstation)
   # so the two cannot drift — this profile is the always-on-host, root-unit caller.
   gaAlert = import ../../../shared/git-annex/alert.nix { inherit lib pkgs; };
+  # The out-of-band fallback (ADR-0020), picked up from this host's uptime watcher when it
+  # declares the relay and null otherwise. This check is the reason it exists: its alerts
+  # say "remote 'kelpy' is unreachable" and travel over a webhook that routes via kelpy.
+  alertPost = import ../../../shared/alert-post.nix { inherit lib pkgs; };
   checkScript = gaAlert.mkCheckScript {
     name = "monitoring-git-annex-alert-check";
     inherit repoTags;
+    outOfBand = alertPost.oobFromWatcher config;
     inherit (cfg)
       webhookUrlFile
       metricsDir

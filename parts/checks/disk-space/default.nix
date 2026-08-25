@@ -30,6 +30,7 @@
 let
   vmPort = 8428;
   receiverPort = 9099;
+  relayPort = 9098;
 
   # Mock VictoriaMetrics. Answers /api/v1/query from /tmp/avail.json or /tmp/pct.json
   # depending on which of the two queries it was asked, and appends every query it saw to
@@ -80,6 +81,30 @@ let
 
   webhookFile = pkgs.writeText "webhook-url" "http://127.0.0.1:${toString receiverPort}/hook";
 
+  # Mock ADR-0020 push relay. Records the Authorization header alongside the body so the
+  # test can assert the ntfy publish shape the real relay requires: topic in the JSON
+  # BODY (not the URL path) and a `tk_`-prefixed bearer token.
+  relayMock = pkgs.writeShellScript "relay-mock" ''
+    exec ${pkgs.python3}/bin/python3 - <<'PY'
+    import http.server, json
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_POST(self):
+            n = int(self.headers.get("content-length", 0))
+            body = self.rfile.read(n).decode("utf-8", "replace")
+            rec = {"auth": self.headers.get("authorization", ""), "body": json.loads(body)}
+            with open("/tmp/relay.log", "a") as f:
+                f.write(json.dumps(rec) + "\n")
+            self.send_response(200)
+            self.end_headers()
+        def log_message(self, *a):
+            pass
+    http.server.HTTPServer(("127.0.0.1", ${toString relayPort}), H).serve_forever()
+    PY
+  '';
+
+  relayTokenFile = pkgs.writeText "relay-token" "s3cr3t";
+  relayTopicFile = pkgs.writeText "relay-topic" "brave-otter-lamp";
+
   diskSpaceModule = self + /modules/nixos/profiles/monitoring/disk-space.nix;
 in
 pkgs.testers.runNixOSTest {
@@ -110,6 +135,11 @@ pkgs.testers.runNixOSTest {
         victoriaMetricsUrl = "http://127.0.0.1:${toString vmPort}";
         # Drive the ticks by hand so the debounce is exercised deterministically.
         failureThreshold = 2;
+        outOfBand = {
+          relayUrl = "http://127.0.0.1:${toString relayPort}";
+          tokenFile = relayTokenFile;
+          topicFile = relayTopicFile;
+        };
       };
       # The timer would race the scripted phases; the test starts the service itself.
       systemd.timers.monitoring-disk-space-check.wantedBy = pkgs.lib.mkForce [ ];
@@ -125,6 +155,14 @@ pkgs.testers.runNixOSTest {
         wantedBy = [ "multi-user.target" ];
         serviceConfig = {
           ExecStart = receiver;
+          # Not `always`: the test stops this to simulate the in-band path being down.
+          Restart = "no";
+        };
+      };
+      systemd.services.relay-mock = {
+        wantedBy = [ "multi-user.target" ];
+        serviceConfig = {
+          ExecStart = relayMock;
           Restart = "always";
         };
       };
@@ -153,9 +191,14 @@ pkgs.testers.runNixOSTest {
         out = machine.succeed("cat /tmp/hooks.log 2>/dev/null || true").strip()
         return [json.loads(line)["text"] for line in out.splitlines() if line.strip()]
 
+    def relay(machine):
+        out = machine.succeed("cat /tmp/relay.log 2>/dev/null || true").strip()
+        return [json.loads(line) for line in out.splitlines() if line.strip()]
+
     watcher.wait_for_unit("multi-user.target")
     watcher.wait_for_open_port(${toString vmPort})
     watcher.wait_for_open_port(${toString receiverPort})
+    watcher.wait_for_open_port(${toString relayPort})
 
     with subtest("the PromQL deduplicates by device and excludes tmpfs"):
         publish(watcher, [("tiny", "/dev/sda1", 30 * GIB)], [("tiny", "/dev/sda1", 10.0)])
@@ -221,5 +264,41 @@ pkgs.testers.runNixOSTest {
         assert len(fired) == 4 and "critically low" in fired[3], f"expected escalation, got {fired}"
         tick(watcher, 2)
         assert len(hooks(watcher)) == 4, f"re-alerted after escalating: {hooks(watcher)}"
+
+    with subtest("an alert the in-band path cannot carry goes out-of-band instead"):
+        # The production failure this exists for: rk1b alerting ABOUT kelpy, over a
+        # webhook that routes THROUGH kelpy. Ten such alerts were silently dropped in
+        # 30 days before the fallback existed.
+        watcher.succeed("systemctl stop hook-receiver")
+        assert relay(watcher) == [], "relay used while the in-band path was healthy"
+
+        publish(
+            watcher,
+            [("big", "/dev/sdb1", 1 * GIB)],
+            [("big", "/dev/sdb1", 99.0)],
+        )
+        # Already reported critical, so clear the state to make this a fresh alert.
+        watcher.succeed("rm -f /var/lib/monitoring-disk-space/*")
+        tick(watcher, 2)
+
+        sent = relay(watcher)
+        assert len(sent) == 1, f"expected exactly one out-of-band publish, got {sent}"
+        assert sent[0]["auth"] == "Bearer tk_s3cr3t", f"wrong bearer shape: {sent[0]['auth']}"
+        assert sent[0]["body"]["topic"] == "brave-otter-lamp", f"topic not in body: {sent[0]}"
+        assert "critically low" in sent[0]["body"]["message"], sent[0]["body"]["message"]
+        assert "[big]" in sent[0]["body"]["message"], sent[0]["body"]["message"]
+
+    with subtest("the in-band path is preferred again once it returns"):
+        watcher.succeed("systemctl start hook-receiver")
+        watcher.wait_for_open_port(${toString receiverPort})
+        before = len(relay(watcher))
+        publish(
+            watcher,
+            [("big", "/dev/sdb1", 90 * GIB)],
+            [("big", "/dev/sdb1", 10.0)],
+        )
+        tick(watcher)
+        assert len(relay(watcher)) == before, "used the out-of-band path while in-band was up"
+        assert any("recovered" in h for h in hooks(watcher)), "recovery did not go in-band"
   '';
 }

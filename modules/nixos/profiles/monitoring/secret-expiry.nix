@@ -29,6 +29,13 @@
 let
   cfg = config.custom.profiles.monitoring-secret-expiry;
 
+  # Shared delivery (see alert-post.nix): in-band to #infra-alerts, falling back to the
+  # ADR-0020 push relay when that POST fails — the webhook routes through kelpy, so an
+  # alert ABOUT kelpy was previously guaranteed to be dropped. The fallback is picked up
+  # automatically on a host whose uptime watcher declares the relay, and is null (i.e.
+  # previous behaviour, exactly) everywhere else.
+  alertPost = import ../../../shared/alert-post.nix { inherit lib pkgs; };
+
   # Guarded import: on a public clone without the secrets input, fall back to {} (no
   # watched secrets) rather than getSecretPath's identities MOCK, whose shape would
   # crash the eval below.
@@ -60,7 +67,6 @@ let
 
   checkScript = pkgs.writeShellScript "monitoring-secret-expiry-check" ''
     set -u
-    url="$(cat ${lib.escapeShellArg cfg.webhookUrlFile} 2>/dev/null || true)"
     state="$STATE_DIRECTORY"
     now="$(${pkgs.coreutils}/bin/date +%s)"
 
@@ -78,17 +84,11 @@ let
       fi
     ''}
 
-    post() { # $1 = message text
-      if [ -z "$url" ]; then
-        echo "secret-expiry: webhook url not available yet, skipping post: $1" >&2
-        return 0
-      fi
-      ${pkgs.curl}/bin/curl -sS -m 10 -o /dev/null \
-        -H 'content-type: application/json' \
-        --data "$(${pkgs.jq}/bin/jq -nc --arg t "$1" '{text:$t}')" \
-        "$url" \
-        || echo "secret-expiry: failed to POST alert (hookshot down?): $1" >&2
-    }
+    ${alertPost.mkPost {
+      name = "secret-expiry";
+      inherit (cfg) webhookUrlFile;
+      outOfBand = alertPost.oobFromWatcher config;
+    }}
 
     check_secret() { # $1=name $2=dateSpec $3=warnCsv $4=runbook $5=note(prom-escaped)
       name="$1"; spec="$2"; warncsv="$3"; runbook="$4"; note="$5"

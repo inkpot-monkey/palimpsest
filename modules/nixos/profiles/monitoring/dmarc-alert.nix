@@ -25,23 +25,23 @@
 let
   cfg = config.custom.profiles.monitoring-dmarc-alert;
 
+  # Shared delivery (see alert-post.nix): in-band to #infra-alerts, falling back to the
+  # ADR-0020 push relay when that POST fails — the webhook routes through kelpy, so an
+  # alert ABOUT kelpy was previously guaranteed to be dropped. The fallback is picked up
+  # automatically on a host whose uptime watcher declares the relay, and is null (i.e.
+  # previous behaviour, exactly) everywhere else.
+  alertPost = import ../../../shared/alert-post.nix { inherit lib pkgs; };
+
   checkScript = pkgs.writeShellScript "monitoring-dmarc-alert-check" ''
     set -u
-    url="$(cat ${lib.escapeShellArg cfg.webhookUrlFile} 2>/dev/null || true)"
     state="$STATE_DIRECTORY"
     vm=${lib.escapeShellArg cfg.victoriaMetricsUrl}
 
-    post() { # $1 = message text
-      if [ -z "$url" ]; then
-        echo "dmarc-alert: webhook url not available yet, skipping post: $1" >&2
-        return 0
-      fi
-      ${pkgs.curl}/bin/curl -sS -m 10 -o /dev/null \
-        -H 'content-type: application/json' \
-        --data "$(${pkgs.jq}/bin/jq -nc --arg t "$1" '{text:$t}')" \
-        "$url" \
-        || echo "dmarc-alert: failed to POST alert (hookshot down?): $1" >&2
-    }
+    ${alertPost.mkPost {
+      name = "dmarc-alert";
+      inherit (cfg) webhookUrlFile;
+      outOfBand = alertPost.oobFromWatcher config;
+    }}
 
     vmq() { # $1 = promql → prints the scalar result value, or empty
       ${pkgs.curl}/bin/curl -sS -m 10 -G "$vm/api/v1/query" \

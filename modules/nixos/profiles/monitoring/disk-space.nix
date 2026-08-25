@@ -67,6 +67,12 @@ let
   infraWebhookDefault = if infraAlerts != null then infraAlerts.webhookUrlFile else null;
   infraEnabled = infraAlerts != null && (infraAlerts.enable or false);
 
+  # Shared delivery: in-band to #infra-alerts, falling back to the ADR-0020 push relay if
+  # that POST fails. This watcher needs the fallback more than most — two of the eight
+  # filesystems it watches are kelpy's, and the webhook it posts to routes through kelpy,
+  # so without it a kelpy disk filling up is precisely the alert that cannot be delivered.
+  alertPost = import ../../../shared/alert-post.nix { inherit lib pkgs; };
+
   # Per-host floors, baked from the fleet registry into a shell lookup. A host absent from
   # the registry falls through to `defaultFloorGiB` rather than being silently skipped —
   # an unregistered node filling its disk is exactly the case worth still hearing about.
@@ -86,23 +92,16 @@ let
 
   checkScript = pkgs.writeShellScript "monitoring-disk-space-check" ''
     set -u
-    url="$(cat ${lib.escapeShellArg cfg.webhookUrlFile} 2>/dev/null || true)"
     state="$STATE_DIRECTORY"
     vm=${lib.escapeShellArg cfg.victoriaMetricsUrl}
     threshold=${toString cfg.failureThreshold}
     warnMult=${toString cfg.warnMultiplier}
 
-    post() { # $1 = message text
-      if [ -z "$url" ]; then
-        echo "disk-space: webhook url not available yet, skipping post: $1" >&2
-        return 0
-      fi
-      ${pkgs.curl}/bin/curl -sS -m 10 -o /dev/null \
-        -H 'content-type: application/json' \
-        --data "$(${pkgs.jq}/bin/jq -nc --arg t "$1" '{text:$t}')" \
-        "$url" \
-        || echo "disk-space: failed to POST alert (hookshot down?): $1" >&2
-    }
+    ${alertPost.mkPost {
+      name = "disk-space";
+      inherit (cfg) webhookUrlFile;
+      inherit (cfg) outOfBand;
+    }}
 
     # $1 = promql -> TSV of host<TAB>device<TAB>value
     vmq() {
@@ -222,6 +221,26 @@ in
         WARN fires under this multiple of the host's floor; CRITICAL under the floor
         itself. 2 is measured: at 3x, rk1b's SD card — which idles at 13.6 GiB free and
         is entirely healthy — would have been in alarm for 930 of 1155 observed hours.
+      '';
+    };
+
+    outOfBand = lib.mkOption {
+      type = lib.types.nullOr (
+        lib.types.submodule {
+          options = {
+            relayUrl = lib.mkOption { type = lib.types.str; };
+            tokenFile = lib.mkOption { type = lib.types.path; };
+            topicFile = lib.mkOption { type = lib.types.path; };
+          };
+        }
+      );
+      default = alertPost.oobFromWatcher config;
+      defaultText = lib.literalExpression "derived from custom.profiles.monitoring-watcher.outOfBand on this host, else null";
+      description = ''
+        The ADR-0020 push relay to fall back to when the in-band webhook POST fails.
+        Defaults to whatever the uptime watcher on this host already declares, so a host
+        running it needs no extra wiring and a host without it keeps in-band-only
+        behaviour. Set explicitly only to point somewhere else (the VM check does).
       '';
     };
 

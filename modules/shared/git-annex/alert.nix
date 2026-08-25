@@ -17,11 +17,19 @@
 # reports on is down. The blind spot — a dead exporter leaving a stale file reading `1` —
 # is closed by git_annex_check_timestamp_seconds and the staleness branch here.
 { lib, pkgs }:
+let
+  alertPost = import ../alert-post.nix { inherit lib pkgs; };
+in
 {
   # Build the check script.
   #   name             the writeShellScript name (also the systemd unit's ExecStart)
   #   webhookUrlFile   file whose contents are the hookshot webhook url (may be null →
   #                    the check logs a skip and posts nothing, e.g. before a secret lands)
+  #   outOfBand        null, or the ADR-0020 push relay to fall back to when the in-band
+  #                    POST fails. This module is why the fallback exists: the webhook
+  #                    routes through kelpy, and rk1b's ten dropped alerts in 30 days were
+  #                    all of them trying to say "remote 'kelpy' is unreachable". Null on
+  #                    the home-manager (workstation) caller, which has no relay secrets.
   #   metricsDir       node-exporter textfile dir holding git-annex-<tag>.prom
   #   repoTags         file tags to watch: "<repo>" (system) or "<user>-<repo>" (home)
   #   presence         "always-on" (strict staleness) | "on-demand" (stale/absent = quiet)
@@ -36,28 +44,21 @@
       presence,
       failureThreshold,
       staleAfterSec,
+      outOfBand ? null,
     }:
     pkgs.writeShellScript name ''
       set -u
       host="$(${pkgs.inetutils}/bin/hostname)"
-      url="$(${pkgs.coreutils}/bin/cat ${lib.escapeShellArg (toString webhookUrlFile)} 2>/dev/null || true)"
       state="$STATE_DIRECTORY"
       metrics_dir=${lib.escapeShellArg metricsDir}
       now="$(${pkgs.coreutils}/bin/date +%s)"
       threshold=${toString failureThreshold}
       presence=${lib.escapeShellArg presence}
 
-      post() { # $1 = message text
-        if [ -z "$url" ]; then
-          echo "git-annex-alert: webhook url not available yet, skipping post: $1" >&2
-          return 0
-        fi
-        ${pkgs.curl}/bin/curl -sS -m 10 -o /dev/null \
-          -H 'content-type: application/json' \
-          --data "$(${pkgs.jq}/bin/jq -nc --arg t "$1" '{text:$t}')" \
-          "$url" \
-          || echo "git-annex-alert: failed to POST alert (hookshot down?): $1" >&2
-      }
+      ${alertPost.mkPost {
+        name = "git-annex-alert";
+        inherit webhookUrlFile outOfBand;
+      }}
 
       # $1=state key $2=1 healthy/0 bad $3=message when it goes bad $4=message when it clears
       track() {
