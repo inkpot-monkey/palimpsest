@@ -160,10 +160,24 @@ in
               # SELECTION; it does not enable the port-forwarding feature itself.)
               PORT_FORWARD_ONLY = "on";
             };
+        # ONLY the WebUI is published, and only to loopback (Caddy fronts it) — the same
+        # rule slskd follows for its listen port, and for the same reason.
+        #
+        # The BitTorrent listen port is deliberately NOT published on the host. qBittorrent's
+        # traffic exits via the VPN, so trackers and peers are told the VPN exit IP; a host
+        # publish binds 0.0.0.0:6881 on kelpy's real address instead, and anything that
+        # reaches it gets a BitTorrent handshake revealing which torrents this host is on.
+        # That was not theoretical: with `6881:6881` published, peers were arriving on
+        # 10.88.0.7 (the podman bridge) from the open internet while every outbound
+        # connection went out over 10.2.0.2 — one peer saw both addresses.
+        #
+        # Seeding still works without an inbound port (peers broker connections we initiate
+        # outbound). Real inbound would need ProtonVPN port forwarding — gluetun's
+        # VPN_PORT_FORWARDING, plus plumbing its dynamically assigned port into qBittorrent's
+        # listener. Note PORT_FORWARD_ONLY below only filters server SELECTION; it does not
+        # turn forwarding on, so publishing 6881 never bought working inbound over the VPN.
         ports = [
           "127.0.0.1:${toString settings.services.private.torrent.port}:${toString cfg.qbittorrent.webuiPort}/tcp" # WebUI
-          "6881:6881/tcp" # Torrent
-          "6881:6881/udp" # Torrent
         ];
         extraOptions = [
           "--cap-add=NET_ADMIN"
