@@ -72,6 +72,16 @@ in
     # on the hosts whose root is already a tmpfs (the impermanence Pis, kelpy's container).
     boot.tmp.cleanOnBoot = true;
 
+    # journald defaults to 10% of the filesystem it sits on, which is sized for a machine
+    # whose journal IS the record. Here it is not: every host ships its journal to
+    # VictoriaLogs via Vector (profiles/monitoring/client.nix) with 30-day retention
+    # (ADR-0021), so the local copy is a buffer for a Vector outage and for `journalctl` on
+    # the box. Uncapped, that duplicate cost 2.8 GiB on rk1b — 10% of a 29 GiB eMMC card,
+    # and the second-largest consumer on it. The cap is uniform because the local journal's
+    # PURPOSE is uniform, unlike disk headroom (see diskFloorGiB, which is per host because
+    # the workloads genuinely differ).
+    services.journald.extraConfig = "SystemMaxUse=512M";
+
     # Trusted backup targets fleet-wide
     programs.ssh.knownHosts."zh2046.rsync.net".publicKey =
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJtclizeBy1Uo3D86HpgD3LONGVH0CJ0NT+YfZlldAJd";

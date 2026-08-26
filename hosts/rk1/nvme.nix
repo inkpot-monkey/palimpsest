@@ -32,6 +32,14 @@
 #   2. mount nixstore, `rsync -aHAX --delete /nix/ /mnt/nixstore/` (-H preserves the
 #      store's hardlinks), confirm the copy, then reboot. Model caches under /var/cache
 #      re-download on first use.
+#   3. AFTER the reboot has proven good, `sudo rm -rf /persistent/nix`. Step 2 copies the
+#      store, it does not move it, and once `/nix` mounts from the NVMe the old copy is
+#      shadowed by the mount — invisible, unreferenced, and still occupying the eMMC.
+#      Skipping it stranded 11 GiB on rk1b — 38% of its 29 GiB card — and that went
+#      unnoticed until a disk-space audit, because nothing visible from a running system
+#      points at it. Do NOT do this on a node where relocateNixStore is false (rk1a,
+#      porcupineFish): there `/nix` is a bind mount FROM /persistent/nix and deleting it
+#      destroys the store.
 { config, lib, ... }:
 let
   cfg = config.custom.rk1.nvme;
