@@ -1,6 +1,7 @@
-# The fleet disk-space watcher. Alerts #infra-alerts (via the hookshot webhook) when any
-# real filesystem on any node drops below the headroom that node declares in the fleet
-# registry as `diskFloorGiB`.
+# The fleet disk-space watcher (ADR-0032). Alerts #infra-alerts (via the hookshot webhook)
+# when any real filesystem on any node drops below the headroom that node declares in the
+# fleet registry as `diskFloorGiB`. The ADR carries the measured case for a per-host space
+# floor over a percentage; this header is the implementation detail.
 #
 # WHY IT IS CENTRAL, NOT PER-HOST. Every other on-host check here reads state the host
 # alone can see (systemd unit states, its own textfile metrics). Disk usage is not like

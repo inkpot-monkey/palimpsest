@@ -221,7 +221,7 @@ in
     # by the host_fleet_coherence check, so it cannot drift from the machine it describes.
     #
     # `diskFloorGiB` is the host's declared minimum free space, in GiB, on any real
-    # filesystem it owns. It has two consumers and is deliberately ONE number: the nix
+    # filesystem it owns (ADR-0032). It has two consumers and is deliberately ONE number: the nix
     # daemon's mid-build emergency GC uses it as `min-free` (profiles/nixConfig.nix), and
     # the disk-space watcher alerts when a device sits under it (monitoring/disk-space.nix).
     # So it reads as a single claim — "this host must never have less than X free" — that

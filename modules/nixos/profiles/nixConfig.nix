@@ -29,7 +29,7 @@ in
     # free space or the daemon collects on every single build.
     #
     # The number comes from the fleet registry's `diskFloorGiB` (parts/settings.nix), which
-    # is where it is measured and justified. Deliberately the SAME number the disk-space
+    # is where it is measured and justified (ADR-0032). Deliberately the SAME number the disk-space
     # watcher alerts on, so "the host must never have less than X free" is declared once and
     # both defended (here) and reported on (monitoring/disk-space.nix) — they cannot drift
     # into disagreeing about what counts as dangerously full.
