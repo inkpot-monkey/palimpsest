@@ -140,6 +140,28 @@
   # for the Claude relay's code-executing `claude` sessions (ADR-0018, since removed);
   # kept because the posture is the host's, not that one service's.
   custom.host.exposed = true;
+
+  # systemd implements IP accounting by attaching a cgroup BPF program to every unit, and
+  # kelpy — a vpsAdminOS container — is not permitted to attach them. So each unit start
+  # emits:
+  #
+  #   <unit>: bpf-firewall: Attaching egress BPF program to cgroup
+  #     /sys/fs/cgroup/system.slice/<unit> failed: Invalid argument
+  #
+  # which cost 10,337 journal lines in two days here (~5k/day), concentrated on the
+  # timer-driven checks that start every 60s. That matters more now the journal is capped
+  # (profiles/base.nix), because this noise evicts real history.
+  #
+  # Turning it off loses nothing, because the accounting is ALREADY dead on this host: the
+  # attach fails, so the counters never move. Measured — `caddy`, which fronts the whole
+  # fleet's web traffic, reports IPIngressBytes=0 and IPEgressBytes=0 here, while the same
+  # counters on rk1b (bare metal, where the attach succeeds) read 33 MB in / 730 MB out for
+  # grafana alone. Nothing in this repo consumes the counters either way.
+  #
+  # Deliberately host-scoped, NOT fleet-wide: on every other host the attach works, the
+  # numbers are real, and there is no noise to silence. The failure is a property of the
+  # container, not of the setting.
+  systemd.settings.Manager.DefaultIPAccounting = false;
   # NOTE: signing is intentionally NOT granted here. It is now a home-sops feature
   # (contract ADR-0002, slice 13) decryptable only by the user's own key, which a headless
   # agent host lacks — and the agent should not sign commits as inkpotmonkey anyway.
