@@ -84,41 +84,19 @@ in
       serviceConfig.ExecStartPre = [ "${cfg.gluetunWatchdog.readyCheck}" ];
     };
 
-    systemd.services.qbittorrent = {
-      after = [ "podman-gluetun.service" ];
-      requires = [ "podman-gluetun.service" ];
-      serviceConfig = {
-        Type = lib.mkForce "simple";
-      };
-      preStart = ''
-                CONF_DIR="/var/lib/qbittorrent/config/qBittorrent"
-                CONF_FILE="$CONF_DIR/qBittorrent.conf"
-                mkdir -p "$CONF_DIR"
-
-                # If file doesn't exist, create a basic one
-                if [ ! -f "$CONF_FILE" ]; then
-                  cat <<EOF > "$CONF_FILE"
-        [LegalNotice]
-        Accepted=true
-
-        [Preferences]
-        WebUI\Username=admin
-        WebUI\Address=*
-        WebUI\ServerDomains=*
-        WebUI\Port=${toString cfg.qbittorrent.webuiPort}
-        Downloads\SavePath=/downloads/
-        Downloads\TempPath=/downloads/incomplete/
-        EOF
-                fi
-
-                # NOTE: qBittorrent expects a PBKDF2 hash for the password in the config file.
-                # Setting it declaratively via Nix is complex because it doesn't support environment variables.
-                # Please set the password manually in the Web UI after first login!
-                # The container prints a temporary password to the logs on first start.
-
-                chown qbittorrent:media "$CONF_FILE"
-      '';
-    };
+    # There is deliberately no `systemd.services.qbittorrent` here. One used to be
+    # declared — `after`/`requires` on gluetun plus a preStart that seeded a default
+    # qBittorrent.conf — but nothing ever gave it an ExecStart, because the application is
+    # the container above and not a host service. systemd refused the unit outright
+    # ("Service has no ExecStart=, ExecStop=, or SuccessAction=. Refusing.") on every
+    # activation, so it sat there as a permanently `bad-setting` unit and its config
+    # bootstrap never ran once. The container's own entrypoint writes that file anyway.
+    #
+    # Passwords still have to be set by hand in the WebUI on first start: qBittorrent
+    # stores a PBKDF2 hash and offers no way to take one from a file or an environment
+    # variable. The container prints a temporary password to its log on first run. The
+    # value is kept in sops under `admin@torrent.palebluebytes.space` in the inkpotmonkey
+    # user secrets.
 
     systemd.tmpfiles.rules = [
       "d /var/lib/qbittorrent/config 0755 qbittorrent media -"
