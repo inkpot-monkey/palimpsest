@@ -140,6 +140,10 @@ in
         SLSKD_USERNAME=${config.sops.placeholder."slskd/username"}
         SLSKD_PASSWORD=${config.sops.placeholder."slskd/password"}
       '';
+      # Same reason as protonvpn_env in ./qbittorrent.nix: the container reads this file
+      # once at creation, so a rotated Soulseek or web-UI credential is otherwise written
+      # to disk and never picked up.
+      restartUnits = [ "podman-slskd.service" ];
     };
 
     # slskd shares the gluetun VPN container's network namespace, so every Soulseek

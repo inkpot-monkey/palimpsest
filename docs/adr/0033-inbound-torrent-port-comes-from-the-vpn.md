@@ -60,6 +60,12 @@ covers all three.
   upgraded in place and must be regenerated into `profiles/media.yaml`. Without it gluetun
   never publishes a port and the reconciler logs "not published yet" forever — the most
   likely reason for this to silently do nothing.
+- **The credential's secret declares `restartUnits`.** podman fixes a container's
+  environment at creation, so a rotated key that sops installs without restarting
+  `podman-gluetun` is written to disk and then ignored — every unit green, gluetun still
+  on the old key, and the only evidence a container start timestamp older than the
+  secret's. Note sops-nix restarts on secret *change*, so a rotation that has already
+  landed needs one manual restart; the declaration protects the next one.
 - **One connection, one forwarded port, and it goes to qBittorrent.** slskd shares the
   netns and stays without inbound, exactly as ADR-0029 has it. Splitting the single port
   between two P2P applications is not possible; if slskd ever needs inbound more than

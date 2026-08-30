@@ -61,6 +61,20 @@ in
 
     sops.secrets.protonvpn_env = lib.mkIf (!cfg.testMode) {
       sopsFile = self.lib.getSecretFile "media";
+      # Rotating the ProtonVPN credential rewrites this file, but the container read its
+      # environment once, when podman created it. Without this the new key is installed
+      # and then ignored: gluetun keeps running on the old one, every unit stays green,
+      # and nothing anywhere reports that the rotation did not take.
+      #
+      # That silence is not hypothetical — it cost a deploy. The key was rotated to one
+      # carrying ProtonVPN's NAT-PMP grant (ADR-0033), sops wrote it, `podman-gluetun`
+      # never restarted, and port forwarding went on being refused at the gateway with
+      # the only evidence being a container start timestamp older than the secret's.
+      #
+      # The restart cascades to qbittorrent-app and slskd via the BindsTo/PartOf wiring
+      # above, which is correct: they live in this container's netns and a new tunnel is
+      # a new namespace.
+      restartUnits = [ "podman-gluetun.service" ];
     };
 
     # qbittorrent-app has no network stack of its own — it lives inside gluetun's
