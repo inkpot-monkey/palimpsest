@@ -64,6 +64,11 @@ covers all three.
   netns and stays without inbound, exactly as ADR-0029 has it. Splitting the single port
   between two P2P applications is not possible; if slskd ever needs inbound more than
   qBittorrent does, this is a re-decision, not a configuration change.
+- **The WebUI login is shared, not copied.** It lives in
+  [`modules/shared/qbittorrent-api.nix`](../../modules/shared/qbittorrent-api.nix),
+  used both by this reconciler and by the preference reconciler that declares
+  qBittorrent's queue policy — the second consumer that made this a helper rather than a
+  block of shell in one module.
 - **A new sops consumer on kelpy**: `qbittorrent_webui_password`, read from
   `users/inkpotmonkey.yaml` (key `admin@torrent.palebluebytes.space`), which kelpy is
   already a recipient of — no new secret file and no re-keying.
