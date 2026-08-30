@@ -57,10 +57,15 @@ let
   # with no privileged namespace games, and it is the same path Caddy uses.
   api = "http://127.0.0.1:${toString pcfg.webuiPort}";
 
+  client = (import ../../../shared/qbittorrent-api.nix { inherit lib pkgs; }).mkClient {
+    inherit api;
+    username = pcfg.webuiUsername;
+    passwordFile = config.sops.secrets.qbittorrent_webui_password.path;
+  };
+
   syncScript = pkgs.writeShellScript "qbittorrent-port-forward-sync" ''
     set -u
-    jar="$RUNTIME_DIRECTORY/cookies"
-    pw="$RUNTIME_DIRECTORY/password"
+    ${client}
 
     port="$(${pkgs.coreutils}/bin/cat ${hostStatusFile} 2>/dev/null || true)"
     case "$port" in
@@ -77,32 +82,13 @@ let
         ;;
     esac
 
-    # Reachability is checked before authentication so that a tick landing mid-restart is
-    # not reported as a failure: podman-qbittorrent-app being down is the unit-state
-    # check's job to alert on, and duplicating it here would just add a second alarm for
-    # one fault. A refused connection is transient; bad credentials are not.
-    if ! ${pkgs.curl}/bin/curl -sS -m 10 -o /dev/null "${api}/api/v2/app/version" 2>/dev/null; then
+    if ! qbt_up; then
       echo "qbittorrent-port-forward: WebUI not answering on ${api} — skipping this tick"
       exit 0
     fi
+    qbt_login || exit 1
 
-    # The password reaches curl through a file, never through argv: this runs every few
-    # minutes on a host with other logins, and `ps` is world-readable. `tr -d` strips the
-    # trailing newline sops leaves on the value, which would otherwise be url-encoded into
-    # the form field and rejected.
-    ${pkgs.coreutils}/bin/install -m 0600 /dev/null "$pw"
-    ${pkgs.coreutils}/bin/tr -d '\n' < ${config.sops.secrets.qbittorrent_webui_password.path} > "$pw"
-
-    if ! ${pkgs.curl}/bin/curl -sS -m 10 -c "$jar" \
-           -d "username=${pcfg.webuiUsername}" \
-           --data-urlencode "password@$pw" \
-           "${api}/api/v2/auth/login" | ${pkgs.gnugrep}/bin/grep -qx 'Ok.'; then
-      echo "qbittorrent-port-forward: WebUI login failed for user ${pcfg.webuiUsername}" >&2
-      exit 1
-    fi
-
-    current="$(${pkgs.curl}/bin/curl -sS -m 10 -b "$jar" "${api}/api/v2/app/preferences" \
-      | ${pkgs.jq}/bin/jq -r '.listen_port // empty')"
+    current="$(qbt_get app/preferences | ${pkgs.jq}/bin/jq -r '.listen_port // empty')"
     if [ -z "$current" ]; then
       echo "qbittorrent-port-forward: could not read listen_port from the WebUI" >&2
       exit 1
@@ -112,9 +98,7 @@ let
     # and must be silent and free.
     [ "$current" = "$port" ] && exit 0
 
-    if ! ${pkgs.curl}/bin/curl -sS -m 10 -b "$jar" -o /dev/null \
-           --data-urlencode "json={\"listen_port\":$port}" \
-           "${api}/api/v2/app/setPreferences"; then
+    if ! qbt_post app/setPreferences "json={\"listen_port\":$port}"; then
       echo "qbittorrent-port-forward: failed to set listen_port to $port" >&2
       exit 1
     fi
