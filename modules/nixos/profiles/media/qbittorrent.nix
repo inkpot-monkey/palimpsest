@@ -96,7 +96,7 @@ in
     # stores a PBKDF2 hash and offers no way to take one from a file or an environment
     # variable. The container prints a temporary password to its log on first run. The
     # value is kept in sops under `admin@torrent.palebluebytes.space` in the inkpotmonkey
-    # user secrets.
+    # user secrets, which is what ./qbittorrent-port-forward.nix authenticates with.
 
     systemd.tmpfiles.rules = [
       "d /var/lib/qbittorrent/config 0755 qbittorrent media -"
@@ -135,7 +135,8 @@ in
               # was observed). Tor and Secure Core servers don't offer port forwarding, so
               # PORT_FORWARD_ONLY excludes them and guarantees a plain Swiss P2P exit — the
               # right kind of server for qBittorrent and slskd. (This only filters server
-              # SELECTION; it does not enable the port-forwarding feature itself.)
+              # SELECTION; forwarding itself is turned on in ./qbittorrent-port-forward.nix,
+              # which is what makes this filter load-bearing rather than merely tidy.)
               PORT_FORWARD_ONLY = "on";
             };
         # ONLY the WebUI is published, and only to loopback (Caddy fronts it) — the same
@@ -149,11 +150,11 @@ in
         # 10.88.0.7 (the podman bridge) from the open internet while every outbound
         # connection went out over 10.2.0.2 — one peer saw both addresses.
         #
-        # Seeding still works without an inbound port (peers broker connections we initiate
-        # outbound). Real inbound would need ProtonVPN port forwarding — gluetun's
-        # VPN_PORT_FORWARDING, plus plumbing its dynamically assigned port into qBittorrent's
-        # listener. Note PORT_FORWARD_ONLY below only filters server SELECTION; it does not
-        # turn forwarding on, so publishing 6881 never bought working inbound over the VPN.
+        # The inbound port that DOES work is the one ProtonVPN forwards on the VPN side:
+        # see ./qbittorrent-port-forward.nix, which turns on gluetun's NAT-PMP client and
+        # syncs the dynamically assigned port into qBittorrent's listener. That is the
+        # complete version of the fix; publishing 6881 on the host never was, since it
+        # exposed the real address without buying any inbound over the tunnel.
         ports = [
           "127.0.0.1:${toString settings.services.private.torrent.port}:${toString cfg.qbittorrent.webuiPort}/tcp" # WebUI
         ];

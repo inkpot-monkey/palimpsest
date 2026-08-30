@@ -11,6 +11,7 @@ in
 {
   imports = [
     ./qbittorrent.nix
+    ./qbittorrent-port-forward.nix
     ./gluetun-watchdog.nix
     ./jellyfin.nix
     ./slskd.nix
