@@ -1350,11 +1350,11 @@
         "rev": "4f2705972208d425c58fb14cee3e993c6b6a70a7",
         "revCount": 91,
         "type": "git",
-        "url": "file:///home/inkpotmonkey/code/users"
+        "url": "ssh://git@github.com/palebluebytes/users"
       },
       "original": {
         "type": "git",
-        "url": "file:///home/inkpotmonkey/code/users"
+        "url": "ssh://git@github.com/palebluebytes/users"
       }
     },
     "vpsFree": {

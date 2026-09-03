@@ -132,21 +132,30 @@
 
     # The operator's fleet users as their OWN external MULTI-USER home-manager flake (repo-split
     # capstone, issue #1) — `inkpotmonkey`, `eyeofalligator`, … each a confined ADR-0007 home,
-    # consumed via the contract's pre-built binding (bindContractPackage, ADR-0016). Currently only
-    # bound by the `prebuilt_bind_external` integration check — NOT yet by any production host (that
-    # cutover waits for the full homes to migrate). `contract` follows the fleet's so there is ONE
-    # contract/lib eval and the repo's own relative `path:` contract input is bypassed.
+    # consumed via the contract's pre-built binding. Every production seat binds from it now
+    # (hosts/default.nix, turnkey `bindContractUser`), which is why the former fleet-side
+    # `prebuilt_bind_external` rig is gone: the bind it rehearsed is the one the fleet runs.
+    # `contract` follows the fleet's so there is ONE contract/lib eval and the repo's own contract
+    # input is bypassed.
     # nixpkgs deliberately does NOT follow the fleet's: the pre-built home is built with the
     # users repo's OWN nixpkgs (the toolchain its CI tests), keeping it isolated from the
     # fleet's pin (the point of the pre-built model). Following made the fleet REBUILD the home
     # against the fleet nixpkgs and drift — e.g. the gui/ai closure needs a package name only
     # the users' newer pin exposes. Cost: a second nixpkgs closure in the fleet.
-    # DEV: local `git+file:`; flips to `github:palebluebytes/users` at T7 — a URL change.
-    # `git+file:` (not `path:`) enumerates git-TRACKED files, so it never copies `.git/`
-    # into the store — sidestepping the `fsmonitor--daemon.ipc` socket that broke the
-    # `path:` copier. Only committed content is seen.
+    #
+    # THE ORIGIN, not a working copy. This was `git+file:///home/inkpotmonkey/code/users` while the
+    # repo-split was in flight, and a local checkout is the wrong thing to lock a fleet against for
+    # a reason that bit during this very change: a DIRTY working tree makes Nix refuse to write the
+    # lock at all ("not writing lock file … unlocked input"), so an unrelated `nix flake update`
+    # fails on whatever happens to be uncommitted next door. It also tracked that checkout's
+    # current branch, so the fleet followed wherever that repo was parked.
+    #
+    # `git+ssh://`, not `github:`: the repo is PRIVATE, and the `github:` fetcher goes through the
+    # GitHub API, which needs an `access-tokens` entry that neither this machine nor a builder has.
+    # SSH uses the key that is already there — the same transport, and for the same reason, as the
+    # `secrets` input above.
     users = {
-      url = "git+file:///home/inkpotmonkey/code/users";
+      url = "git+ssh://git@github.com/palebluebytes/users";
       inputs.contract.follows = "contract";
     };
 
