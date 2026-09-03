@@ -3,7 +3,6 @@
   lib,
   settings,
   self,
-  inputs,
   ...
 }:
 
@@ -31,11 +30,19 @@ in
 
     services.paperless = {
       enable = true;
-      # Pin paperless to nixpkgs-stable: unstable's paperless-ngx pins ocrmypdf
-      # down to ocrmypdf_16 (paperless requires <17), and that overridden OCR
-      # closure isn't on Hydra/cache.nixos.org for unstable revisions, so every
-      # re-lock rebuilds ocrmypdf from source. The stable build is cached.
-      package = inputs.nixpkgs-stable.legacyPackages.${config.nixpkgs.hostPlatform.system}.paperless-ngx;
+      # NO `package` PIN. This used to take paperless-ngx from nixpkgs-stable, because unstable's
+      # pinned ocrmypdf DOWN to ocrmypdf_16 (paperless required <17) and that overridden OCR
+      # closure was not on cache.nixos.org, so every re-lock rebuilt ocrmypdf from source.
+      #
+      # That reason has expired: unstable's paperless-ngx 3.1.1 carries ocrmypdf 17.11.0 with no
+      # override, and both are substitutable from cache.nixos.org. Keeping the pin actively broke
+      # the host instead — unstable's paperless MODULE reads `cfg.package.tiktokenCacheDir`, a
+      # passthru only the 3.x package has, so a stable 2.20.15 package under it fails at eval
+      # (`attribute 'tiktokenCacheDir' missing`). Module and package have to come from one pin.
+      #
+      # NOTE FOR THE NEXT DEPLOY OF THIS HOST: this moves paperless 2.20.15 → 3.1.1, a major
+      # upgrade that migrates the document database on first start. Take a backup of
+      # /var/lib/paperless before switching kelpy.
       consumptionDirIsPublic = true;
       domain = "paperless.${domain}";
       inherit (settings.services.private.paperless) port;
