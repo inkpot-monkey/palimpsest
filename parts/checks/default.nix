@@ -113,6 +113,13 @@
         host_fleet_coherence = import ./host-user-contract-matrix {
           inherit pkgs self inputs;
         };
+        # The fleet-side RUNTIME proof of the turnkey bind: a real contractPackage from the pinned
+        # `users` flake, bound by `bindContractUsers` on a booted seat — account, grant and the
+        # home's own activation. Built on the contract's published seat-VM harness
+        # (`testing.mkSeatHarness`). Headless on purpose; see the check's own header.
+        contract_seat = import ./contract-seat {
+          inherit pkgs inputs;
+        };
         # Presence-aware git-annex replication alerting (palimpsest#60): on-demand hosts
         # suppress stale/absent metrics (a closed laptop lid must not page) and alert
         # only on fresh faults, while always-on hosts keep the strict staleness check.
