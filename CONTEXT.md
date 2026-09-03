@@ -31,7 +31,7 @@ A bespoke long-running program packaged and wired by this repo under `modules/ni
 _Avoid_: daemon, app.
 
 **`custom.*`**:
-The repo's own NixOS/home-manager option namespace (`custom.profiles.*`, `custom.home.profiles.*`, `custom.rk1.*`, `custom.users.*`). All first-party configuration hangs off it.
+The repo's own NixOS/home-manager option namespace (`custom.profiles.*`, `custom.home.profiles.*`, `custom.rk1.*`). All first-party configuration hangs off it. It stops where the contract's does: everything the contract puts on a host — the bound accounts, the machine's declared modes, the derived display surface — lives under `contract.*`, one prefix per party ([contract ADR-0026](https://github.com/palebluebytes/host-user-contract/blob/main/docs/adr/0026-one-option-prefix-per-party.md)). `custom.users.*` was this repo's spelling of that before the rule; it is `contract.users.*` now.
 
 ### Secrets
 
