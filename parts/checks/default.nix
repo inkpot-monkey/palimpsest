@@ -111,7 +111,7 @@
         # contract's conformance suite (the display binding is wired wherever the contract
         # decides a surface is needed; real exposed-traits are archetype-covered).
         host_fleet_coherence = import ./host-user-contract-matrix {
-          inherit pkgs self;
+          inherit pkgs self inputs;
         };
         # Presence-aware git-annex replication alerting (palimpsest#60): on-demand hosts
         # suppress stale/absent metrics (a closed laptop lid must not page) and alert

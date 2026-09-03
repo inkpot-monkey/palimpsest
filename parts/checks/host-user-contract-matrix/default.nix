@@ -11,7 +11,12 @@
 # Plus one property of the same shape but outside the contract — a DECLARATION that has
 # to keep matching the machine it describes:
 #   3. settings.nodes.<h>.onTailnet agrees with that host's real services.tailscale.enable.
-{ self, pkgs, ... }:
+{
+  self,
+  pkgs,
+  inputs,
+  ...
+}:
 let
   inherit (pkgs) lib;
   hosts = self.nixosConfigurations;
@@ -48,7 +53,7 @@ let
     name: declaredOnTailnet name != hosts.${name}.config.services.tailscale.enable
   ) comparableNodes;
 
-  assertions = [
+  claims = [
     {
       name = "coherence: the display binding renders the contract's gui decision on every real host";
       ok = lib.all (x: x) (lib.attrValues wiredResults);
@@ -74,19 +79,20 @@ let
       ok = lib.elem "wheel" (hosts.weedySeadragon.config.users.users.admin.extraGroups or [ ]);
     }
   ];
-  failures = builtins.filter (a: !a.ok) assertions;
-  report = lib.concatMapStringsSep "\n" (
-    a: "  ${if a.ok then "ok  " else "FAIL"}  ${a.name}"
-  ) assertions;
 in
-pkgs.runCommand "host-fleet-coherence" { } ''
-  cat <<'EOF'
-  host↔contract coherence (real fleet ties back to the contract's conformance suite):
-  ${report}
-  EOF
-  ${lib.optionalString (failures != [ ]) ''
-    echo "host coherence gate FAILED (see above)" >&2
-    exit 1
-  ''}
-  touch $out
-''
+# Reported through the CONTRACT's claim report, not this file's own copy of the format. The
+# ok/FAIL column, the failing-claim filter and the non-zero exit were hand-written here — the same
+# three lines three other suites had written, in a format with no owner and therefore free to
+# diverge. The contract owns it now (its ADR-0025: the kit ships the technique a consumer runs
+# over its own repo, never the verdict), which also gets the guards this file never had — a claim
+# with no `ok`, a non-boolean verdict or a newline in its name is refused by name instead of
+# quietly rendering wrong.
+#
+# The verdict lands in the BUILDER, exactly as it did before, so this stays an ordinary
+# `checks.<system>` entry that `nix flake check` fails on.
+inputs.contract.lib.mkClaimReport {
+  inherit pkgs;
+  name = "host-fleet-coherence";
+  title = "host↔contract coherence (real fleet ties back to the contract's conformance suite)";
+  inherit claims;
+}
