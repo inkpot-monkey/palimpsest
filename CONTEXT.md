@@ -56,62 +56,130 @@ _Avoid_: fetch/pull (reserve for git); it reads a value, it does not sync the st
 
 ### Users & the host↔user contract
 
-> Target architecture being designed: hosts and users split into separate repos bound by a shared contract, so any host can enable a user and on rebuild they transparently work, while hosts can deny features a user introduces. See [contract ADR-0001](https://github.com/palebluebytes/host-user-contract/blob/main/docs/adr/0001-host-user-contract.md). Today `users/` still lives in this repo; these terms fix the language the migration aims at.
+The split HAPPENED: hosts live here, the operator's users live in their own flake
+(`git+ssh://git@github.com/palebluebytes/users`, private), and the interface between them is a third
+repo ([`palebluebytes/host-user-contract`](https://github.com/palebluebytes/host-user-contract),
+public, released). Any host binds any user by NAME and on rebuild that person's account and home
+transparently work, while the host decides what the account may DO.
+
+The contract's own `CONTEXT.md` is the authoritative glossary for its vocabulary and states the
+distinctions this repo must not blur (mode vs grant, affordance vs grant vs granted, deny vs ban).
+What follows is only what THIS repo needs: the terms that appear in its files, and the places where
+the fleet — not the contract — makes the decision.
 
 **User**:
-A portable bundle of *public identity + home config + its own secrets + grantable features*, owned in its own repo. Distinct from the **system account** (`users.users.<name>`) a host materialises from the user's public identity via a contract-shipped realization module. The contract realizes the *account*; the account's *powers* (privileged groups, display manager) come from granted features, never from the user's raw declaration.
+A **member** of the pinned `users` flake: a directory holding `identity.json` (public identity +
+login credential) and `user.nix` (which session shapes this person runs in, and the home for each).
+Distinct from the **system account** (`users.users.<name>`) a host materialises from that identity
+when it binds them. A user asks for **no powers at all** — it says only which shapes it runs in —
+so an account's powers come from the host's **affordances** and the **mode** it was bound in, never
+from anything the user wrote.
 _Avoid_: account (reserve for the unix system account), profile.
 
 **Contract** (the *contract kit*):
-The small shared flake both host and user repos depend on. More than schemas: it ships (1) the **schema** — the identity option set, home-profile meta, the feature/capability vocabulary, and the `platform` *interface*; (2) the host-invariant **realization** that turns the schema into a system account with powers from grants; (3) the **derivation logic** (e.g. recipients-from-grants); and (4) a **conformance suite** that proves the patterns across synthetic hosts × users. It is neither host nor user; it is the agreed interface between them, and the only thing that lets a host *deny* a feature it understands. The host supplies only the *implementation* of the **platform interface** (its secrets backend) — that stays host-side. Delivered as a registry-baked **kit** — its modules close over their own feature registry, so they depend on nothing but nixpkgs `lib` and never on the consuming host's `self`. It now lives in its **own public repo**, `github:palebluebytes/host-user-contract`, consumed as a flake input (`nixpkgs.follows`); edit behaviour THERE, then `nix flake update contract` here ([contract ADR-0004](https://github.com/palebluebytes/host-user-contract/blob/main/docs/adr/0004-extract-contract-flake.md)).
+The small shared flake this repo and the `users` flake both depend on. It ships (1) the **schema** —
+the identity option set, the mode registry and the feature registry; (2) the host-invariant
+**realization** that turns that schema into a system account with the groups its grant and mode
+confer; (3) the **producer surface** a users repo bakes homes through; and (4) a **conformance
+suite** proving the promises against synthetic users on synthetic hosts, surfaced into this repo's
+own `nix flake check` as `contract_conformance`. It is neither host nor user but the agreed
+interface between them. Consumed as a flake input with `nixpkgs.follows`; edit behaviour THERE, then
+`nix flake update contract` here ([contract ADR-0004](https://github.com/palebluebytes/host-user-contract/blob/main/docs/adr/0004-extract-contract-flake.md)).
+Everything it puts on a host lives under `contract.*` — one option prefix per party
+([contract ADR-0026](https://github.com/palebluebytes/host-user-contract/blob/main/docs/adr/0026-one-option-prefix-per-party.md)),
+which is where this repo's own `custom.*` namespace stops.
 _Avoid_: api, sdk, common.
 
-**Platform interface**:
-The contract's seam to a host's secrets backend: a feature declares a *logical* secret and reads its resolved **runtime path**, never naming the backend. The contract ships the typed *interface*; the host supplies the *binding* — the only place a backend (sops, agenix, …) is named — so backends are interchangeable and the contract stays secret-free. It abstracts secret *provisioning*, not merely file location: a path-locator plus a key-selector would be a sops abstraction wearing a neutral name ([contract ADR-0005](https://github.com/palebluebytes/host-user-contract/blob/main/docs/adr/0005-platform-backend-agnostic-secrets.md)).
-_Avoid_: secrets backend (that is the host's *implementation* of this interface, not the interface itself).
+**Mode** (session shape):
+What a home IS — today `cli` (the **floor**, which every host runs) and `gui`. A host declares the
+modes THE MACHINE CAN RUN as `contract.modes` (in `hosts/default.nix`: `[ "gui" ]` for the three
+desktop seats, nothing at all for the servers, since the floor is implicit and unexcludable). A user
+declares which modes it runs in, and a home is built per mode — so the bind SELECTS one rather than
+composing them. A mode carries its own groups (a graphical session's input devices), which is why a
+display is never a feature and a host never "grants gui": it runs the gui mode.
+A mode may also publish **mode parameters** — `gui.desktop = "plasma"`, the user's intent, carried
+in the binding index — which the seat may honour or ignore; the **session type** (wayland/x11) is
+the seat's own business and no part of the contract.
+_Avoid_: variant, profile, "the gui grant", calling the mode set a grant set.
+
+**Affordance**:
+What THIS host is willing to confer on ONE named person, stated at that person's bind and nowhere
+else (`bindUsers { inkpotmonkey = { sudo = true; containers = true; }; }`). A decision about a
+person, as against `contract.modes`, which is a capability of the box. It is now the WHOLE of the
+grant: since a user asks for no powers, there is no user-side offer left to intersect with, so what
+the bind states is exactly what the account gets.
+_Avoid_: offer (retired — a user no longer asks for features), granting a mode.
+
+**Grant**:
+What a bound account HOLDS, written by the bind into `contract.users.<user>.granted.<feature>` and
+readable there. Host-write-only: a user repo can never set its own grant, and **deny is simply the
+absence of a grant** — an unafforded feature is off, and asking for nothing is never an error. The
+privileged-group **clamp** is the teeth: groups a user names for itself are dropped unless granted,
+which is why the hand-written break-glass `admin` on weedySeadragon must be afforded `sudo`
+explicitly to keep its wheel (asserted by the `host_fleet_coherence` check).
+_Avoid_: veto, "default-open".
 
 **Feature** (capability):
-The unit of negotiation between a host and a user: simultaneously what a user **offers**, what a host **grants** or denies, and what pulls a secret. A feature token-gates a slice of the user's bundle (`mkIf` no-op when not granted), mirroring the NixOS profile model ([ADR-0013](docs/adr/0013-uniform-bundle-consumption.md)). Its packages, config, and secret all flow through one grant gate.
-_Avoid_: flag, module (the gate is not itself a module).
+A named power a host may confer, from the contract's own registry: `sudo`, `containers`,
+`virtualization`, `nix-daemon`. Each confers privileged groups and nothing else — features are
+about POWERS, so a display is a mode and not a feature. This fleet affords `sudo` + `containers` to
+its operator and `sudo` alone to the laptop's co-admin; `virtualization` and `nix-daemon` are
+afforded nowhere.
+_Avoid_: flag, module (the gate is not itself a module), role (the `workstation` role was retired
+in favour of these atomic powers).
 
-A feature has two faces, kept distinct: the **grant** (host-owned) and its **feature configuration** (user-owned).
+**contractPackage** (the pre-built binding):
+The artifact the `users` flake publishes per user × mode × system: home-manager's activation package
+plus a `contract-manifest.json` sidecar declaring the contract version, the username and the mode.
+A host binds it by reading the **binding index** — `contractUsers.<system>.<user>`, plain data with
+no import-from-derivation — so it picks a package by READING rather than by building every one to
+look inside. The home is therefore built with the users repo's OWN toolchain, and this fleet holds
+zero users-repo internals: no package names, no variant labels, no identity paths. At activation a
+`contract-activate-<user>` oneshot runs it inside a real login session
+(`runuser -l`), which the `contract_seat` check boots and asserts.
+_Avoid_: activationPackage (home-manager's own term for what this wraps), variant.
 
-**Grant** / **Offer**:
-A user **offers** a feature it *can* provide; a host **grants** it by explicitly enabling it (`custom.users.<user>.granted.<feature>`). Default-closed: an ungranted feature is off, and "deny" is simply the absence of a grant. The grant is purely the host's yes/no. Granting a feature is also what re-keys that feature's secret to the host — so **public identity travels with the user; secrets follow features**, and a host that grants nothing private holds no private key material.
-
-The grant is the **sole enabler**, and the host must grant *every* host effect — no exceptions. A user can never enable a feature; it can only **offer** one. An offer without a grant is **inert**: the feature's host effects are a silent no-op and the build still succeeds — requesting an ungranted feature is never an error, it simply produces a host without that feature. Consequently `granted.<feature>` is **host-write-only** — a user repo can never set its own grant — and the user contributes no system configuration at all, only data the host's grants draw on (see **User manifest**, **Feature module**, **Binding path**, [contract ADR-0002](https://github.com/palebluebytes/host-user-contract/blob/main/docs/adr/0002-user-confinement-manifest-greeter.md)).
+**Declaration** vs **Configuration**:
+A user's **declaration** (`user.nix`) is READ AS DATA by bare `evalModules` with no home-manager
+present — which is what lets a host learn somebody's modes without building anything. The
+**configuration** is the home-manager module a mode points at, and is BUILT. The two are never the
+same file.
+_Avoid_: manifest for the declaration (the manifest is the contractPackage's json sidecar).
 
 **Prohibition** vs **Incapacity**:
-Two reasons a host lacks a feature, only one of which is a security statement. A **prohibition** is a host *forbidding* a feature it otherwise could run — the security verb (e.g. an exposed host forbidding any secret-bearing feature). An **incapacity** is a host simply not being able to offer it — a *headless* host has no display, so no greeter and no gui, which is a fact about the hardware, not a policy. Do not model incapacity as a ban; it dilutes the one word that carries weight.
-_Avoid_: "deny" for both (reserve denial for the absence of a grant; use prohibit for the active security veto).
-
-**Feature configuration**:
-The user-provided *parameters* of a feature (e.g. a gui user's **session** preference — Wayland or X11 — or a restic feature's schedule), as opposed to the **grant**, which is the host's yes/no. The realization reads a feature's configuration only when the feature is granted: user-scoped parameters apply per user, while host-affecting ones **aggregate** across all granted users rather than conflict. The gui **session** is the canonical case — on a single-seat host the display surface is the *union* of every granted gui user's session, so two users with different sessions coexist, each logging into their own. (Aggregation only fits parameters that genuinely union; a truly singular setting like the system timezone stays a host decision.)
-_Avoid_: settings (too generic), the grant (that is the host's, not the user's).
-
-**User manifest**:
-The confined surface a user exposes — a **home-manager config repo**, deliberately: home-manager is already a restricted universe a config cannot escape, and already the portable standalone artifact the greeter fetches. The home module holds the **dotfiles**, the contract **features** it enables, and the host-affecting params those features need, and emits **requests** (see below) — but it never writes host config. The **identity** lives *in the repo* as a contract-conventional **`identity.json`** (a data file, `{name, email, sshKey, hashedPassword, username}`): the home module loads it (`fromJSON`) and so owns it, while the **greeter reads the same file with `jq`** — after fetching the repo *source* but **before evaluating any Nix** — to authenticate. That is the point of a data file over Nix-inline identity: evaluating the untrusted home module runs every module body (IFD, `builtins.fetch*`, non-termination — eval is not a sandbox), so auth must complete on inert data, not code ([contract ADR-0006](https://github.com/palebluebytes/host-user-contract/blob/main/docs/adr/0006-anyhost-greeter-runtime-binding.md)). It has no system-configuration slot, so `users.users`, `nixpkgs.*`, `boot.*` are not in its universe. Its requests are **host-independent** and harvested **against** a host's grant surface: the host's grants decide which realize. Its home module may *read* host state only through the restricted **hostFacts** projection, never raw `osConfig`. This is what makes a user portable — and what makes evaluating a stranger's flake URL at the greeter's *config* surface safe. See [contract ADR-0002](https://github.com/palebluebytes/host-user-contract/blob/main/docs/adr/0002-user-confinement-manifest-greeter.md).
-_Avoid_: user module (a NixOS module — the manifest is a home-manager module), config.
-
-**Request**:
-The declarative data a user manifest emits to ask the host for a feature's host effect — populated in a contract-provided `contract.requests` namespace inside the home-manager evaluation (e.g. `gui.session = "x11"`, a kanata config). A **request is not a write**: the user only *asks*; a contract-owned system integration reads the requests and applies the **granted** ones, aggregating host-affecting ones (the gui-session union reads every granted user's request). An ungranted request is inert. Request payloads for **safe-set** features must be **inert** (no host-executed user code) — an executable payload (a `kanata-with-cmd` keymap) is a code-exec vector and stays build-time-only. See [contract ADR-0002](https://github.com/palebluebytes/host-user-contract/blob/main/docs/adr/0002-user-confinement-manifest-greeter.md).
-_Avoid_: write, set (the user never sets host config; it requests).
-
-**Feature module**:
-A **contract-owned** NixOS module carrying a feature's *host effects* (its services, groups, packages, secrets), gated `mkIf granted` and parameterized by the user's emitted **request**. It is the only thing that writes host configuration on a user's behalf — the user manifest never does. Relocating a host effect out of a user and into a feature module is what turns an unbounded "user can set anything" into "the host grants, the contract realizes" (the model-C boundary, [contract ADR-0001](https://github.com/palebluebytes/host-user-contract/blob/main/docs/adr/0001-host-user-contract.md) mechanic 7, made concrete in [contract ADR-0002](https://github.com/palebluebytes/host-user-contract/blob/main/docs/adr/0002-user-confinement-manifest-greeter.md)).
-_Avoid_: profile (a profile is host- or user-toggled config composition; a feature module is the grant-gated realization of one feature).
-
-**hostFacts**:
-The restricted, read-only projection of host state a user manifest's home module may consult to adapt — `{ exposed, platform, granted }` and nothing more. It is **self-scoped** (this user's grants only; never another user's data and never a secret value) and deliberately **excludes `hostName`**, so a user adapts on *semantic* facts, never on host identity. It replaces the raw-`osConfig` read with a surface narrow enough that host-awareness can't become host-coupling. See [contract ADR-0002](https://github.com/palebluebytes/host-user-contract/blob/main/docs/adr/0002-user-confinement-manifest-greeter.md).
-_Avoid_: osConfig (the unrestricted tree it replaces).
+Two reasons a host lacks something, only one of which is a security statement. A **prohibition** is
+a host forbidding what it otherwise could run — the security verb. An **incapacity** is a host
+simply not being able to: a headless server has no display, so it declares no gui mode, which is a
+fact about the machine and not a policy. Do not model incapacity as a ban; it dilutes the one word
+that carries weight.
+_Avoid_: "deny" for both (deny is the absence of a grant; prohibit is the active security veto).
 
 **Safe set** (runtime-eligible features):
-The features a *runtime* binding — the greeter — may confer on a user without operator authorship: those that confer no privileged group, bear no secret, **and carry an inert request payload** (`¬secretBearing ∧ featureGroups == [] ∧ inertPayload`). It is **derived**, not declared. gui is in it (carrying only the inert `session` request); `workstation` (privileged), `restic`/`signing` (secret-bearing), and a `kanata-with-cmd` keymap (executable payload) are not. The hinge of the model: privilege — and host-executed code — is build-time-only, so a flake URL typed at a greeter can never escalate. See [contract ADR-0002](https://github.com/palebluebytes/host-user-contract/blob/main/docs/adr/0002-user-confinement-manifest-greeter.md).
-_Avoid_: default-granted (describes the disposition, not the membership rule).
+The features a RUNTIME binding could confer on a walk-up user without operator authorship — derived,
+never declared, as those conferring no privileged group. **It is empty today**, and that is the
+model working rather than a gap: every feature in the registry confers privileged groups, so
+privilege is build-time-only and a flake URL typed at a greeter can escalate to nothing. What such a
+user would still get is a graphical session, because gui is a **mode** the machine runs and not a
+feature anybody grants.
+_Avoid_: default-granted (that describes the disposition, not the membership rule).
 
 **Binding path**:
-How a user is bound to a host, of which there are two, with opposite grant defaults *by design*. **Build-time binding** is operator-authored (the fleet declaration) and **default-closed** — the operator grants explicitly, privilege included, subject to prohibitions. **Runtime binding** is the **greeter** (flake URL + username + password) and is **default-open over the safe set** — gui and baseline are auto-granted, privilege is impossible. Both call **one host-side `bindUser`** (feed `identity.json` → the realization's account; wire the contract + user home modules; harvest the granted `contract.requests`) — the greeter is not a parallel codepath, it is `bindUser` with the grant computed at runtime (= the safe set). Both drive the *same* contract, manifests, and feature modules.
-_Avoid_: enable (a user is never bound by enabling itself; the host's grant binds).
+How a person is bound to a host. This fleet uses **build-time binding** exclusively and operator-
+authored: `hosts/default.nix` names each user and its affordances, and `bindContractUsers` reads the
+index, selects the mode, confers the grant and realizes the account. The contract also ships a
+**runtime binding** — the greeter, taking a flake URL, a username and a password — which **no host
+here runs**: the desktop seats are SDDM + Plasma, and stargazer's `regreet` is explicitly disabled
+in favour of it. The greeter's proofs are the contract's own; what this repo proves is its own bind
+(`contract_seat`, `host_fleet_coherence`).
+_Avoid_: enable (a user is never bound by enabling itself; the host's bind binds).
+
+**Platform interface**:
+The backend-neutral secrets seam: a consumer declares a *logical* secret and reads its resolved
+runtime path, never naming sops. **It is this repo's own now** — it formerly lived in the contract,
+which has since narrowed to "no secrets beyond the login credential" and dropped it, so the fleet
+declares the interface as well as binding it (`modules/homeManager/options.nix`, types matching the
+retired seam verbatim). Cite it as a fleet concept; the contract carries no secrets seam.
+_Avoid_: secrets backend (that is the *implementation* of this interface — sops — not the interface).
 
 ### Matrix bridging
 
