@@ -139,7 +139,7 @@
   # refuses any secret-bearing user-feature grant (contract ADR-0001). Set originally
   # for the Claude relay's code-executing `claude` sessions (ADR-0018, since removed);
   # kept because the posture is the host's, not that one service's.
-  custom.host.exposed = true;
+  contract.exposed = true;
 
   # systemd implements IP accounting by attaching a cgroup BPF program to every unit, and
   # kelpy — a vpsAdminOS container — is not permitted to attach them. So each unit start

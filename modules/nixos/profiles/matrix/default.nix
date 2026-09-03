@@ -459,7 +459,7 @@ in
 
     # Via the contract aggregator (the sole writer of permittedInsecurePackages), so
     # this merges with any other permit on the host instead of clobbering it.
-    custom.insecurePackages = [ "olm-3.2.16" ];
+    contract.insecurePackages = [ "olm-3.2.16" ];
 
     # ----------------------------------------------------------------------------
     # Secret Management (SOPS)

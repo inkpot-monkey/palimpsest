@@ -6,11 +6,11 @@
 #   1. `custom.profiles.gui.enable` — the HOST's opt-in for generic desktop plumbing
 #      (input devices, polkit, power). Set per host in hosts/<name>/configuration.nix.
 #
-#   2. `custom.gui.surface.enabled` — the CONTRACT's decision that a shared display
-#      surface must exist at all (contract ADR-0005). Nothing here sets it; the contract's
-#      realization derives it from the users bound to the host. That is why this module is
-#      imported fleet-wide from profiles/base.nix and self-gates: it must fire on exactly
-#      the hosts the contract says need a seat, whether or not (1) is also set.
+#   2. `contract.display.enabled` — the CONTRACT's decision that a shared display
+#      surface must exist at all (contract ADR-0021). Nothing here sets it — it is `readOnly`,
+#      derived from the session shapes the MACHINE declared it can run (`contract.modes`). That
+#      is why this module is imported fleet-wide from profiles/base.nix and self-gates: it must
+#      fire on exactly the hosts the contract says need a seat, whether or not (1) is also set.
 #
 # Merging the two former files (gui-base.nix + gui-desktop.nix) removed the split without
 # merging the conditions: block (2) below is still the host's *binding* for the contract's
@@ -24,7 +24,7 @@
 
 let
   cfg = config.custom.profiles.gui;
-  surface = config.custom.gui.surface;
+  surface = config.contract.display;
 in
 {
   options.custom.profiles.gui = {

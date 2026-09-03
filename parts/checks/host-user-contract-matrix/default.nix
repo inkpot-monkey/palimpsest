@@ -3,7 +3,7 @@
 # the contract flake's own checks (`inputs.contract.checks.<system>.conformance`). What
 # stays here is the fleet-specific tie-back: that THIS fleet's real hosts are coherent
 # with the contract. Two light, real-host properties:
-#   1. wherever the contract decides a display surface is needed (custom.gui.surface),
+#   1. wherever the contract decides a display surface is needed (`contract.display`),
 #      the host's display binding (gui.nix) actually renders it (sddm) — proof
 #      the binding is wired fleet-wide, the host's half of the contract's gui decision;
 #   2. every real host's exposed-trait is one the contract's archetypes cover, so
@@ -22,7 +22,7 @@ let
     let
       c = sys.config;
     in
-    c.custom.gui.surface.enabled -> c.services.displayManager.sddm.enable;
+    c.contract.display.enabled -> c.services.displayManager.sddm.enable;
   wiredResults = lib.mapAttrs (_: bindingWired) hosts;
 
   # 2. The real fleet's exposed-traits are covered by the contract's archetypes
@@ -31,7 +31,7 @@ let
     false
     true
   ];
-  realExposed = lib.unique (map (h: h.config.custom.host.exposed) (lib.attrValues hosts));
+  realExposed = lib.unique (map (h: h.config.contract.exposed) (lib.attrValues hosts));
   exposedCovered = lib.all (e: lib.elem e archetypeExposed) realExposed;
 
   # 3. The `onTailnet` declaration matches the machine. The monitoring node job filters

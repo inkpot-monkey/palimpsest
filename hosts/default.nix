@@ -6,41 +6,45 @@
 let
   inherit (self.lib) mkSystem mkPiSystem;
 
-  # Turnkey host-side bind (contract ADR-0025): a host declares its `contract.affordances` ONCE
-  # and binds each user BY NAME; the contract derives the grant as `affordances ∩ offer` (the
-  # user's offer is published in the pinned `users` flake's `contractUsers` index), selects the
-  # maximal baked variant, and delegates to bindContractPackage. This replaces the hand-rolled
-  # bindContractPackage + loadIdentity + per-host grant matrix — the host holds ZERO users-repo
-  # internals (no package names, variant labels or identity paths). Named `bindUserTurnkey` (NOT
-  # `bindContractUser` — that is the contract's public consumer bind this delegates to; `traceUser`
-  # is its distinct headless inspector).
-  bindUserTurnkey =
-    username:
-    inputs.contract.lib.bindContractUser {
-      inherit username;
-      usersFlake = inputs.users;
+  # Turnkey host-side bind (contract ADR-0025, ADR-0026). A host states TWO separate things, and
+  # the contract keeps them apart on purpose:
+  #
+  #   `contract.modes`  — the session shapes THE BOX can run. A capability of the machine, said
+  #                       once, about nobody. The floor (`cli`) is implicit and unexcludable, so a
+  #                       headless host says nothing at all.
+  #   `affordances`     — what a given ACCOUNT may DO, said per user AT ITS BIND. A decision about
+  #                       a person, and now the whole of the grant: a user declares only which
+  #                       shapes it runs in and asks for no powers, so there is no user-side offer
+  #                       left to intersect with. What is written below IS what is conferred.
+  #
+  # This replaced one host-wide `contract.affordances` block. Reading a display out of the same
+  # namespace as sudo made a seat's capability look like a privilege, which is the split the
+  # contract made upstream — `gui` is not a feature any more, it is a mode.
+  #
+  # `bindContractUsers` takes the host's whole user list in one call, reads the binding index the
+  # pinned `users` flake publishes, selects each person's mode, confers what was afforded and
+  # realizes the account. The host holds ZERO users-repo internals: no package names, no variant
+  # labels, no identity paths.
+  bindUsers =
+    users:
+    inputs.contract.lib.bindContractUsers {
+      source = inputs.users;
+      inherit users;
     };
 
-  # Server seat — inkpotmonkey administers it (sudo) and runs containers, no gui. Intersected with
-  # inkpotmonkey's offer this selects the base variant and confers wheel + docker/podman (the atomic
-  # capabilities that replaced the retired `workstation` role, ADR-0024). The contract adds the login
-  # account, groups and authorized keys; nothing else is needed host-side — the pre-built home carries
-  # its own packages and the login shell defaults to bashInteractive.
-  serverAffordances.contract.affordances = {
-    sudo.enable = true;
-    containers.enable = true;
+  # The operator's account, wherever it is bound: administers the machine and runs containers.
+  # These are the atomic capabilities that replaced the retired `workstation` role (contract
+  # ADR-0024); `virtualization` is deliberately absent.
+  operator = {
+    sudo = true;
+    containers = true;
   };
 
-  # GUI workstation seat — the server affordances plus gui, so the intersection with inkpotmonkey's
-  # offer selects the gui variant and turns on the shared display surface + input groups (the DE is
-  # the seat's own binding, modules/nixos/profiles/gui.nix; the contract's realization links
-  # the XDG portal/desktop dirs). virtualization is intentionally absent — inkpotmonkey's offer no
-  # longer includes it.
-  guiAffordances.contract.affordances = {
-    gui.enable = true;
-    sudo.enable = true;
-    containers.enable = true;
-  };
+  # A GUI seat — the box can run a graphical session, so a user that declares one is bound in it.
+  # The DE itself is the seat's own binding (modules/nixos/profiles/gui.nix); the contract only
+  # derives that a shared display surface is needed (`contract.display.enabled`) and links the
+  # XDG portal/desktop dirs.
+  guiSeat.contract.modes = [ "gui" ];
 in
 {
   flake.nixosConfigurations = {
@@ -48,8 +52,8 @@ in
 
       modules = [
         ./stargazer/configuration.nix
-        guiAffordances
-        (bindUserTurnkey "inkpotmonkey")
+        guiSeat
+        (bindUsers { inkpotmonkey = operator; })
       ];
     };
 
@@ -57,19 +61,23 @@ in
 
       modules = [
         ./weedySeadragon/configuration.nix
-        guiAffordances
-        # inkpotmonkey (gui variant) and eyeofalligator, both bound turnkey from the `users`
-        # flake. eyeofalligator co-administers this laptop; the clamp drops the wheel it declares
-        # in its identity, so its offer includes sudo and the host affords it ⇒ wheel is conferred
-        # by the grant (contract ADR-0001 threat model). eyeofalligator's HOST-side setup (steam,
-        # flatpak, printing, …) — which the pre-built home cannot carry — lives in the module below.
-        (bindUserTurnkey "inkpotmonkey")
-        (bindUserTurnkey "eyeofalligator")
+        guiSeat
+        # inkpotmonkey and eyeofalligator, both bound from the `users` flake. eyeofalligator
+        # co-administers this laptop, so it is afforded sudo — and ONLY sudo: it used to sit under
+        # a host-wide affordance block that also carried `containers`, which was incidental to the
+        # block's scope rather than anything this person needs. Now that affordances are stated per
+        # user, the narrower set is the honest one. Its HOST-side setup (steam, flatpak, printing,
+        # …) — which the pre-built home cannot carry — lives in the module below.
+        (bindUsers {
+          inkpotmonkey = operator;
+          eyeofalligator.sudo = true;
+        })
         ./weedySeadragon/eyeofalligator.nix
         # The break-glass admin account (declared in ./weedySeadragon/configuration.nix) is a
-        # contract user too but is NOT in the `users` flake, so it is not turnkey-bound; its wheel
-        # is clamped unless granted, so grant sudo directly to keep root if the primary login breaks.
-        { custom.users.admin.granted.sudo.enable = true; }
+        # contract user too but is NOT in the `users` flake, so it is not bound from there; its
+        # wheel is clamped unless granted, so grant sudo directly to keep root if the primary
+        # login breaks.
+        { contract.users.admin.granted.sudo = true; }
       ];
     };
 
@@ -77,8 +85,8 @@ in
 
       modules = [
         ./sawtoothShark/configuration.nix
-        guiAffordances
-        (bindUserTurnkey "inkpotmonkey")
+        guiSeat
+        (bindUsers { inkpotmonkey = operator; })
       ];
     };
 
@@ -96,8 +104,7 @@ in
         # Turnkey base bind: the contractPackage is a pre-built activate script, home-manager-
         # version-agnostic, so the Pi's separate home-manager-25_11 pin (specialArgs above) is
         # irrelevant for inkpotmonkey.
-        serverAffordances
-        (bindUserTurnkey "inkpotmonkey")
+        (bindUsers { inkpotmonkey = operator; })
         # blocky removed here (ADR-0023) — the Pi-only module swap it needed went with it.
       ];
     };
@@ -111,8 +118,7 @@ in
 
       modules = [
         ./kelpy/configuration.nix
-        serverAffordances
-        (bindUserTurnkey "inkpotmonkey")
+        (bindUsers { inkpotmonkey = operator; })
       ];
     };
 
@@ -120,8 +126,7 @@ in
 
       modules = [
         ./potbelliedSeahorse/configuration.nix
-        serverAffordances
-        (bindUserTurnkey "inkpotmonkey")
+        (bindUsers { inkpotmonkey = operator; })
       ];
 
     };
@@ -135,8 +140,7 @@ in
     rk1a = mkSystem {
       modules = [
         ./rk1/common.nix
-        serverAffordances
-        (bindUserTurnkey "inkpotmonkey")
+        (bindUsers { inkpotmonkey = operator; })
         {
           networking.hostName = "rk1a";
           custom.profiles.monitoring-client.enable = true;
@@ -171,8 +175,7 @@ in
         # git-annex owns the corpus tree, replicated to kelpy and — unlike music — backed up
         # offsite. Adds to the same services.git-annex enabled by git-annex.nix above.
         ./rk1/library.nix
-        serverAffordances
-        (bindUserTurnkey "inkpotmonkey")
+        (bindUsers { inkpotmonkey = operator; })
         ({ config, ... }: {
           networking.hostName = "rk1b";
           # rk1b is the media + monitoring node (ADR-0027). The local llama.cpp LLM stack is
