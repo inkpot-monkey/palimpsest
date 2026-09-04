@@ -59,6 +59,24 @@ in
 
     services.music-assistant = {
       enable = true;
+      # ONE TEST SKIPPED, and only on the way past a builder limitation. music-assistant runs its
+      # suite at build time, and 2.9.13 added `test_digital_silence_yields_finite_spectral_centroid`,
+      # which initialises torch's QNNPACK quantized backend — unavailable on this fleet's aarch64
+      # builder, so it errors with `RuntimeError: failed to initialize QNNPACK`. 3271 tests pass and
+      # that one takes the build down, and with it every rk1b deploy.
+      #
+      # It belongs to the `smart_fades` provider, which this host does not run (see `providers`
+      # below), so what is skipped is a test for code that is never loaded here. If smart_fades is
+      # ever wanted on this node, the QNNPACK question is real and this skip is not the answer.
+      # `overrideAttrs`, NOT `overridePythonAttrs`: this module hands the package on as
+      # `cfg.package.override { inherit (cfg) providers; }`, and only the former keeps `.override`
+      # on the result (the latter drops it — `attribute 'override' missing`). The skip survives
+      # that second override, which is the property that matters and is checked, not assumed.
+      package = pkgs.music-assistant.overrideAttrs (old: {
+        disabledTests = (old.disabledTests or [ ]) ++ [
+          "test_digital_silence_yields_finite_spectral_centroid"
+        ];
+      });
       # The providers this design uses: read Navidrome (opensubsonic), push to the Pi's snapserver
       # (snapcast), and the Party plugin (guest QR access to a shared queue — the "Spotify Jam on
       # your own library" experience, ADR-0031). The stats scrobbler is a later, additive step.
