@@ -33,7 +33,7 @@
     backup.enable = false;
     direnv.enable = true;
     fonts.enable = true;
-    gaming.enable = false;
+    gaming.enable = true;
     bluetooth.enable = true;
     impermanence.enable = false;
     litellm.enable = false;
