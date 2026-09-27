@@ -284,8 +284,11 @@ def poll_mailbox() -> list[bytes]:
     finally:
         try:
             imap.logout()
-        except Exception:
-            pass
+        except (OSError, imaplib.IMAP4.error) as exc:
+            # Best-effort cleanup in a `finally`: swallowed on purpose, because raising here
+            # would mask whatever exception is already on its way out of the block. Logged so
+            # a server that always refuses logout is visible rather than silent.
+            log(f"IMAP logout failed (ignored): {exc}")
     return messages
 
 

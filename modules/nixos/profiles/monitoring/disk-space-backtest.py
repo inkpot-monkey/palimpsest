@@ -82,6 +82,7 @@ def fetch(
         proc = subprocess.run(
             ["ssh", "-o", "BatchMode=yes", ssh_host, f"curl -sS {shlex.quote(url)}"],
             capture_output=True,
+            check=False,  # handled below, with curl's stderr in the message
         )
         if proc.returncode != 0:
             sys.exit(f"ssh/curl failed: {proc.stderr.decode()[:400]}")
@@ -219,23 +220,15 @@ def main() -> None:
 
     print("\n=== debounce sensitivity (per-host floors, CRITICAL + WARN 2x) ===")
     print(f"{'sustain':>9}  {'CRIT':>5}  {'WARN':>5}  {'total':>6}")
+    # Each host's floor, resolved once: it does not vary with the sustain window, and
+    # hoisting it keeps the lambdas' defaults free of a call (they still bind by value, so
+    # every key gets its own threshold).
+    floors = {k: CONFIGURED_FLOORS.get(k[0], DEFAULT_FLOOR) for k in keys}
     for sustain_h in (1, 2, 3, 6, 12):
         sus = max(1, int(sustain_h / sample_h))
-        c = sum(
-            episodes(
-                avail[k],
-                lambda v, t=CONFIGURED_FLOORS.get(k[0], DEFAULT_FLOOR): v < t,
-                sus,
-            )[0]
-            for k in keys
-        )
+        c = sum(episodes(avail[k], lambda v, t=floors[k]: v < t, sus)[0] for k in keys)
         w = sum(
-            episodes(
-                avail[k],
-                lambda v, t=CONFIGURED_FLOORS.get(k[0], DEFAULT_FLOOR) * 2: v < t,
-                sus,
-            )[0]
-            for k in keys
+            episodes(avail[k], lambda v, t=floors[k] * 2: v < t, sus)[0] for k in keys
         )
         print(f"{sustain_h:8}h  {c:5}  {w:5}  {c + w:6}")
 

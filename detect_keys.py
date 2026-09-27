@@ -1,3 +1,5 @@
+import sys
+
 import evdev
 from evdev import ecodes
 
@@ -26,9 +28,10 @@ found_devices = []
 
 try:
     devices = [evdev.InputDevice(path) for path in evdev.list_devices()]
-except Exception as e:
+except OSError as e:
+    # /dev/input/* is root-or-input-group only, and a device can vanish mid-enumeration.
     print(f"Error listing devices: {e}")
-    exit(1)
+    sys.exit(1)
 
 print(f"Scanning {len(devices)} devices...")
 
@@ -42,11 +45,10 @@ for device in devices:
         print(f"Checking device: {device.name} at {device.path}")
 
         for name, code in target_keys.items():
-            if code in supported_keys:
-                if name not in found_keys:
-                    print(f"  FOUND {name}")
-                    found_keys.add(name)
-                    device_has_target = True
+            if code in supported_keys and name not in found_keys:
+                print(f"  FOUND {name}")
+                found_keys.add(name)
+                device_has_target = True
 
         if device_has_target:
             found_devices.append(device.name)
