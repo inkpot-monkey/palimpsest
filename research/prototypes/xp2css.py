@@ -4,8 +4,9 @@ engine (lxml.cssselect), must land on the same element the x-pointer names."""
 import re
 import sys
 import zipfile
+
 from lxml import etree
-from lxml.cssselect import CSSSelector
+from lxml.cssselect import CSSSelector, SelectorError
 
 BOXING = {"autoBoxing", "floatBox", "inlineBox", "tabularBox", "pseudoElem"}
 STEP = re.compile(r"/([A-Za-z_][\w.:-]*|text\(\))(?:\[(\d+)\])?")
@@ -46,7 +47,7 @@ def to_css(xp):
             break
         if name in BOXING:
             continue
-        parts.append("%s:nth-of-type(%d)" % (name, idx))
+        parts.append(f"{name}:nth-of-type({idx})")
     return n, " > ".join(parts)
 
 
@@ -59,11 +60,11 @@ def xpointer_for(doc, node, n):
         chain.append(
             local(cur.tag)
             if len(same) == 1
-            else "%s[%d]" % (local(cur.tag), same.index(cur) + 1)
+            else f"{local(cur.tag)}[{same.index(cur) + 1}]"
         )
         cur = p
     chain.reverse()
-    return "/body/DocFragment[%d]/%s.0" % (n, "/".join(chain))
+    return f"/body/DocFragment[{n}]/{'/'.join(chain)}.0"
 
 
 z = zipfile.ZipFile(sys.argv[1])
@@ -72,7 +73,10 @@ ok = fail = 0
 for n, (idref, href) in enumerate(items, 1):
     try:
         doc = etree.fromstring(z.read(href))
-    except Exception:
+    except (etree.XMLSyntaxError, KeyError) as e:
+        # Not every spine href is parseable XHTML, and a broken manifest can name an
+        # entry the zip does not hold; either way there is nothing to check here.
+        print("SKIP", href, e)
         continue
     # namespace-strip so cssselect matches plain tag names
     for el in doc.iter():
@@ -89,7 +93,7 @@ for n, (idref, href) in enumerate(items, 1):
             continue
         try:
             hits = CSSSelector(css)(doc)
-        except Exception as e:
+        except SelectorError as e:
             print("SELECTOR ERROR", css, e)
             fail += 1
             continue
@@ -99,4 +103,4 @@ for n, (idref, href) in enumerate(items, 1):
             fail += 1
             if fail <= 5:
                 print("MISMATCH\n  xp :", xp, "\n  css:", css, "\n  hits:", len(hits))
-print("resolved identically: %d   mismatched: %d" % (ok, fail))
+print(f"resolved identically: {ok}   mismatched: {fail}")

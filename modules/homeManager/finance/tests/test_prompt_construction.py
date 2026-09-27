@@ -1,9 +1,10 @@
-import unittest
+import datetime
 import os
 import sys
+import unittest
 from unittest.mock import patch
-from beancount.core import data, amount, number
-import datetime
+
+from beancount.core import amount, data, number
 
 # Ensure we can import from parent directory
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -43,7 +44,7 @@ class TestPromptConstruction(unittest.TestCase):
 
         # Assert
         # Check what arguments were passed to completion()
-        args, kwargs = mock_completion.call_args
+        _args, kwargs = mock_completion.call_args
         messages = kwargs["messages"]
         user_message = messages[1]["content"]
 

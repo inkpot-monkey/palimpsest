@@ -9,8 +9,8 @@ Mirrors what a Rust version in stump_core would do:
 
 import re
 import sys
-import zipfile
 import xml.etree.ElementTree as ET
+import zipfile
 
 BOXING = {"autoBoxing", "floatBox", "inlineBox", "tabularBox", "pseudoElem"}
 STEP = re.compile(r"/([A-Za-z_][\w.:-]*|text\(\))(?:\[(\d+)\])?")
@@ -70,12 +70,8 @@ def convert(epub, xp):
         target = matches[idx - 1]
         out.append(2 * (kids.index(target) + 1))
         node = target
-    return "epubcfi(/%d/%d[%s]!%s)" % (
-        spine_step,
-        2 * n,
-        idref,
-        "".join("/%d" % s for s in out),
-    )
+    steps = "".join(f"/{s}" for s in out)
+    return f"epubcfi(/{spine_step}/{2 * n}[{idref}]!{steps})"
 
 
 def xpointer_for_node(doc, node, n):
@@ -88,21 +84,19 @@ def xpointer_for_node(doc, node, n):
         kids = [c for c in p if isinstance(c.tag, str)]
         same = [c for c in kids if local(c.tag) == local(cur.tag)]
         idx = same.index(cur) + 1
-        chain.append(
-            local(cur.tag) if len(same) == 1 else "%s[%d]" % (local(cur.tag), idx)
-        )
+        chain.append(local(cur.tag) if len(same) == 1 else f"{local(cur.tag)}[{idx}]")
         cur = p
     chain.reverse()
-    return "/body/DocFragment[%d]/%s.0" % (n, "/".join(chain))
+    return f"/body/DocFragment[{n}]/{'/'.join(chain)}.0"
 
 
 if __name__ == "__main__":
     epub = sys.argv[1]
     z = zipfile.ZipFile(epub)
     step, items = spine(z)
-    print("spine step /%d, %d items" % (step, len(items)))
+    print(f"spine step /{step}, {len(items)} items")
     for i, (idref, href) in enumerate(items[:3], 1):
-        print("  DocFragment[%d] -> %s (%s)" % (i, idref, href))
+        print(f"  DocFragment[{i}] -> {idref} ({href})")
     for n in range(1, len(items) + 1):
         doc = ET.fromstring(z.read(items[n - 1][1]))
         ps = [
@@ -113,7 +107,7 @@ if __name__ == "__main__":
         if len(ps) < 3:
             continue
         xp = xpointer_for_node(doc, ps[2], n)
-        print("\nDocFragment[%d] %s" % (n, items[n - 1][0]))
+        print(f"\nDocFragment[{n}] {items[n - 1][0]}")
         print("  x-pointer :", xp)
         print("  epubcfi   :", convert(epub, xp))
         print("  text      :", repr("".join(ps[2].itertext())[:70]))

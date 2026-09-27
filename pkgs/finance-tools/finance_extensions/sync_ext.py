@@ -1,7 +1,8 @@
-from fava.ext import FavaExtensionBase, extension_endpoint
-import subprocess
 import os
 import shutil
+import subprocess
+
+from fava.ext import FavaExtensionBase, extension_endpoint
 
 
 class SyncExtension(FavaExtensionBase):
@@ -32,8 +33,7 @@ class SyncExtension(FavaExtensionBase):
                 )
 
                 # Stream lines as they come
-                for line in process.stdout:
-                    yield line
+                yield from process.stdout
 
                 process.wait()
 
@@ -42,7 +42,9 @@ class SyncExtension(FavaExtensionBase):
                 else:
                     yield f"\nFAILED: Process exited with code {process.returncode}"
 
-            except Exception as e:
-                yield f"\nERROR: {str(e)}"
+            except (OSError, subprocess.SubprocessError, UnicodeDecodeError) as e:
+                # Spawn failure, a subprocess-level error, or output that is not valid
+                # UTF-8. Reported into the stream because the response has already begun.
+                yield f"\nERROR: {e!s}"
 
         return Response(stream_with_context(generate()), mimetype="text/plain")

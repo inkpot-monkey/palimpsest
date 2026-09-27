@@ -1,8 +1,9 @@
+import datetime
 import unittest
 from unittest.mock import patch
-from beancount.core import data, amount, number
+
+from beancount.core import amount, data, number
 from hooks.smart_tagger import SmartLLMHook
-import datetime
 
 
 class TestSmartLLMHook(unittest.TestCase):

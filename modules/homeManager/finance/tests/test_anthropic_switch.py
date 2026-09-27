@@ -1,12 +1,13 @@
-import unittest
 import os
 import sys
+import unittest
 
 # Ensure we can import from parent directory
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from hooks.smart_tagger import SmartLLMHook
 from unittest.mock import patch
+
+from hooks.smart_tagger import SmartLLMHook
 
 
 class TestAnthropicSwitch(unittest.TestCase):

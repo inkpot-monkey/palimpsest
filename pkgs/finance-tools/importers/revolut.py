@@ -1,9 +1,10 @@
 # Beancount v3 Migration: beancount.ingest -> beangulp
-from beangulp import Importer
-from beancount.core import data, amount, number
-from dateutil.parser import parse
 import csv
 import os
+
+from beancount.core import amount, data, number
+from beangulp import Importer
+from dateutil.parser import parse
 
 
 class RevolutImporter(Importer):
@@ -28,7 +29,8 @@ class RevolutImporter(Importer):
                     "started date" in header.lower()
                     or "completed date" in header.lower()
                 )
-        except Exception:
+        except (OSError, UnicodeDecodeError):
+            # Unreadable, or not a text file at all -- either way it is not ours.
             return False
 
     def extract(self, filepath, existing_entries=None):

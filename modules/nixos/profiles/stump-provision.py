@@ -110,7 +110,7 @@ def wait_for_server(timeout=180):
             with urllib.request.urlopen(f"{BASE}/api/v2/ping", timeout=5) as resp:
                 if resp.status == 200:
                     return
-        except (urllib.error.URLError, OSError, TimeoutError) as err:  # noqa: PERF203
+        except (urllib.error.URLError, OSError, TimeoutError) as err:
             last = err
         time.sleep(2)
     raise SystemExit(f"stump: server never answered {BASE}/api/v2/ping ({last})")

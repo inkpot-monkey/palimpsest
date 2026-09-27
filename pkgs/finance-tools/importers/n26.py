@@ -1,8 +1,9 @@
-from beangulp import Importer
-from beancount.core import data, amount, number
-from dateutil.parser import parse
 import csv
 import os
+
+from beancount.core import amount, data, number
+from beangulp import Importer
+from dateutil.parser import parse
 
 
 class N26Importer(Importer):
@@ -24,7 +25,8 @@ class N26Importer(Importer):
                     and '"payee"' in header.lower()
                     and '"amount (eur)"' in header.lower()
                 )
-        except Exception:
+        except (OSError, UnicodeDecodeError):
+            # Unreadable, or not a text file at all -- either way it is not ours.
             return False
 
     def extract(self, filepath, existing_entries=None):

@@ -1,8 +1,8 @@
-import os
 import json
+import os
 import sys
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any
 
 
 def get_config_dir() -> Path:
@@ -11,19 +11,21 @@ def get_config_dir() -> Path:
     return Path(xdg_config) / "finance"
 
 
-def load_ai_config() -> Dict[str, Any]:
+def load_ai_config() -> dict[str, Any]:
     """Load the AI configuration from ai_config.json."""
     config_path = get_config_dir() / "ai_config.json"
     try:
         if config_path.exists():
             with open(config_path, "r") as f:
                 return json.load(f)
-    except Exception as e:
+    except (OSError, ValueError) as e:
+        # Unreadable file, or JSON that will not parse/decode. Either way the caller
+        # gets defaults rather than a crash on a hand-edited config.
         print(f"Warning: Failed to load ai_config.json: {e}", file=sys.stderr)
     return {}
 
 
-def get_model_name(config: Optional[Dict[str, Any]] = None) -> str:
+def get_model_name(config: dict[str, Any] | None = None) -> str:
     """Get the model name from config or default."""
     if config is None:
         config = load_ai_config()
@@ -35,7 +37,7 @@ def get_model_name(config: Optional[Dict[str, Any]] = None) -> str:
     return model
 
 
-def get_expense_patterns(config: Optional[Dict[str, Any]] = None) -> list[str]:
+def get_expense_patterns(config: dict[str, Any] | None = None) -> list[str]:
     """Get expense account patterns."""
     if config is None:
         config = load_ai_config()

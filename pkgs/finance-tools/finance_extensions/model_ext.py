@@ -1,9 +1,10 @@
+import json
+import logging
+import subprocess
+
 from fava.ext import FavaExtensionBase, extension_endpoint
 from flask import jsonify, request
-import subprocess
-import json
 from utils.config import get_config_dir, get_model_name, load_ai_config
-import logging
 
 log = logging.getLogger(__name__)
 
@@ -64,7 +65,8 @@ class ModelExtension(FavaExtensionBase):
                 return jsonify({"success": True, "explanation": res.stdout.strip()})
             except subprocess.TimeoutExpired:
                 return jsonify({"success": False, "error": "AI request timed out"}), 504
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError) as e:
+            # `ollama` missing from PATH, or it failed or timed out under `check=True`.
             return jsonify({"success": False, "error": str(e)}), 500
 
     @extension_endpoint(methods=["POST"])
@@ -79,7 +81,9 @@ class ModelExtension(FavaExtensionBase):
             with open(config_path, "w") as f:
                 json.dump({"model": model}, f)
             return jsonify({"success": True})
-        except Exception as e:
+        except (OSError, TypeError) as e:
+            # The config directory or file is not writable, or the posted model is not
+            # JSON-serialisable.
             return jsonify({"success": False, "error": str(e)}), 500
 
     @extension_endpoint(methods=["POST"])
@@ -98,5 +102,6 @@ class ModelExtension(FavaExtensionBase):
             return jsonify({"success": True, "output": res.stdout})
         except subprocess.CalledProcessError as e:
             return jsonify({"success": False, "error": e.stderr}), 500
-        except Exception as e:
+        except (OSError, subprocess.SubprocessError) as e:
+            # `ollama` missing from PATH, or the 5-minute pull timeout expired.
             return jsonify({"success": False, "error": str(e)}), 500

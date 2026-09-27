@@ -5,8 +5,9 @@ lxml.cssselect (independent engine) must be exactly the originating element."""
 import re
 import sys
 import zipfile
+
 from lxml import etree
-from lxml.cssselect import CSSSelector
+from lxml.cssselect import CSSSelector, SelectorError
 
 _SEL = {}
 
@@ -51,7 +52,7 @@ def to_css(xp):
             break
         if name in BOXING:
             continue
-        parts.append("%s:nth-of-type(%d)" % (name, idx))
+        parts.append(f"{name}:nth-of-type({idx})")
     return n, " > ".join(parts)
 
 
@@ -66,11 +67,11 @@ def xpointer_for(doc, node, n):
         chain.append(
             local(cur.tag)
             if len(same) == 1
-            else "%s[%d]" % (local(cur.tag), same.index(cur) + 1)
+            else f"{local(cur.tag)}[{same.index(cur) + 1}]"
         )
         cur = p
     chain.reverse()
-    return "/body/DocFragment[%d]/%s.0" % (n, "/".join(chain))
+    return f"/body/DocFragment[{n}]/{'/'.join(chain)}.0"
 
 
 grand_ok = grand_fail = 0
@@ -87,10 +88,12 @@ for epub in sys.argv[1:]:
             continue
         try:
             doc = etree.fromstring(raw)
-        except Exception:
+        except etree.XMLSyntaxError:
+            # Plenty of real EPUBs ship XHTML that is not well-formed XML; retry as HTML
+            # before giving up on the document.
             try:
                 doc = etree.fromstring(raw, etree.HTMLParser())
-            except Exception:
+            except etree.XMLSyntaxError:
                 skipped += 1
                 continue
         if doc is None:
@@ -120,7 +123,7 @@ for epub in sys.argv[1:]:
                 continue
             try:
                 hits = sel(css)(doc)
-            except Exception as e:
+            except SelectorError as e:
                 fail += 1
                 if fail <= 3:
                     print("  SELECTOR ERROR", css, e)
@@ -130,11 +133,11 @@ for epub in sys.argv[1:]:
             else:
                 fail += 1
                 if fail <= 3:
-                    print("  MISMATCH xp=%s css=%s hits=%d" % (xp, css, len(hits)))
+                    print(f"  MISMATCH xp={xp} css={css} hits={len(hits)}")
     print(
-        "%-40s ok=%-6d fail=%-4d skipped_docs=%-3d mixed_ns_docs=%d"
-        % (epub.rsplit("/", 1)[-1], ok, fail, skipped, mixed_ns)
+        f"{epub.rsplit('/', 1)[-1]:<40} ok={ok:<6} fail={fail:<4} "
+        f"skipped_docs={skipped:<3} mixed_ns_docs={mixed_ns}"
     )
     grand_ok += ok
     grand_fail += fail
-print("\nTOTAL  resolved identically: %d   mismatched: %d" % (grand_ok, grand_fail))
+print(f"\nTOTAL  resolved identically: {grand_ok}   mismatched: {grand_fail}")

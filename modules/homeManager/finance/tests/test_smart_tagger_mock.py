@@ -2,14 +2,16 @@ import os
 import sys
 import unittest
 from unittest.mock import MagicMock, patch
-from beancount.core import data, amount, number
+
+from beancount.core import amount, data, number
 
 # Ensure we can import from parent directory
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from hooks.smart_tagger import SmartLLMHook
 import datetime
 import os
+
+from hooks.smart_tagger import SmartLLMHook
 
 
 class TestSmartLLMHook(unittest.TestCase):

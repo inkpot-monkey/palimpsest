@@ -1,7 +1,8 @@
-from hooks.smart_tagger import SmartLLMHook
-from beancount.core import data, amount, number
-from datetime import date
 import sys
+from datetime import date
+
+from beancount.core import amount, data, number
+from hooks.smart_tagger import SmartLLMHook
 
 # Mock transaction
 entry = data.Transaction(

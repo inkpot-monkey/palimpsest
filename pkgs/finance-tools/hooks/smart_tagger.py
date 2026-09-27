@@ -1,9 +1,8 @@
-from litellm import completion
-from beancount.core import data
-
 import sys
-from typing import Dict, Optional
-from utils.config import load_ai_config, get_model_name, get_expense_patterns
+
+from beancount.core import data
+from litellm import completion
+from utils.config import get_expense_patterns, get_model_name, load_ai_config
 
 
 # Simple LLM Tagger Hook
@@ -39,7 +38,9 @@ class SmartLLMHook:
                 self.model = model
                 self.expense_patterns = ["Expenses", "Income"]
 
-        except Exception as e:
+        except (AttributeError, KeyError, TypeError, ValueError) as e:
+            # load_ai_config already absorbs unreadable/unparseable files, so what reaches
+            # here is a config whose contents are the wrong shape. Fall back to defaults.
             print(f"Warning: Failed to load config: {e}", file=sys.stderr)
             self.model = model
             self.expense_patterns = ["Expenses", "Income"]
@@ -54,7 +55,8 @@ class SmartLLMHook:
                 f"{self.api_base}/api/tags", timeout=2
             ) as response:
                 return response.status == 200
-        except Exception:
+        except (OSError, ValueError):
+            # Unreachable, timed out, or api_base is not a usable URL.
             return False
 
     def __call__(self, entries, existing_entries):
@@ -98,12 +100,11 @@ class SmartLLMHook:
         for entry in entries:
             if isinstance(entry, data.Transaction):
                 # Check if we need to tag it
-                needs_help = False
-                if len(entry.postings) == 1:
-                    needs_help = True
-                elif len(entry.postings) > 1:
-                    if "Unknown" in entry.postings[1].account:
-                        needs_help = True
+                # A lone posting has nothing to balance against, and an "Unknown"
+                # counter-account is the importer saying it could not decide.
+                needs_help = len(entry.postings) == 1 or (
+                    len(entry.postings) > 1 and "Unknown" in entry.postings[1].account
+                )
 
                 if needs_help:
                     description = entry.narration.strip()
@@ -227,7 +228,7 @@ class SmartLLMHook:
                         f"Integrity Failure at index {i}: Anchor amount changed. Original: {anchor_orig.units}, Processed: {anchor_proc.units}"
                     )
 
-    def predict(self, entry: data.Transaction) -> Optional[Dict[str, str]]:
+    def predict(self, entry: data.Transaction) -> dict[str, str] | None:
         # Construct prompt
         description = entry.narration
         date = entry.date
@@ -264,6 +265,7 @@ class SmartLLMHook:
             end = content.rfind("}") + 1
             if start != -1 and end != -1:
                 return json.loads(content[start:end])
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - provider errors are not enumerable, and
+            # a tagging hook must never break the import run it is called from.
             print(f"LiteLLM Error: {e}", file=sys.stderr)
             return None
