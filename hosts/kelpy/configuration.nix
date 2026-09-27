@@ -59,7 +59,6 @@
         "stalwart.service" # mail
         "tuwunel.service" # matrix homeserver
         "matrix-hookshot.service" # the alert delivery path itself
-        "litellm.service"
         "jellyfin.service"
         "podman-qbittorrent-app.service" # torrent
         "podman-slskd.service" # Soulseek music seeder (ADR-0029)
@@ -129,7 +128,6 @@
       infraAlerts.enable = true;
     };
     paperless.enable = true;
-    litellm.enable = true;
     blocky.enable = true;
     media = {
       enable = true;

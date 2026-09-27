@@ -8,6 +8,12 @@
 
 let
   cfg = config.custom.profiles.litellm;
+  svc = settings.services.private.litellm;
+
+  # Same edge/origin split as immich: on the edge Caddy is local and loopback is
+  # right; off it, Caddy has to reach in over the tailnet. Derived from the
+  # registry so the binding cannot drift from the placement.
+  offEdge = (svc.origin or null) == config.networking.hostName;
 in
 {
   options.custom.profiles.litellm = {
@@ -30,11 +36,15 @@ in
       };
     };
 
+    # Off-edge only, and on tailscale0 alone — NOT openFirewall, which would also
+    # expose the proxy (and therefore the DeepInfra key behind it) to the LAN.
+    networking.firewall.interfaces."tailscale0".allowedTCPPorts = lib.mkIf offEdge [ svc.port ];
+
     services.litellm = {
       enable = true;
       environmentFile = config.sops.templates."litellm-env".path;
-      host = "127.0.0.1";
-      inherit (settings.services.private.litellm) port;
+      host = if offEdge then "0.0.0.0" else "127.0.0.1";
+      inherit (svc) port;
 
       settings = {
         master_key = "os.environ/LITELLM_MASTER_KEY";

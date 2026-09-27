@@ -230,6 +230,12 @@ in
             databaseDir = "/var/cache/postgresql";
           };
 
+          # LiteLLM — the cloud-model proxy (DeepInfra). Moved off kelpy purely for memory
+          # (~292M on a 4G host); it holds no state and talks only outward, so relocating it
+          # costs nothing. Caddy still fronts it at litellm.<domain>, so consumers see no
+          # change of address. Binds 0.0.0.0 + tailscale0 only, like Immich.
+          custom.profiles.litellm.enable = true;
+
           # Music Assistant — the library-plane brain (ADR-0031). Reads Navidrome (over loopback,
           # co-located here) and pushes audio to porcupineFish's snapserver in external-server mode,
           # so the Navidrome library plays out the Pi's speakers, controlled from Home Assistant on

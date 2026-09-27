@@ -57,9 +57,14 @@ let
       };
     };
     private = {
+      # LiteLLM — the cloud-model proxy (DeepInfra). Moved off kelpy to rk1b for
+      # memory: it was ~292M on a 4G host and holds no state, so it is the cheapest
+      # thing to relocate. Caddy still fronts it at litellm.<domain>, so consumers
+      # see no change. DEPLOY BOTH HOSTS.
       litellm = {
         edge = "kelpy";
         port = 4000;
+        origin = "rk1b";
       };
       monitoring = {
         edge = "kelpy";
