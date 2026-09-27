@@ -25,7 +25,15 @@
     base.enable = true;
     ssh.enable = true;
     sudo.enable = true;
-    wireless.enable = true;
+    # A speaker on a shelf, not a laptop: keep the burned-in MAC everywhere and stop the
+    # Livebox steering it between radios. 2.4 GHz measured better here than 5 GHz (-69 dBm
+    # vs -76 dBm), so `bg` is the pin even though that inverts the usual advice — see the
+    # option's description, and re-measure if the box or the router moves.
+    wireless = {
+      enable = true;
+      mode = "stationary";
+      band = "bg";
+    };
     hifiberry.enable = true;
     hifi.enable = true;
     tailscale = {
