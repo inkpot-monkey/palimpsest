@@ -60,7 +60,7 @@ in
     users.groups.qbittorrent = { };
 
     sops.secrets.protonvpn_env = lib.mkIf (!cfg.testMode) {
-      sopsFile = self.lib.getSecretFile "media";
+      sopsFile = self.lib.getSecretFile cfg.vpnSecretFile;
       # Rotating the ProtonVPN credential rewrites this file, but the container read its
       # environment once, when podman created it. Without this the new key is installed
       # and then ignored: gluetun keeps running on the old one, every unit stays green,

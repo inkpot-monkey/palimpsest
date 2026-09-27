@@ -251,6 +251,12 @@ in
           custom.profiles.media = {
             enable = true;
             mediaPath = "/var/cache/media";
+            # rk1b's OWN ProtonVPN config, not kelpy's. Two hosts on one WireGuard key
+            # repoint each other's endpoint on every handshake and contend for the single
+            # NAT-PMP grant, with both units staying green throughout (palimpsest#190).
+            # This key was minted for rk1b with NAT-PMP enabled at generation (stash
+            # 0ab5214) precisely so the two stacks can run at once.
+            vpnSecretFile = "video";
             slskd = {
               enable = true;
               libraryPath = config.services.navidrome.settings.MusicFolder;

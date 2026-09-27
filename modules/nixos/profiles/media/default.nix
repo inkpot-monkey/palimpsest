@@ -51,6 +51,29 @@ in
       default = if offEdge then "0.0.0.0" else "127.0.0.1";
       description = "Address the media web UIs are published on.";
     };
+    vpnSecretFile = lib.mkOption {
+      type = lib.types.str;
+      default = "media";
+      example = "video";
+      description = ''
+        Which stash file holds THIS host's ProtonVPN WireGuard credential (the
+        `protonvpn_env` key inside it).
+
+        Per-host because the credential is per-host, and that is not cosmetic: a
+        WireGuard peer identity IS its public key, and ProtonVPN keeps ONE endpoint per
+        key, repointing it on every authenticated handshake. Two hosts sharing a key flap
+        each other's tunnel while both units stay green, and the NAT-PMP grant (ADR-0033)
+        is per-session on that key too, so the forwarded port would be contended rather
+        than owned (palimpsest#190).
+
+        The files are therefore deliberately separate, each registered under its own name
+        in the expiry registry — `protonvpn_env_kelpy` → profiles/media.yaml,
+        `protonvpn_env_rk1b` → profiles/video.yaml. Set it where the host is declared;
+        the module must not infer it, so that adding a third host is a stated fact rather
+        than a branch somebody has to find.
+      '';
+    };
+
     testMode = lib.mkOption {
       type = lib.types.bool;
       default = false;
