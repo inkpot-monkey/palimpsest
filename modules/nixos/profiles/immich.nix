@@ -92,6 +92,42 @@ in
     systemd.services.immich-server.unitConfig.RequiresMountsFor = [ cfg.mediaLocation ];
     systemd.services.postgresql.unitConfig.RequiresMountsFor = [ cfg.databaseDir ];
 
+    # Both directories must EXIST before their units start, and only systemd's own
+    # StateDirectory= would have created them — which it does not once the path is moved
+    # off /var/lib. Without this postgres dies at step NAMESPACE with "Failed to set up
+    # mount namespacing: /var/cache/postgresql: No such file or directory", restarts five
+    # times and hits the start limit; Immich then has no database to reach.
+    #
+    # A oneshot rather than a tmpfiles rule so it can WAIT for the NVMe mount — tmpfiles
+    # runs early and would create these on the tmpfs root, which the real mount then
+    # shadows. Same reasoning as stump.nix's stump-library-roots.
+    systemd.services.immich-data-dirs = {
+      description = "Ensure Immich's media and database directories exist";
+      wantedBy = [ "multi-user.target" ];
+      before = [
+        "immich-server.service"
+        "postgresql.service"
+      ];
+      requiredBy = [
+        "immich-server.service"
+        "postgresql.service"
+      ];
+      unitConfig.RequiresMountsFor = [
+        cfg.mediaLocation
+        cfg.databaseDir
+      ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+      };
+      # `install -d` is idempotent and sets the same owner/mode the services expect.
+      # 0700 on the cluster: it holds Immich's credentials and every asset's metadata.
+      script = ''
+        install -d -o ${config.services.immich.user} -g ${config.services.immich.group} -m 0750 ${cfg.mediaLocation}
+        install -d -o postgres -g postgres -m 0700 ${cfg.databaseDir}
+      '';
+    };
+
     # Only meaningful where the data sits under the impermanent root. When it has
     # been moved to a durable NVMe subtree (the rk1 pattern) these paths are
     # already outside /persistent's remit, so the entries would be inert at best.

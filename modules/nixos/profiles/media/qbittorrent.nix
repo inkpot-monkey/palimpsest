@@ -9,10 +9,15 @@
 let
   cfg = config.custom.profiles.media;
 
-  # Reproducible OCI images via digests
+  # Reproducible OCI images via digests. FULLY QUALIFIED, including the registry: a
+  # short name like `qmcgaw/gluetun` only resolves where podman has
+  # unqualified-search-registries configured, so it worked on kelpy and failed outright
+  # on rk1b with "did not resolve to an alias and no unqualified-search registries are
+  # defined". Pinning the registry alongside the digest is what actually makes these
+  # reproducible rather than host-dependent.
   images = {
     gluetun = {
-      image = "qmcgaw/gluetun";
+      image = "docker.io/qmcgaw/gluetun";
       digest = "sha256:f9cd584c6bb8c89e7e4c6d799c7547f600bc86842fd5636307543c001d929bbb";
     };
     qbittorrent = {

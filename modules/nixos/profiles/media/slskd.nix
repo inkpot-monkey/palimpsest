@@ -12,7 +12,7 @@ let
 
   # Reproducible OCI image, digest-pinned like gluetun/qbittorrent in ./qbittorrent.nix.
   # slskd 0.26.0.0.
-  slskdImage = "slskd/slskd@sha256:ecd4026d4f8fb504e2cc55323efa2c1f5b56d20d3686b018249cc36b48ea17a6";
+  slskdImage = "docker.io/slskd/slskd@sha256:ecd4026d4f8fb504e2cc55323efa2c1f5b56d20d3686b018249cc36b48ea17a6";
 
   # The web UI port is the service-registry port (kept as one source of truth so Caddy's
   # upstream and slskd's listener never drift); published to loopback for Caddy to front.
