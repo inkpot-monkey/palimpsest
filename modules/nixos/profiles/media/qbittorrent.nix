@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  pkgs,
   settings,
   self,
   ...
@@ -100,7 +101,17 @@ in
       # binds eth0/lo only and never rebinds, leaving the UDP DHT socket on the bridge
       # where the kill-switch drops it (dht_nodes stuck at 0) while outbound TCP still
       # works and hides the problem.
-      serviceConfig.ExecStartPre = [ "${cfg.gluetunWatchdog.readyCheck}" ];
+      # The config dir must exist before podman binds it, and on an impermanence host it
+      # must exist INSIDE the bind mount — hence RequiresMountsFor and a pre-start rather
+      # than the tmpfiles rule alone. systemd-tmpfiles-setup is a boot-time oneshot: a rule
+      # added by a switch does not re-run it, so on rk1b the mount arrived empty and podman
+      # died with "statfs /var/lib/qbittorrent/config: no such file or directory". The
+      # tmpfiles rule is kept for a clean first boot; this makes it true at start time too.
+      unitConfig.RequiresMountsFor = [ "/var/lib/qbittorrent" ];
+      serviceConfig.ExecStartPre = [
+        "${pkgs.coreutils}/bin/install -d -o qbittorrent -g media -m 0755 /var/lib/qbittorrent/config"
+        "${cfg.gluetunWatchdog.readyCheck}"
+      ];
     };
 
     # There is deliberately no `systemd.services.qbittorrent` here. One used to be
