@@ -32,6 +32,10 @@
     kanata.enable = true; # keyboard remap, host-side (contract ADR-0002 slice 11)
     backup.enable = false;
     direnv.enable = true;
+    # Container runtime for local development. The `containers` affordance is already
+    # granted to inkpotmonkey on this host (hosts/default.nix); the group it confers only
+    # materializes once a runtime exists, which is what this enables.
+    docker.enable = true;
     fonts.enable = true;
     gaming.enable = true;
     bluetooth.enable = true;

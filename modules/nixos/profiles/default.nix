@@ -34,6 +34,7 @@
     paperless = ./paperless.nix;
     proxy = ./proxy.nix;
     podman = ./podman.nix;
+    docker = ./docker.nix;
     affine = ./affine;
     litellm = ./litellm.nix;
     openclaw = ./openclaw.nix;
