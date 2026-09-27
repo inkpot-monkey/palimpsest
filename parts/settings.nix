@@ -70,6 +70,13 @@ let
         edge = "kelpy";
         port = 28981;
       };
+      # Immich — the personal photo library (replaces the Google Photos/Drive
+      # archive). Co-located with Caddy on kelpy, so no `origin`: the vhost
+      # proxies to loopback behind the internal_only tailnet guard.
+      immich = {
+        edge = "kelpy";
+        port = 2283;
+      };
       torrent = {
         edge = "kelpy";
         port = 8080;

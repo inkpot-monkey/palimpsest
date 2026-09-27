@@ -32,6 +32,7 @@
     mail = ./mail;
     mail-dane-autoupdate = ./mail/dane-autoupdate.nix;
     paperless = ./paperless.nix;
+    immich = ./immich.nix;
     proxy = ./proxy.nix;
     podman = ./podman.nix;
     docker = ./docker.nix;

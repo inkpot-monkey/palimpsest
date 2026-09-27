@@ -89,6 +89,10 @@
     # properly means teaching the home-manager module to export too, which is where
     # that repo's outbound half actually lives. Not done here.
     monitoring-git-annex-alert.enable = true;
+    # Immich (palimpsest: Google Photos exit). Machine learning is left on — CLIP
+    # search is the reason to run this rather than a directory of JPEGs — but it is
+    # the RAM-hungry half, so it is the first thing to turn off if kelpy gets tight.
+    immich.enable = true;
     mail = {
       enable = true;
       inherit (settings.mail) domain extraDomains;
