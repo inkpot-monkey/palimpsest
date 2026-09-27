@@ -8,7 +8,6 @@
 {
   config,
   lib,
-  settings,
   self,
   ...
 }:
@@ -59,26 +58,30 @@
       # so .git needs no group-write and git's dubious-ownership check never fires.
       mode = "2770";
 
+      # Real files in the worktree, not symlinks into .git/annex/objects. This declares
+      # what is already true on disk (checked 2026-09-27: links=1, real files) and is
+      # what slskd needs to seed actual bytes now that it runs here rather than off
+      # kelpy's replica.
+      #
+      # `thin` is deliberately NOT set. It would hardlink each working file to its annex
+      # object and reclaim ~41G, but beets writes tags into this tree and a write through
+      # a thin hardlink mutates the annex object itself. The kelpy replica could afford
+      # thin because nothing there ever wrote to it; this tree is written to, so the
+      # duplication is the price of safety.
+      unlock = true;
+
       # Watch the library and adopt what beets files, without waiting for a timer.
       assistant = true;
 
-      # rk1b is authoritative and kelpy is a full replica: both want every track.
+      # rk1b is the only copy now: this repo wants every track.
       group = "backup";
       wanted = "standard";
 
-      # rk1b initiates. kelpy declares the mirror-image remote so either end can reconcile.
-      #
-      # MagicDNS name, not the bare hostname and not a pinned tailscale IP: rk1b cannot
-      # resolve `kelpy` at all (only kelpy carries a networking.hosts pin for rk1b — the
-      # asymmetry is easy to miss because the reverse direction works), and `settings.tailnet`
-      # is the fleet's documented way to address a peer, precisely because pinned IPs
-      # silently rot when a host re-keys.
-      remotes = [
-        {
-          name = "kelpy";
-          url = "git-annex@kelpy.${settings.tailnet}:/var/lib/git-annex/music";
-        }
-      ];
+      # No remotes. The kelpy replica that used to sit on the other end of this link is
+      # RETIRED (hosts/kelpy/git-annex.nix) — it existed solely to feed slskd, and slskd
+      # now runs here and reads this tree directly. ⚠ That means the library has ONE copy
+      # again: replication was the only thing standing in for a backup of it, and
+      # custom.profiles.backup is still off fleet-wide (palimpsest#150).
     };
   };
 

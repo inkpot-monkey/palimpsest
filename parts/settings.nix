@@ -51,9 +51,22 @@ let
         edge = "kelpy";
         port = 9000;
       };
+      # Jellyfin. RUNS on rk1b with the rest of custom.profiles.media (the stack moves
+      # as one: qBittorrent and slskd share gluetun's netns and jellyfin is gated on the
+      # same profile flag). Public vhost, so kelpy's Caddy is still the internet-facing
+      # half; the port itself is open on tailscale0 only.
+      #
+      # ⚠ TRANSCODING IS SOFTWARE-ONLY AND ~3.3x SLOWER HERE. Measured 2026-09-27:
+      # 1080p->720p h264 ran 12.4x realtime on kelpy (EPYC) vs 3.8x on rk1b (RK3588).
+      # rk1b has VPU nodes but no usable path: the only exposed encoder
+      # (rk3588-vepu121-enc) does JPEG and nothing else, and the H.264/HEVC decoders are
+      # stateless V4L2 which mainline ffmpeg cannot drive. Hardware transcode would need
+      # the vendor BSP kernel plus jellyfin-ffmpeg built --enable-rkmpp. Fine while
+      # clients direct-play; revisit if transcodes become common.
       jellyfin = {
         edge = "kelpy";
         port = 8096;
+        origin = "rk1b";
       };
     };
     private = {
@@ -90,9 +103,15 @@ let
         port = 2283;
         origin = "rk1b";
       };
+      # qBittorrent's WebUI, published out of the gluetun netns. Moved to rk1b with the
+      # rest of custom.profiles.media — chiefly to get the torrent write IO off kelpy's
+      # shared VPS disk (the same resource-abuse flag that moved monitoring, ADR-0021)
+      # and onto the NVMe. Egress still goes through ProtonVPN inside gluetun, so the
+      # home line carries the traffic but not the identity.
       torrent = {
         edge = "kelpy";
         port = 8080;
+        origin = "rk1b";
       };
       # affine is disabled for now (custom.profiles.affine.enable = false, so no
       # backend) — keep it out of the registry so Caddy doesn't front a dead vhost
@@ -153,14 +172,20 @@ let
         origin = "rk1b";
       };
       # slskd — the Soulseek client that seeds the shared music library outward
-      # (ADR-0028). It RUNS on kelpy (where the git-annex `music` replica lives),
-      # inside the ProtonVPN container's netns, with its web UI published to loopback;
-      # kelpy's Caddy fronts it tailnet-only at slskd.<domain> (internal_only guard).
-      # No `origin`: unlike Navidrome it is co-located with the edge. The profile that
-      # runs it is custom.profiles.media.slskd.
+      # (ADR-0028). It RUNS on rk1b, inside the ProtonVPN container's netns, with its
+      # web UI published out of gluetun; kelpy's Caddy fronts it tailnet-only at
+      # slskd.<domain> (internal_only guard). The profile that runs it is
+      # custom.profiles.media.slskd.
+      #
+      # Moving it here is the one relocation that DELETES work rather than shifting it:
+      # on kelpy it read a full git-annex `music` REPLICA that existed solely to feed it,
+      # and rk1b already holds the authoritative library at /var/cache/music. The replica
+      # and its assistant are retired in hosts/kelpy/git-annex.nix, and music-sync's drain
+      # into the beets inbox becomes a local move instead of a cross-host rsync.
       slskd = {
         edge = "kelpy";
         port = 5030;
+        origin = "rk1b";
       };
     };
   };

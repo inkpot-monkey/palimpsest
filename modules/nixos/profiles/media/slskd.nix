@@ -55,8 +55,8 @@ in
   config = lib.mkIf (cfg.enable && slskd.enable) {
     # Fail loud rather than seed a broken tree. slskd's whole purpose is sharing the
     # replica, so the path it mounts must (1) be a declared annex repo, and (2) be
-    # `unlock`+`thin` — an un-unlocked repo is a tree of symlinks into
-    # `.git/annex/objects`, which slskd would share as dangling links, not real bytes.
+    # `unlock` — an un-unlocked repo is a tree of symlinks into `.git/annex/objects`,
+    # which slskd would share as dangling links, not real bytes.
     assertions = [
       {
         assertion = libraryRepos != [ ];
@@ -68,12 +68,25 @@ in
         '';
       }
       {
-        assertion = lib.all (r: r.unlock && r.thin) libraryRepos;
+        # `unlock` ONLY. This used to demand `unlock && thin`, which conflated a
+        # correctness requirement with a capacity choice: what slskd needs is real file
+        # bytes, and `unlock` alone delivers them. `thin` only decides whether the
+        # working file is a hardlink to the annex object (1x disk) or a second copy
+        # (2x) — invisible to a reader.
+        #
+        # Keeping `thin` in the assertion actively pushed the wrong way once slskd moved
+        # off kelpy. It made sense there: a read-only REPLICA on an 87G budget. On rk1b
+        # the same tree is the AUTHORITATIVE library that beets writes tags into, and a
+        # write through a thin hardlink mutates the annex object underneath — the very
+        # corruption the libraryPath option's own docs warn about. So demanding it here
+        # would have forced the hazardous setting to satisfy a check that never needed it.
+        assertion = lib.all (r: r.unlock) libraryRepos;
         message = ''
           custom.profiles.media.slskd shares ${slskd.libraryPath}, but that git-annex
-          repo is not `unlock` + `thin`. slskd must read real file bytes to seed them;
-          a locked repo is symlinks into .git/annex/objects that it would share as
-          dangling links. Set unlock = true; thin = true; on the repository (ADR-0028).
+          repo is not `unlock`. slskd must read real file bytes to seed them; a locked
+          repo is symlinks into .git/annex/objects that it would share as dangling
+          links. Set unlock = true; on the repository (ADR-0028). `thin` is a separate
+          disk-space choice and is NOT required — avoid it on a tree anything writes to.
         '';
       }
     ];
@@ -160,7 +173,7 @@ in
     # downloader can't reach us). Direct inbound would need ProtonVPN port forwarding
     # (gluetun VPN_PORT_FORWARDING) wired through to slskd — a future refinement.
     virtualisation.oci-containers.containers.gluetun.ports = [
-      "127.0.0.1:${toString webPort}:${toString webPort}/tcp"
+      "${cfg.bindHost}:${toString webPort}:${toString webPort}/tcp"
     ];
 
     # slskd has no network stack of its own — it lives inside gluetun's namespace. When

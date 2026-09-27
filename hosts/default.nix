@@ -230,6 +230,33 @@ in
             databaseDir = "/var/cache/postgresql";
           };
 
+          # The media stack — gluetun (ProtonVPN), qBittorrent, slskd and Jellyfin. Moved
+          # here wholesale off kelpy: the profile is one flag and qBittorrent/slskd share
+          # gluetun's network namespace, so it could not be split without refactoring that
+          # VPN wiring. Drivers were memory (kelpy has 4G) and write IO — torrent traffic on
+          # a shared VPS disk is the resource-abuse flag that already moved monitoring
+          # (ADR-0021); here it lands on the NVMe.
+          #
+          # mediaPath is on /var/cache, NOT the 2G tmpfs root that downloads would fill in
+          # minutes — the same placement as Navidrome, Stump and Immich.
+          #
+          # slskd points at the AUTHORITATIVE library here (Navidrome's MusicFolder), not a
+          # replica: that is the whole reason this move pays for itself, and it satisfies
+          # slskd's own assertion that the path be an unlock+thin annex repo. kelpy's
+          # replica is retired in hosts/kelpy/git-annex.nix.
+          #
+          # ⚠ Jellyfin transcoding is SOFTWARE-ONLY here and ~3.3x slower than on kelpy —
+          # see the jellyfin entry in parts/settings.nix for the measurements and why the
+          # RK3588 VPU cannot help.
+          custom.profiles.media = {
+            enable = true;
+            mediaPath = "/var/cache/media";
+            slskd = {
+              enable = true;
+              libraryPath = config.services.navidrome.settings.MusicFolder;
+            };
+          };
+
           # LiteLLM — the cloud-model proxy (DeepInfra). Moved off kelpy purely for memory
           # (~292M on a 4G host); it holds no state and talks only outward, so relocating it
           # costs nothing. Caddy still fronts it at litellm.<domain>, so consumers see no
@@ -345,6 +372,10 @@ in
               "victoriametrics.service"
               "victorialogs.service"
               "vector.service"
+              # The media stack, moved here off kelpy (which watched these three before).
+              "jellyfin.service"
+              "podman-qbittorrent-app.service" # torrent
+              "podman-slskd.service" # Soulseek music seeder (ADR-0029)
             ];
           };
 

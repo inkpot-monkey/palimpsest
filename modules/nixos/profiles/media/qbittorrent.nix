@@ -170,7 +170,7 @@ in
         # complete version of the fix; publishing 6881 on the host never was, since it
         # exposed the real address without buying any inbound over the tunnel.
         ports = [
-          "127.0.0.1:${toString settings.services.private.torrent.port}:${toString cfg.qbittorrent.webuiPort}/tcp" # WebUI
+          "${cfg.bindHost}:${toString settings.services.private.torrent.port}:${toString cfg.qbittorrent.webuiPort}/tcp" # WebUI
         ];
         extraOptions = [
           "--cap-add=NET_ADMIN"

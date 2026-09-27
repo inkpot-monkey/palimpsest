@@ -59,9 +59,6 @@
         "stalwart.service" # mail
         "tuwunel.service" # matrix homeserver
         "matrix-hookshot.service" # the alert delivery path itself
-        "jellyfin.service"
-        "podman-qbittorrent-app.service" # torrent
-        "podman-slskd.service" # Soulseek music seeder (ADR-0029)
         # music-sync.service is deliberately NOT listed: it is a oneshot (path/timer
         # triggered), so it is `inactive` by design between runs and this active-watch
         # would spam. A failed drain surfaces via its systemd unit-state metric + the
@@ -129,13 +126,11 @@
     };
     paperless.enable = true;
     blocky.enable = true;
-    media = {
-      enable = true;
-      # slskd seeds the git-annex `music` replica (ADR-0028) out to Soulseek, through
-      # the same ProtonVPN container the torrent stack uses. Reads the replica in
-      # ./git-annex.nix read-only; web UI fronted tailnet-only at slskd.<domain>.
-      slskd.enable = true;
-    };
+    # custom.profiles.media is NOT enabled here. The whole stack — gluetun, qBittorrent,
+    # slskd and Jellyfin — moved to rk1b (hosts/default.nix): memory relief on a 4G host,
+    # and the torrent write IO belongs on rk1b's NVMe rather than this shared VPS disk
+    # (the resource-abuse flag that already moved monitoring, ADR-0021). kelpy keeps only
+    # the Caddy vhosts.
   };
 
   # kelpy is internet-facing (public Caddy edge, a federated homeserver) and runs
@@ -197,13 +192,12 @@
     # NOTE: `backup.enable` is currently false above (deferred — palimpsest#150), so nothing
     # ships until it returns; when it does, `library` goes offsite via the /persistent path.
     #
-    # slskd's own downloads (ADR-0029) are the same category — bulk, re-acquirable data
-    # that must never ship off-site — so they are excluded too. slskd's small state dir
-    # (/var/lib/slskd: share DB, config) is left in: it is not bulk and is cheap to keep.
-    exclude = [
-      "/persistent/var/lib/git-annex/music"
-      "/persistent/var/lib/media/slskd-downloads"
-    ];
+    # The music and slskd-downloads excludes that used to sit here are GONE with the
+    # data: custom.profiles.media and the `music` git-annex replica both moved to rk1b,
+    # so neither path exists on this host any more and excluding them would be dead
+    # config. The `library` replica below is the only annex tree left here that this
+    # backup touches, and it is deliberately NOT excluded.
+    exclude = [ ];
   };
 
   # Enforce the ADR-0031/#90 divergence from music: the document library replica MUST go
