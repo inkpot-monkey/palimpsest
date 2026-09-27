@@ -61,8 +61,21 @@ in
     };
     webuiPort = lib.mkOption {
       type = lib.types.port;
-      default = 8080;
-      description = "Internal WebUI port for qBittorrent.";
+      default = settings.services.private.torrent.port;
+      description = ''
+        Internal WebUI port for qBittorrent, inside gluetun's netns.
+
+        Defaults to the PUBLISHED port rather than qBittorrent's usual 8080, and the two
+        must not diverge. qBittorrent validates the Host header against its own configured
+        port and answers a mismatch with a bare `401 Unauthorized` -- BEFORE it looks at
+        credentials, so it is indistinguishable from a bad password and sends you hunting
+        the wrong thing. (It cost exactly that here: correct and wrong passwords returned
+        identical 401s.)
+
+        It stayed hidden while both numbers were 8080 on kelpy, and surfaced the moment
+        the published port moved to 8090 to dodge rk1b's supernote server. Deriving it
+        from the registry means a future port change cannot reintroduce the mismatch.
+      '';
     };
   };
 
