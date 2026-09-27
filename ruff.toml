@@ -1,0 +1,24 @@
+# Ruff configuration for this repo. treefmt runs `ruff check` and `ruff format` over every
+# .py file (parts/treefmt.nix), and the pre-commit hook fails on anything ruff reports, so
+# this file is the one place to record a rule the repo disagrees with.
+#
+# Deliberately ignore-ONLY: there is no `select` here. The active rule set stays whatever the
+# ruff on PATH enables by default, which is what the gate has always been enforcing. Adding a
+# `select` would freeze that set as of today and silently stop enforcing anything a later ruff
+# adds -- a weaker gate, arrived at by accident. Verified when this file was added: it changes
+# nothing except the rules listed below.
+
+[lint]
+ignore = [
+  # EXE001: "shebang is present but file is not executable".
+  #
+  # The Python scripts under modules/ carry a shebang to document how to run them by hand,
+  # but nothing ever execs them directly -- the systemd units invoke them through an explicit
+  # interpreter (`${pkgs.python3}/bin/python3 ${./script.py}`), so the execute bit is never
+  # consulted, and in the nix store the mode is not ours to control anyway.
+  #
+  # It also cannot be waived locally: a `# noqa: EXE001` has to sit on the line ruff reports,
+  # which is the shebang itself, and appending a comment there corrupts the interpreter line.
+  # So the choice is this ignore or a mode change on every such script in perpetuity.
+  "EXE001",
+]
