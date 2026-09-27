@@ -29,6 +29,18 @@ let
 
   # Helper to construct the immutable image string
   mkImage = img: "${img.image}@${img.digest}";
+
+  # Writes qBittorrent's WebUI username + PBKDF2 password hash into its config from the
+  # sops secret, idempotently. Runs with `+` (full privileges, no sandbox) because it has
+  # to read /run/secrets and write into the container's config as root.
+  seedPassword = pkgs.writeShellScript "qbittorrent-seed-password" ''
+    set -eu
+    ${pkgs.python3}/bin/python3 ${./qbittorrent-password.py} \
+      /var/lib/qbittorrent/config/qBittorrent/qBittorrent.conf \
+      ${config.sops.secrets.qbittorrent_webui_password.path} \
+      ${cfg.portForward.webuiUsername}
+    ${pkgs.coreutils}/bin/chown -R qbittorrent:media /var/lib/qbittorrent/config
+  '';
 in
 {
   options.custom.profiles.media.qbittorrent = {
@@ -110,6 +122,13 @@ in
       unitConfig.RequiresMountsFor = [ "/var/lib/qbittorrent" ];
       serviceConfig.ExecStartPre = [
         "${pkgs.coreutils}/bin/install -d -o qbittorrent -g media -m 0755 /var/lib/qbittorrent/config"
+        # Seed the WebUI credential from sops BEFORE the container starts. qBittorrent
+        # mints a random password on first run and only ever stores a PBKDF2 hash, so this
+        # was the one hand step left in the stack — and until it was done, the preferences
+        # and port-forward reconcilers could not authenticate and failed on every timer.
+        # Ordered here deliberately: qBittorrent rewrites this file when it exits, so the
+        # write has to happen while the container is stopped.
+        "+${seedPassword}"
         "${cfg.gluetunWatchdog.readyCheck}"
       ];
     };
