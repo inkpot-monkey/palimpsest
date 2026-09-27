@@ -1344,11 +1344,11 @@
         "nixpkgs": "nixpkgs_13"
       },
       "locked": {
-        "lastModified": 1788689621,
-        "narHash": "sha256-/SaO2GBD2w5ZK1A8RkYM8vNUREhCYs7XAjRKrc4XGRk=",
+        "lastModified": 1790501777,
+        "narHash": "sha256-dMa55Lh9QPvGMyg7QUSMwuBZx6UlLFKPFFvova0Fop0=",
         "ref": "refs/heads/main",
-        "rev": "6f5fcbbee9cabb792c7f58034166b6d50067e6a4",
-        "revCount": 172,
+        "rev": "9243922aba49979d085f80c9c290cc7cb65152d8",
+        "revCount": 173,
         "type": "git",
         "url": "ssh://git@github.com/palebluebytes/users"
       },
