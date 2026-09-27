@@ -110,7 +110,16 @@ let
       # home line carries the traffic but not the identity.
       torrent = {
         edge = "kelpy";
-        port = 8080;
+        # 8090, not qBittorrent's usual 8080: on rk1b the supernote server already holds
+        # 0.0.0.0:8080 (and 8081), so gluetun died with "listen tcp4 :8080: bind: address
+        # already in use". This is the HOST-side published port only — the container's
+        # own WebUI stays on webuiPort 8080 inside gluetun's netns.
+        #
+        # ⚠ `checkPorts` below could not catch this. It compares registry entries against
+        # each other on a listener host, and supernote is deliberately absent from the
+        # registry because it is not Caddy-fronted — so a collision with a non-registry
+        # listener is invisible to it and only shows up as a failed unit after a deploy.
+        port = 8090;
         origin = "rk1b";
       };
       # affine is disabled for now (custom.profiles.affine.enable = false, so no
