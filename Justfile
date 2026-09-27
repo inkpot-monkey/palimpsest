@@ -44,9 +44,16 @@ build host="":
 cache-kernel host="porcupineFish":
   #!/usr/bin/env bash
   set -euo pipefail
-  paths=$(nix eval --no-eval-cache --raw --impure --expr \
-    'let k = (builtins.getFlake (toString ./.)).nixosConfigurations.{{host}}.config.boot.kernelPackages.kernel;
-     in builtins.concatStringsSep "\n" (map (o: k.${o}.outPath) k.outputs)')
+  # Evaluate through the flake ref (`.#...`), the same way `deploy` and `build` do. The
+  # obvious alternative -- `--impure --expr 'getFlake (toString ./.)'` -- makes Nix read the
+  # raw directory rather than the git tree, so it chokes on anything in it that is not a
+  # regular file or symlink: `.git/fsmonitor--daemon.ipc` is a socket, and with git's fsmonitor
+  # running that form dies with "has an unsupported type" on every dirty tree, which is
+  # exactly when you reach for this recipe. The trade-off is that a flake ref sees only
+  # git-tracked content, so `git add` a new file before pushing -- same rule as every other
+  # recipe here.
+  paths=$(nix eval --no-eval-cache --raw .#nixosConfigurations.{{host}}.config.boot.kernelPackages.kernel \
+    --apply 'k: builtins.concatStringsSep "\n" (map (o: k.${o}.outPath) k.outputs)')
   echo "kernel outputs for {{host}}:"; echo "$paths"
   # The deploy builds these on the rk1b aarch64 builder; pull any that aren't local yet.
   # --no-check-sigs: rk1b signs its store paths with a key this host doesn't trust, and
