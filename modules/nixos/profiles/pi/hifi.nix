@@ -20,6 +20,20 @@ let
   # snapcast-stream-switcher.py and the `--volume-ctrl` note below. (#96)
   streamSwitcher = ./snapcast-stream-switcher.py;
 
+  # librespot's volume cache. snapserver passes `&cache=` straight through as librespot's
+  # `--cache`, which is also where librespot keeps its `volume` file (main.rs: the volume dir is
+  # `--system-cache` or, failing that, `--cache`). Paired with `&disable_audio_cache=true` and
+  # `--disable-credential-cache` in `&params`, this directory holds exactly one thing — the last
+  # volume the Spotify app asked for. No audio chunks, no Spotify token on disk. CacheDirectory
+  # on the snapserver unit below creates it; it lives on the ephemeral root by design (see
+  # hosts/porcupineFish/impermanence.nix), so a reboot returns to the default below.
+  librespotCache = "/var/cache/snapserver/librespot";
+
+  # The volume librespot starts at when that cache is empty — first run, and every boot.
+  # librespot's scale is 0..u16::MAX, and this is the value `--initial-volume 50` would have
+  # computed (50/100 × 65535), i.e. half-scale on the slider: (0.9·0.5 + 0.1)³ = −15.6 dB.
+  librespotDefaultVolume = 32767;
+
   # The stream name the Spotify librespot source registers under, and the snapclient hostID.
   # Shared between the librespot source and the switcher's reference-volume config so the two
   # agree on which stream is app-controlled.
@@ -42,19 +56,38 @@ let
   # than one shared hardware master. To stop Spotify inheriting the low level MA may have left
   # on the shared snapclient mixer, the switcher pins that mixer to a reference (100%) on every
   # switch to this stream (SWITCHER_REFERENCE_* below) — so the app slider is the only gain
-  # that then varies. `--initial-volume` is librespot's startup/fallback level (it caches the
-  # app's last value); the app slider overrides it live.
+  # that then varies.
+  #
+  # `volume=` is deliberately EMPTY, and that is the whole fix for "Spotify drops out and comes
+  # back deafening". An empty value makes snapserver omit `--initial-volume` altogether
+  # (librespot_stream.cpp: `if (!volume.empty()) params_ += " --initial-volume " + volume`),
+  # which matters because:
+  #   * librespot re-applies its initial volume to the mixer on *every* Spirc creation
+  #     (spirc.rs `Spirc::new` → `set_volume`), and main.rs re-creates the Spirc after every
+  #     "Spirc shut down unexpectedly" — i.e. after every dropped Spotify session; and
+  #   * an explicit `--initial-volume` *overrides* the remembered one (main.rs:
+  #     `opt_str(INITIAL_VOLUME).map(…).or_else(|| cache.volume())`).
+  # So with a fixed initial volume, any wifi blip resets the gain to whatever that number is.
+  # From a typical 25% app slider — cubic (0.9·0.25 + 0.1)³ = −29 dB — a reconnect used to be
+  # +29 dB louder, which is how a websocket reset became a jump to full scale. With the cache
+  # instead, a reconnect restores the level the app last set, and `librespotDefaultVolume`
+  # applies only when there is nothing to restore.
   librespotSource = lib.concatStrings [
     "librespot:///${lib.getExe pkgs.librespot}"
     "?name=${spotifyStream}"
     "&devicename=porcupineFish"
     "&bitrate=320"
     "&normalize=true"
-    # `volume=` becomes librespot's `--initial-volume` — the startup/fallback level.
-    "&volume=100"
+    # Empty on purpose — see the VOLUME note above. Do not give this a value.
+    "&volume="
+    # Remember the app's volume across session drops and librespot restarts.
+    "&cache=${librespotCache}"
+    "&disable_audio_cache=true"
     # snapcast forbids `--onevent` in &params (use &onevent) but passes everything else
     # through verbatim. Keep the pinned zeroconf port so the firewall can open exactly it.
-    "&params=--volume-ctrl cubic --zeroconf-port ${toString spotifyZeroconfPort}"
+    # `--disable-credential-cache` keeps the cache above volume-only: zeroconf hands the
+    # session over per-connect, so there is no reason to leave Spotify credentials on disk.
+    "&params=--volume-ctrl cubic --zeroconf-port ${toString spotifyZeroconfPort} --disable-credential-cache"
   ];
 in
 {
@@ -120,6 +153,43 @@ in
           enabled = true;
           port = 1780;
         };
+      };
+    };
+
+    # snapserver's unit needs two things the nixpkgs module does not give it.
+    systemd.services.snapserver = {
+      # 1. A network with an actual address. librespot's zeroconf needs a non-loopback
+      #    interface; with none up, libmdns fails ("Setting up dns-sd failed: No such device"),
+      #    librespot treats a dead discovery as fatal (`Discovery stopped unexpectedly` →
+      #    exit(1)) and snapserver respawns it — measured at 67-93 restarts on every boot,
+      #    looping until NetworkManager finished associating, each one re-advertising and then
+      #    withdrawing the Connect device. The module only orders after `network.target`, which
+      #    says nothing about addresses, so wait for the real thing. (NetworkManager-wait-online
+      #    backs this target on this host — see the wireless profile.)
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
+
+      serviceConfig = {
+        # 2. Somewhere for librespot to remember the app's volume. Ephemeral on purpose — it is
+        #    the level, not an audio cache, and losing it just means starting from
+        #    `librespotDefaultVolume` again.
+        CacheDirectory = "snapserver";
+
+        # Seed the default volume, so the first connect after a boot lands on a level this repo
+        # chose rather than on whatever librespot happens to default to. librespot creates this
+        # directory itself (cache.rs `Cache::new`), but only once snapserver has started it —
+        # too late to write the file into, hence the mkdir here. Runs as the unit's own
+        # (dynamic) user, so the file ends up owned correctly. `-` prefixed: seeding a volume
+        # must never be able to keep the audio node down.
+        ExecStartPre = [
+          "-${pkgs.writeShellScript "librespot-seed-volume" ''
+            set -eu
+            mkdir -p ${librespotCache}
+            if [ ! -e ${librespotCache}/volume ]; then
+              echo ${toString librespotDefaultVolume} > ${librespotCache}/volume
+            fi
+          ''}"
+        ];
       };
     };
 

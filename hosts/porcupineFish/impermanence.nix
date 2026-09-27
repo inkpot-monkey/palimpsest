@@ -94,4 +94,10 @@
   # stateless and the librespot Spotify stream re-advertises over zeroconf on every boot
   # (no stored credentials), so its audio cache is safe to lose — and the node-exporter
   # textfiles (regenerated on the next event). See ADR-0031.
+  #
+  # That includes /var/cache/snapserver/librespot, which holds one file: the volume the Spotify
+  # app last set. It exists so a dropped session does not come back at a different level (see
+  # the VOLUME note in modules/nixos/profiles/pi/hifi.nix), and wiping it on reboot is the
+  # intended behaviour — the box then starts from the profile's default rather than from
+  # whatever level the last listener happened to leave behind.
 }
