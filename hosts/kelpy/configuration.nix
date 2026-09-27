@@ -89,10 +89,12 @@
     # properly means teaching the home-manager module to export too, which is where
     # that repo's outbound half actually lives. Not done here.
     monitoring-git-annex-alert.enable = true;
-    # Immich (palimpsest: Google Photos exit). Machine learning is left on — CLIP
-    # search is the reason to run this rather than a directory of JPEGs — but it is
-    # the RAM-hungry half, so it is the first thing to turn off if kelpy gets tight.
-    immich.enable = true;
+    # Immich is NOT enabled here. It lives on rk1b (see hosts/default.nix and the
+    # `immich` entry in parts/settings.nix); kelpy only fronts it with Caddy.
+    # It ran here briefly and could not: 4G, no swap, and immich-server peaks
+    # ~1.4G importing geodata on first start, so it OOM-looped and the kernel
+    # killed tuwunel and jellyfin alongside it. Do not re-enable it on this host
+    # without giving kelpy considerably more memory.
     mail = {
       enable = true;
       inherit (settings.mail) domain extraDomains;

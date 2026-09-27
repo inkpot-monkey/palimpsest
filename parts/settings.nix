@@ -71,11 +71,19 @@ let
         port = 28981;
       };
       # Immich — the personal photo library (replaces the Google Photos/Drive
-      # archive). Co-located with Caddy on kelpy, so no `origin`: the vhost
-      # proxies to loopback behind the internal_only tailnet guard.
+      # archive). Same edge/origin split as Navidrome and Stump: it RUNS on rk1b
+      # (media node, NVMe /var/cache), fronted by kelpy's Caddy at immich.<domain>
+      # behind the internal_only tailnet guard.
+      #
+      # It started co-located on kelpy and had to move: kelpy has 4G and no swap,
+      # and immich-server peaks ~1.4G importing geodata on first start. It
+      # OOM-looped there and the kernel took tuwunel and jellyfin with it. rk1b has
+      # 32G and the media disk. Moving `origin` means BOTH hosts need deploying —
+      # kelpy for the vhost, rk1b for the service (the same trap stump.nix flags).
       immich = {
         edge = "kelpy";
         port = 2283;
+        origin = "rk1b";
       };
       torrent = {
         edge = "kelpy";

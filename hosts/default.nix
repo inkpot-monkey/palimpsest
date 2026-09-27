@@ -212,6 +212,24 @@ in
           # navidrome user so filed tracks are library-owned. See modules/nixos/profiles/beets.nix.
           custom.profiles.beets.enable = true;
 
+          # Immich — the personal photo library, replacing the Google Photos/Drive archive.
+          # Lands here rather than on kelpy for the same reason the media plane did: kelpy has
+          # 4G and no swap, and immich-server peaks ~1.4G importing its geodata on first start.
+          # It OOM-looped there and the kernel killed tuwunel and jellyfin alongside it. rk1b
+          # has 32G, 15G of zram swap and the NVMe, and both the server and the ML worker are
+          # substitutable for aarch64 (checked against cache.nixos.org, not assumed).
+          #
+          # Media and database both go on the /var/cache NVMe subtree, NOT the tmpfs root —
+          # the same placement as Navidrome and Stump — and the profile gates both units on
+          # those mounts so neither can win the race against var-cache.mount and write to the
+          # ramdisk. Fronted by kelpy's Caddy at immich.<domain>, so DEPLOY KELPY TOO (the
+          # same trap stump.nix flags above).
+          custom.profiles.immich = {
+            enable = true;
+            mediaLocation = "/var/cache/immich";
+            databaseDir = "/var/cache/postgresql";
+          };
+
           # Music Assistant — the library-plane brain (ADR-0031). Reads Navidrome (over loopback,
           # co-located here) and pushes audio to porcupineFish's snapserver in external-server mode,
           # so the Navidrome library plays out the Pi's speakers, controlled from Home Assistant on
