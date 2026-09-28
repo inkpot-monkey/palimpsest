@@ -1,6 +1,8 @@
 {
   config,
   lib,
+  pkgs,
+  self,
   settings,
   ...
 }:
@@ -43,6 +45,39 @@ in
         originals are only pixels, but albums, faces, people and share links live
         here and nowhere else.
       '';
+    };
+
+    provision = {
+      enable = lib.mkEnableOption ''
+        a post-start oneshot that creates Immich's admin account from sops and mints
+        an API key for the CLI importer (immich-provision.py). Immich has no
+        declarative path for its first-run account -- a fresh instance sits at
+        `isInitialized: false` and refuses everything, and an API key cannot exist
+        before the account does. Idempotent and fail-loud, the same shape as
+        custom.profiles.homeassistant.provision'';
+
+      adminEmail = lib.mkOption {
+        type = lib.types.str;
+        default = "admin@${settings.primaryDomain}";
+        description = "Email address of the owner account created on first run.";
+      };
+
+      adminName = lib.mkOption {
+        type = lib.types.str;
+        default = "Administrator";
+        description = "Display name for that account.";
+      };
+
+      apiKeyFile = lib.mkOption {
+        type = lib.types.path;
+        default = "/var/lib/immich-provision/cli-api-key";
+        description = ''
+          Where to write an API key for the CLI importer, 0600 root.
+
+          Minted only when this file is absent, so re-runs do not accumulate keys on
+          the account. Deleting it and re-running the unit issues a fresh one.
+        '';
+      };
     };
 
     machineLearning = lib.mkOption {
@@ -126,6 +161,52 @@ in
         install -d -o ${config.services.immich.user} -g ${config.services.immich.group} -m 0750 ${cfg.mediaLocation}
         install -d -o postgres -g postgres -m 0700 ${cfg.databaseDir}
       '';
+    };
+
+    # Post-start provisioner (opt-in). Immich has no declarative path for its owner
+    # account, so this drives Immich's own signup API — idempotent (a provisioned
+    # instance reports isInitialized and is left alone) and fail-loud. Mirrors
+    # custom.profiles.homeassistant.provision, down to the LoadCredential handling.
+    systemd.services.immich-provision = lib.mkIf cfg.provision.enable {
+      description = "Provision Immich's admin account and CLI API key";
+      after = [ "immich-server.service" ];
+      requires = [ "immich-server.service" ];
+      wantedBy = [ "multi-user.target" ];
+      environment = {
+        IMMICH_URL = "http://127.0.0.1:${toString svc.port}";
+        IMMICH_ADMIN_EMAIL = cfg.provision.adminEmail;
+        IMMICH_ADMIN_NAME = cfg.provision.adminName;
+        IMMICH_API_KEY_FILE = cfg.provision.apiKeyFile;
+      };
+      # Immich's first start imports its geodata and is slow; retry over a generous
+      # window rather than failing a boot race. The window must exceed
+      # RestartSec * burst or systemd rate-limits the retries away instantly.
+      startLimitIntervalSec = 1800;
+      startLimitBurst = 10;
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        Restart = "on-failure";
+        RestartSec = 60;
+        # The password lands in a per-service tmpfs, never in argv or a shared env.
+        LoadCredential = [ "admin_password:${config.sops.secrets.immich_admin_secret.path}" ];
+        ExecStart = pkgs.writeShellScript "immich-provision" ''
+          set -euo pipefail
+          for _ in $(seq 1 120); do
+            code=$(${pkgs.curl}/bin/curl -s -o /dev/null -w '%{http_code}' \
+              "$IMMICH_URL/api/server/ping" || true)
+            [ "$code" = "200" ] && break
+            sleep 5
+          done
+          exec ${pkgs.python3}/bin/python3 ${./immich-provision.py}
+        '';
+      };
+    };
+
+    # The owner password. Already present in the stash (profiles/media.yaml,
+    # `immich_admin_secret`) and until now unused by anything.
+    sops.secrets.immich_admin_secret = lib.mkIf cfg.provision.enable {
+      sopsFile = self.lib.getSecretFile "media";
     };
 
     # Only meaningful where the data sits under the impermanent root. When it has

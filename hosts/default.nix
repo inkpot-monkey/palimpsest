@@ -228,6 +228,11 @@ in
             enable = true;
             mediaLocation = "/var/cache/immich";
             databaseDir = "/var/cache/postgresql";
+            # The owner account, from the `immich_admin_secret` that has sat unused in
+            # profiles/media.yaml since before Immich existed here. Also mints the API
+            # key the CLI importer needs — which cannot exist until the account does,
+            # so this unblocks the photo import as well as the login.
+            provision.enable = true;
           };
 
           # The media stack — gluetun (ProtonVPN), qBittorrent, slskd and Jellyfin. Moved
@@ -251,6 +256,31 @@ in
           custom.profiles.media = {
             enable = true;
             mediaPath = "/var/cache/media";
+            # Jellyfin's wizard and libraries, declared rather than clicked. Moving the
+            # stack here produced a running Jellyfin sat beside 15G of media with no
+            # library pointing at any of it — that state lived only in kelpy's UI, and
+            # kelpy's copy turned out to be 14K of nothing, so there was nothing to
+            # migrate and no way to notice except by looking.
+            jellyfin.provision = {
+              enable = true;
+              libraries = [
+                {
+                  name = "Series";
+                  type = "tvshows";
+                  path = "/var/cache/media/series";
+                }
+                {
+                  name = "Movies";
+                  type = "movies";
+                  path = "/var/cache/media/movies";
+                }
+                {
+                  name = "Downloads";
+                  type = "tvshows";
+                  path = "/var/cache/media/downloads";
+                }
+              ];
+            };
             # rk1b's OWN ProtonVPN config, not kelpy's. Two hosts on one WireGuard key
             # repoint each other's endpoint on every handshake and contend for the single
             # NAT-PMP grant, with both units staying green throughout (palimpsest#190).

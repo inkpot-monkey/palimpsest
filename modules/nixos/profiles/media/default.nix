@@ -74,6 +74,67 @@ in
       '';
     };
 
+    jellyfin.provision = {
+      enable = lib.mkEnableOption ''
+        a post-start oneshot that completes Jellyfin's startup wizard and declares its
+        libraries from this config (jellyfin-provision.py). Jellyfin has no declarative
+        path for either: a fresh server sits at `StartupWizardCompleted: false` and
+        serves nothing, and libraries are UI state thereafter. Idempotent and
+        fail-loud, the same shape as custom.profiles.homeassistant.provision'';
+
+      adminUser = lib.mkOption {
+        type = lib.types.str;
+        default = "admin";
+        description = "Jellyfin admin account created by the wizard.";
+      };
+
+      uiCulture = lib.mkOption {
+        type = lib.types.str;
+        default = "en-GB";
+        description = "Jellyfin UI culture.";
+      };
+
+      metadataCountry = lib.mkOption {
+        type = lib.types.str;
+        default = "GB";
+        description = "Metadata country code.";
+      };
+
+      metadataLanguage = lib.mkOption {
+        type = lib.types.str;
+        default = "en";
+        description = "Preferred metadata language.";
+      };
+
+      libraries = lib.mkOption {
+        type = lib.types.listOf (
+          lib.types.submodule {
+            options = {
+              name = lib.mkOption {
+                type = lib.types.str;
+                description = "Library name as it appears in Jellyfin.";
+              };
+              type = lib.mkOption {
+                type = lib.types.str;
+                example = "tvshows";
+                description = "Jellyfin collection type (tvshows, movies, music, ...).";
+              };
+              path = lib.mkOption {
+                type = lib.types.path;
+                description = "Directory the library indexes.";
+              };
+            };
+          }
+        );
+        default = [ ];
+        description = ''
+          Libraries to declare. Matched by NAME: an existing library is left alone
+          rather than re-pointed, so renaming one here adds a second rather than
+          moving the first.
+        '';
+      };
+    };
+
     testMode = lib.mkOption {
       type = lib.types.bool;
       default = false;
