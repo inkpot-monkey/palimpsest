@@ -230,6 +230,39 @@ in
     # Vector receiver (ADR-0022) still read nodes.*.tailscale.ip4.
     tailnet = "tail8596c.ts.net";
 
+    # Fleet SSH host keys, rendered into programs.ssh.knownHosts by profiles/base.nix.
+    #
+    # PUBLIC data — a host key exists to be published — so it lives here in the open repo
+    # rather than the secrets stash, and deliberately NOT in secrets/nodes.nix, which is
+    # scoped to the handful of tailscale IPs that must be literals.
+    #
+    # Why declare them at all when MagicDNS already resolves every host: MagicDNS answers
+    # "what address is rk1b", not "is the machine answering there the one I meant". The
+    # second question is SSH's, and unanswered it stops any host-to-host command at a
+    # first-contact prompt — which is what broke an rsync from kelpy to rk1b even though
+    # the name resolved fine. The git-annex remotes never hit it only because that module
+    # manages its own .ssh for the git-annex user, so the gap stays invisible until
+    # something else tries.
+    #
+    # Each entry covers the bare name, its lowercase MagicDNS form (tailscale lowercases,
+    # so `sawtoothShark` is `sawtoothshark` on the tailnet) and the FQDN. Addresses are
+    # deliberately absent: the fleet addresses hosts by name precisely so a re-key cannot
+    # rot a pinned IP (see secrets/nodes.nix).
+    #
+    # To add a host: `ssh <host> cat /etc/ssh/ssh_host_ed25519_key.pub`. Re-keying a host
+    # (a reflash regenerates it) means updating it here, or every peer refuses it — loudly,
+    # which is the point.
+    hostKeys = {
+      kelpy = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFxYh9E9CSKCUmX3XrYdAWF3+z0lf6E8XKdP0H1mFWkd";
+      rk1a = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF6JzPAATadOmBGkzcjFEeyDfSGPXMn7c2a2T748oSvX";
+      rk1b = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM8vcWJlfVAx0p384OZniUuuo66oYnC9XlPaeajMZtTM";
+      porcupineFish = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPB1Szi8Wcy14xVp8t1dldg7zeRcjuUFN2Im+d2MExsq";
+      sawtoothShark = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIICKpf3TlWKUf4U2JlOQqY43sJ0T/Q3stMfiz6uz9qWr";
+      # stargazer, weedySeadragon and potbelliedSeahorse are absent because they were
+      # powered off when this was populated, not because they are excluded. Add them with
+      # the command above; an absent host simply keeps the old first-contact prompt.
+    };
+
     # Mail domains served by Stalwart — the single source of truth consumed by both the
     # kelpy mail profile and the `dns` app (which generates the per-domain mail records).
     mail = {

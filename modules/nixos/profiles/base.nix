@@ -4,6 +4,7 @@
   options,
   pkgs,
   inputs,
+  settings,
   ...
 }:
 let
@@ -96,9 +97,38 @@ in
         # on the hosts whose root is already a tmpfs (the impermanence Pis, kelpy's container).
         boot.tmp.cleanOnBoot = true;
 
-        # Trusted backup targets fleet-wide
-        programs.ssh.knownHosts."zh2046.rsync.net".publicKey =
-          "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJtclizeBy1Uo3D86HpgD3LONGVH0CJ0NT+YfZlldAJd";
+        # Fleet host keys, so any host-to-host ssh/rsync/scp works without a first-contact
+        # prompt. MagicDNS already resolves every peer by name; what it does not do is
+        # vouch for the machine answering, and that is the half OpenSSH refuses on. Without
+        # this, an interactive run stops at "authenticity of host ... can't be established"
+        # and a scripted one dies outright with "Host key verification failed" — which is
+        # exactly how an rsync from kelpy to rk1b failed even though the name resolved.
+        #
+        # Declared rather than trust-on-first-use deliberately: TOFU records whatever
+        # answered the first time, which is only as trustworthy as that moment. These come
+        # from the hosts themselves and live in the repo, so a changed key is a visible
+        # diff instead of a silent re-pin.
+        #
+        # Lives in `base` (fleet-wide) rather than the `ssh` profile, which only the
+        # servers enable — the desktops initiate most of these connections and would
+        # otherwise be the machines still prompting.
+        programs.ssh.knownHosts = {
+          # Trusted backup targets fleet-wide.
+          "zh2046.rsync.net".publicKey =
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJtclizeBy1Uo3D86HpgD3LONGVH0CJ0NT+YfZlldAJd";
+        }
+        // lib.mapAttrs (host: key: {
+          publicKey = key;
+          # Tailscale lowercases MagicDNS names, so `sawtoothShark` is `sawtoothshark`
+          # on the tailnet while the Nix attribute keeps its camelCase. Accept both
+          # spellings and the FQDN, or half the ways of naming a host still prompt.
+          hostNames = lib.unique [
+            host
+            (lib.toLower host)
+            "${host}.${settings.tailnet}"
+            "${lib.toLower host}.${settings.tailnet}"
+          ];
+        }) settings.hostKeys;
       }
     ]
   );
