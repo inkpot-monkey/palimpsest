@@ -1,5 +1,6 @@
 {
   config,
+  options,
   pkgs,
   lib,
   inputs,
@@ -70,6 +71,29 @@
       "/var/lib"
       "/home/inkpotmonkey"
     ];
+  };
+
+  # Build sops-install-secrets with Go 1.26 rather than this host's default 1.25.7.
+  #
+  # porcupineFish is the only host that needs this, because it is the only one not
+  # built against the root nixpkgs: mkPiSystem goes through
+  # nixos-raspberrypi.lib.nixosSystem, so its pkgs come from THAT input's pinned
+  # nixpkgs. sops-nix HEAD now requires Go >= 1.26 and the Pi's default go is 1.25.7,
+  # so the 2026-09-28 fleet bump failed here and nowhere else with
+  #
+  #   go: go.mod requires go >= 1.26.0 (running go 1.25.7; GOTOOLCHAIN=local)
+  #
+  # Two obvious fixes are both worse. Holding sops-nix at its previous rev breaks every
+  # OTHER host, because that rev uses `buildGo125Module` which the new nixpkgs removed
+  # ("Go 1.25 is end-of-life") -- tried and reverted. Bumping nixos-raspberrypi to reach
+  # a newer default go moves the kernel too, and that pin exists precisely because
+  # unstable Pi kernels hang in initrd and are uncached (AGENTS.md).
+  #
+  # The Pi's nixpkgs already CARRIES go_1_26; only the default is older. So this changes
+  # nothing but which compiler builds one Go program. Delete it once the Pi's nixpkgs
+  # default reaches 1.26 -- at that point it is a no-op, not a hazard.
+  sops.package = options.sops.package.default.override {
+    buildGoModule = pkgs.buildGo126Module;
   };
 
   sops.age.sshKeyPaths = [
