@@ -31,6 +31,15 @@ let
   # from probing/alerting; it does not stop Caddy fronting it (to fully retire a
   # service, remove its entry). The slice-04 flake-check guard enforces both the
   # reason-when-disabled rule and that every monitored service has a buildable probe.
+  #
+  # ⚠ ADDING AN ENTRY IS A FLEET-WIDE DEPLOY, not an edge/origin one. Several entries
+  # below say "DEPLOY BOTH HOSTS", meaning the edge (for the Caddy vhost) and the origin
+  # (for the service) — but that is not the whole list. A private entry's hostname is also
+  # baked into blocky's generated hosts file (profiles/blocky.nix) on EVERY host in
+  # `dns.nameserverHosts` below, at build time. Deploy only some of them and the name
+  # resolves INTERMITTENTLY, because MagicDNS spreads queries across the fleet resolvers:
+  # measured 2026-09-29, `forge` answered from kelpy's blocky and NXDOMAIN'd from rk1b's
+  # until rk1b was deployed too — so from a workstation it simply did not resolve.
   services = {
     public = {
       matrix = {

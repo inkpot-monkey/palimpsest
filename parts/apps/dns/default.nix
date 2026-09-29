@@ -13,6 +13,7 @@ let
       pkgs.typescript
       pkgs.curl # fetch the authoritative mail records from Stalwart's API
       pkgs.cacert # CA bundle for verifying the Stalwart API's TLS
+      pkgs.ssh-to-age # derive the sops age identity from the admin ssh key (see below)
     ];
     text = ''
       set -euo pipefail
@@ -21,6 +22,45 @@ let
       DNS_DIR=$(mktemp -d)
       CREDS_JSON=$(mktemp --suffix=.json)
       trap 'rm -rf "$DNS_DIR" "$CREDS_JSON"' EXIT
+
+      # ── The sops age identity ────────────────────────────────────────────────────────
+      # Every `sops --decrypt` below needs the &admin age identity, and nothing on a
+      # workstation supplies one any more. It used to arrive as an environment variable:
+      # home-manager exported
+      #   SOPS_AGE_KEY_FILE = "/run/user/$(id -u)/secrets.d/age-keys.txt";
+      # and home-sops populated that file. The line left this tree in 9b785dc (2026-08-07),
+      # when the homes moved to the external users flake, and home-sops has since been
+      # dismantled fleet-wide (palimpsest#209) — so the variable AND the file it named are
+      # both gone, and this app began failing with "no master key was able to decrypt the
+      # file" on a machine where it had always worked.
+      #
+      # There is no fallback left to lean on, and the two obvious ones are both dead ends:
+      #
+      #   * sops 3.13 searches SOPS_AGE_{KEY,KEY_FILE,KEY_CMD},
+      #     SOPS_AGE_SSH_PRIVATE_KEY_{FILE,CMD} and ~/.ssh/id_rsa. Note what is NOT in that
+      #     list: ~/.ssh/id_ed25519, which is this fleet's admin key.
+      #   * SOPS_AGE_SSH_PRIVATE_KEY_FILE does NOT substitute. That path uses age's own
+      #     ssh-identity support, which opens `ssh-ed25519` recipient stanzas — whereas
+      #     every file here is encrypted to a native `age1…` X25519 recipient derived with
+      #     ssh-to-age (docs/adr/0003). Point it at exactly the right key and sops still
+      #     answers "no identity matched any of the recipients".
+      #
+      # So derive the native identity here, into the tmpdir the trap above already removes.
+      # Deliberately NOT a persistent ~/.config/sops/age/keys.txt: the key it would hold
+      # decrypts the ENTIRE fleet, and leaving it in plaintext forever to save re-deriving
+      # a few bytes per run is a bad trade.
+      #
+      # Skipped when an identity is already configured, so an existing setup always wins,
+      # and skipped when there is no ssh key to derive from — which is the case on kelpy,
+      # where the cert-renewal hook (mail/dane-autoupdate.nix) passes STALWART_PW and
+      # CLOUDFLARE_API_TOKEN in from sops-nix secrets and never calls sops at all.
+      ADMIN_SSH_KEY="''${HOME:-}/.ssh/id_ed25519"
+      if [ -z "''${SOPS_AGE_KEY:-}''${SOPS_AGE_KEY_FILE:-}''${SOPS_AGE_KEY_CMD:-}" ] \
+         && [ -n "''${HOME:-}" ] && [ -r "$ADMIN_SSH_KEY" ]; then
+        SOPS_AGE_KEY_FILE="$DNS_DIR/age-key.txt"
+        ( umask 077; ssh-to-age -private-key -i "$ADMIN_SSH_KEY" -o "$SOPS_AGE_KEY_FILE" )
+        export SOPS_AGE_KEY_FILE
+      fi
 
       # Copy TS config and support files
       cp "${./dnsconfig.ts}" "$DNS_DIR/dnsconfig.ts"
@@ -99,6 +139,28 @@ let
 
       echo "Compiling TypeScript configuration..."
       # We use tsc to transpile TS to ES5 JS that dnscontrol can understand.
+      #
+      # ⚠ THIS IS BROKEN ON TypeScript 7, which is what `pkgs.typescript` now resolves to.
+      # TS 7 removed the ES5 target outright, along with every module kind `--outFile`
+      # accepted (None/AMD/System/UMD) — so this dies with a misleading
+      # "Argument for '--module' option must be: …", listing a set that silently no longer
+      # contains the one being asked for.
+      #
+      # ES5 IS NOT A PREFERENCE THAT CAN BE RELAXED. dnscontrol 5.2.0 embeds otto, a
+      # strictly ES5.1 interpreter. Measured against the real binary, it rejects `const`
+      # ("Unexpected reserved word"), `let`, arrow functions ("Unexpected token >") and
+      # template literals ("Unexpected token ILLEGAL"). Nor is there another downleveller to
+      # hand: esbuild refuses ("Transforming const to the configured target environment
+      # (es5) is not supported yet") and swc does not currently build in nixpkgs.
+      #
+      # There is nothing to wait for upstream either: dnscontrol v5.2.0 is the newest
+      # release and its go.mod still pins github.com/robertkrimen/otto v0.5.1 (plus
+      # xddxdd/ottoext for `require`). The fix is a pinned TypeScript 5, or a dnscontrol
+      # fork swapping otto for goja — pkg/js/js.go is 10.5 KB with 11 otto call sites, and
+      # the 67 KB helpers.js prelude is ES5 and would run on goja unchanged.
+      #
+      # DO NOT "fix" this by relaxing the target: that produces JS which compiles cleanly
+      # here and then fails inside dnscontrol, which is the worse failure.
       tsc --project "$DNS_DIR/tsconfig.json" \
           --noEmit false \
           --target ES5 \
