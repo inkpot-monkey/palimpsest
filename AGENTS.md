@@ -57,8 +57,15 @@ touching secrets:
 - **A new file must be `git add`ed before the flake can see it.** The source is
   git-tracked-files-only, so an untracked file fails at *eval* with
   `error: Path '…' is not tracked by Git` rather than as a missing file.
-- **Raspberry Pi kernel pin:** `nixos-raspberrypi` must pin a rev whose *default*
-  kernel is stable; unstable/next kernels hang in initrd and aren't cached.
+- **Raspberry Pi kernel pin:** porcupineFish must run a `stable_*`-tagged vendor kernel
+  — unstable/next ones hang in initrd, a silent brick (no console, no network, and
+  extlinux does not fall back). The host `lib.mkForce`s `boot.kernelPackages` to a named
+  bundle, so the `nixos-raspberrypi` rev's *default* no longer has to be stable, but the
+  forced bundle does. Read the `tag` in the rev's `pkgs/linux-rpi/linux-sources.nix`, not
+  the version number: the same `6.18.34` is `stable_*` on one branch and `unstable_*` on
+  another. Bumping that rev also moves the Pi's whole userspace (it pins its own nixpkgs),
+  so `home-manager-pi` moves with it in lockstep. **Never deploy a kernel change to this
+  host remotely** — validate at the device. See `hosts/porcupineFish/README.md`.
 - **Services are monitored by default (ADR-0019).** Every `settings.services` entry
   is uptime-probed automatically. To exempt a *served* service, set
   `monitor = { enable = false; reason = "…"; }` on its entry (not delete it — that

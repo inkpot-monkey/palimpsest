@@ -1,6 +1,5 @@
 {
   config,
-  options,
   pkgs,
   lib,
   inputs,
@@ -73,28 +72,27 @@
     ];
   };
 
-  # Build sops-install-secrets with Go 1.26 rather than this host's default 1.25.7.
+  # Pin the kernel to a *stable*-tagged vendor bundle, never the input's default.
   #
-  # porcupineFish is the only host that needs this, because it is the only one not
-  # built against the root nixpkgs: mkPiSystem goes through
-  # nixos-raspberrypi.lib.nixosSystem, so its pkgs come from THAT input's pinned
-  # nixpkgs. sops-nix HEAD now requires Go >= 1.26 and the Pi's default go is 1.25.7,
-  # so the 2026-09-28 fleet bump failed here and nowhere else with
+  # nixos-raspberrypi's default kernel is currently linux_rpi-bcm2711-6.18.52, built from
+  # raspberrypi/linux's `unstable_20260915` tag, and unstable/next-branch kernels hang this
+  # host in the initrd before systemd ever starts -- a silent brick: no HDMI console (the
+  # framebuffer only appears once vc4 KMS loads late), no network, and extlinux does not
+  # fall back. The tell is a flashed card whose /var is empty and whose root was never
+  # grown. See README "Toolchain pin".
   #
-  #   go: go.mod requires go >= 1.26.0 (running go 1.25.7; GOTOOLCHAIN=local)
+  # v6_18_39 is raspberrypi/linux `stable_20260724`, the newest stable bundle this input
+  # offers, and it is a genuine 6.12 -> 6.18 LTS jump from the old 6.12.47 pin. Read the
+  # TAG, not the version number, when changing this: 6.18.34 is stable_20260609 on this
+  # rev but unstable_20260604 on main -- the same number, different branch.
   #
-  # Two obvious fixes are both worse. Holding sops-nix at its previous rev breaks every
-  # OTHER host, because that rev uses `buildGo125Module` which the new nixpkgs removed
-  # ("Go 1.25 is end-of-life") -- tried and reverted. Bumping nixos-raspberrypi to reach
-  # a newer default go moves the kernel too, and that pin exists precisely because
-  # unstable Pi kernels hang in initrd and are uncached (AGENTS.md).
+  # raspberry-pi-4.nix sets kernelPackages with mkDefault, so mkForce wins. A non-default
+  # bundle is unlikely to be on nixos-raspberrypi.cachix.org; `just cache-kernel
+  # porcupineFish` pre-seeds ours, and rk1b builds it natively rather than under QEMU.
   #
-  # The Pi's nixpkgs already CARRIES go_1_26; only the default is older. So this changes
-  # nothing but which compiler builds one Go program. Delete it once the Pi's nixpkgs
-  # default reaches 1.26 -- at that point it is a no-op, not a hazard.
-  sops.package = options.sops.package.default.override {
-    buildGoModule = pkgs.buildGo126Module;
-  };
+  # Mainline is not an option: the HiFiBerry machine driver and the
+  # hifiberry-dacplusadcpro overlay are vendor-only.
+  boot.kernelPackages = lib.mkForce pkgs.linuxAndFirmware.v6_18_39.linuxPackages_rpi4;
 
   sops.age.sshKeyPaths = [
     "/etc/ssh/ssh_host_ed25519_key"

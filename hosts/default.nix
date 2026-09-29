@@ -97,12 +97,12 @@ in
     porcupineFish = mkPiSystem {
 
       specialArgs = {
-        homeManagerInput = inputs.home-manager-25_11;
+        homeManagerInput = inputs.home-manager-pi;
       };
       modules = [
         ./porcupineFish/configuration.nix
         # Turnkey base bind: the contractPackage is a pre-built activate script, home-manager-
-        # version-agnostic, so the Pi's separate home-manager-25_11 pin (specialArgs above) is
+        # version-agnostic, so the Pi's separate home-manager-pi pin (specialArgs above) is
         # irrelevant for inkpotmonkey.
         (bindUsers { inkpotmonkey = operator; })
         # blocky removed here (ADR-0023) — the Pi-only module swap it needed went with it.

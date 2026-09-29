@@ -76,8 +76,9 @@ nix run .#build-pi -- provision /dev/sdX porcupineFish
 > `secrets/.sops.yaml` (a `&<host>` key anchor + `*<host>` in each relevant `creation_rules`);
 > if not, the script tells you what to add. For an *existing* host where you'd rather keep its
 > current key (no re-key), use the manual flow in [Secrets (SOPS)](#secrets-sops--all-or-nothing)
-> and skip `provision`. The image attribute is `config.system.build.sdImage` (`images.sd-card`
-> does not exist on the pinned toolchain).
+> and skip `provision`. The image attribute is `config.system.build.sdImage`, which is what
+> `build-pi.sh` uses. (Since the 2026-09-29 pin bump `config.system.build.images.sd-card` also
+> exists, but it evaluates to a *different* derivation — don't mix them.)
 
 ## How `build-pi` Chooses Defaults
 
@@ -115,19 +116,38 @@ disables the tty1/serial gettys. The only early console is **serial UART** (`ena
 set; wire a USB-UART to GPIO pins 6/8/10 @ 115200). So the real "did it boot?" signal is whether
 it appears on **tailscale**, not the monitor.
 
-## Toolchain pin (why `nixos-raspberrypi` is pinned, and the forward path)
+## Toolchain pin (why `nixos-raspberrypi` is pinned, and how to bump it)
 
-`flake.nix` pins `nixos-raspberrypi` to **`40861a6`** (Mar 2026), whose **default** kernel is
-`linux_rpi-bcm2711-6.12.47-stable` — cached on `nixos-raspberrypi.cachix.org` and proven to boot.
-**Do not bump it without re-validating a porcupineFish boot at the device.** Both current upstream
-defaults are **unstable/next** snapshots that **hang porcupineFish in the initrd before systemd
-ever starts**: `main`/`v1.20260517.0` defaults to `6.12.87-unstable`, and `develop` to
-`6.18.34-unstable`. Only `stable_*`-tagged kernels have booted here.
+`flake.nix` pins `nixos-raspberrypi` to **`24c74e7`** (`develop`, 27 Sep 2026). Since 2026-09-29
+the kernel and the userspace are **separate** decisions, so read them separately:
 
-> **This pin also fixes the whole userspace to nixpkgs 25.11** (see "Why this host is pinned to
-> nixpkgs / home-manager 25.11" below) — `nixos-raspberrypi` hard-pins `nixpkgs = nixos-25.11`, so
-> every *program* on this host comes from 25.11, one release behind the rest of the fleet
-> (nixos-unstable / 26.11). The kernel and the userspace are the same decision.
+**Kernel — never the input's default.** This rev's default is
+`linux_rpi-bcm2711-6.18.52-unstable_20260915`, and unstable/next-branch kernels hang this host in
+the initrd before systemd ever starts. `configuration.nix` therefore pins
+`boot.kernelPackages = lib.mkForce pkgs.linuxAndFirmware.v6_18_39.linuxPackages_rpi4`
+— `linux_rpi-bcm2711-6.18.39-stable_20260724`, the newest **stable**-tagged bundle this rev
+offers, and a real 6.12→6.18 LTS jump from the previous `6.12.47-stable` pin.
+**Do not bump either without re-validating a boot at the device.**
+
+> **Read the `tag`, not the version number.** Stability is not a property of the version: `6.18.34`
+> is `stable_20260609` on `develop` but `unstable_20260604` on `main`. The authority is
+> `pkgs/linux-rpi/linux-sources.nix` in the pinned rev, and the resolved name carries it —
+> `nix eval --raw .#nixosConfigurations.porcupineFish.config.boot.kernelPackages.kernel.name`
+> must end in `-stable_YYYYMMDD`. Only `stable_*` kernels have ever booted here.
+
+> **A non-default bundle is not on `nixos-raspberrypi.cachix.org`** (that cache carries the
+> default's `out` only). Both this kernel and its `dev`/`modules` outputs build from source on the
+> rk1b aarch64 builder — native, not QEMU, so tens of minutes rather than hours. Run
+> `just cache-kernel porcupineFish` afterwards to push all three to `palebluebytes.cachix.org`, or
+> the next deploy after a GC recompiles the lot.
+
+**Userspace — nixpkgs 26.05**, up from 25.11. `nixos-raspberrypi` hard-pins its own nixpkgs, so
+every *program* on this host comes from that release, still one behind the rest of the fleet
+(nixos-unstable / 26.11). Taking this bump was the README's own recommended forward path (option 1
+under "Paths to unstable"): the home-manager input moved with it to `release-26.05` and was renamed
+`home-manager-pi`, so the version-guards in `users/inkpotmonkey/home/*` now take their
+`versionAtLeast "26.05"` branches. It also retired a `sops.package` override this host carried:
+26.05's default `go` **is** `go_1_26`, which is what sops-nix HEAD needs.
 
 ### How to recognise this failure (it's deceptive)
 
@@ -138,25 +158,69 @@ ever starts**: `main`/`v1.20260517.0` defaults to `6.12.87-unstable`, and `devel
   Both ⇒ it died in stage-1/initrd, *before* activation. (A late failure like sops would still
   boot, populate `/var`, and grow the root.)
 
-### Forward path (don't stay on Feb 2026 forever)
+### Bumping the pin again
 
-The vendor kernel tracks **LTS** (it moved 6.12→6.18 LTS upstream in mid-2026), so it lags
-mainline by ~2–3 release cycles by design — that's fine. The newest kernel this HAT can *safely*
-run today is **`6.18.33-stable`** (a real 6.12→6.18 LTS jump), added to the **`develop`** branch
-(upstream issue #191). Pure *mainline* is **not** an option: the HiFiBerry machine driver + the
-`hifiberry-dacplusadcpro` overlay are **vendor-only** (the PCM512x/PCM186x codec drivers are
-upstreamed; the glue that binds them to the Pi's I²S is not), so stay on the vendor kernel.
+The vendor kernel tracks **LTS** (it moved 6.12→6.18 upstream in mid-2026), so it lags mainline by
+~2–3 release cycles by design — that's fine. Pure *mainline* is **not** an option: the HiFiBerry
+machine driver + the `hifiberry-dacplusadcpro` overlay are **vendor-only** (the PCM512x/PCM186x
+codec drivers are upstreamed; the glue that binds them to the Pi's I²S is not), so stay on the
+vendor kernel.
 
-To move: pin a *newer* `nixos-raspberrypi` (newer u-boot/firmware/fixes) and **`lib.mkForce`
-`boot.kernelPackages` to a `stable` bundle** — e.g. `linuxAndFirmware.v6_18_33.linuxPackages_rpi4`
-on `develop`, or `v6_12_47` — **never the branch default** (which is now an `unstable` snapshot).
-`raspberry-pi-4.nix` sets it with `lib.mkDefault`, so the force wins. A non-default kernel likely
-isn't cached, but the **rk1b native aarch64 builder** (now online) makes that a tolerable native
-build rather than a QEMU slog (`just cache-kernel porcupineFish` can also pre-seed it). **Validate
-with a physical reflash** and a known-good rollback image in hand: a bad kernel hangs in initrd — a
-silent brick with no console/network, and extlinux won't auto-fall-back — so this is an
-at-the-device change, **not** a remote `switch` + reboot. See `UPGRADE-audio-dsp.md`'s sibling
-reasoning; report any initrd regression upstream to `nvmd/nixos-raspberrypi`.
+The recipe, which is what the 2026-09-29 bump followed:
+
+1. Read `pkgs/linux-rpi/linux-sources.nix` in the candidate rev and pick the newest entry whose
+   `tag` starts with `stable_` — **not** the newest `modDirVersion`, and **not**
+   `linuxAndFirmware.default`/`.latest`, both of which point at `unstable_*` snapshots.
+1. Pin the rev in `flake.nix` and `lib.mkForce` that bundle in `configuration.nix`.
+   `raspberry-pi-4.nix` sets `boot.kernelPackages` with `lib.mkDefault`, so the force wins.
+1. Check whether the rev's `flake.nix` moved its `nixpkgs` pin. If it did, move
+   `home-manager-pi` to the matching `release-XX.XX` in lockstep — home-manager evaluates against
+   the *system* nixpkgs, and a mismatched pair fails to evaluate.
+1. `nix eval --raw …boot.kernelPackages.kernel.name` and confirm it ends `-stable_YYYYMMDD`.
+1. Build (`nixos-rebuild --build-host rk1b … build`) and `just cache-kernel porcupineFish`.
+
+**Then validate at the device.** A bad kernel hangs in initrd, with no HDMI console and no
+network, and extlinux does **not** auto-fall-back. So this is an at-the-device change, **not** a
+remote `switch` + reboot.
+
+> That caution is sharper here than it reads. The documented fix for the audio wedge is a **cold
+> power-cycle** ([`RUNBOOK-audio-silence.md`](./RUNBOOK-audio-silence.md)) — so a `switch` that
+> writes an unvalidated extlinux entry arms a brick that the *other* runbook will spring. Once
+> switched, the next boot from any cause is the test, whether or not you meant it to be.
+
+### The recovery path is the boot menu, not a reflash
+
+"No auto-fall-back" is true but incomplete, and the difference decides how you should do this.
+u-boot reads `/boot/extlinux/extlinux.conf`, which carries `MENU TITLE` and **`TIMEOUT 50`** — 5
+seconds (syslinux counts in tenths) of interactive menu *before* Linux is entered at all. A kernel
+that hangs in initrd therefore cannot stop you reaching it: u-boot has already handed over or not.
+Every past generation is still listed, and checked on 2026-09-29 all of them pointed at the same
+retained `…-6.12.47-stable_20250916-Image`, present in `/boot/nixos/`. `/boot` is the 117G
+partition at 12% use, so a second kernel costs nothing.
+
+So the cheap, reversible validation is:
+
+1. **Attach serial UART first** (GPIO 6/8/10 @ 115200). Without it there is no menu and no
+   recovery — this is the one non-negotiable step.
+1. `just deployBoot porcupineFish` — stages the generation as default for next boot *without*
+   activating it, so a failure costs a reboot rather than a running system.
+1. Reboot at the device and watch the serial console.
+1. If it hangs: power-cycle, catch the 5-second menu, select the previous `nixos-NN-default`
+   entry. You are back on 6.12.47 without touching the card.
+
+**Prefer this to a reflash.** Reflashing regenerates the SSH host key, which invalidates the sops
+age key derived from it — so a "safe" reflash actually costs you `sops-install-secrets`
+(all-or-nothing: even the wifi PSK never lands, and the Pi silently fails to join the network)
+unless you restore `/etc/ssh/ssh_host_ed25519_key{,.pub}` or re-key. Keep a flashed card as the
+*last* resort, not the first.
+
+> Caveat on the above: the menu behaviour is read off the generated `extlinux.conf` plus u-boot's
+> documented `sysboot`/pxe menu support — it has not been exercised on this board. Confirm the
+> menu actually renders on serial **before** you rely on it, i.e. reboot once with serial attached
+> while still on the known-good kernel.
+
+See `UPGRADE-audio-dsp.md`'s sibling reasoning; report any initrd regression upstream to
+`nvmd/nixos-raspberrypi`.
 
 ## Secrets (SOPS) — all-or-nothing
 
@@ -219,22 +283,23 @@ If local emulation is too slow, you can build natively on the Pi.
    nixos-rebuild switch --flake ~/nixos-config#porcupineFish
    ```
 
-## Why this host is pinned to nixpkgs / home-manager 25.11 (and paths to 26.11)
+## Why this host trails the fleet on nixpkgs / home-manager (and paths to unstable)
 
 The rest of the fleet tracks **nixpkgs-unstable (26.11)**, but porcupineFish (and any
-`mkPiSystem` host) is built by **`nvmd/nixos-raspberrypi`**, which hard-pins
-`nixpkgs = github:NixOS/nixpkgs/nixos-25.11` on *every* branch (`main`, `develop`). That pin is
+`mkPiSystem` host) is built by **`nvmd/nixos-raspberrypi`**, which hard-pins its own `nixpkgs` on
+*every* branch — **`nixos-26.05`** as of the `24c74e7` pin, `nixos-25.11` before it. That pin is
 deliberate: the flake's Pi vendor kernel, firmware/`config.txt` handling, and the **HiFiBerry DAC2
-ADC Pro** device-tree overlay are curated against 25.11 (see `audio_blog.md`). Because of this,
-the host's home-manager input is `home-manager-25_11` (release-25.11) — home-manager evaluates
-against the *system* nixpkgs, and the unstable home-manager hard-requires nixpkgs' newer
-`lib/services` ("modular services") library, which does **not** exist in 25.11.
+ADC Pro** device-tree overlay are curated against it (see `audio_blog.md`). Because of this, the
+host's home-manager input is **`home-manager-pi`** (`release-26.05`, matched to that pin) —
+home-manager evaluates against the *system* nixpkgs, and a newer home-manager hard-requires
+nixpkgs' `lib/services` ("modular services") library. **The two move in lockstep or not at all.**
 
-Consequence for shared home profiles: any home module that uses an **unstable-only** home-manager
-option (e.g. `programs.ssh.settings`, `programs.git.settings`, `xdg.userDirs.setSessionVariables`,
-`home.stateVersion = "26.11"`) will fail to *evaluate* here — and `lib.mkIf`/profile-disable does
-**not** suppress "option does not exist" errors (unknown-option checks run during structural
-name-collection, before the condition). The repo handles this two ways:
+Consequence for shared home profiles: any home module that uses an option newer than the Pi's
+home-manager (historically `programs.ssh.settings`, `programs.git.settings`,
+`xdg.userDirs.setSessionVariables`, `home.stateVersion = "26.11"`) fails to *evaluate* here — and
+`lib.mkIf`/profile-disable does **not** suppress "option does not exist" errors (unknown-option
+checks run during structural name-collection, before the condition). The repo handles this two
+ways:
 
 - **De-monolith:** `users/inkpotmonkey/home/profiles.nix` imports the desktop/dev modules
   (`gui`/`dev`/`ai`/`emacs`) **only on gui hosts** (branching on
@@ -243,13 +308,18 @@ name-collection, before the condition). The repo handles this two ways:
   pick the API/value the running home-manager actually provides (`options.programs.X ? settings`,
   `lib.versionAtLeast lib.version "26.05"`).
 
-### Paths to 26.11 (when/if you want to unify the Pi onto unstable)
+Both stay: the gap narrowed from two releases to one on 2026-09-29, it did not close, and the
+guards are what make the *next* bump a lock change rather than an excavation.
 
-Ranked by risk (researched 2026-06; archive dates current as of then):
+### Paths to unstable (when/if you want to unify the Pi onto 26.11)
 
-1. **Wait for `nvmd/nixos-raspberrypi` to track the next stable (26.x), then bump** the
-   `nixos-raspberrypi` + `home-manager-25_11` inputs. *Lowest risk* — keeps the vendor kernel and
-   curated HiFiBerry overlay; the version-guards above degrade to no-ops. Recommended default.
+Ranked by risk (researched 2026-06, re-checked 2026-09):
+
+1. **Follow `nvmd/nixos-raspberrypi` as it tracks each new stable, and bump in lockstep** — the
+   `nixos-raspberrypi` + `home-manager-pi` inputs together, per "Bumping the pin again" above.
+   *Lowest risk;* keeps the vendor kernel and curated HiFiBerry overlay, and the version-guards
+   degrade as the gap closes. **This is the path taken on 2026-09-29** (25.11 → 26.05) and remains
+   the recommended default. Note it converges *toward* unstable without ever reaching it.
 1. **Switch toolchain to `nixos-hardware` (`raspberry-pi/4`) + the upstream generic aarch64 SD
    image**, which follows your own nixpkgs (tracks unstable cleanly). *This is the only live
    unstable-tracking option* — `nix-community/raspberry-pi-nix` (archived 2025-03-23) and the

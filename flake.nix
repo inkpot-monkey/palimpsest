@@ -10,19 +10,41 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    home-manager-25_11 = {
-      url = "github:nix-community/home-manager/release-25.11";
+    # The Pi's home-manager, which must MATCH nixos-raspberrypi's pinned nixpkgs release
+    # rather than track the fleet: home-manager evaluates against the system nixpkgs, and a
+    # newer home-manager hard-requires nixpkgs' `lib/services` ("modular services") library.
+    # Renamed from home-manager-25_11 when that pin moved to 26.05 -- the name is now
+    # release-agnostic so the next bump is a one-line url change, not a rename.
+    home-manager-pi = {
+      url = "github:nix-community/home-manager/release-26.05";
       inputs.nixpkgs.follows = "nixos-raspberrypi/nixpkgs";
     };
 
-    # Pinned to 40861a6 (Mar 2026): this rev's DEFAULT is the *stable*-branch RPi vendor
-    # kernel linux_rpi-bcm2711-6.12.47-stable (+ matched firmware 1.20250915), both cached
-    # on nixos-raspberrypi.cachix.org (no local kernel compile). Stay on a *stable*-branch
-    # kernel: the *unstable/next* branch (e.g. 6.12.87 on rev 06c6e351, or 6.18.x on the
-    # develop branch) hangs porcupineFish in the initrd before systemd (empty /var, root
-    # never grows). Only bump to another rev whose default is a newer *stable* kernel, and
-    # re-validate a porcupineFish boot — see hosts/porcupineFish/README.md.
-    nixos-raspberrypi.url = "github:nvmd/nixos-raspberrypi/40861a63b4162f9332d03e125d76b9b8e2bbe79c";
+    # Pinned to 24c74e7 (develop, 27 Sep 2026). Two things come from this input and they
+    # are separate decisions:
+    #
+    #   KERNEL. This rev's DEFAULT is linux_rpi-bcm2711-6.18.52-*unstable*, which must not
+    #   be used: unstable/next-branch kernels hang porcupineFish in the initrd before
+    #   systemd (empty /var, root never grown). So the host pins boot.kernelPackages to
+    #   `linuxAndFirmware.v6_18_39` (= raspberrypi/linux stable_20260724) with mkForce --
+    #   see hosts/porcupineFish/configuration.nix. Note that a version NUMBER tells you
+    #   nothing here: 6.18.34 is stable_20260609 on this rev but unstable_20260604 on main.
+    #   Always read pkgs/linux-rpi/linux-sources.nix for the `tag`, never the version.
+    #
+    #   USERSPACE. This rev hard-pins nixpkgs = nixos-26.05, up from 25.11 on the old pin.
+    #   That is the whole point of the bump and it is the README's recommended path
+    #   ("Paths to unstable", option 1): the Pi's userspace moves a release forward and the
+    #   home-manager input moves with it, below -- they are one decision, because
+    #   home-manager evaluates against the system nixpkgs. The version-guards in
+    #   users/inkpotmonkey/home/* now take their 26.05 branches; they are still load-bearing,
+    #   the gap to the fleet narrowed from two releases to one, it did not close. The bump
+    #   also makes go_1_26 the default here, which retires the sops.package override
+    #   porcupineFish carried for a day.
+    #
+    # Only bump to another rev that still offers a *stable*-tagged kernel bundle, and
+    # re-validate a porcupineFish boot AT THE DEVICE -- a bad kernel is a silent brick with
+    # no console and extlinux will not fall back. See hosts/porcupineFish/README.md.
+    nixos-raspberrypi.url = "github:nvmd/nixos-raspberrypi/24c74e712ac864af1dcd6b89fd4de8d47d5a4d0a";
 
     impermanence = {
       url = "github:nix-community/impermanence";
@@ -44,22 +66,16 @@
 
     vpsFree.url = "github:vpsfreecz/vpsadminos";
 
-    # NOT pinnable to one rev right now, and porcupineFish is the reason. sops-nix
-    # HEAD needs Go >= 1.26; the Pi builds against nixos-raspberrypi's OWN pinned
-    # nixpkgs (Go 1.25.7), not the root one (1.26.7), so a fleet bump fails there with
+    # Tracks main. Held that way for a reason worth keeping: sops-nix HEAD needs Go >=
+    # 1.26, and for one day (2026-09-28) porcupineFish could not build it, because the Pi
+    # goes through nixos-raspberrypi.lib.nixosSystem and got that input's pinned nixpkgs
+    # (then 25.11, go 1.25.7) rather than the root one. Pinning sops-nix back was not the
+    # escape -- the older rev uses `buildGo125Module`, which the new nixpkgs REMOVED ("Go
+    # 1.25 is end-of-life") -- so it would have broken every other host instead.
     #
-    #   go: go.mod requires go >= 1.26.0 (running go 1.25.7; GOTOOLCHAIN=local)
-    #
-    # while every other host builds it fine. But holding sops-nix at the last rev that
-    # suited the Pi breaks everything else instead, because that rev uses
-    # `buildGo125Module`, which the 2026-09-28 nixpkgs REMOVED ("Go 1.25 is
-    # end-of-life"). There is no rev satisfying both nixpkgs at once.
-    #
-    # So: track main, which keeps the fleet building, and accept that porcupineFish
-    # stays on its current generation until nixos-raspberrypi's pin carries Go >= 1.26.
-    # Bumping that pin to force it is the wrong lever -- it exists because unstable Pi
-    # kernels hang in initrd and are uncached (AGENTS.md). Revisit when the Pi's
-    # nixpkgs moves; nothing here needs changing then, the next update just works.
+    # Resolved at the root on 2026-09-29 by bumping nixos-raspberrypi to a rev pinning
+    # nixpkgs 26.05, where `go` IS go_1_26. If this recurs, that is the lever: align the
+    # Pi's nixpkgs, do not pin sops-nix and do not special-case the host.
     sops-nix = {
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";

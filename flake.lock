@@ -388,7 +388,7 @@
         "type": "github"
       }
     },
-    "home-manager-25_11": {
+    "home-manager-pi": {
       "inputs": {
         "nixpkgs": [
           "nixos-raspberrypi",
@@ -396,16 +396,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1779506708,
-        "narHash": "sha256-QOD/CNm196nCJRheux/URi4/HE66fthdOMqCJoPP1Y0=",
+        "lastModified": 1790215976,
+        "narHash": "sha256-VkR1rMGyjU9jtw8ISFx5uqR9e+LEaOlhHwrseFkiIVk=",
         "owner": "nix-community",
         "repo": "home-manager",
-        "rev": "3ee51fbdac8c8bdfe1e7e1fcaba6520a563f394f",
+        "rev": "a6631107a83ceab5872f298a2ea710859c80c4cb",
         "type": "github"
       },
       "original": {
         "owner": "nix-community",
-        "ref": "release-25.11",
+        "ref": "release-26.05",
         "repo": "home-manager",
         "type": "github"
       }
@@ -707,17 +707,17 @@
         "nixpkgs": "nixpkgs_6"
       },
       "locked": {
-        "lastModified": 1773700428,
-        "narHash": "sha256-4l6WNsjLntLat/q6gkvmIKas4/t4zy+FG+rV7Mingj4=",
+        "lastModified": 1790512862,
+        "narHash": "sha256-ohM2X8gVuO/Mmhlv+VC/hr1k122NgQlGeizWUROza4E=",
         "owner": "nvmd",
         "repo": "nixos-raspberrypi",
-        "rev": "40861a63b4162f9332d03e125d76b9b8e2bbe79c",
+        "rev": "24c74e712ac864af1dcd6b89fd4de8d47d5a4d0a",
         "type": "github"
       },
       "original": {
         "owner": "nvmd",
         "repo": "nixos-raspberrypi",
-        "rev": "40861a63b4162f9332d03e125d76b9b8e2bbe79c",
+        "rev": "24c74e712ac864af1dcd6b89fd4de8d47d5a4d0a",
         "type": "github"
       }
     },
@@ -995,16 +995,16 @@
     },
     "nixpkgs_6": {
       "locked": {
-        "lastModified": 1773375660,
-        "narHash": "sha256-SEzUWw2Rf5Ki3bcM26nSKgbeoqi2uYy8IHVBqOKjX3w=",
+        "lastModified": 1790450978,
+        "narHash": "sha256-/eLCD/X9kaWJqPR47+fDozEC87Hjmm3i8gJbYmDAD7g=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "3e20095fe3c6cbb1ddcef89b26969a69a1570776",
+        "rev": "5e2305d577ca00acbba631b05cb1094d172b29f3",
         "type": "github"
       },
       "original": {
         "owner": "NixOS",
-        "ref": "nixos-25.11",
+        "ref": "nixos-26.05",
         "repo": "nixpkgs",
         "type": "github"
       }
@@ -1114,7 +1114,7 @@
         "flake-parts": "flake-parts",
         "git-hooks": "git-hooks",
         "home-manager": "home-manager",
-        "home-manager-25_11": "home-manager-25_11",
+        "home-manager-pi": "home-manager-pi",
         "impermanence": "impermanence",
         "jmap-bridge": "jmap-bridge",
         "llm-agents": "llm-agents",
