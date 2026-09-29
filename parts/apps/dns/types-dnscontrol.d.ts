@@ -25,13 +25,10 @@ interface DNSRecord {
 }
 
 type DomainModifier =
-  | ((domain: Domain) => void)
-  | Partial<Domain>
-  | DomainModifier[];
+  ((domain: Domain) => void) | Partial<Domain> | DomainModifier[];
 
 type RecordModifier =
-  | ((record: DNSRecord) => void)
-  | Partial<DNSRecord["meta"]>;
+  ((record: DNSRecord) => void) | Partial<DNSRecord["meta"]>;
 
 type Duration =
   | `${number}${"s" | "m" | "h" | "d" | "w" | "n" | "y" | ""}`
