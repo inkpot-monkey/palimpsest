@@ -25,5 +25,9 @@
   # inputs.jmap-bridge.packages.<system> (see modules/nixos/profiles/matrix/jmap-bridge.nix).
   # rust-mcp-server = pkgs.callPackage ./rust-mcp-server { };
   to-av1 = pkgs.callPackage ./to-av1 { };
+  # TypeScript 5, pinned so the `dns` app can still emit ES5 — dnscontrol's embedded JS
+  # engine is ES5-only and nixpkgs' `typescript` is now 7.x, which removed that target.
+  # Its header carries the removal condition; nothing else should consume it.
+  typescript-es5 = pkgs.callPackage ./typescript-es5 { };
   ocr-shot = pkgs.callPackage ./ocr { };
 }

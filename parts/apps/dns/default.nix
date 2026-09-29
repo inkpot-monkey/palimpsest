@@ -10,7 +10,9 @@ let
       pkgs.dnscontrol
       pkgs.sops
       pkgs.jq
-      pkgs.typescript
+      # NOT pkgs.typescript, which is now 7.x and cannot emit ES5 — see the compile step
+      # below and pkgs/typescript-es5 for why that is non-negotiable here.
+      self.packages.${pkgs.stdenv.hostPlatform.system}.typescript-es5
       pkgs.curl # fetch the authoritative mail records from Stalwart's API
       pkgs.cacert # CA bundle for verifying the Stalwart API's TLS
       pkgs.ssh-to-age # derive the sops age identity from the admin ssh key (see below)
@@ -140,27 +142,18 @@ let
       echo "Compiling TypeScript configuration..."
       # We use tsc to transpile TS to ES5 JS that dnscontrol can understand.
       #
-      # ⚠ THIS IS BROKEN ON TypeScript 7, which is what `pkgs.typescript` now resolves to.
-      # TS 7 removed the ES5 target outright, along with every module kind `--outFile`
-      # accepted (None/AMD/System/UMD) — so this dies with a misleading
-      # "Argument for '--module' option must be: …", listing a set that silently no longer
-      # contains the one being asked for.
+      # ⚠ THE ES5 TARGET IS WHY THE COMPILER IS PINNED (pkgs/typescript-es5). It is not a
+      # preference that can be relaxed: dnscontrol 5.2.0 embeds otto, a strictly ES5.1
+      # interpreter which — measured against the real binary — rejects `const` ("Unexpected
+      # reserved word"), `let`, arrow functions ("Unexpected token >") and template literals
+      # ("Unexpected token ILLEGAL"). Meanwhile `pkgs.typescript` moved to 7.x, which removed
+      # the ES5 target outright along with every module kind `--outFile` accepted
+      # (None/AMD/System/UMD), and reports it as a misleading "Argument for '--module' option
+      # must be: …" listing a set that silently no longer contains the one being asked for.
       #
-      # ES5 IS NOT A PREFERENCE THAT CAN BE RELAXED. dnscontrol 5.2.0 embeds otto, a
-      # strictly ES5.1 interpreter. Measured against the real binary, it rejects `const`
-      # ("Unexpected reserved word"), `let`, arrow functions ("Unexpected token >") and
-      # template literals ("Unexpected token ILLEGAL"). Nor is there another downleveller to
-      # hand: esbuild refuses ("Transforming const to the configured target environment
-      # (es5) is not supported yet") and swc does not currently build in nixpkgs.
-      #
-      # There is nothing to wait for upstream either: dnscontrol v5.2.0 is the newest
-      # release and its go.mod still pins github.com/robertkrimen/otto v0.5.1 (plus
-      # xddxdd/ottoext for `require`). The fix is a pinned TypeScript 5, or a dnscontrol
-      # fork swapping otto for goja — pkg/js/js.go is 10.5 KB with 11 otto call sites, and
-      # the 67 KB helpers.js prelude is ES5 and would run on goja unchanged.
-      #
-      # DO NOT "fix" this by relaxing the target: that produces JS which compiles cleanly
-      # here and then fails inside dnscontrol, which is the worse failure.
+      # So do NOT "fix" a future failure here by dropping `--target`/`--module`: that
+      # compiles cleanly and then fails inside dnscontrol, which is the worse failure. The
+      # pin's header carries the condition under which it can go away.
       tsc --project "$DNS_DIR/tsconfig.json" \
           --noEmit false \
           --target ES5 \
