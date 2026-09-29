@@ -169,11 +169,19 @@
     # the Caddy vhosts.
   };
 
-  # kelpy is internet-facing (public Caddy edge, a federated homeserver) and runs
-  # services that reach out on the operator's behalf — mark it exposed so the contract
-  # refuses any secret-bearing user-feature grant (contract ADR-0001). Set originally
-  # for the Claude relay's code-executing `claude` sessions (ADR-0018, since removed);
-  # kept because the posture is the host's, not that one service's.
+  # kelpy is internet-facing (public Caddy edge, a federated homeserver) and runs services
+  # that reach out on the operator's behalf. Set originally for the Claude relay's
+  # code-executing `claude` sessions (ADR-0018, since removed); kept because the posture is
+  # the host's, not that one service's.
+  #
+  # IT ENFORCES NOTHING. The note that used to sit here claimed the contract "refuses any
+  # secret-bearing user-feature grant" on an exposed host; it does not, and never did. The
+  # pinned contract says so in as many words — modules.nix:72 calls `exposed` "a plain fact
+  # a host operator records; the contract enforces nothing on it", and features.nix:10 reads
+  # "A feature never carries a secret (ADR-0003)", so there is no such grant to refuse in the
+  # first place. This flag is a posture RECORD: something a human reads when deciding what
+  # belongs here. Corrected while wiring the forge (palimpsest#212), whose token placement
+  # question (#209) was framed around the enforcement this comment invented.
   contract.exposed = true;
 
   # systemd implements IP accounting by attaching a cgroup BPF program to every unit, and
