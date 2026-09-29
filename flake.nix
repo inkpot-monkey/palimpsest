@@ -113,7 +113,31 @@
     # so `nix flake update jmap-bridge` is a NO-OP: bumping the bridge means
     # editing the tag below by hand. `gh release list --repo
     # palebluebytes/jmap-matrix-bridge` shows what is available.
-    jmap-bridge.url = "github:palebluebytes/jmap-matrix-bridge/v0.5.6";
+    #
+    # A tag pin is necessary but NOT sufficient (learned 2026-09-27): it proves CI
+    # built that closure ONCE, and nothing keeps it alive. cachix retention here is
+    # weeks, so v0.5.6 — cut 2026-08-24 and left pinned for five of them — had aged
+    # out (`ixh5h5jm...-jmap-matrix-bridge-0.5.6` a 404) and a kelpy deploy silently
+    # compiled matrix-sdk/sqlx from source again, the exact cost this pin exists to
+    # avoid. Worse, CI spent those weeks warming the *bumped* lock that lived only on
+    # an unmerged flake.lock PR — a closure nothing could pin. Note the release
+    # binary reaches the cache as a dependency of `checks.<system>.jmap-bridge` (the
+    # VM test instantiates this package), NOT via `packages.*`, which `nix flake
+    # check` skips. So when bumping the tag, prove the substitute is there first:
+    #   nix build --dry-run .#nixosConfigurations.kelpy.config.services.jmap-bridge.package
+    # must say "will be fetched", never "will be built".
+    #
+    # A local dry-run answers the wrong question once the closure is already in THIS
+    # machine's store — it then prints nothing at all, which reads like success. The
+    # question is whether the CACHE has it, so query the narinfo directly:
+    #   h=$(basename $(nix eval --raw \
+    #     "github:palebluebytes/jmap-matrix-bridge/<tag>#packages.x86_64-linux.default.outPath") \
+    #     | cut -d- -f1)
+    #   curl -s -o /dev/null -w '%{http_code}' "https://palebluebytes.cachix.org/$h.narinfo"
+    # 200 means substitutable; 404 means a source build wherever it is deployed.
+    # Measured 2026-09-28: v0.5.6 → 404 (aged out, exactly as above), v0.5.7 → 200,
+    # v0.5.8 → 200. Pinned to v0.5.8: newest AND still warm.
+    jmap-bridge.url = "github:palebluebytes/jmap-matrix-bridge/v0.5.8";
 
     secrets = {
       url = "git+ssh://git@github.com/inkpot-monkey/stash.git";
