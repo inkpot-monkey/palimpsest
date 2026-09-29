@@ -105,7 +105,16 @@
       ${readUrl}
 
       post() { # $1 = message text
+        # `--retry-connrefused` is the load-bearing flag, not a nicety. The in-band webhook
+        # is hookshot on LOOPBACK, and the moments that generate alerts are disproportionately
+        # the moments hookshot is restarting — a deploy, a cert rotation, a service bounce. A
+        # single-shot POST then dies instantly with "Failed to connect to 127.0.0.1:9000
+        # after 0 ms" and the alert is simply lost. Measured on kelpy: mail-dane-sync logged
+        # four such drops, and in the most recent one hookshot was serving requests again
+        # 15 SECONDS later. Curl treats a refused connection as fatal unless told otherwise,
+        # so without this flag the other two retry options never engage.
         if [ -n "$url" ] && ${pkgs.curl}/bin/curl -sS -m 10 -o /dev/null \
+          --retry 3 --retry-connrefused --retry-delay 2 \
           -H 'content-type: application/json' \
           --data "$(${pkgs.jq}/bin/jq -nc --arg t "$1" '{text:$t}')" \
           "$url"; then

@@ -26,6 +26,12 @@ let
   # Reuse the dns app's exe (same source of truth as a manual `nix run .#dns` push, so the
   # automated and manual reconciles can never compute a different record set).
   dnsProgram = (import (self + "/parts/apps/dns") { inherit pkgs self; }).program;
+
+  # Shared delivery (modules/shared/alert-post.nix), replacing a hand-rolled curl that this
+  # module was the last holdout on. It brings retry-on-connection-refused, which is the
+  # specific failure recorded here four times: the alert fires exactly when hookshot is most
+  # likely to be mid-restart, because a cert rotation and a deploy are the same moment.
+  alertPost = import (self + "/modules/shared/alert-post.nix") { inherit lib pkgs; };
   certFile = "/var/lib/acme/mail.${mailCfg.domain}/cert.pem";
 
   syncScript = pkgs.writeShellScript "mail-dane-sync" ''
@@ -35,7 +41,11 @@ let
     # which is exactly the scope dnscontrol needs.
     export CLOUDFLARE_API_TOKEN="$(cat ${config.sops.secrets.cloudflare_dns_token_stalwart.path})"
     export STALWART_PW="$(cat ${config.sops.secrets.stalwart_admin_password_plain.path})"
-    url="$(cat ${lib.escapeShellArg cfg.webhookUrlFile} 2>/dev/null || true)"
+    ${alertPost.mkPost {
+      name = "mail-dane-sync";
+      inherit (cfg) webhookUrlFile;
+      outOfBand = alertPost.oobFromWatcher config;
+    }}
 
     out="$(${dnsProgram} push mail 2>&1)"; rc=$?
     printf '%s\n' "$out"
@@ -44,24 +54,32 @@ let
     n="$(printf '%s\n' "$out" | ${pkgs.gnugrep}/bin/grep -oE 'Done\. [0-9]+ correction' | ${pkgs.gnugrep}/bin/grep -oE '[0-9]+' | tail -1)"
 
     if [ "$rc" -ne 0 ]; then
-      msg="⚠️ [dane] mail cert renewed but the DANE/TLSA DNS sync FAILED (rc=$rc) — records may be stale; check 'journalctl -u mail-dane-sync'."
-    elif [ -n "''${n:-}" ] && [ "$n" != "0" ]; then
-      msg="🔐 [dane] mail cert renewed → pushed $n DNS correction(s) to keep DANE/TLSA in sync with the new cert."
-    else
-      msg=""
+      post "⚠️ [dane] mail cert renewed but the DANE/TLSA DNS sync FAILED (rc=$rc) — records may be stale; check 'journalctl -u mail-dane-sync'."
+      # AND FAIL THE UNIT. This used to `exit 0` unconditionally, on the reasoning that the
+      # path watcher would retry on the next cert change and a hard failure would only spam
+      # the journal. That reasoning does not survive contact with the retry interval: the
+      # next cert change is ~60 DAYS away, so a persistent breakage sits undetected for two
+      # months while systemd cheerfully logs "Finished Reconcile mail DANE/TLSA DNS records".
+      #
+      # It is not hypothetical — it is how this was found. A TypeScript bump broke the dns
+      # app's compile step; the reconcile failed, its alert landed in a hookshot restart
+      # window and was dropped, and the unit reported success. Three failures in a row and
+      # nothing anywhere was red.
+      #
+      # A non-zero exit leaves the unit `failed`, which node-exporter's systemd collector
+      # already publishes as node_systemd_unit_state{state="failed"} — so the state is
+      # observable even when the notification is not. That is the whole point: the alert is
+      # best-effort, the unit state is not.
+      exit "$rc"
     fi
 
-    if [ -n "$msg" ]; then
-      if [ -n "$url" ]; then
-        ${pkgs.curl}/bin/curl -sS -m 10 -o /dev/null -H 'content-type: application/json' \
-          --data "$(${pkgs.jq}/bin/jq -nc --arg t "$msg" '{text:$t}')" "$url" \
-          || echo "mail-dane-sync: failed to POST alert" >&2
-      else
-        echo "mail-dane-sync: webhook url unavailable; would have posted: $msg" >&2
-      fi
+    if [ -n "''${n:-}" ] && [ "$n" != "0" ]; then
+      post "🔐 [dane] mail cert renewed → pushed $n DNS correction(s) to keep DANE/TLSA in sync with the new cert."
     fi
-    # Never fail the unit on a transient push/alert problem — the path watcher will retry on
-    # the next cert change, and a hard failure would just spam the journal.
+
+    # A push that SUCCEEDED but whose alert could not be delivered still exits 0: the records
+    # are correct, which is what this unit exists for, and `post` has already logged and
+    # tried its out-of-band leg. Only a failed reconcile fails the unit.
     exit 0
   '';
 in
@@ -97,7 +115,13 @@ in
 
     systemd.services.mail-dane-sync = {
       description = "Reconcile mail DANE/TLSA DNS records with the renewed cert";
-      after = [ "network-online.target" ];
+      # hookshot is the in-band alert path, and it lives on this host. Ordering against it
+      # does not fix a mid-run restart (nothing can), but it does stop the common boot-time
+      # case where the reconcile fires before hookshot has opened its port at all.
+      after = [
+        "network-online.target"
+        "matrix-hookshot.service"
+      ];
       wants = [ "network-online.target" ];
       serviceConfig = {
         Type = "oneshot";
