@@ -44,6 +44,22 @@
 
     vpsFree.url = "github:vpsfreecz/vpsadminos";
 
+    # NOT pinnable to one rev right now, and porcupineFish is the reason. sops-nix
+    # HEAD needs Go >= 1.26; the Pi builds against nixos-raspberrypi's OWN pinned
+    # nixpkgs (Go 1.25.7), not the root one (1.26.7), so a fleet bump fails there with
+    #
+    #   go: go.mod requires go >= 1.26.0 (running go 1.25.7; GOTOOLCHAIN=local)
+    #
+    # while every other host builds it fine. But holding sops-nix at the last rev that
+    # suited the Pi breaks everything else instead, because that rev uses
+    # `buildGo125Module`, which the 2026-09-28 nixpkgs REMOVED ("Go 1.25 is
+    # end-of-life"). There is no rev satisfying both nixpkgs at once.
+    #
+    # So: track main, which keeps the fleet building, and accept that porcupineFish
+    # stays on its current generation until nixos-raspberrypi's pin carries Go >= 1.26.
+    # Bumping that pin to force it is the wrong lever -- it exists because unstable Pi
+    # kernels hang in initrd and are uncached (AGENTS.md). Revisit when the Pi's
+    # nixpkgs moves; nothing here needs changing then, the next update just works.
     sops-nix = {
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
