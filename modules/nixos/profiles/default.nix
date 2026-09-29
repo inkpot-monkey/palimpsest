@@ -48,6 +48,7 @@
     book-filer = ./book-filer.nix;
     backup = ./backup.nix;
     blocky = ./blocky.nix;
+    forge = ./forge.nix;
     # Flat keys so each matches its enable option 1:1 (custom.profiles.<key>), the same
     # invariant every other profile follows. Nothing imports these à la carte; the bundle
     # picks them up via lib.collect.
@@ -64,6 +65,7 @@
     monitoring-secret-expiry = ./monitoring/secret-expiry.nix;
     monitoring-git-annex-alert = ./monitoring/git-annex-alert.nix;
     monitoring-disk-space = ./monitoring/disk-space.nix;
+    monitoring-cgroup-memory = ./monitoring/cgroup-memory.nix;
     media = ./media;
 
     # --- Hardware Specific (Pi) ---

@@ -64,6 +64,11 @@
         # would spam. A failed drain surfaces via its systemd unit-state metric + the
         # backstop timer's retry; a dedicated OnFailure alert is a possible follow-up.
         "vector.service" # monitoring-client still runs here; server moved to rk1b
+        # The private forge (palimpsest#212). This is the alerting half of the memory
+        # fence: a one-off OOM kill is absorbed by `Restart = always` and shows up only as
+        # the cgroup `oom_kill` counter, but a genuine runaway crash-loops past the start
+        # limit into `failed` — which is exactly what this watch sees.
+        "forgejo.service"
         "paperless-scheduler.service"
         "paperless-task-queue.service"
         "paperless-consumer.service"
@@ -85,6 +90,37 @@
     # properly means teaching the home-manager module to export too, which is where
     # that repo's outbound half actually lives. Not done here.
     monitoring-git-annex-alert.enable = true;
+    # Per-unit cgroup memory metrics (palimpsest#211). The fleet's only memory
+    # instrumentation, landed in the same deploy as its first memory cap because a
+    # measurement that arrives after the thing it measures has a hole exactly where the
+    # interesting data is. Collection only — no alert, because there is no baseline yet and
+    # any threshold would be invented.
+    #
+    # The list is the newcomer PLUS the incumbents it now shares 4 GB with, so the numbers
+    # are comparable and #215's tighten-the-cap step has something to compare against.
+    # caddy is included as the control: it is the busiest unit here and the least likely to
+    # surprise, so an odd reading on it means the metric is wrong, not the service.
+    monitoring-cgroup-memory = {
+      enable = true;
+      units = [
+        "forgejo.service" # the capped unit — the reason this module exists
+        "tuwunel.service" # matrix homeserver; an OOM casualty in the immich incident
+        "stalwart.service" # mail
+        "caddy.service" # the edge, and the control series
+        "paperless-task-queue.service" # the other memory-hungry incumbent
+      ];
+    };
+    # The private forge (palimpsest#204 / #212) — Forgejo, tailnet-only, for NEW private
+    # projects. Co-located with the Caddy edge, so it listens on loopback; only its
+    # git-over-SSH port is opened, on tailscale0.
+    #
+    # ⚠ It is MEMORY-CAPPED (MemoryMax = 1G) and that cap is provisional — no trustworthy
+    # Forgejo footprint figure exists, so it is sized by what this host can spare rather
+    # than by what Forgejo needs. palimpsest#215 carries the measure-and-tighten step; the
+    # cgroup-memory metric above is what it reads. If an `oom_kill` shows up, the answer is
+    # to RAISE the cap, not to move the forge — the move to rk1b triggers only when the
+    # raise would push kelpy below 1 GB available.
+    forge.enable = true;
     # Immich is NOT enabled here. It lives on rk1b (see hosts/default.nix and the
     # `immich` entry in parts/settings.nix); kelpy only fronts it with Caddy.
     # It ran here briefly and could not: 4G, no swap, and immich-server peaks

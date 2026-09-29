@@ -191,6 +191,23 @@ let
       # and rk1b already holds the authoritative library at /var/cache/music. The replica
       # and its assistant are retired in hosts/kelpy/git-annex.nix, and music-sync's drain
       # into the beets inbox becomes a local move instead of a cross-host rsync.
+      # Forgejo — the private forge for NEW private projects (palimpsest#204). Unlike almost
+      # everything else in this block it is CO-LOCATED with the edge: it runs on kelpy, so
+      # there is no `origin` and Caddy proxies to 127.0.0.1. The vhost subdomain is this
+      # attribute name, so it is `forge`; the profile that runs it is custom.profiles.forge.
+      #
+      # 3000 is Forgejo's own default HTTP port and is free on kelpy (checked against the
+      # live listener set, not just against this registry — see the `torrent` note below for
+      # why that distinction matters). Git-over-SSH is NOT here: it is not an HTTP endpoint,
+      # Caddy does not front it, and it would collide in `checkPorts` with nothing anyway.
+      # Its port lives on custom.profiles.forge.sshPort.
+      #
+      # Monitored by default (ADR-0019), which is what we want: it is probed through Caddy at
+      # forge.<domain>, so the probe covers the vhost, the TLS cert and the backend together.
+      forge = {
+        edge = "kelpy";
+        port = 3000;
+      };
       slskd = {
         edge = "kelpy";
         port = 5030;
