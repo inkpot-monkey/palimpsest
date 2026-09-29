@@ -14,6 +14,41 @@ in
   options.services.git-annex = {
     enable = lib.mkEnableOption "git-annex";
 
+    package = lib.mkOption {
+      type = lib.types.package;
+      defaultText = lib.literalExpression "pkgs.git-annex, with the bup test skipped";
+      description = ''
+        The git-annex package every unit here runs.
+
+        The default skips ONE test. git-annex runs its suite at build time, and the
+        nixpkgs bump to 2026-09-28 fails on `bup remote`:
+
+            initremote failed with unexpected exit code
+            error: remote /build/.../tmprepo0/dir has no colon
+            git-annex: bup init failed
+
+        That is a bup-side bug about how it parses a local remote path, not a
+        git-annex fault and nothing to do with this fleet's config — 6 of the 7 test
+        groups pass, and the one that fails takes the whole build down, and with it
+        every deploy of a host that runs git-annex.
+
+        `checkFlags` reaches tasty directly (nixpkgs' checkPhase is literally
+        `git-annex test $checkFlags`), so the skip is that one group by name rather
+        than `dontCheck`, which would have thrown away the other six. This fleet uses
+        ssh and rsync special remotes and no bup anywhere, so what is skipped is a
+        test for a remote type nothing here can reach.
+
+        Same shape as the music-assistant skip in profiles/music-assistant.nix.
+        Revisit when nixpkgs carries a fixed bup.
+      '';
+      default = pkgs.git-annex.overrideAttrs (old: {
+        checkFlags = (old.checkFlags or [ ]) ++ [
+          "-p"
+          "!/bup/"
+        ];
+      });
+    };
+
     sshKeyFile = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
@@ -233,7 +268,7 @@ in
   config = lib.mkIf cfg.enable {
     environment.systemPackages = [
       pkgs.git
-      pkgs.git-annex
+      cfg.package
     ];
 
     users.users.git-annex = {
@@ -508,7 +543,7 @@ in
               wantedBy = [ "multi-user.target" ];
               path = [
                 pkgs.git
-                pkgs.git-annex
+                cfg.package
                 pkgs.openssh
                 pkgs.rsync
                 pkgs.gnupg
@@ -525,7 +560,7 @@ in
                 # it in .git/annex/daemon.log. Restart=always (not on-failure) covers a clean
                 # exit too; the init unit's explicit stop/start is a requested stop, which
                 # systemd never auto-restarts, so it does not fight this.
-                ExecStart = "${pkgs.git-annex}/bin/git-annex assistant --foreground";
+                ExecStart = "${cfg.package}/bin/git-annex assistant --foreground";
                 Type = "simple";
                 Restart = "always";
                 RestartSec = 10;
