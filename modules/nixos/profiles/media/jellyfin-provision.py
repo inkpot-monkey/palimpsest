@@ -27,6 +27,7 @@ environment.
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -80,6 +81,28 @@ def main() -> int:
     if info is None:
         print("jellyfin-provision: no public info returned", file=sys.stderr)
         return 1
+
+    # A mid-start Jellyfin answers /System/Info/Public with 200 while still 503-ing the
+    # startup endpoints, and it reported StartupWizardCompleted=false on a server that
+    # had been provisioned days earlier -- so this ran the wizard again and only failed
+    # safely because the POST 503'd. Acting on that reading is the hazard: a moment
+    # later and it would have re-run the wizard against a live server.
+    #
+    # So a `false` here is not believed on sight. Re-read after a pause and require two
+    # consecutive agreeing answers; a genuinely fresh server keeps saying false, while a
+    # starting one flips to true and is left alone. A disagreement means "still coming
+    # up" -- exit non-zero and let the unit's retry handle it, rather than guessing.
+    if not info.get("StartupWizardCompleted"):
+        time.sleep(15)
+        second = call(base, "/System/Info/Public")
+        if second is None or second.get("StartupWizardCompleted"):
+            print(
+                "jellyfin-provision: server still starting (wizard state changed between "
+                "reads) — retrying later rather than acting on it",
+                file=sys.stderr,
+            )
+            return 1
+        info = second
 
     if info.get("StartupWizardCompleted"):
         print("jellyfin-provision: wizard already completed, leaving it alone")
