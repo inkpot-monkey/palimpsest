@@ -437,16 +437,22 @@ in
             # the start — a deadlock. Queuing the job lets it run once init completes.
             # `|| true` because a repo with assistant = false has no such unit.
             serviceConfig.ExecStartPost = lib.optional repo.assistant "+${pkgs.bash}/bin/sh -c '${pkgs.systemd}/bin/systemctl start --no-block git-annex-assistant-${name}.service || true'";
-            path = with pkgs; [
+            # NOT `with pkgs; [ ... git-annex ... ]`: that spelling silently bypassed
+            # cfg.package and pulled the unpatched build, so the bup-test skip had no
+            # effect here and the deploy kept failing on an identical drv hash while
+            # every other call site was already routed through the option.
+            path = [
+              cfg.package
+            ]
+            ++ (with pkgs; [
               coreutils
               git
-              git-annex
               gnugrep
               gawk
               gnupg
               openssh
               rsync
-            ];
+            ]);
             script = ''
               if [ ! -d "${repo.path}" ]; then
                 mkdir -p "${repo.path}"
