@@ -168,8 +168,10 @@
     #   curl -s -o /dev/null -w '%{http_code}' "https://palebluebytes.cachix.org/$h.narinfo"
     # 200 means substitutable; 404 means a source build wherever it is deployed.
     # Measured 2026-09-28: v0.5.6 → 404 (aged out, exactly as above), v0.5.7 → 200,
-    # v0.5.8 → 200. Pinned to v0.5.8: newest AND still warm.
-    jmap-bridge.url = "github:palebluebytes/jmap-matrix-bridge/v0.5.8";
+    # v0.5.8 → 200. Re-measured 2026-09-30: v0.5.8 → 200, v0.5.9 → 200.
+    # Pinned to v0.5.9: newest AND still warm. v0.5.9 adds the backfill window the
+    # matrix profile sets (services.jmap-bridge.backfillWindow).
+    jmap-bridge.url = "github:palebluebytes/jmap-matrix-bridge/v0.5.9";
 
     secrets = {
       url = "git+ssh://git@github.com/inkpot-monkey/stash.git";

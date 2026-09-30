@@ -85,6 +85,22 @@ in
 
       url = "http://127.0.0.1:8081";
 
+      # Bridge only the last week of history into Matrix, not the whole mailbox.
+      # Backfill otherwise walks every email and gives each thread its own room —
+      # thousands of them on a mailbox this old, and the Gmail archive import
+      # (docs/runbooks/gmail-to-stalwart.md) would add years more.
+      #
+      # This bounds HISTORICAL backfill only; live sync always bridges new mail, so
+      # nothing arriving from now on is affected. It is also not a substitute for the
+      # runbook's bridge-state fast-forward: that guards the import against *live*
+      # sync, which this deliberately never limits. What this does guard is the case
+      # the fast-forward cannot — a `matrix-reset` or re-login wiping the bridge DB
+      # and restarting backfill, which would otherwise replay the entire archive.
+      #
+      # Beware the duration format: `1w` is a week, but `1m` would be one MINUTE
+      # (a month is `1mo`). Needs jmap-bridge >= v0.5.9.
+      backfillWindow = "1w";
+
       matrixUrl = "http://127.0.0.1:6167";
       # matrixUrl is loopback, so the module's matrixDomain default (its host,
       # 127.0.0.1) would mint wrong ghost mxids — pin it to the real server_name.
