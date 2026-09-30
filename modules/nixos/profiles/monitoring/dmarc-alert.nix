@@ -93,16 +93,19 @@ let
     # rebaselines without alerting.
     track() { # $1 = state file, $2 = current value, $3 = min delta to report
       local sf="$state/$1" prev delta
-      if [ ! -e "$sf" ]; then
-        # First observation on this host: seed the baseline and stay quiet. There is no
-        # rise without a prior sample, and counting the seed as one would alert on the
-        # entire accumulated history the first time the watcher runs (or any time its
-        # StateDirectory is new), reporting years of counter as a single-check burst.
+      prev="$(cat "$sf" 2>/dev/null || true)"
+      if [ -z "$prev" ]; then
+        # No baseline yet, or one lost to a truncated write (`printf >` truncates before
+        # it writes, and this runs on an SD-card Pi): seed it and stay quiet. There is no
+        # rise without a prior sample, and counting the seed as one would report the whole
+        # accumulated history — years of a mostly-compliant counter as a single-check
+        # burst. An empty file must take this path too, not fall through to a 0 baseline:
+        # 0 is a real prior value and would make the backlog look like new failures.
+        # Contrast tlsrpt-alert, whose counter is failures-ONLY, so there a first
+        # observation is genuinely news and is reported rather than seeded.
         printf '%s' "$2" > "$sf"
         return 0
       fi
-      prev="$(cat "$sf" 2>/dev/null || true)"
-      prev="''${prev:-0}" # a truncated write
       printf '%s' "$2" > "$sf"
       [ "$2" -gt "$prev" ] || return 0
       delta=$(( $2 - prev ))

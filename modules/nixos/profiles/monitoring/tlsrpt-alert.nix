@@ -14,6 +14,14 @@
 # alert only when it INCREASES, with a best-effort per-domain/result-type breakdown.
 # Counters only rise, so a drop means the poller's state was wiped (textfile reset) —
 # rebaseline quietly, no alert. Runs where VictoriaMetrics is (rk1b).
+#
+# On a FIRST observation (no baseline file yet) the whole counter is reported, not
+# suppressed. This metric counts ONLY failures and its series does not exist until one has
+# been ingested, so every unit of it is something nobody has been told about — seeding the
+# baseline silently would swallow the first real failure, which is the one that matters
+# most. The message says "recorded so far" instead of claiming a delta. Contrast
+# dmarc-alert, whose counter is mostly compliant mail and which therefore DOES seed
+# quietly: there, replaying the backlog would report years of history as a single burst.
 {
   config,
   lib,
@@ -58,15 +66,35 @@ let
     fc="''${fc%.*}"
 
     sf="$state/failures.count"
-    prev="$(cat "$sf" 2>/dev/null || echo 0)"
+
+    # An empty or truncated baseline must not reach the comparisons below. `printf >`
+    # truncates before it writes, so a power cut mid-write (this runs on an SD-card Pi)
+    # leaves the file empty — and `[ 3 -gt "" ]` then fails with "integer expected", which
+    # skips BOTH branches: the alert is lost AND the baseline is never repaired, so the
+    # watcher stays blind on every later run instead of just this one. A lost baseline is
+    # indistinguishable from never having had one, so both count as a first observation and
+    # get its wording.
+    prev="$(cat "$sf" 2>/dev/null || true)"
+    if [ -n "$prev" ]; then
+      first=0
+    else
+      first=1
+      prev=0
+    fi
 
     if [ "$fc" -gt "$prev" ]; then
-      delta=$(( fc - prev ))
+      # See the header on why a first observation reports the whole counter rather than
+      # seeding quietly, and why it must not claim the sessions are all new.
+      if [ "$first" = 1 ]; then
+        lead="$fc failed TLS session(s) recorded so far (first observation on this host)"
+      else
+        lead="$(( fc - prev )) new failed TLS session(s) reported (cumulative: $fc)"
+      fi
       # Best-effort per-domain + result-type breakdown for the message context.
       bd="$(${pkgs.curl}/bin/curl -sS -m 10 -G "$vm/api/v1/query" \
         --data-urlencode 'query=sum by (policy_domain, result_type) (smtp_tls_report_failures_total) > 0' \
         | ${pkgs.jq}/bin/jq -r '[.data.result[]? | "\(.metric.policy_domain // "?")/\(.metric.result_type // "?")=\(.value[1]|tonumber|floor)"] | join(", ")')"
-      post "🔒 [tlsrpt] $delta new failed TLS session(s) reported (cumulative: $fc). A sender honouring your MTA-STS/DANE policy could not negotiate secure TLS to the MX — check for a cert problem or downgrade. Breakdown: ''${bd:-n/a}. See the SMTP TLS Reporting dashboard."
+      post "🔒 [tlsrpt] $lead. A sender honouring your MTA-STS/DANE policy could not negotiate secure TLS to the MX — check for a cert problem or downgrade. Breakdown: ''${bd:-n/a}. See the SMTP TLS Reporting dashboard."
       printf '%s' "$fc" > "$sf"
     elif [ "$fc" -lt "$prev" ]; then
       # Counter went backwards → poller state/textfile reset. Rebaseline, don't alert.
