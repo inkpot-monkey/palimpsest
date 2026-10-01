@@ -68,22 +68,24 @@ let
       sleep 2
     done
 
-    at="$(curl -X POST "$url/_matrix/client/v3/login" -H 'content-type: application/json' \
+    # Reply kept so the failure branch can show the homeserver's errcode; printed only
+    # when there is no access_token, so a successful login never logs one.
+    resp="$(curl -X POST "$url/_matrix/client/v3/login" -H 'content-type: application/json' \
       -d "$(jq -nc --arg u "${adminLocalpart}" --arg p "$pass" \
-        '{type:"m.login.password",identifier:{type:"m.id.user",user:$u},password:$p}')" \
-      | jq -r '.access_token // empty')"
-    [ -n "$at" ] || { echo "hookshot-notifications-room: admin login failed" >&2; exit 1; }
+        '{type:"m.login.password",identifier:{type:"m.id.user",user:$u},password:$p}')")"
+    at="$(jq -r '.access_token // empty' <<<"$resp" 2>/dev/null || true)"
+    [ -n "$at" ] || { echo "hookshot-notifications-room: admin login failed: $resp" >&2; exit 1; }
     auth=(-H "Authorization: Bearer $at")
 
     if [ -s "$marker" ]; then
       rid="$(cat "$marker")"
     else
-      rid="$(curl "''${auth[@]}" -X POST "$url/_matrix/client/v3/createRoom" \
+      resp="$(curl "''${auth[@]}" -X POST "$url/_matrix/client/v3/createRoom" \
         -H 'content-type: application/json' \
         -d "$(jq -nc --arg b "$bot" --argjson extra ${lib.escapeShellArg createExtra} \
-          '$extra + {preset:"private_chat",invite:[$b]}')" \
-        | jq -r '.room_id // empty')"
-      [ -n "$rid" ] || { echo "hookshot-notifications-room: createRoom failed" >&2; exit 1; }
+          '$extra + {preset:"private_chat",invite:[$b]}')")"
+      rid="$(jq -r '.room_id // empty' <<<"$resp" 2>/dev/null || true)"
+      [ -n "$rid" ] || { echo "hookshot-notifications-room: createRoom failed: $resp" >&2; exit 1; }
       printf '%s' "$rid" > "$marker"
       chmod 644 "$marker"
       echo "hookshot-notifications-room: created room -> $rid"

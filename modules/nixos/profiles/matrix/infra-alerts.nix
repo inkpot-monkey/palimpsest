@@ -73,11 +73,13 @@ let
       sleep 2
     done
 
-    at="$(curl -X POST "$url/_matrix/client/v3/login" -H 'content-type: application/json' \
+    # Reply kept so the failure branch can show the homeserver's errcode; printed only
+    # when there is no access_token, so a successful login never logs one.
+    resp="$(curl -X POST "$url/_matrix/client/v3/login" -H 'content-type: application/json' \
       -d "$(jq -nc --arg u "${adminLocalpart}" --arg p "$pass" \
-        '{type:"m.login.password",identifier:{type:"m.id.user",user:$u},password:$p}')" \
-      | jq -r '.access_token // empty')"
-    [ -n "$at" ] || { echo "infra-alerts: admin login failed" >&2; exit 1; }
+        '{type:"m.login.password",identifier:{type:"m.id.user",user:$u},password:$p}')")"
+    at="$(jq -r '.access_token // empty' <<<"$resp" 2>/dev/null || true)"
+    [ -n "$at" ] || { echo "infra-alerts: admin login failed: $resp" >&2; exit 1; }
     auth=(-H "Authorization: Bearer $at")
 
     # Marker first, then the legacy pin (adopted once, so an existing room keeps
@@ -161,11 +163,16 @@ let
     botpl="$(jq -r --arg b "$bot" '.users[$b] // 0' <<<"$pl" 2>/dev/null || echo 0)"
     if [ "$botpl" -lt 50 ]; then
       newpl="$(jq -c --arg b "$bot" '.users[$b] = 50' <<<"$pl")"
-      curl -f "''${auth[@]}" -X PUT \
+      # This PUT is the one place a room-version rule can bite (v12 rejects a `users`
+      # map naming the creator), so report what came back rather than just "could not".
+      resp="$(curl "''${auth[@]}" -X PUT \
         "$url/_matrix/client/v3/rooms/$ridenc/state/m.room.power_levels" \
-        -H 'content-type: application/json' -d "$newpl" >/dev/null \
-        && echo "infra-alerts: promoted @hookshot so it can write its connection" \
-        || { echo "infra-alerts: could not promote @hookshot" >&2; exit 1; }
+        -H 'content-type: application/json' -d "$newpl")"
+      if jq -e '.event_id' <<<"$resp" >/dev/null 2>&1; then
+        echo "infra-alerts: promoted @hookshot so it can write its connection"
+      else
+        echo "infra-alerts: could not promote @hookshot: $resp" >&2; exit 1
+      fi
     fi
 
     # 1. The hookId -> stateKey map, in the BOT's room account data. Written before

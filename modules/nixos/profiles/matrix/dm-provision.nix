@@ -88,12 +88,15 @@ let
     done
 
     pass="$(cat "$CREDENTIALS_DIRECTORY/admin_password")"
-    at="$(${pkgs.curl}/bin/curl -s -X POST "$url/_matrix/client/v3/login" \
+    # Keep the reply so the failure branch can show it. Echoing the homeserver's own
+    # errcode is the difference between a five-minute fix and a bisect; it is printed
+    # only when there is no access_token, so a successful login never logs one.
+    resp="$(${pkgs.curl}/bin/curl -s -X POST "$url/_matrix/client/v3/login" \
       -H 'content-type: application/json' \
       -d "$(${pkgs.jq}/bin/jq -nc --arg u "${adminLocalpart}" --arg p "$pass" \
-        '{type:"m.login.password",identifier:{type:"m.id.user",user:$u},password:$p}')" \
-      | ${pkgs.jq}/bin/jq -r '.access_token // empty')"
-    [ -n "$at" ] || { echo "dm-provision[$bot]: admin login failed" >&2; exit 1; }
+        '{type:"m.login.password",identifier:{type:"m.id.user",user:$u},password:$p}')")"
+    at="$(${pkgs.jq}/bin/jq -r '.access_token // empty' <<<"$resp" 2>/dev/null || true)"
+    [ -n "$at" ] || { echo "dm-provision[$bot]: admin login failed: $resp" >&2; exit 1; }
     auth=(-H "Authorization: Bearer $at")
     meenc="$(${pkgs.jq}/bin/jq -rn --arg m "$me" '$m|@uri')"
 
@@ -104,12 +107,12 @@ let
       # Create the DM and invite the bot — the bridge bot auto-joins the invite.
       # createExtra carries the topic and (for require-encryption bridges) turns on
       # e2ee so the bot doesn't drop the user's commands as unencrypted.
-      rid="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" -X POST "$url/_matrix/client/v3/createRoom" \
+      resp="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" -X POST "$url/_matrix/client/v3/createRoom" \
         -H 'content-type: application/json' \
         -d "$(${pkgs.jq}/bin/jq -nc --arg b "$bot" --argjson extra '${createExtra}' \
-          '{is_direct:true,invite:[$b],preset:"trusted_private_chat"} + $extra')" \
-        | ${pkgs.jq}/bin/jq -r '.room_id // empty')"
-      [ -n "$rid" ] || { echo "dm-provision[$bot]: createRoom failed" >&2; exit 1; }
+          '{is_direct:true,invite:[$b],preset:"trusted_private_chat"} + $extra')")"
+      rid="$(${pkgs.jq}/bin/jq -r '.room_id // empty' <<<"$resp" 2>/dev/null || true)"
+      [ -n "$rid" ] || { echo "dm-provision[$bot]: createRoom failed: $resp" >&2; exit 1; }
       printf '%s' "$rid" > "$marker"
       echo "dm-provision[$bot]: created DM -> $rid"
       ridenc="$(${pkgs.jq}/bin/jq -rn --arg r "$rid" '$r|@uri')"

@@ -76,23 +76,25 @@ let
     done
 
     pass="$(cat "$CREDENTIALS_DIRECTORY/admin_password")"
-    at="$(${pkgs.curl}/bin/curl -s -X POST "$url/_matrix/client/v3/login" \
+    # Reply kept so the failure branch can show the homeserver's errcode; printed only
+    # when there is no access_token, so a successful login never logs one.
+    resp="$(${pkgs.curl}/bin/curl -s -X POST "$url/_matrix/client/v3/login" \
       -H 'content-type: application/json' \
       -d "$(${pkgs.jq}/bin/jq -nc --arg u "${adminLocalpart}" --arg p "$pass" \
-        '{type:"m.login.password",identifier:{type:"m.id.user",user:$u},password:$p}')" \
-      | ${pkgs.jq}/bin/jq -r '.access_token // empty')"
-    [ -n "$at" ] || { echo "hookshot-space: admin login failed" >&2; exit 1; }
+        '{type:"m.login.password",identifier:{type:"m.id.user",user:$u},password:$p}')")"
+    at="$(${pkgs.jq}/bin/jq -r '.access_token // empty' <<<"$resp" 2>/dev/null || true)"
+    [ -n "$at" ] || { echo "hookshot-space: admin login failed: $resp" >&2; exit 1; }
     auth=(-H "Authorization: Bearer $at")
 
     # Create or reuse the Space.
     if [ -s "$marker" ]; then
       space="$(cat "$marker")"
     else
-      space="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" -X POST "$url/_matrix/client/v3/createRoom" \
+      resp="$(${pkgs.curl}/bin/curl -s "''${auth[@]}" -X POST "$url/_matrix/client/v3/createRoom" \
         -H 'content-type: application/json' \
-        -d '{"name":"Hookshot","topic":"GitHub / webhooks / feeds — hookshot rooms","preset":"private_chat","creation_content":{"type":"m.space"}}' \
-        | ${pkgs.jq}/bin/jq -r '.room_id // empty')"
-      [ -n "$space" ] || { echo "hookshot-space: createRoom failed" >&2; exit 1; }
+        -d '{"name":"Hookshot","topic":"GitHub / webhooks / feeds — hookshot rooms","preset":"private_chat","creation_content":{"type":"m.space"}}')"
+      space="$(${pkgs.jq}/bin/jq -r '.room_id // empty' <<<"$resp" 2>/dev/null || true)"
+      [ -n "$space" ] || { echo "hookshot-space: createRoom failed: $resp" >&2; exit 1; }
       printf '%s' "$space" > "$marker"
       echo "hookshot-space: created Space -> $space"
     fi
