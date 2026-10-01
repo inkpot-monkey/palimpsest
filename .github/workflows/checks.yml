@@ -37,6 +37,23 @@ env:
   # lib.getSecret* lookup takes its mock fallback (ADR-0012).
   OVERRIDE: --override-input secrets path:./ci/no-secrets
 
+  # Checks this environment cannot run. These are NOT known failures — each one passes
+  # locally — so keep the list short, and always record why. The skip is printed in the
+  # discover job so it never becomes invisible.
+  #
+  #   contract_seat, host_fleet_coherence, netns_container_binding
+  #     evaluate the whole fleet/user configuration, which needs the *second* private
+  #     flake input, `users` (ssh://git@github.com/palebluebytes/users). ADR-0012's mock
+  #     fallback covers `secrets` only, so these fail at eval with "Failed to fetch git
+  #     repository". Re-enable by giving the workflow a read-only deploy key for that
+  #     repo — nothing in the checks themselves needs changing.
+  #
+  #   git_annex_alert
+  #     git-annex is not substitutable for this nixpkgs rev, so CI builds it from source
+  #     and git-annex's OWN test suite fails in the runner sandbox. Upstream's problem,
+  #     and ~9 minutes of runner time to rediscover it each run.
+  EXCLUDE: contract_seat host_fleet_coherence netns_container_binding git_annex_alert
+
 jobs:
   # Enumerate the checks from the flake itself, so a newly added check is picked up
   # without editing this file.
@@ -67,8 +84,15 @@ jobs:
             # `git_annex_alert` (underscore) is a cheap alerting check and is kept.
             sel=$(jq -c '[.[] | select(startswith("git-annex") | not)]' <<<"$all")
           fi
+          # Drop the environment-limited checks (see EXCLUDE above), and say so.
+          for x in $EXCLUDE; do
+            sel=$(jq -c --arg x "$x" '[.[] | select(. != $x)]' <<<"$sel")
+            echo "  SKIPPED (see EXCLUDE in this workflow): $x"
+          done
           if [ -n "${ONLY:-}" ]; then
-            sel=$(jq -c --arg q "$ONLY" '[.[] | select(contains($q))]' <<<"$sel")
+            # Match against the FULL list, so `only` can deliberately target an
+            # excluded check to re-test it.
+            sel=$(jq -c --arg q "$ONLY" '[.[] | select(contains($q))]' <<<"$all")
             [ "$(jq -r 'length' <<<"$sel")" -gt 0 ] || {
               echo "::error::no check name contains '$ONLY'"; exit 1; }
           fi
