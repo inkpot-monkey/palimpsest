@@ -187,6 +187,17 @@ in
     bridgeService
     dmService
   ];
+  # No start rate limiting. systemd's default (5 starts per 10s) exists to stop a
+  # crash-looping daemon, and is actively wrong for an idempotent convergence
+  # oneshot: `matrix-reset` restarts this whole family in ONE transaction, several
+  # of them restart the bridge as they go, and an operator re-running one by hand to
+  # debug is normal. Hit the limit and systemd refuses to start the unit at all
+  # ('start-limit-hit') until someone runs `systemctl reset-failed` — so the bridge
+  # stays down while every oneshot that already ran reports success. That is this
+  # subsystem's signature failure (ADR-0017), and the bridge sits at exactly 5
+  # starts per reset today: the bridge's own, plus one from each of the four
+  # oneshots that restart it.
+  startLimitIntervalSec = 0;
   wantedBy = [ "multi-user.target" ];
   serviceConfig = {
     Type = "oneshot";

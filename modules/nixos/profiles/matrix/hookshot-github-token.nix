@@ -265,6 +265,12 @@ in
 
     systemd.services.matrix-hookshot-github-token = {
       description = "Store the GitHub personal access token in hookshot's token store";
+      # Not start-rate-limited: see the rationale on the shared admin-room constructor
+      # in hookshot-adminroom.nix. An idempotent oneshot that `matrix-reset` restarts
+      # alongside the rest of the family must not be refused for restarting "too
+      # often".
+      startLimitIntervalSec = 0;
+
       # after+wants, never before/requires: it restarts hookshot, and it needs the
       # key that hookshot's preStart generates.
       #

@@ -302,6 +302,12 @@ in
     # hookshot, so it must be ordered after it, not before.
     systemd.services.matrix-infra-alerts-room = {
       description = "Ensure #infra-alerts exists + @hookshot joined; load the webhook";
+      # Not start-rate-limited: see the rationale on the shared admin-room constructor
+      # in hookshot-adminroom.nix. An idempotent oneshot that `matrix-reset` restarts
+      # alongside the rest of the family must not be refused for restarting "too
+      # often".
+      startLimitIntervalSec = 0;
+
       # Ordered after every other oneshot that restarts the bridge. All of them are
       # isDm, so `matrix-reset` starts the whole set in ONE systemd transaction, and
       # concurrent restarts of a unit the transaction also orders on is the shape

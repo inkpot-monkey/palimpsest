@@ -320,6 +320,14 @@ in
       settings.passFile = "${stateDir}/passkey.pem";
     };
 
+    # The bridge is restarted once by EACH oneshot that writes something it loads at
+    # startup — four of them — on top of its own start, so a `matrix-reset` lands
+    # exactly on systemd's default 5-starts-per-10s limit. One more such oneshot, or
+    # one retry, and systemd refuses to bring the bridge back ('start-limit-hit')
+    # while every oneshot still reports success: alerting silently dead, which is
+    # the failure ADR-0017 was written about. See hookshot-adminroom.nix.
+    systemd.services.matrix-hookshot.startLimitIntervalSec = 0;
+
     systemd.services.matrix-hookshot.serviceConfig = {
       ExecStart = lib.mkForce (
         "${config.services.matrix-hookshot.package}/bin/matrix-hookshot "

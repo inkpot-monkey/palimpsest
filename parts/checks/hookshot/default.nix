@@ -310,6 +310,11 @@ pkgs.testers.nixosTest {
         # counter is how the test observes that (and that it doesn't restart twice).
         systemd.services.matrix-hookshot = {
           description = "stub matrix-hookshot";
+          # Mirrors the real bridge unit (hookshot.nix): no start rate limiting. The
+          # phases below restart it well past systemd's default 5-per-10s, and a stub
+          # that kept the limit would fail the test for a property the real unit does
+          # not have.
+          startLimitIntervalSec = 0;
           serviceConfig = {
             Type = "oneshot";
             RemainAfterExit = true;

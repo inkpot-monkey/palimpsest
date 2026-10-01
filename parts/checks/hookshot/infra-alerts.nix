@@ -248,6 +248,8 @@ pkgs.testers.nixosTest {
         # how the test sees that.
         systemd.services.matrix-hookshot = {
           description = "stub matrix-hookshot";
+          # Mirrors the real bridge unit (hookshot.nix): no start rate limiting.
+          startLimitIntervalSec = 0;
           serviceConfig = {
             Type = "oneshot";
             RemainAfterExit = true;

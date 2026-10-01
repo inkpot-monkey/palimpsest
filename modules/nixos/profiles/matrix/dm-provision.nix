@@ -200,6 +200,9 @@ in
     "tuwunel.service"
     "tuwunel-register-admin.service"
   ];
+  # Not start-rate-limited — see hookshot-adminroom.nix. `matrix-reset` restarts
+  # every DM provisioner in one transaction, and re-running one by hand is routine.
+  startLimitIntervalSec = 0;
   wantedBy = [ "multi-user.target" ];
   serviceConfig = {
     Type = "oneshot";
