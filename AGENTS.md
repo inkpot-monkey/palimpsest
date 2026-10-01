@@ -2,7 +2,10 @@
 
 ## Build / lint / test commands
 
-- **Check:** `nix flake check -L`
+- **Check:** `nix flake check -L`. Also runs in CI (`.github/workflows/checks.yml`,
+  one job per check) on every push to `main` and every PR, against the **mock**
+  secret set — so CI cannot catch a secret-dependent regression, and the
+  git-annex VM suite is excluded there by default (opt in via workflow_dispatch).
 - **Format:** `nix fmt` (treefmt; runs nixfmt/deadnix/statix, ruff
   (format+check), rustfmt, shfmt, taplo, prettier, mdformat, elisp-autofmt —
   enforced via pre-commit hook). Config in `parts/treefmt.nix`.
