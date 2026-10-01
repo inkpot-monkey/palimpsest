@@ -19,6 +19,10 @@ on:
         description: "Also run the git-annex VM checks (slow)"
         type: boolean
         default: false
+      only:
+        description: "Run only checks whose name contains this substring (blank = all)"
+        type: string
+        default: ""
 
 # A newer push supersedes an in-flight run for the same ref; main is never cancelled.
 concurrency:
@@ -37,7 +41,7 @@ jobs:
   # Enumerate the checks from the flake itself, so a newly added check is picked up
   # without editing this file.
   discover:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Just a flake eval; if it has not answered by now it is wedged, not slow.
     timeout-minutes: 10
     outputs:
@@ -49,6 +53,7 @@ jobs:
         name: List checks
         env:
           INCLUDE_GIT_ANNEX: ${{ inputs.include-git-annex }}
+          ONLY: ${{ inputs.only }}
         run: |
           set -euo pipefail
           # stderr carries the "Git tree is dirty" / mock warnings; keep it off stdout.
@@ -62,12 +67,17 @@ jobs:
             # `git_annex_alert` (underscore) is a cheap alerting check and is kept.
             sel=$(jq -c '[.[] | select(startswith("git-annex") | not)]' <<<"$all")
           fi
+          if [ -n "${ONLY:-}" ]; then
+            sel=$(jq -c --arg q "$ONLY" '[.[] | select(contains($q))]' <<<"$sel")
+            [ "$(jq -r 'length' <<<"$sel")" -gt 0 ] || {
+              echo "::error::no check name contains '$ONLY'"; exit 1; }
+          fi
           echo "checks=$sel" >> "$GITHUB_OUTPUT"
           jq -r '.[]' <<<"$sel" | sed 's/^/  will run: /'
 
   check:
     needs: discover
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # A hard ceiling, not an expectation: the jobs run in parallel, so wall-clock is
     # the slowest single check (cold, dominated by substituting its closure), not the
     # sum. Without this a VM test that hangs waiting on a unit would sit for GitHub's
@@ -81,15 +91,28 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      # Almost every check is a NixOS VM test, which needs /dev/kvm. GitHub's Linux
-      # runners expose it but not to the runner user by default.
+      # Almost every check is a NixOS VM test, which wants /dev/kvm. GitHub's Linux
+      # runners expose it, but not writable by the runner user by default.
+      #
+      # This step must never fail the job. `run:` uses `bash -e`, so an earlier version
+      # ending in a bare `test -w /dev/kvm` aborted every check job in seconds when the
+      # device was not writable — a setup step masquerading as 22 check failures. The
+      # test driver falls back to TCG software emulation anyway; it is only much slower,
+      # which is worth a warning, not a hard stop.
       - name: Enable KVM
         run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
-          test -w /dev/kvm && echo "/dev/kvm is writable"
+          if [ -e /dev/kvm ]; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+              | sudo tee /etc/udev/rules.d/99-kvm4all.rules >/dev/null
+            sudo udevadm control --reload-rules || true
+            sudo udevadm trigger --name-match=kvm || true
+          fi
+          if [ -w /dev/kvm ]; then
+            echo "KVM: hardware acceleration available"
+          else
+            echo "::warning title=No KVM::/dev/kvm is $([ -e /dev/kvm ] && echo 'present but not writable' || echo absent); VM tests fall back to software emulation and will be slow"
+            ls -l /dev/kvm 2>&1 || true
+          fi
 
       # Reclaim ~30 GB of preinstalled toolchains; a VM-test closure plus nixpkgs
       # does not fit comfortably on a stock runner otherwise.
