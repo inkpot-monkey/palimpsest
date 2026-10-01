@@ -107,13 +107,22 @@ let
       if [ -s "$marker" ]; then
         echo "infra-alerts: the recorded room is gone (wiped homeserver?) — creating a new one"
       fi
-      rid="$(curl "''${auth[@]}" -X POST "$url/_matrix/client/v3/createRoom" \
+      # No power_level_content_override: from room version 12 the creator holds
+      # implicit infinite power and MUST NOT appear in `users` — listing it gets the
+      # whole createRoom rejected with M_INVALID_PARAM ("creator user IDs are not
+      # allowed in the `users` field"), which is how tuwunel 1.9.3 broke this. And
+      # an override naming only the bot is no better: `users` is replaced wholesale,
+      # so on a pre-12 room it would drop the creator's own 100. The bot is promoted
+      # after the fact instead, by the block below, which is version-agnostic and
+      # the path an adopted room already took.
+      resp="$(curl "''${auth[@]}" -X POST "$url/_matrix/client/v3/createRoom" \
         -H 'content-type: application/json' \
-        -d "$(jq -nc --arg b "$bot" --arg a "@${adminLocalpart}:${domain}" \
-          '{name:"Infra Alerts",topic:"Fleet uptime alerts (ADR-0019)",preset:"private_chat",invite:[$b],
-            power_level_content_override:{users:{($a):100,($b):50}}}')" \
-        | jq -r '.room_id // empty')"
-      [ -n "$rid" ] || { echo "infra-alerts: createRoom failed" >&2; exit 1; }
+        -d "$(jq -nc --arg b "$bot" \
+          '{name:"Infra Alerts",topic:"Fleet uptime alerts (ADR-0019)",preset:"private_chat",invite:[$b]}')")"
+      rid="$(jq -r '.room_id // empty' <<<"$resp" 2>/dev/null || true)"
+      # Echo the homeserver's reply. The bare "createRoom failed" this used to print
+      # cost a whole session to turn back into a cause.
+      [ -n "$rid" ] || { echo "infra-alerts: createRoom failed: $resp" >&2; exit 1; }
       printf '%s' "$rid" > "$marker"; chmod 644 "$marker"
       echo "infra-alerts: created room $rid"
     fi
@@ -145,8 +154,9 @@ let
 
     # The bot writes its own connection as a state event, and m.room.power_levels
     # defaults state_default to 50 while an invited member joins at 0 — so without
-    # this the PUT below 403s. Creation sets it via power_level_content_override;
-    # an adopted room needs it applied after the fact, by the admin who made it.
+    # this the PUT below 403s. EVERY room comes through here, freshly created or
+    # adopted: createRoom no longer pre-seeds the bot's level (see above), so this
+    # is the only thing that grants it. Done by the admin, who created the room.
     pl="$(curl "''${auth[@]}" "$url/_matrix/client/v3/rooms/$ridenc/state/m.room.power_levels")"
     botpl="$(jq -r --arg b "$bot" '.users[$b] // 0' <<<"$pl" 2>/dev/null || echo 0)"
     if [ "$botpl" -lt 50 ]; then
