@@ -175,6 +175,11 @@ in
         # git-annex owns the corpus tree, replicated to kelpy and — unlike music — backed up
         # offsite. Adds to the same services.git-annex enabled by git-annex.nix above.
         ./rk1/library.nix
+        # Off-site restic for the Immich photo library — the fleet's first live backup job
+        # (palimpsest#150). Carries the whole backup story for this host, profile toggles
+        # included, because kelpy's `/persistent` pattern does not transfer to a tmpfs-rooted
+        # host whose data lives on the /var/cache NVMe subtree.
+        ./rk1/backup.nix
         (bindUsers { inkpotmonkey = operator; })
         ({ config, ... }: {
           networking.hostName = "rk1b";
@@ -353,11 +358,9 @@ in
           # dirs redirect to /var/cache (NVMe) via BindPaths. See ADR-0021.
           custom.profiles.monitoring-server.enable = true;
           custom.profiles.monitoring-client.enable = true;
-          # Off fleet-wide: DEFERRED, not blocked (palimpsest#150 — rsync.net is reachable;
-          # this is a scheduling decision). reportJobs keeps the telemetry backup visible on
-          # the Backups board as a disabled edge.
-          custom.profiles.backup.monitoringTelemetry.enable = false;
-          custom.profiles.backup.reportJobs = [ "telemetry" ];
+          # custom.profiles.backup now lives in ./rk1/backup.nix, which turns the `daily`
+          # job ON for the Immich photo library and keeps telemetry off. It is the fleet's
+          # first live off-site job (palimpsest#150); read that file before changing it.
 
           # DMARC aggregate-report metrics. Co-located with the monitoring server so
           # it's scraped over loopback; polls the `dmarc` mailbox on kelpy's Stalwart

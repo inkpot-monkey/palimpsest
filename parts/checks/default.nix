@@ -19,6 +19,14 @@
         uptime_monitoring = import ./uptime-monitoring {
           inherit pkgs self;
         };
+        # The Immich database-dump freshness guard (hosts/rk1/backup.nix). Immich's media
+        # directory holds only pixels — albums, people and faces live in a dump written by
+        # Immich's OWN scheduler, configured in its UI rather than here. This pins that the
+        # guard refuses an absent, empty, non-dump or stale dump directory and passes a live
+        # nightly one, so a silently-stopped dump cannot present as a green backup.
+        immich_db_dump_freshness = import ./immich-db-dump-freshness {
+          inherit pkgs self;
+        };
         networking = import ./networking {
           inherit pkgs inputs self;
         };
