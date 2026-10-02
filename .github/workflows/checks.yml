@@ -54,6 +54,18 @@ env:
   #     and ~9 minutes of runner time to rediscover it each run.
   EXCLUDE: contract_seat host_fleet_coherence netns_container_binding git_annex_alert
 
+  # Checks held out of the push gate for WALL-CLOCK, not because anything is wrong with
+  # them — a different reason from EXCLUDE above, so a different list. The jobs fan out
+  # in parallel, so the run takes as long as its slowest single check: these two took
+  # 27 and 23 minutes while all 16 others finished inside 8, i.e. they alone tripled the
+  # time to feedback on every push.
+  #
+  # They are still run by `workflow_dispatch` with an `only` filter (which matches the
+  # full list), and they still run locally in `nix flake check`. If this gate is ever
+  # wanted as the complete story, move them to a scheduled workflow rather than quietly
+  # dropping them.
+  SLOW: supernote_mirror stump
+
 jobs:
   # Enumerate the checks from the flake itself, so a newly added check is picked up
   # without editing this file.
@@ -84,10 +96,15 @@ jobs:
             # `git_annex_alert` (underscore) is a cheap alerting check and is kept.
             sel=$(jq -c '[.[] | select(startswith("git-annex") | not)]' <<<"$all")
           fi
-          # Drop the environment-limited checks (see EXCLUDE above), and say so.
+          # Drop the environment-limited and slow checks, and say which, so neither
+          # exclusion is invisible in the run.
           for x in $EXCLUDE; do
             sel=$(jq -c --arg x "$x" '[.[] | select(. != $x)]' <<<"$sel")
-            echo "  SKIPPED (see EXCLUDE in this workflow): $x"
+            echo "  SKIPPED, cannot run here (see EXCLUDE in this workflow): $x"
+          done
+          for x in $SLOW; do
+            sel=$(jq -c --arg x "$x" '[.[] | select(. != $x)]' <<<"$sel")
+            echo "  SKIPPED, too slow for the push gate (see SLOW): $x"
           done
           if [ -n "${ONLY:-}" ]; then
             # Match against the FULL list, so `only` can deliberately target an

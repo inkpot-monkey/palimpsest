@@ -4,13 +4,15 @@
 
 - **Check:** `nix flake check -L`. Also runs in CI (`.github/workflows/checks.yml`,
   one job per check) on every push to `main` and every PR, against the **mock**
-  secret set — so CI cannot catch a secret-dependent regression. CI runs 18 of the
-  22 non-git-annex checks; the `EXCLUDE` list in that workflow names the four it
-  cannot (three need the private `users` flake input, which the ADR-0012 mocks do
-  not cover; `git_annex_alert` builds git-annex from source and trips its upstream
-  test suite). Those four still have to be run locally. The git-annex VM suite is
-  also skipped in CI by default — opt in via workflow_dispatch, which also takes an
-  `only` substring filter for re-running a single check.
+  secret set — so CI cannot catch a secret-dependent regression. CI runs 16 of the
+  22 non-git-annex checks, in ~10 min. Two lists in that workflow name the rest,
+  each with its reason inline: `EXCLUDE` (four it *cannot* run — three need the
+  private `users` flake input, which the ADR-0012 mocks do not cover, and
+  `git_annex_alert` builds git-annex from source and trips its upstream test suite)
+  and `SLOW` (`supernote_mirror`, `stump` — 27 and 23 min, which alone tripled the
+  push-gate wall-clock). **All six, and the git-annex VM suite, are yours to run
+  locally** — `nix flake check` remains the only complete gate. workflow_dispatch
+  takes an `only` substring filter that reaches any check, excluded or not.
 - **Format:** `nix fmt` (treefmt; runs nixfmt/deadnix/statix, ruff
   (format+check), rustfmt, shfmt, taplo, prettier, mdformat, elisp-autofmt —
   enforced via pre-commit hook). Config in `parts/treefmt.nix`.
