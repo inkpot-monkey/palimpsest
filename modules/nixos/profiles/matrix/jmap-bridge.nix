@@ -19,6 +19,18 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        # This bridge talks to Stalwart over loopback and logs in as a mailbox
+        # account, so the mail server must be on this host. Making it explicit
+        # also pins down where `email_password` comes from: profiles/mail
+        # declares it (it is that server's credential), and this module only
+        # consumes it.
+        assertion = config.custom.profiles.mail.enable;
+        message = "custom.profiles.matrix.jmap-bridge requires custom.profiles.mail.enable: it bridges that host's Stalwart mailbox over loopback JMAP and uses the email_password secret that profile declares.";
+      }
+    ];
+
     # --- Secrets ---
     # All JMAP/email credentials live in the mail secrets file (the bridge's
     # Matrix-side appservice tokens are email-bridge state, kept alongside the
@@ -30,10 +42,6 @@ in
       sopsFile = self.lib.getSecretFile "mail";
     };
     sops.secrets.email_encryption_key = {
-      sopsFile = self.lib.getSecretFile "mail";
-    };
-    # JMAP login password for the declaratively-provisioned bridge user.
-    sops.secrets.email_password = {
       sopsFile = self.lib.getSecretFile "mail";
     };
 

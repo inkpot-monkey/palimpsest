@@ -41,6 +41,17 @@ in
             owner = "stalwart-mail";
             group = "stalwart-mail";
           };
+          # The mailbox account's own JMAP/IMAP password. It belongs to THIS
+          # profile: the mail server is what the credential authenticates
+          # against, and consumers of it (profiles/mail/sieve.nix, and the
+          # jmap-bridge under profiles/matrix) all require this profile anyway.
+          # It used to be declared only by matrix/jmap-bridge.nix, which made the
+          # mail host's access to its own mailbox credential depend on the Matrix
+          # profile being enabled. Left root-only (no owner/group) deliberately —
+          # every consumer reads it as root or via systemd LoadCredential.
+          email_password = {
+            sopsFile = self.lib.getSecretPath "profiles/mail.yaml";
+          };
         };
 
         sops.templates.cloudflare_acme_env = {
