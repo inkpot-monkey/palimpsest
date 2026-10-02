@@ -31,6 +31,7 @@
     matrix = ./matrix;
     mail = ./mail;
     mail-dane-autoupdate = ./mail/dane-autoupdate.nix;
+    mail-sieve = ./mail/sieve.nix;
     paperless = ./paperless.nix;
     immich = ./immich.nix;
     proxy = ./proxy.nix;

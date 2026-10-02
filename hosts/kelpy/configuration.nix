@@ -134,6 +134,30 @@
     # Auto-reconcile the mail domains' DANE/TLSA records when acme renews the mail cert,
     # so the published TLSA never drifts from the served cert (mail-scoped dns push).
     mail-dane-autoupdate.enable = true;
+    # Tag mail that reaches this mailbox by Gmail forwarding, so the origin of
+    # every message stays answerable after the Gmail cutover
+    # (docs/runbooks/gmail-to-stalwart.md).
+    mail-sieve = {
+      enable = true;
+      user = "thomas";
+      script = ''
+        require ["imap4flags"];
+
+        # Gmail sets X-Forwarded-For on everything it forwards from the old
+        # account. Tag those with the same keyword the one-off archive import
+        # used, so tagged = arrived via the old Gmail address and untagged =
+        # sent straight here. The tagged proportion is the cutover's real
+        # progress metric: it falls as correspondents are updated, and reaching
+        # zero is when Gmail can be retired.
+        #
+        # Deliberately does NOT set $seen. Forwarded mail is new mail and must
+        # arrive unread; the archive's blanket $seen was a one-off for history,
+        # not a delivery policy.
+        if header :contains "X-Forwarded-For" "tsdkelly@gmail.com" {
+            addflag "gmail:tsdkelly";
+        }
+      '';
+    };
     matrix = {
       enable = true;
       whatsapp.enable = true;
