@@ -43,15 +43,19 @@ touching secrets:
 
 - **`secrets/` is a separate repo** (pinned as a flake input). Editing a secret
   is not enough: commit + push it in the secrets repo, then `nix flake update secrets` here, *before* deploy — otherwise sops activation fails on the target.
+
 - **sops is all-or-nothing per host.** A host needs its age key on *every* sops
   file, or `sops-install-secrets` installs none (e.g. no wifi on a Pi). When
   adding/rotating a host key, re-key all files together.
+
 - **Never ship the admin SSH key to headless/agent hosts.** `~/.ssh/id_ed25519`
   is the sops admin key (`&admin`) and decrypts everything. Use a host's
   dedicated `signing_key`, not the admin key.
+
 - **Some components live in their own repos**, consumed as flake inputs — e.g.
   `jmap-matrix-bridge` and `host-user-contract` (ADR-0016). Only host glue lives
   here; change behaviour in the upstream repo, then `nix flake update <input>`.
+
 - **`jmap-bridge` is pinned to a release tag, so `nix flake update jmap-bridge`
   is a no-op.** Bump it by editing the tag in `flake.nix` by hand
   (`gh release list --repo palebluebytes/jmap-matrix-bridge`). The pin exists
@@ -61,12 +65,27 @@ touching secrets:
   compile matrix-sdk/sqlx from source — no error, just half an hour. A tag is
   always a released, CI-built rev. If you ever do point it at a raw rev, check
   first: `gh run list --repo palebluebytes/jmap-matrix-bridge --commit <rev>`.
+
 - **`nix flake update` gets rate-limited** (`429: Too Many Requests`) because it
-  calls the GitHub API anonymously. Add
-  `--option access-tokens github.com=$(gh auth token)`.
+  calls the GitHub API anonymously. Authenticate it with the `gh` credential — but
+  pass it through the ENVIRONMENT, not on the command line:
+
+  ```sh
+  NIX_CONFIG="access-tokens = github.com=$(gh auth token)" nix flake update
+  ```
+
+  **Not `--option access-tokens github.com=$(gh auth token)`.** Argv is
+  world-readable via `/proc/<pid>/cmdline`, so the inline form publishes a live
+  GitHub OAuth token to every user on the box for as long as the command runs —
+  and into any log, transcript or CI output that echoes the command. `NIX_CONFIG`
+  puts it in the process environment instead, which is readable only by the same
+  user and root. (Not perfect, just strictly better; for a long-lived fix put the
+  `access-tokens` line in a mode-600 `~/.config/nix/nix.conf` and pass nothing.)
+
 - **A new file must be `git add`ed before the flake can see it.** The source is
   git-tracked-files-only, so an untracked file fails at *eval* with
   `error: Path '…' is not tracked by Git` rather than as a missing file.
+
 - **Raspberry Pi kernel pin:** porcupineFish must run a `stable_*`-tagged vendor kernel
   — unstable/next ones hang in initrd, a silent brick (no console, no network, and
   extlinux does not fall back). The host `lib.mkForce`s `boot.kernelPackages` to a named
@@ -76,6 +95,7 @@ touching secrets:
   another. Bumping that rev also moves the Pi's whole userspace (it pins its own nixpkgs),
   so `home-manager-pi` moves with it in lockstep. **Never deploy a kernel change to this
   host remotely** — validate at the device. See `hosts/porcupineFish/README.md`.
+
 - **Services are monitored by default (ADR-0019).** Every `settings.services` entry
   is uptime-probed automatically. To exempt a *served* service, set
   `monitor = { enable = false; reason = "…"; }` on its entry (not delete it — that

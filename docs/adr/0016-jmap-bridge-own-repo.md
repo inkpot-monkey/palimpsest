@@ -46,5 +46,5 @@ Concretely, the fleet had been pinned to `9a9f7ce282`, a release-plz merge with 
 
 Two related traps, same neighbourhood:
 
-- `nix flake update` makes **anonymous** GitHub API calls and hits `429: Too Many Requests` on a busy machine. `--option access-tokens github.com=$(gh auth token)` uses the existing `gh` credential and clears it.
+- `nix flake update` makes **anonymous** GitHub API calls and hits `429: Too Many Requests` on a busy machine. Passing the existing `gh` credential clears it. ⚠ Use the environment form — `NIX_CONFIG="access-tokens = github.com=$(gh auth token)"` — and **not** the `--option` form this ADR originally recorded: argv is world-readable via `/proc/<pid>/cmdline`, so the inline form leaks a live token. See AGENTS.md.
 - A newly added file that is **not yet `git add`ed** is invisible to the flake (the source is git-tracked-files-only), and shows up as `error: Path '…' in the repository … is not tracked by Git` at eval time, not as a missing-file error.
