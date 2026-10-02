@@ -1,7 +1,7 @@
 # Runbook: migrating Gmail into Stalwart
 
 Moves the whole Gmail archive into the self-hosted Stalwart mailbox on `kelpy`, tags
-every imported message with the flat keyword **`gmail`**, marks them all **read**, and
+every imported message with the keyword **`gmail:tsdkelly`**, marks them all **read**, and
 points new Gmail arrivals at Stalwart by forwarding.
 
 Mail server: [`modules/nixos/profiles/mail/default.nix`](../../modules/nixos/profiles/mail/default.nix)
@@ -31,7 +31,7 @@ state, so it resumes *after* the import and never replays it.
 | Transport | `imapsync` for the copy, then one JMAP pass | imapsync is resumable and Gmail-aware; JMAP sets arbitrary keywords and `$seen` natively |
 | Source scope | **`[Gmail]/All Mail` only** | exactly one copy of everything. Gmail shows each labelled message in its label folder too, so syncing folders as well double-imports. Excludes Spam/Trash by Gmail's design |
 | Destination | a dedicated **`Gmail`** mailbox | keeps the live 632-message Inbox usable. Change `IMPORT_MAILBOX` in `env.sh` to merge into Inbox instead |
-| Labels | flat `gmail` keyword only | what was asked for. Gmail labels are *not* recoverable over All Mail IMAP — only a Takeout export carries `X-Gmail-Labels`. Decide before importing if you ever want them |
+| Labels | one flat keyword, `gmail:tsdkelly` | what was asked for. Namespaced by source account so a later import from a second account stays distinguishable — `gmail` alone could not be told apart after the fact. The colon is legal: RFC 8621 keywords exclude only `( ) { ] % * " \`, and Stalwart accepts it in an `Email/query` filter (checked against the live server). Gmail's own *labels* are a separate matter and are *not* recoverable over All Mail IMAP — only a Takeout export carries `X-Gmail-Labels`. Decide before importing if you ever want those |
 | Cutover | Gmail forwards **and keeps its copy** | `backup.enable = false` fleet-wide, so a populated Gmail is currently the only second copy of this mail |
 
 ## Credentials
@@ -90,7 +90,7 @@ cd ~/code/nixos/.scratch/gmail-migration
 
    ```bash
    . ./env.sh && export STALWART_PW="$(stalwart_pw)"
-   ./03-tag-read.py         # dry: prints how many lack `gmail` / `$seen`
+   ./03-tag-read.py         # dry: prints how many lack `gmail:tsdkelly` / `$seen`
    ./03-tag-read.py --go
    ```
 
