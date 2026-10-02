@@ -74,8 +74,9 @@
 # `supernote` user 0700 and — deliberately — NOT in the `library` group: the mirror
 # reaches content over the client HTTP API, never the FS. Persisted WHOLE via impermanence +
 # StateDirectory (ADR-0004 pattern). It has NO kelpy replica and NO offsite backup, and nothing
-# here adds it to a restic path (restic is off fleet-wide on rk1b anyway; only the telemetry job
-# is declared). The reason is that the store is REBUILDABLE, and since #117 that is carried by the
+# here adds it to a restic path (rk1b's restic job, hosts/rk1/backup.nix, is scoped to the Immich
+# photo library and does not cover this store). The reason is that the store is REBUILDABLE, and
+# since #117 that is carried by the
 # MIRROR below: every LIVE file in the store is mirrored down into `library/supernote/`
 # (hosts/rk1/library.nix), which sits on the NVMe and is git-annex-replicated to kelpy — so the
 # handwriting is already on different physical media than this store, which shares rk1b's eMMC
@@ -87,10 +88,11 @@
 # thing the mirror structurally cannot carry, since it materialises the VFS and nothing describes
 # that blob; it is also, for the same reason, unreachable debris rather than content.
 #   ⚠ Say REBUILDABLE, not "backed up". `library/` is INTENDED to be offsite-backed (see the header
-#     of hosts/rk1/library.nix) and currently is NOT: no host declares a covering restic path with
-#     backups enabled, and rk1b runs no restic unit at all (palimpsest#150). The case for leaving
-#     the store un-backed-up rests on the mirror, which runs, and never on an offsite backup, which
-#     does not.
+#     of hosts/rk1/library.nix) and currently is NOT: rk1b's restic job exists now
+#     (hosts/rk1/backup.nix) but its `paths` name the Immich photo library only, and kelpy's
+#     covering `/persistent` path is still gated behind `backup.enable = false` (palimpsest#150).
+#     The case for leaving the store un-backed-up rests on the mirror, which runs, and never on an
+#     offsite backup of `library/`, which still does not.
 # What is store-ONLY is the database — the account, the device pairing, the recycle bin — so
 # losing the eMMC costs a re-pair, not documents. Recovery if the store is lost:
 #   • device intact → re-pair the Nomad to the server and let Private Cloud Sync re-seed it;
@@ -187,8 +189,9 @@ let
 
   # Paths this design has retired, swept on every start so a pre-existing deploy does not leave
   # them behind. All three sit where abandoning them costs something: the first two are inside the
-  # git-annex library tree, so an orphan would replicate to kelpy (and offsite too, once offsite
-  # backup lands — palimpsest#150), and the third is persisted server state. Named rather than
+  # git-annex library tree, so an orphan would replicate to kelpy (and offsite too, once this tree
+  # is added to a restic path — palimpsest#150; rk1b's job exists but covers Immich only), and the
+  # third is persisted server state. Named rather than
   # inlined so the sweep and this comment cannot drift apart.
   #   • ereader-outbox/ — the one-shot send inbox, retired with the upload path (#117).
   #   • ereader/        — the old mirror root, when this mirrored ONLY /DOCUMENT/Document/ereader.
@@ -250,8 +253,9 @@ in
           Root of the git-annex library tree (hosts/rk1/library.nix). Its `supernote/` subfolder is
           a strict downward mirror of everything the device holds — `Note/`, `Document/` and the
           other folders the firmware seeds, at the same relative paths — git-annex-replicated to
-          kelpy, unlike the server store (and offsite too, once offsite backup lands —
-          palimpsest#150; it does not run today). Nothing is written into it by hand: there is
+          kelpy, unlike the server store (and offsite too, once this tree is added to a restic
+          path — palimpsest#150; rk1b's job runs now but covers the Immich library only).
+          Nothing is written into it by hand: there is
           no upload path, so a file here that the store lacks is treated as a device-side delete
           and removed. Books reach the device by OPDS pull from Stump, not through this tree.
         '';

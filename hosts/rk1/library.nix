@@ -5,13 +5,17 @@
 # the only writer of `supernote/`.
 #
 # UNLIKE the music library these are personal documents, not re-acquirable media, so ADR-0031
-# also asks that they be backed up OFFSITE. ⚠ That half is INTENT, NOT FACT: no restic path
-# lists THIS tree, and while the kelpy replica does sit under a covering path (`/persistent`,
-# defended by an assertion there), that path is gated behind `backup.enable = false` on every
-# host that sets it — and rk1b runs no restic unit at all (palimpsest#150). Nothing ships
-# anywhere today. Do not read this header as evidence the documents are backed
-# up — they are REPLICATED, which is the weaker guarantee: it survives a dead disk, but not a
-# delete propagating to both copies, nor losing the house.
+# also asks that they be backed up OFFSITE. ⚠ That half is STILL INTENT, NOT FACT — but the
+# reason has changed, and so has the cost of fixing it. rk1b DOES now run a restic unit
+# (hosts/rk1/backup.nix, the fleet's first live off-site job), and it is scoped deliberately to
+# the Immich photo library: THIS tree is not in its `paths`. The kelpy replica sits under a
+# covering path (`/persistent`, defended by an assertion there), but that one is still gated
+# behind `backup.enable = false`. So nothing ships this tree anywhere today — however, closing
+# that gap is now adding `/var/cache/library` to an existing job rather than standing one up
+# (palimpsest#150, where the document library is the highest-priority target).
+# Do not read this header as evidence the documents are backed up — they are REPLICATED, which
+# is the weaker guarantee: it survives a dead disk, but not a delete propagating to both copies,
+# nor losing the house.
 #
 # The storage / placement / backup decision is ADR-0031 (built by palimpsest#90); it deliberately
 # reuses the ADR-0028 git-annex ownership model (read that before changing the ownership here).

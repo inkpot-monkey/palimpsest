@@ -80,8 +80,11 @@
       # No remotes. The kelpy replica that used to sit on the other end of this link is
       # RETIRED (hosts/kelpy/git-annex.nix) — it existed solely to feed slskd, and slskd
       # now runs here and reads this tree directly. ⚠ That means the library has ONE copy
-      # again: replication was the only thing standing in for a backup of it, and
-      # custom.profiles.backup is still off fleet-wide (palimpsest#150).
+      # again, and replication was the only thing standing in for a backup of it.
+      # custom.profiles.backup IS now on for this host (hosts/rk1/backup.nix), but that job
+      # covers the Immich photo library only — this tree is deliberately outside it, on the
+      # ADR-0028/#150 reasoning that music is bulk re-acquirable media. That remains a
+      # decision, not an oversight: re-download is the recovery path here.
     };
   };
 
