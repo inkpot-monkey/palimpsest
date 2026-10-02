@@ -99,7 +99,7 @@ let
       };
       # Immich — the personal photo library (replaces the Google Photos/Drive
       # archive). Same edge/origin split as Navidrome and Stump: it RUNS on rk1b
-      # (media node, NVMe /var/cache), fronted by kelpy's Caddy at immich.<domain>
+      # (media node, NVMe /var/cache), fronted by kelpy's Caddy at photos.<domain>
       # behind the internal_only tailnet guard.
       #
       # It started co-located on kelpy and had to move: kelpy has 4G and no swap,
@@ -107,7 +107,12 @@ let
       # OOM-looped there and the kernel took tuwunel and jellyfin with it. rk1b has
       # 32G and the media disk. Moving `origin` means BOTH hosts need deploying —
       # kelpy for the vhost, rk1b for the service (the same trap stump.nix flags).
-      immich = {
+      # Named `photos`, not `immich`: the registry attribute name IS the vhost subdomain
+      # (proxy.nix) AND the generated DNS record (parts/apps/dns) AND the uptime probe name
+      # (ADR-0019), so it is the user-facing URL rather than an implementation detail. Immich
+      # is the software; photos is the service. Renaming this key moves all three together —
+      # which also means a rename needs `nix run .#dns -- push`, not just a deploy.
+      photos = {
         edge = "kelpy";
         port = 2283;
         origin = "rk1b";

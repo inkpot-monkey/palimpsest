@@ -9,7 +9,10 @@
 
 let
   cfg = config.custom.profiles.immich;
-  svc = settings.services.private.immich;
+  # The registry entry is `photos`, not `immich` — the attribute name is the public
+  # subdomain, the DNS record and the uptime probe name, so it names the service rather
+  # than the software. See the entry's own comment in parts/settings.nix.
+  svc = settings.services.private.photos;
 
   # Immich may run on the edge (Caddy proxies to loopback) or off it (Caddy on the
   # edge proxies across the tailnet to `origin`). The binding has to follow, so it

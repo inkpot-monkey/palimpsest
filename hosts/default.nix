@@ -227,7 +227,7 @@ in
           # Media and database both go on the /var/cache NVMe subtree, NOT the tmpfs root —
           # the same placement as Navidrome and Stump — and the profile gates both units on
           # those mounts so neither can win the race against var-cache.mount and write to the
-          # ramdisk. Fronted by kelpy's Caddy at immich.<domain>, so DEPLOY KELPY TOO (the
+          # ramdisk. Fronted by kelpy's Caddy at photos.<domain>, so DEPLOY KELPY TOO (the
           # same trap stump.nix flags above).
           custom.profiles.immich = {
             enable = true;
