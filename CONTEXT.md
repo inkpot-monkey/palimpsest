@@ -258,6 +258,16 @@ _Avoid_: using "retention" for backup keep-policy or for how long blobs are kept
 A point-in-time off-site copy made by **restic**, kept under a keep-daily/weekly/monthly policy, used to *restore* after data loss. Distinct from **archival** (git-annex replication of blobs) and from **retention** (in-place expiry).
 _Avoid_: archive, snapshot (reserve "snapshot" for a TSDB-consistent point-in-time the backup is taken *from*).
 
+> Personal photos are the one data class that exists in **two unrelated collections** at once. They are not two copies of one thing, and conflating them is how a photo ends up believed-safe in neither. The two terms below are deliberately distinct; `gphotos-keep`/`gphotos-archive` on the admin workstation are neither of them.
+
+**Pictures annex**:
+The **blob** collection of the user's own `~/Pictures` — a git-annex working copy on the workstation, pushed by its assistant into a passive second repo on `kelpy` (no assistant, no remotes, nothing reads it). Protected by **archival** (two annex replicas), and by **backup** only once `kelpy`'s restic job is enabled, under which its covering `/persistent` path reaches it.
+_Avoid_: photo backup, the photos (ambiguous with the Photo library), kelpy pictures.
+
+**Photo library**:
+The **Immich**-managed collection on `rk1b` — the former Google Photos archive (ADR-0034). Not a blob collection and not in git-annex: Immich owns an object store under `mediaLocation` plus a postgres database, and album, person and face data exists **only** in that database. Protected by **backup** (`hosts/rk1/backup.nix`, the fleet's first live restic job), never by archival.
+_Avoid_: photo archive, Immich backup, the photos (ambiguous with the Pictures annex).
+
 ### Networking & DNS
 
 > The tailnet's DNS is **split-horizon with ad-blocking**, served by **blocky** ([ADR-0011](docs/adr/0011-blocky-runtime-tailscale-dns.md), [ADR-0023](docs/adr/0023-fleet-dns-dual-blocky.md)). The terms below fix how names resolve and who depends on the DNS plane.
