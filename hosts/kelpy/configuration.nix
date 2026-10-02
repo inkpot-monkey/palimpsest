@@ -141,20 +141,38 @@
       enable = true;
       user = "thomas";
       script = ''
-        require ["imap4flags"];
+        require ["imap4flags", "fileinto"];
 
         # Gmail sets X-Forwarded-For on everything it forwards from the old
-        # account. Tag those with the same keyword the one-off archive import
-        # used, so tagged = arrived via the old Gmail address and untagged =
-        # sent straight here. The tagged proportion is the cutover's real
-        # progress metric: it falls as correspondents are updated, and reaching
-        # zero is when Gmail can be retired.
+        # account. File those into the same mailbox the one-off archive import
+        # filled, and tag them with the same keyword, so everything that ever
+        # arrived via the old Gmail address lives in one place. The tagged
+        # proportion is the cutover's real progress metric: it falls as
+        # correspondents are updated, and reaching zero is when Gmail can be
+        # retired.
+        #
+        # fileinto, not just the keyword, because the keyword alone is not
+        # portable across clients: an IMAP keyword is invisible in any client
+        # without a local tag definition for it (Thunderbird ignores unknown
+        # keywords outright), whereas a mailbox renders everywhere with no
+        # client-side config. The keyword is kept as metadata for searching.
+        #
+        # fileinto CANCELS Sieve's implicit keep, so these messages land only in
+        # the Gmail mailbox and never in the Inbox. That is the intent — watch
+        # that mailbox's unread count, not the Inbox, for forwarded mail.
+        #
+        # jmap-bridge is unaffected: live sync polls Email/changes, which is
+        # account-wide and not scoped to a mailbox, so these still reach Matrix.
+        # Verified — the post-reset backfill processed 39 messages already in
+        # this mailbox, and a live forward minted its room two seconds after
+        # delivery.
         #
         # Deliberately does NOT set $seen. Forwarded mail is new mail and must
         # arrive unread; the archive's blanket $seen was a one-off for history,
         # not a delivery policy.
         if header :contains "X-Forwarded-For" "tsdkelly@gmail.com" {
             addflag "gmail:tsdkelly";
+            fileinto "Gmail";
         }
       '';
     };
