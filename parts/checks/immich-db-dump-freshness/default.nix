@@ -95,10 +95,18 @@ pkgs.runCommand "check-immich-db-dump-freshness"
     reset; dump $(( 49 * 3600 ))
     expect 1 "49h-old dump refuses (just outside the limit)"
 
-    # 7. Steady state: Immich dumps at 02:00 and restic runs at 00/6:00, so a healthy newest
-    #    dump is ~22h old at the 00:00 run. The case that must NOT alarm, every single night.
-    reset; dump $(( 22 * 3600 ))
-    expect 0 "22h-old dump passes (steady state)"
+    # 7. Steady state: Immich dumps at 02:00 and restic runs at 03:00/15:00, so a healthy
+    #    newest dump is ~1h old at the first run and ~13h at the second. One MISSED night
+    #    puts it at ~25h and must still pass — the guard is meant to fire on the second
+    #    consecutive miss, not the first. These are the cases that must never alarm.
+    reset; dump 3600
+    expect 0 "1h-old dump passes (steady state, just after the 02:00 dump)"
+
+    reset; dump $(( 13 * 3600 ))
+    expect 0 "13h-old dump passes (the 15:00 run)"
+
+    reset; dump $(( 25 * 3600 ))
+    expect 0 "25h-old dump passes (one missed night is tolerated)"
 
     # 8. Freshness is the NEWEST dump, not the oldest or an arbitrary one. Immich keeps several
     #    (five on rk1b), so a directory of old dumps plus one fresh one is the normal shape —
