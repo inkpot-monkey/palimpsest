@@ -215,7 +215,7 @@
       "id": 6,
       "type": "stat",
       "title": "Off-site jobs enabled",
-      "description": "Count of restic off-site jobs currently enabled fleet-wide. 0 today: restic is off while rsync.net is unreachable (amber = worth knowing, not an error).",
+      "description": "Count of restic off-site job \u00d7 destination pairs currently enabled fleet-wide. Each host sends every enabled job to every enabled destination independently (fan-out, ADR-0035), so adding a second repository doubles this number. rk1b's photo library is live; the other hosts are still deferred (palimpsest#150).",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -300,7 +300,7 @@
       "id": 1,
       "type": "canvas",
       "title": "Backup topology",
-      "description": "Fleet backup flow. Green = on-fleet git-annex replication (live): inkpotmonkey's ~/Pictures and rk1b's music library both replicate to kelpy. Grey = restic off-site to rsync.net, currently DISABLED fleet-wide (rsync.net unreachable). Structure + current-state colours are fixed here; live per-link/per-job health is in the tables below. Dynamic colouring is a preview-loop follow-up (canvas can't be authored headless).",
+      "description": "Fleet backup flow. Green = on-fleet git-annex replication (live): inkpotmonkey's ~/Pictures and rk1b's music library both replicate to kelpy. Grey = restic off-site to rsync.net \u2014 LIVE from rk1b (the Immich photo library, verified weekly) and still deferred on kelpy, porcupineFish and sawtoothShark. Structure and colours are fixed here; live per-link/per-job health is in the tables below. Dynamic colouring is a preview-loop follow-up (canvas can't be authored headless), which is why rk1b's live edge still draws grey.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -736,7 +736,7 @@
               "name": "legend-off",
               "config": {
                 "text": {
-                  "fixed": "\u2500 restic (disabled)",
+                  "fixed": "\u2500 restic (off-site)",
                   "mode": "fixed"
                 },
                 "color": {
@@ -1005,7 +1005,7 @@
     {
       "id": 11,
       "type": "row",
-      "title": "Off-site (restic \u2192 rsync.net)",
+      "title": "Off-site (restic)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1018,8 +1018,8 @@
     {
       "id": 3,
       "type": "table",
-      "title": "Off-site backups (restic \u2192 rsync.net)",
-      "description": "Per off-site job the fleet OWNS (custom.profiles.backup.reportJobs), whether or not enabled \u2014 so a disabled job shows as OFF, not missing. Enabled reads 0 fleet-wide today (rsync.net unreachable). Last success is blank until a job runs; when restic returns it fills in and ages.",
+      "title": "Off-site backups (restic)",
+      "description": "One row per off-site job \u00d7 destination the fleet OWNS (custom.profiles.backup.reportJobs \u00d7 destinations), whether or not enabled \u2014 so a disabled job, or a destination switched off on a host, shows as OFF rather than vanishing. Last success is blank until a job runs; when restic returns it fills in and ages.",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -1061,7 +1061,7 @@
           "id": "filterFieldsByName",
           "options": {
             "include": {
-              "pattern": "^(host|restic_job|Value #A|Value #B)$"
+              "pattern": "^(host|restic_job|restic_dest|Value #A|Value #B)$"
             }
           }
         },
@@ -1072,12 +1072,14 @@
             "indexByName": {
               "host": 0,
               "restic_job": 1,
-              "Value #A": 2,
-              "Value #B": 3
+              "restic_dest": 2,
+              "Value #A": 3,
+              "Value #B": 4
             },
             "renameByName": {
               "host": "Host",
               "restic_job": "Job",
+              "restic_dest": "Destination",
               "Value #A": "Enabled",
               "Value #B": "Last success"
             }
@@ -1162,6 +1164,193 @@
             "matcher": {
               "id": "byName",
               "options": "Last success"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "id": 12,
+      "type": "row",
+      "title": "Repository maintenance \u2014 is the off-site copy actually readable?",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 38
+      },
+      "panels": []
+    },
+    {
+      "id": 13,
+      "type": "table",
+      "title": "Verification and retention (per repository)",
+      "description": "Per restic repository, from the host elected to maintain it (custom.profiles.backup.destinations.<name>.maintenance). Verified is the result of the weekly `restic check --read-data-subset=10%`, which reads a random tenth of the pack data and so covers the whole repository every ~10 weeks \u2014 a structural check alone reads no packs and cannot see bit rot, the failure an off-site copy exists to survive. Nothing on this fleet had EVER verified a backup before 2026-10-05. Blank means the weekly timer has not fired yet; FAILED means the repository could not be read and the off-site copy should be treated as untrusted until it passes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 39
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "label_replace(backup_restic_check_success, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "time() - label_replace(backup_restic_last_check_timestamp_seconds, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "time() - label_replace(backup_restic_last_prune_timestamp_seconds, \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "filterFieldsByName",
+          "options": {
+            "include": {
+              "pattern": "^(host|restic_dest|Value #A|Value #B|Value #C)$"
+            }
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {},
+            "indexByName": {
+              "host": 0,
+              "restic_dest": 1,
+              "Value #A": 2,
+              "Value #B": 3,
+              "Value #C": 4
+            },
+            "renameByName": {
+              "host": "Maintained by",
+              "restic_dest": "Repository",
+              "Value #A": "Verified",
+              "Value #B": "Last check",
+              "Value #C": "Last prune"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": "",
+            "sort": [
+              {
+                "field": "Repository",
+                "desc": false
+              }
+            ]
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "filterable": false
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Verified"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "FAILED",
+                        "color": "#d10e0e"
+                      },
+                      "1": {
+                        "text": "OK",
+                        "color": "#0ca30c"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "thresholds"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "#d10e0e",
+                      "value": null
+                    },
+                    {
+                      "color": "#0ca30c",
+                      "value": 1
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "Last (check|prune)"
             },
             "properties": [
               {
