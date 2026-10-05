@@ -113,17 +113,73 @@ names it.
 | Phase | What | State |
 | --- | --- | --- |
 | 0 | Separate backup / prune / check; first real `check` | **done 2026-10-05** |
-| 1 | Refactor to a `destinations` attrset, rsync.net only; move the daily job to 03:00/15:00 | pending |
+| 1 | Refactor to a `destinations` attrset, rsync.net only; move the daily job to 03:00/15:00 | **done 2026-10-05** |
 | 2 | B2 bucket + no-delete key; hand-`init` with matched chunker params; enable on rk1b | pending, needs the account |
 | 3 | kelpy, porcupineFish, sawtoothShark | pending |
 | 4 | Automated restore drill with its own metric (palimpsest#150) | pending |
 
-Phase 1 also fixes an RPO gap visible in the live snapshots: Immich dumps its database at 02:00
-while the backup runs at 00/6:00, so a snapshot pairs metadata up to 22h older than the files
+Phase 1 also fixed an RPO gap visible in the live snapshots: Immich dumps its database at 02:00
+while the backup ran at 00/6:00, so a snapshot paired metadata up to 22h older than the files
 beside it. Assets would restore onto disk that the database cannot see. Running at 03:00 and
-15:00 puts the dump an hour ahead of the backup and costs nothing.
+15:00 puts the dump an hour ahead of the day's first snapshot; the 15:00 run trades that for a
+12h file RPO, and a restore wanting the consistent pair picks the 03:00 one.
 
 Phase 3 on kelpy is the largest single win and deserves its own change: flipping
 `backup.enable` there ships the Supernote document library — palimpsest#150's stated highest
 priority — and the `pictures` annex, and activates the ADR-0031 exclude assertion that has been
 dormant since it was written.
+
+______________________________________________________________________
+
+## Revision — 2026-10-05: phase 1 landed, and it corrected Decision 3
+
+The `destinations` × `jobs` cross product is in (`modules/nixos/profiles/backup.nix`), rsync.net
+is its only entry, and a host now declares *what* it backs up
+(`custom.profiles.backup.jobs.<name>`) while the profile owns *where* it goes. Adding B2 in
+phase 2 is one `destinations.b2` entry: no host edits, no hand-written units, no metric
+plumbing. Three things were learned doing it, and the first contradicts Decision 3 above.
+
+**1. `prune` and `check` are per REPOSITORY, not per job.** Decision 3 split them out of the
+backup unit — right — but kept them keyed by job, which only looked correct while rk1b was the
+only host backing up. The fleet's hosts all write into **one** rsync.net repository (snapshots
+are told apart by restic's own hostname field), so `restic-check-daily` and
+`restic-check-telemetry` would have downloaded and verified the *same* repository twice, and
+four hosts' prune units would have repacked the same packs while fighting for the same
+exclusive lock. They are now `restic-prune-<destination>` / `restic-check-<destination>`, and a
+per-destination `maintenance` flag elects **one host** to run them. Their metrics lose the
+`restic_job` label and gain `restic_dest`, which is what they always meant.
+
+**2. Retention was unscoped, and that was a latent data-loss bug.** `restic forget` is explicit
+that with no snapshot filter "all snapshots are first divided into groups according to
+`--group-by`" (default `host,paths`) "and after that the policy specified by the `--keep-*`
+options is applied to each group individually" — i.e. it considers the **whole repository**. So
+`restic-prune-daily` on rk1b was applying rk1b's `--keep-daily 7 --keep-weekly 4 --keep-monthly 6` to *every* group in the shared repository. Harmless only by accident: rk1b is
+the sole host backing up today and telemetry is off. The moment phase 3 enabled kelpy, rk1b's
+policy would have started expiring kelpy's snapshots, and daily's policy telemetry's.
+
+Fixed by scoping retention to `--host <this host> --tag <job>`, with every snapshot now tagged
+with its job name (`extraBackupArgs = [ "--tag <job>" ]`). The failure direction is deliberately
+safe: if the filters ever match nothing, snapshots are kept rather than deleted. Snapshots
+written before this change carry no tag and must be retagged once per repository
+(`restic tag --add <job> --host <host>`), or they are immortal.
+
+**3. `forget` takes an exclusive lock even without `--prune`** — `cmd_forget.go` in v0.19.1
+opens with `openWithExclusiveLock` unconditionally. So splitting retention into its own unit
+relocates lock contention rather than removing it, and on a shared repository several hosts'
+weekly `forget` runs *will* collide. The mitigation is `--retry-lock`, which is reachable here
+only because these units are hand-written: it still cannot be passed to the module's own backup
+unit (nixpkgs#468191). Retention, prune and check therefore all wait rather than fail; the
+backup itself still relies on staggered scheduling, which is why that is now a build-time
+assertion rather than a comment.
+
+Also added, because the refactor made them cheap: a build failure when an enabled job has no
+paths (restic exits 0 having backed up nothing — the quiet failure `hosts/rk1/backup.nix`
+warns about in prose), and a build failure when one job fires at the same minute on two
+destinations. And the Backups board gained the verification table that Decision 4 promised:
+`check_success` and the last check/prune ages, per repository.
+
+One test property is worth naming, because it is what the refactor bought: destinations being
+data means `parts/checks/backup-status` can declare a **local-disk** destination and run real
+restic against it. It creates another host's snapshots and another job's snapshots in one
+repository, runs retention with `--keep-last 1`, and asserts that only this host's own job lost
+a snapshot. That is the bug in (2), pinned where reading the code had missed it.
