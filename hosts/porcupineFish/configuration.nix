@@ -1,5 +1,4 @@
 {
-  config,
   pkgs,
   lib,
   inputs,
@@ -62,15 +61,13 @@
   # the zfs module itself is still an uncached from-source build. So: keep it off.
   boot.supportedFilesystems.zfs = lib.mkForce false;
 
-  # Gated at the job level (mirrors kelpy): with restic off, the `daily` job must not
-  # exist at all, or the module fails on a job with paths but no password. mkIf on the
-  # whole value omits the job; mkIf on `.paths` alone would still instantiate it.
-  services.restic.backups.daily = lib.mkIf config.custom.profiles.backup.enable {
-    paths = [
-      "/var/lib"
-      "/home/inkpotmonkey"
-    ];
-  };
+  # WHAT this host would back up, declared ahead of `backup.enable` (still deferred,
+  # palimpsest#150). The profile instantiates no restic unit until the job is enabled, so
+  # unlike the old `services.restic.backups.daily` form this needs no `mkIf` to stay inert.
+  custom.profiles.backup.jobs.daily.paths = [
+    "/var/lib"
+    "/home/inkpotmonkey"
+  ];
 
   # Pin the kernel to a *stable*-tagged vendor bundle, never the input's default.
   #

@@ -255,11 +255,12 @@
     inherit (settings.nodes.kelpy) hostName domain;
   };
 
-  # Gate the WHOLE `daily` entry on the backup profile: writing `.daily.paths`
-  # alone would still instantiate `restic.backups.daily` (empty → fails the
-  # repository/passwordFile assertions) when the profile, which supplies those,
-  # is disabled. mkIf on the attrset removes the entry entirely.
-  services.restic.backups.daily = lib.mkIf config.custom.profiles.backup.enable {
+  # WHAT this host backs up. The profile decides WHERE (its `destinations`) and WHETHER
+  # (`backup.enable`), so declaring the paths here is safe while backups are still deferred —
+  # no restic unit is instantiated until the profile turns the job on. That is a change from
+  # the old `services.restic.backups.daily` form, which had to be wrapped in `mkIf` to stop
+  # an incomplete job failing the module's repository/password assertions.
+  custom.profiles.backup.jobs.daily = {
     paths = [ "/persistent" ];
     # The music replica must never go off-site: it is bulk, re-acquirable data, not
     # personal documents — and once seeded it is by far the largest thing on this 90G
@@ -288,17 +289,20 @@
 
   # Enforce the ADR-0031/#90 divergence from music: the document library replica MUST go
   # offsite, so no restic exclude may cover it. The comments above can't stop a future edit
-  # widening the music exclusion to /var/lib/git-annex; this fails the build the moment such an
-  # exclude covers the library — as soon as backup is re-enabled. Lazy-safe: when backup is off,
-  # restic.backups.daily (and its `exclude`) is removed by the mkIf, but `||` short-circuits
-  # before the second operand ever forces it.
+  # widening the music exclusion to /var/lib/git-annex; this fails the build the moment such
+  # an exclude covers the library.
+  #
+  # It now reads the JOB rather than `services.restic.backups.daily.exclude`, which makes it
+  # ALWAYS LIVE: the old form had to be guarded with `!backup.enable ||` because the restic
+  # entry did not exist while backups were deferred, so the guard was dormant for the whole
+  # time it mattered most — someone could have widened the exclude and the build would have
+  # passed. The job's `exclude` exists whether or not the job runs, so the guard does too.
   assertions = [
     {
       assertion =
-        !config.custom.profiles.backup.enable
-        || !lib.any (
+        !lib.any (
           e: lib.hasPrefix e "/persistent/var/lib/git-annex/library"
-        ) config.services.restic.backups.daily.exclude;
+        ) config.custom.profiles.backup.jobs.daily.exclude;
       message = "hosts/kelpy: a restic exclude now covers the Supernote document library replica (/persistent/var/lib/git-annex/library), but ADR-0031/#90 requires it backed up offsite. Do not widen the music exclusion to /var/lib/git-annex.";
     }
   ];

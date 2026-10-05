@@ -6,11 +6,36 @@
   ...
 }:
 
+# Off-site restic backups, expressed as a DESTINATION × JOB cross product.
+#
+# A job says WHAT to back up (`paths`, `exclude`, retention) and is declared by the host that
+# owns the data. A destination says WHERE it goes (repository, credentials, transport) and is
+# declared here, once, for the whole fleet. Every active pair becomes its own
+# `services.restic.backups."<job>-<destination>"` entry, and therefore its own systemd unit,
+# timer and metric series.
+#
+# WHY A CROSS PRODUCT (ADR-0035). One off-site copy is not 3-2-1, and restic cannot write one
+# backup run to two repositories. The two available shapes are fan-out (an independent
+# `restic backup` per destination, reading the source from local disk) and replication
+# (`restic copy` primary→secondary). We fan out, because `restic copy` must DOWNLOAD the whole
+# payload before re-uploading it — the repositories use different encryption keys, so the bytes
+# cannot move provider-to-provider — and because fan-out yields two repositories that share no
+# history, so a bad `forget` or a lapsed account in one cannot propagate to the other.
+#
+# Adding a second destination is therefore meant to cost one `destinations.<name>` entry and
+# nothing else: no host edits, no new units written by hand, no metric plumbing.
 let
   cfg = config.custom.profiles.backup;
+
+  # restic stamps its own hostname into every snapshot (Go's os.Hostname), which is this.
+  # Used to scope `forget` to THIS host's snapshots — see forgetServices.
+  hostName = config.networking.hostName;
+
   sftpCommand = "sftp.command='ssh -F /dev/null -i ${config.sops.secrets.restic_ssh_private.path} zh2046@zh2046.rsync.net -s sftp'";
 
-  # A restic job's enabled state, mapped from the profile's two toggles.
+  # A restic job's enabled state, mapped from the profile's two toggles. The toggles, not the
+  # presence of a `jobs.<name>` entry, decide what runs: a host may declare its paths while
+  # backups are still deferred, which is how kelpy and porcupineFish sat for months.
   jobEnabled =
     job:
     if job == "daily" then
@@ -20,16 +45,302 @@ let
     else
       false;
 
-  # Publishes `backup_restic_enabled{restic_job}` for every job this host reports, from the
-  # CONFIG (not from a running restic), so the Backups board can draw an off-site edge as
-  # a known-disabled state rather than as missing data — the whole reason it survives the
-  # jobs being switched off. A separate last-success file (stamped by the restic unit on
-  # success, below) carries the freshness; keeping them in different files means a
-  # disabled job still shows its last real success age next to enabled=0.
+  destinationModule = {
+    options = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = ''
+          Whether this host sends its jobs to this destination. Off keeps the destination
+          VISIBLE on the Backups board as `backup_restic_enabled = 0` rather than letting it
+          vanish, which is the distinction that board exists to draw.
+        '';
+      };
+
+      repository = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = "/var/lib/restic-local";
+        description = "Repository as a literal string. Use `repositoryFile` for anything secret.";
+      };
+
+      repositoryFile = lib.mkOption {
+        type = lib.types.nullOr lib.types.path;
+        default = null;
+        description = "File holding the repository string — a sops secret or template.";
+      };
+
+      environmentFile = lib.mkOption {
+        type = lib.types.nullOr lib.types.path;
+        default = null;
+        description = ''
+          File of `KEY=value` lines sourced into every unit for this destination. This is how
+          an S3-compatible destination receives its credentials, which cannot go in argv or
+          the Nix store.
+        '';
+      };
+
+      passwordFile = lib.mkOption {
+        type = lib.types.path;
+        default = config.sops.secrets.restic_password.path;
+        defaultText = lib.literalExpression "config.sops.secrets.restic_password.path";
+        description = "File holding the repository password.";
+      };
+
+      extraOptions = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        example = [ "sftp.command='ssh …'" ];
+        description = ''
+          restic extended options (`-o key=value`), applied to the backup unit AND to this
+          destination's forget/prune/check units — a transport the backup needs is a transport
+          every other command needs, and splitting them is how maintenance silently stops
+          reaching the repository.
+        '';
+      };
+
+      maintenance = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = ''
+          Whether THIS host runs the repository-wide maintenance (`prune`, `check`) for this
+          destination. Exactly ONE host per destination should set it.
+
+          The fleet's hosts share a single rsync.net repository — snapshots are distinguished
+          by restic's own hostname field — so `prune` and `check` are properties of the
+          REPOSITORY, not of a host or a job. Two hosts pruning it weekly would contend for
+          the same exclusive lock and each repack the same packs; two hosts checking it would
+          download the same tenth of the pack data twice. Retention (`forget`) is different
+          and runs everywhere: see forgetServices.
+
+          OPT-IN, because the two ways to get this wrong are not equally bad. Defaulting to
+          true would mean every host added in phase 3 silently joined the fight over one
+          repository's lock; defaulting to false means a brand-new destination with no elected
+          maintainer is never verified — which the Backups board shows as a blank Verified
+          cell rather than hiding. One is wasteful and invisible, the other is visible.
+        '';
+      };
+
+      retryLock = lib.mkOption {
+        type = lib.types.str;
+        default = "1h";
+        description = ''
+          `--retry-lock` for the forget and prune units. Both take an EXCLUSIVE repository
+          lock (restic's `forget` does so even without `--prune`), so on a shared repository
+          they WILL collide; waiting is the correct response, not failing.
+
+          This flag is reachable here only because these units are hand-written. It cannot be
+          passed to the module's own backup unit — `extraOptions` entries are each prefixed
+          `-o `, and `extraBackupArgs` reaches only the `backup` subcommand (nixpkgs#468191).
+        '';
+      };
+
+      forgetCalendar = lib.mkOption {
+        type = lib.types.str;
+        default = "Sun 03:30";
+        description = "When retention is applied for this destination's jobs.";
+      };
+
+      pruneCalendar = lib.mkOption {
+        type = lib.types.str;
+        default = "Sun 04:00";
+        description = "When `prune` reclaims the space `forget` released. After forgetCalendar.";
+      };
+
+      checkCalendar = lib.mkOption {
+        type = lib.types.str;
+        default = "Sun 05:30";
+        description = ''
+          When the integrity check runs. After `pruneCalendar` by default, so a week's
+          rewritten pack files are the ones verified rather than the ones prune replaced.
+        '';
+      };
+
+      checkOpts = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ "--read-data-subset=10%" ];
+        example = [ "--read-data-subset=1/7" ];
+        description = ''
+          Options for `restic check`. The default verifies repository STRUCTURE plus a random
+          tenth of the pack data each run, so the whole repository is covered over ~10 weeks
+          while each run downloads only ~a tenth of it.
+
+          A bare structural `check` (`[ ]`) proves the index and metadata are consistent but
+          reads no pack data, so it cannot detect bit rot in the packs themselves — which is
+          the failure an off-site copy exists to survive. Hence a subset rather than nothing.
+          `--read-data` reads everything and costs a full download each run.
+        '';
+      };
+
+      settings = lib.mkOption {
+        type = lib.types.attrs;
+        default = { };
+        example = {
+          timerConfig = {
+            OnCalendar = "04,16:00";
+            Persistent = true;
+          };
+        };
+        description = ''
+          Extra `services.restic.backups.<job>-<destination>` settings for every job going to
+          this destination, applied LAST so it wins over the job's own. The intended use is
+          offsetting a second destination's timers off the first's — see the staggering
+          assertion below — not overriding `paths`.
+        '';
+      };
+    };
+  };
+
+  jobModule = {
+    options = {
+      paths = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        description = ''
+          What this job backs up, on every destination. Declared by the host that owns the
+          data; an enabled job with no paths is a build error, because restic would succeed
+          having backed up nothing.
+        '';
+      };
+
+      exclude = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        description = "Exclude patterns, on every destination.";
+      };
+
+      retention = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        example = [ "--keep-daily 7" ];
+        description = ''
+          `restic forget` keep-policy flags for this job. Applied per destination, scoped to
+          this host's own snapshots of this job.
+        '';
+      };
+
+      timerConfig = lib.mkOption {
+        type = lib.types.attrsOf lib.types.unspecified;
+        default = {
+          OnCalendar = "daily";
+          Persistent = true;
+        };
+        description = "When the backup runs. Offset per destination via `destinations.<name>.settings`.";
+      };
+
+      settings = lib.mkOption {
+        type = lib.types.attrs;
+        default = { };
+        example = {
+          backupPrepareCommand = "…";
+        };
+        description = ''
+          Extra `services.restic.backups.<job>-<destination>` settings for this job on every
+          destination — `backupPrepareCommand`, `backupCleanupCommand`, `user`, and anything
+          else the nixpkgs module takes that this profile does not model.
+        '';
+      };
+    };
+  };
+
+  activeDestinations = lib.filterAttrs (_: d: d.enable) cfg.destinations;
+  activeJobs = lib.filterAttrs (name: _: jobEnabled name) cfg.jobs;
+
+  # The cross product, as a flat list of records. Everything below maps over this, so a new
+  # destination reaches the backup units, the forget units, the metrics and the board without
+  # any of them being touched.
+  pairs = lib.concatLists (
+    lib.mapAttrsToList (
+      jobName: job:
+      lib.mapAttrsToList (destName: dest: {
+        inherit
+          jobName
+          job
+          destName
+          dest
+          ;
+        name = "${jobName}-${destName}";
+      }) activeDestinations
+    ) activeJobs
+  );
+
+  # Every (job, destination) a host OWNS — the cross product of reportJobs with all declared
+  # destinations, enabled or not. This, not `pairs`, is what the Backups board draws from: a
+  # disabled job or a switched-off destination must publish `enabled 0` rather than going
+  # missing, or "we turned it off" and "the exporter died" look identical.
+  reportPairs = lib.concatLists (
+    map (
+      jobName:
+      lib.mapAttrsToList (destName: dest: {
+        inherit jobName destName;
+        enabled = jobEnabled jobName && dest.enable;
+      }) cfg.destinations
+    ) cfg.reportJobs
+  );
+
+  # Each generated restic job. Precedence runs left to right: this profile's derivation of the
+  # pair, then the job's own escape hatch, then the destination's — so a destination can offset
+  # timers for everything it receives.
+  resticJob =
+    p:
+    {
+      initialize = true;
+      inherit (p.dest)
+        repository
+        repositoryFile
+        passwordFile
+        environmentFile
+        extraOptions
+        ;
+      inherit (p.job) paths exclude;
+
+      # Tag every snapshot with its job name. This is what makes retention scopable: `forget`
+      # considers ALL snapshots in the repository unless filtered ("All snapshots are first
+      # divided into groups according to --group-by, and after that the policy ... is applied
+      # to each group individually"), and the repository is shared by the whole fleet. Without
+      # the tag, `daily`'s keep-policy would be applied to `telemetry`'s snapshot group, and
+      # to every other host's.
+      extraBackupArgs = [ "--tag ${p.jobName}" ];
+
+      # Deliberately EMPTY. `pruneOpts` welds `unlock` and `forget --prune` into the BACKUP
+      # unit's ExecStart list, and ExecStartPost — where the last-success metric is stamped —
+      # fires only when every ExecStart step succeeded. A prune failing on a contended lock
+      # therefore suppressed the stamp for a backup that had in fact succeeded, and the board
+      # went cold on a good night. Retention lives in forgetServices; space reclamation in
+      # pruneServices.
+      pruneOpts = [ ];
+
+      timerConfig = p.job.timerConfig;
+    }
+    // p.job.settings
+    // p.dest.settings;
+
+  # Renders a Prometheus label set in a FIXED order. `mapAttrsToList` would sort
+  # alphabetically, which puts `restic_dest` before `restic_job` and made the status script
+  # (whose labels were written out by hand) disagree with the stamps for the same series.
+  # Prometheus does not care, but anything matching on the rendered text does — the VM check
+  # does, and caught exactly that. Unknown labels are appended rather than dropped.
+  renderLabels =
+    labels:
+    let
+      preferred = lib.filter (k: labels ? ${k}) [
+        "restic_job"
+        "restic_dest"
+      ];
+      rest = lib.filter (k: !(lib.elem k preferred)) (lib.attrNames labels);
+    in
+    lib.concatStringsSep "," (map (k: ''${k}="${labels.${k}}"'') (preferred ++ rest));
+
+  # Publishes `backup_restic_enabled{restic_job,restic_dest}` for every job × destination this
+  # host owns, from the CONFIG rather than from a running restic — so the Backups board can
+  # draw an off-site edge as a known-disabled state instead of as missing data. A separate
+  # last-success file (stamped by each restic unit on success) carries the freshness; keeping
+  # them in different files means a disabled job still shows its last real success age next to
+  # enabled=0.
   #
-  # The label is `restic_job`, NOT `job`: `job` is a RESERVED Prometheus label (the scrape
-  # job name), so a textfile `job="daily"` is silently overwritten to `job="node"` at
-  # scrape time — every host's jobs would collapse into one. Do not rename it back.
+  # The label is `restic_job`, NOT `job`: `job` is a RESERVED Prometheus label (the scrape job
+  # name), so a textfile `job="daily"` is silently overwritten to `job="node"` at scrape time —
+  # every host's jobs would collapse into one. Do not rename it back.
   statusScript = pkgs.writeShellScript "backup-restic-status" ''
     set -u
     metrics_dir=${lib.escapeShellArg cfg.metricsDir}
@@ -45,9 +356,14 @@ let
 
     emit '# HELP backup_restic_enabled Whether this restic backup job is currently enabled (1) or intentionally off (0).'
     emit '# TYPE backup_restic_enabled gauge'
-    ${lib.concatMapStringsSep "\n" (job: ''
-      emit 'backup_restic_enabled{restic_job="${job}"} ${if jobEnabled job then "1" else "0"}'
-    '') cfg.reportJobs}
+    ${lib.concatMapStringsSep "\n" (p: ''
+      emit 'backup_restic_enabled{${
+        renderLabels {
+          restic_job = p.jobName;
+          restic_dest = p.destName;
+        }
+      }} ${if p.enabled then "1" else "0"}'
+    '') reportPairs}
 
     emit '# HELP backup_restic_check_timestamp_seconds Unix time this backup status check last ran.'
     emit '# TYPE backup_restic_check_timestamp_seconds gauge'
@@ -57,189 +373,291 @@ let
     ${pkgs.coreutils}/bin/mv -f "$tmp" "$metrics_dir/backup-restic-status.prom"
   '';
 
-  # Stamps a single `<metric>{restic_job}` gauge into the textfile dir. Generalised from the
-  # original last-success stamp so the prune and check units below can report with the same
-  # shape — one file per metric per job, so a stale one never shadows a fresh one.
-  #
-  # Runs as root, like the restic units, so it can write the exporter dir. Best-effort on a
-  # host without monitoring-exporters: there is nowhere to publish, and that must never fail
-  # a backup.
-
-  # The original last-success stamp, kept at its existing filename and metric so the Backups
-  # board keeps its series. ⚠ Its MEANING changes with this commit: prune no longer runs in
-  # the backup unit, so ExecStartPost now fires when the BACKUP succeeded, which is what the
-  # metric name always claimed. Before, a failed `forget --prune` in the same ExecStart list
-  # suppressed it and the board went cold on a night the backup had in fact succeeded.
-  # Stamps a single `<metric>{restic_job}` gauge into the textfile dir. Generalised from the
-  # last-success stamp below so the prune and check units report with the same shape — one
-  # file per metric per job, so a stale file never shadows a fresh one.
+  # Stamps a single gauge into the textfile dir — one file per metric per series, so a stale
+  # file never shadows a fresh one.
   #
   # Runs as root, like the restic units, so it can write the exporter dir. Best-effort on a
   # host without monitoring-exporters: there is nowhere to publish, and that must never fail
   # a backup.
   stampScript =
     {
+      # Filename stem, and the systemd-safe part of the derivation name.
       name,
-      job,
+      # Label set for the series, e.g. { restic_job = "daily"; restic_dest = "rsyncnet"; }.
+      labels,
       metric,
       help,
       # A SHELL snippet evaluated INSIDE the generated stamp script — which is a separate
       # process, so it cannot read the caller's variables. To pass a runtime value, use "$1"
       # and give it as an argument; `$ok` would be unbound there (and `set -u` would kill the
-      # stamp before it wrote anything). Defaults to now, which is what a "last <thing>"
-      # gauge wants.
+      # stamp before it wrote anything). Defaults to now, which is what a "last <thing>" gauge
+      # wants.
       value ? null,
     }:
     let
       valueExpr = if value == null then "$(${pkgs.coreutils}/bin/date +%s)" else value;
+      labelExpr = renderLabels labels;
     in
-    pkgs.writeShellScript "backup-restic-stamp-${name}-${job}" ''
+    pkgs.writeShellScript "backup-restic-stamp-${name}" ''
       set -u
       metrics_dir=${lib.escapeShellArg cfg.metricsDir}
       [ -d "$metrics_dir" ] || exit 0
-      tmp="$(${pkgs.coreutils}/bin/mktemp "$metrics_dir/.backup-restic-${name}-${job}.XXXXXX")"
+      tmp="$(${pkgs.coreutils}/bin/mktemp "$metrics_dir/.backup-restic-${name}.XXXXXX")"
       trap '${pkgs.coreutils}/bin/rm -f "$tmp"' EXIT
       {
         printf '%s\n' '# HELP ${metric} ${help}'
         printf '%s\n' '# TYPE ${metric} gauge'
-        printf '${metric}{restic_job="%s"} %s\n' "${job}" "${valueExpr}"
+        printf '${metric}{${labelExpr}} %s\n' "${valueExpr}"
       } > "$tmp"
       ${pkgs.coreutils}/bin/chmod 0644 "$tmp"
-      ${pkgs.coreutils}/bin/mv -f "$tmp" "$metrics_dir/backup-restic-${name}-${job}.prom"
+      ${pkgs.coreutils}/bin/mv -f "$tmp" "$metrics_dir/backup-restic-${name}.prom"
     '';
 
-  resticStamp =
-    job:
-    pkgs.writeShellScript "backup-restic-stamp-${job}" ''
-      set -u
-      metrics_dir=${lib.escapeShellArg cfg.metricsDir}
-      [ -d "$metrics_dir" ] || exit 0
-      tmp="$(${pkgs.coreutils}/bin/mktemp "$metrics_dir/.backup-restic-${job}-lastsuccess.XXXXXX")"
-      trap '${pkgs.coreutils}/bin/rm -f "$tmp"' EXIT
-      {
-        printf '%s\n' '# HELP backup_restic_last_success_timestamp_seconds Unix time of the last successful restic backup for this job.'
-        printf '%s\n' '# TYPE backup_restic_last_success_timestamp_seconds gauge'
-        printf 'backup_restic_last_success_timestamp_seconds{restic_job="%s"} %s\n' "${job}" "$(${pkgs.coreutils}/bin/date +%s)"
-      } > "$tmp"
-      ${pkgs.coreutils}/bin/chmod 0644 "$tmp"
-      ${pkgs.coreutils}/bin/mv -f "$tmp" "$metrics_dir/backup-restic-${job}-lastsuccess.prom"
-    '';
+  # Everything the out-of-band forget, prune and check units need to reach the same repository
+  # the backup unit uses. Derived from the destination rather than restated, so a rotation or a
+  # repository move cannot leave these pointing somewhere else.
+  resticEnv =
+    destName: dest:
+    {
+      RESTIC_PASSWORD_FILE = dest.passwordFile;
+      # One cache per destination, shared by that destination's maintenance units. restic keys
+      # its cache by repository ID internally, so sharing is safe and lets the week's check
+      # reuse the index the prune downloaded.
+      RESTIC_CACHE_DIR = "/var/cache/restic-maintenance-${destName}";
+    }
+    // lib.optionalAttrs (dest.repository != null) { RESTIC_REPOSITORY = dest.repository; }
+    // lib.optionalAttrs (dest.repositoryFile != null) {
+      RESTIC_REPOSITORY_FILE = dest.repositoryFile;
+    };
 
-  # Everything the out-of-band prune and check units need to talk to the same repository the
-  # backup unit uses. Derived from the same secrets rather than restated, so a rotation or a
-  # repository move cannot leave these two pointing somewhere else.
-  resticEnv = job: {
-    RESTIC_PASSWORD_FILE = config.sops.secrets.restic_password.path;
-    RESTIC_REPOSITORY_FILE = config.sops.templates."restic-repo".path;
-    # One cache per job, matching what the nixpkgs module does. restic keys its cache by
-    # repository ID internally so sharing would be safe, but a separate directory also keeps
-    # one job's cache eviction out of another's way.
-    RESTIC_CACHE_DIR = "/var/cache/restic-backups-${job}";
+  # Shared service skeleton for the hand-written maintenance units.
+  maintenanceService = destName: dest: {
+    environment = resticEnv destName dest;
+    # ssh is how the sftp transport works and is NOT on a unit's default PATH; the nixpkgs
+    # module puts it there for its own units (`path = [ config.programs.ssh.package ]`) and
+    # these need the same, or every command here fails on an sftp destination.
+    path = [ config.programs.ssh.package ];
+    wants = [ "network-online.target" ];
+    after = [ "network-online.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      CacheDirectory = "restic-maintenance-${destName}";
+      CacheDirectoryMode = "0700";
+      PrivateTmp = true;
+    }
+    // lib.optionalAttrs (dest.environmentFile != null) { EnvironmentFile = dest.environmentFile; };
   };
 
-  resticBin = "${lib.getExe pkgs.restic} -o ${sftpCommand}";
+  resticBin =
+    dest: "${lib.getExe pkgs.restic}${lib.concatMapStrings (o: " -o ${o}") dest.extraOptions}";
 
-  # PRUNE, OUT OF BAND. Deliberately not the nixpkgs module's `pruneOpts`, which appends
-  # `unlock` and `forget --prune` to the BACKUP unit's ExecStart list. Two problems with that:
+  # RETENTION, per host × job × destination. Runs EVERYWHERE, unlike prune and check: a
+  # snapshot belongs to the host that wrote it, and only that host knows how long to keep it.
   #
-  #   1. ExecStartPost — where the last-success metric is stamped — fires only when every
-  #      ExecStart succeeded, so a prune that failed on a contended lock suppressed the
-  #      stamp for a backup that had in fact succeeded. The board went cold on a good night.
-  #   2. `forget --prune` is the only operation needing an EXCLUSIVE repository lock, and
-  #      `--retry-lock` cannot be reached through the module (`extraOptions` entries are all
-  #      prefixed `-o `, and `extraBackupArgs` reaches only the `backup` subcommand — see
-  #      nixpkgs#468191). Keeping prune on its own timer is therefore the only available way
-  #      to stop it contending, which matters more once a second destination exists.
+  # Scoped with BOTH filters, and both are load-bearing on a repository the fleet shares:
+  #   --host  this host's snapshots only, so rk1b's policy cannot expire kelpy's history
+  #   --tag   this job's snapshots only, so `daily`'s policy cannot be applied to `telemetry`
+  # Without them `forget` considers every snapshot in the repository and applies the policy to
+  # each (host, paths) group it finds — which silently makes retention "whichever unit ran
+  # last". If the filters ever match nothing, the failure direction is safe: snapshots are
+  # kept, not deleted.
   #
-  # `unlock` first, as the module did: it clears STALE locks only (restic's own staleness
-  # test), so it cannot stomp a live operation.
-  pruneUnits = job: retention: {
-    systemd.services."restic-prune-${job}" = {
-      description = "restic forget+prune for the ${job} repository";
-      environment = resticEnv job;
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStart = [
-          "${resticBin} unlock"
-          "${resticBin} forget --prune ${lib.concatStringsSep " " retention}"
-        ];
-        ExecStartPost = [
-          (stampScript {
-            name = "lastprune";
-            inherit job;
-            metric = "backup_restic_last_prune_timestamp_seconds";
-            help = "Unix time of the last successful restic forget+prune for this job.";
-          })
-        ];
-      };
-    };
-    systemd.timers."restic-prune-${job}" = {
-      description = "Weekly restic forget+prune for ${job}";
+  # `--prune` is deliberately NOT passed. Reclaiming space is repository-wide work that one
+  # host does for everyone; see pruneServices.
+  forgetServices = lib.listToAttrs (
+    map (
+      p:
+      lib.nameValuePair "restic-forget-${p.name}" (
+        lib.mkMerge [
+          (maintenanceService p.destName p.dest)
+          {
+            description = "restic retention for ${p.jobName} on ${p.destName}";
+            serviceConfig = {
+              ExecStart = [
+                "${resticBin p.dest} forget --retry-lock ${p.dest.retryLock} --host ${hostName} --tag ${p.jobName} ${lib.concatStringsSep " " p.job.retention}"
+              ];
+              ExecStartPost = [
+                (stampScript {
+                  name = "lastforget-${p.name}";
+                  labels = {
+                    restic_job = p.jobName;
+                    restic_dest = p.destName;
+                  };
+                  metric = "backup_restic_last_forget_timestamp_seconds";
+                  help = "Unix time retention was last applied successfully for this job and destination.";
+                })
+              ];
+            };
+          }
+        ]
+      )
+    ) pairs
+  );
+
+  forgetTimers = lib.listToAttrs (
+    map (
+      p:
+      lib.nameValuePair "restic-forget-${p.name}" {
+        description = "Weekly restic retention for ${p.jobName} on ${p.destName}";
+        wantedBy = [ "timers.target" ];
+        timerConfig = {
+          # Weekly, not per-backup: retention is `--keep-daily 7`, so a weekly sweep holds at
+          # most ~14 days of snapshots, and the cost of that slack is a little storage.
+          OnCalendar = p.dest.forgetCalendar;
+          Persistent = true;
+          # Spread the fleet's exclusive-lock contenders out; --retry-lock covers the rest.
+          RandomizedDelaySec = "20m";
+          Unit = "restic-forget-${p.name}.service";
+        };
+      }
+    ) pairs
+  );
+
+  # The destinations THIS host maintains. `prune` and `check` are repository-wide operations:
+  # not scopable to a host or a job, and running them from four hosts would repack and
+  # re-download the same data four times while fighting for the same exclusive lock.
+  #
+  # Filtered from `usedDestinations`, NOT from every enabled destination: a host that sends
+  # nothing to a repository has no business pruning it, and declaring the units there would
+  # also demand sops secrets it was deliberately never given.
+  maintained = lib.filterAttrs (_: d: d.maintenance) usedDestinations;
+
+  # Destinations actually RECEIVING a job on this host. Narrower than `activeDestinations`,
+  # which still lists rsync.net on a host whose jobs are all deferred — and there its
+  # `repositoryFile` default cannot even be evaluated, because the sops template it points at
+  # is only defined when a job is enabled (sops is all-or-nothing per host, so a host that
+  # does not back up must not be handed the restic secrets). Validation below therefore covers
+  # what is in use, not what is merely declared.
+  usedDestinations = lib.filterAttrs (
+    name: _: lib.any (p: p.destName == name) pairs
+  ) cfg.destinations;
+
+  # SPACE RECLAMATION, per destination, on the elected host.
+  #
+  # `unlock` first, as the nixpkgs module did: it clears STALE locks only (restic's own
+  # staleness test), so it cannot stomp a live operation. Worth keeping — the fleet's first
+  # real backup was blocked by a 212-day-old lock left behind by a decommissioned host.
+  pruneServices = lib.mapAttrs' (
+    destName: dest:
+    lib.nameValuePair "restic-prune-${destName}" (
+      lib.mkMerge [
+        (maintenanceService destName dest)
+        {
+          description = "restic prune for the ${destName} repository";
+          serviceConfig = {
+            ExecStart = [
+              "${resticBin dest} unlock"
+              "${resticBin dest} prune --retry-lock ${dest.retryLock}"
+            ];
+            ExecStartPost = [
+              (stampScript {
+                name = "lastprune-${destName}";
+                labels.restic_dest = destName;
+                metric = "backup_restic_last_prune_timestamp_seconds";
+                help = "Unix time this repository was last pruned successfully.";
+              })
+            ];
+          };
+        }
+      ]
+    )
+  ) maintained;
+
+  pruneTimers = lib.mapAttrs' (
+    destName: dest:
+    lib.nameValuePair "restic-prune-${destName}" {
+      description = "Weekly restic prune for ${destName}";
       wantedBy = [ "timers.target" ];
       timerConfig = {
-        # Weekly, not per-backup: `forget --prune` rewrites pack files, so running it on every
-        # backup is expensive for no benefit. Retention is `--keep-daily 7`, so a weekly sweep
-        # holds at most ~14 days of snapshots — the cost of that slack is a little storage.
-        OnCalendar = cfg.pruneCalendar;
+        OnCalendar = dest.pruneCalendar;
         Persistent = true;
         RandomizedDelaySec = "10m";
-        Unit = "restic-prune-${job}.service";
+        Unit = "restic-prune-${destName}.service";
       };
-    };
-  };
+    }
+  ) maintained;
 
-  # CHECK. Nothing on this fleet verified a backup before this: the nixpkgs module only runs
-  # `check` when `checkOpts` is non-empty (`runCheck` defaults to `checkOpts != []`), and it
-  # was never set — so every "successful" backup was unverified. palimpsest#150 asks for
-  # exactly this.
+  # VERIFICATION, per destination, on the elected host. Nothing on this fleet verified a backup
+  # before this existed: the nixpkgs module only runs `check` when `checkOpts` is non-empty
+  # (`runCheck` defaults to `checkOpts != [ ]`) and it was never set, so every "successful"
+  # backup was unverified. palimpsest#150 asks for exactly this.
   #
-  # Its own unit rather than `checkOpts`, for the same reason prune is: `check` would
-  # otherwise join the backup unit's ExecStart list, where a transient read error during a
+  # Its own unit rather than `checkOpts`, for the same reason prune is: `check` would otherwise
+  # join the backup unit's ExecStart list, where a transient read error during a
   # multi-hundred-megabyte data read would fail the unit and suppress the backup's own
   # last-success stamp.
   #
-  # The script writes the success gauge itself — on both paths — and then exits with restic's
-  # status, so a failure is both visible on the board AND fails the unit.
-  checkUnits = job: {
-    systemd.services."restic-check-${job}" = {
-      description = "restic integrity check for the ${job} repository";
-      environment = resticEnv job;
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStart = pkgs.writeShellScript "restic-check-${job}" ''
-          set -u
-          ok=0
-          if ${resticBin} check ${lib.concatStringsSep " " cfg.checkOpts}; then ok=1; fi
-          ${
-            stampScript {
-              name = "checksuccess";
-              inherit job;
-              metric = "backup_restic_check_success";
-              help = "Whether the last restic integrity check for this job passed (1) or failed (0).";
-              value = "$1";
-            }
-          } "$ok"
-          ${stampScript {
-            name = "lastcheck";
-            inherit job;
-            metric = "backup_restic_last_check_timestamp_seconds";
-            help = "Unix time the last restic integrity check for this job ran, pass or fail.";
-          }}
-          [ "$ok" = 1 ] || exit 1
-        '';
-      };
-    };
-    systemd.timers."restic-check-${job}" = {
-      description = "Periodic restic integrity check for ${job}";
+  # The script writes the success gauge itself — on BOTH paths — and then exits with restic's
+  # status, so a failure is visible on the board AND fails the unit. A check that fails
+  # silently is indistinguishable from one that never ran.
+  checkServices = lib.mapAttrs' (
+    destName: dest:
+    lib.nameValuePair "restic-check-${destName}" (
+      lib.mkMerge [
+        (maintenanceService destName dest)
+        {
+          description = "restic integrity check for the ${destName} repository";
+          serviceConfig.ExecStart = pkgs.writeShellScript "restic-check-${destName}" ''
+            set -u
+            ok=0
+            if ${resticBin dest} check ${lib.concatStringsSep " " dest.checkOpts}; then ok=1; fi
+            ${
+              stampScript {
+                name = "checksuccess-${destName}";
+                labels.restic_dest = destName;
+                metric = "backup_restic_check_success";
+                help = "Whether the last restic integrity check of this repository passed (1) or failed (0).";
+                value = "$1";
+              }
+            } "$ok"
+            ${stampScript {
+              name = "lastcheck-${destName}";
+              labels.restic_dest = destName;
+              metric = "backup_restic_last_check_timestamp_seconds";
+              help = "Unix time this repository was last checked, pass or fail.";
+            }}
+            [ "$ok" = 1 ] || exit 1
+          '';
+        }
+      ]
+    )
+  ) maintained;
+
+  checkTimers = lib.mapAttrs' (
+    destName: dest:
+    lib.nameValuePair "restic-check-${destName}" {
+      description = "Periodic restic integrity check for ${destName}";
       wantedBy = [ "timers.target" ];
       timerConfig = {
-        OnCalendar = cfg.checkCalendar;
+        OnCalendar = dest.checkCalendar;
         Persistent = true;
         RandomizedDelaySec = "30m";
-        Unit = "restic-check-${job}.service";
+        Unit = "restic-check-${destName}.service";
       };
-    };
-  };
+    }
+  ) maintained;
+
+  # Stamp last-success after a successful run. ExecStartPost fires only when every ExecStart
+  # step succeeded — which, now that forget and prune have their own units, means exactly "the
+  # backup succeeded". Feeds the Backups board's freshness.
+  backupStampServices = lib.listToAttrs (
+    map (
+      p:
+      lib.nameValuePair "restic-backups-${p.name}" {
+        serviceConfig.ExecStartPost = [
+          (stampScript {
+            name = "lastsuccess-${p.name}";
+            labels = {
+              restic_job = p.jobName;
+              restic_dest = p.destName;
+            };
+            metric = "backup_restic_last_success_timestamp_seconds";
+            help = "Unix time of the last successful restic backup for this job and destination.";
+          })
+        ];
+      }
+    ) pairs
+  );
 
 in
 {
@@ -248,6 +666,30 @@ in
 
     monitoringTelemetry = {
       enable = lib.mkEnableOption "VictoriaMetrics snapshot backup to rsync.net (every 6h, keep 7d)";
+    };
+
+    destinations = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.submodule destinationModule);
+      default = { };
+      description = ''
+        Off-site repositories every enabled job is sent to, independently (fan-out). The
+        `rsyncnet` entry is defined by this profile; a host adds or disables one rather than
+        rewriting its jobs.
+      '';
+    };
+
+    jobs = lib.mkOption {
+      type = lib.types.attrsOf (lib.types.submodule jobModule);
+      default = { };
+      example = lib.literalExpression ''{ daily.paths = [ "/persistent" ]; }'';
+      description = ''
+        What this host backs up, keyed by job name. Each job is sent to every enabled
+        destination, so a host declares its data once and gains the second copy for free.
+
+        Whether a job RUNS is decided by `enable` (daily) and `monitoringTelemetry.enable`
+        (telemetry), not by the presence of its entry here — a host may declare its paths
+        while backups are still deferred.
+      '';
     };
 
     reportJobs = lib.mkOption {
@@ -264,41 +706,8 @@ in
         off-site backup jobs this host is RESPONSIBLE for, independent of whether they are
         currently enabled. A host that does off-site backup lists its jobs here so a
         disabled job still surfaces as a known-off edge (backup_restic_enabled = 0) rather
-        than vanishing. Publishes only where monitoring-exporters provides the textfile dir.
-      '';
-    };
-
-    pruneCalendar = lib.mkOption {
-      type = lib.types.str;
-      default = "Sun 04:00";
-      description = ''
-        When `forget --prune` runs, for every enabled job. Out of band from the backup —
-        see the pruneUnits comment for why it is not the module's `pruneOpts`.
-      '';
-    };
-
-    checkCalendar = lib.mkOption {
-      type = lib.types.str;
-      default = "Sun 05:30";
-      description = ''
-        When the integrity check runs. After `pruneCalendar` by default, so a week's
-        rewritten pack files are the ones verified rather than the ones prune replaced.
-      '';
-    };
-
-    checkOpts = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
-      default = [ "--read-data-subset=10%" ];
-      example = [ "--read-data-subset=1/7" ];
-      description = ''
-        Options for `restic check`. The default verifies repository STRUCTURE plus a random
-        tenth of the pack data each run, so the whole repository is covered over ~10 weeks
-        while each run downloads only ~a tenth of it.
-
-        A bare structural `check` (`[ ]`) proves the index and metadata are consistent but
-        reads no pack data, so it cannot detect bit rot in the packs themselves — which is
-        the failure an off-site copy exists to survive. Hence a subset rather than nothing.
-        `--read-data` reads everything and costs a full download each run.
+        than vanishing. Reported once per declared destination. Publishes only where
+        monitoring-exporters provides the textfile dir.
       '';
     };
 
@@ -309,9 +718,72 @@ in
     };
   };
 
+  # ⚠ EVERY PATH IN `config` BELOW IS STATIC, down to the option. That is a hard requirement,
+  # not a style: this module both DEFINES `destinations`/`jobs` and READS them to generate its
+  # units, so if the module system had to evaluate those options to discover which paths this
+  # module defines, it would have to evaluate the definitions to evaluate the definitions.
+  # `lib.mkMerge (map … pairs)` as a config entry does exactly that and fails with `infinite
+  # recursion encountered`. Computed attrsets belong on the RIGHT of a static path, as
+  # `systemd.services = lib.mkMerge [ … ]` — by then the structure question is settled.
   config = lib.mkMerge [
-    # Restic secrets: shared by daily backup and monitoring telemetry backup.
-    # Loaded whenever either is enabled.
+    # The fleet's rsync.net repository, shared by every host (snapshots are told apart by
+    # restic's own hostname field). Defined here rather than per host because the credentials
+    # are one fleet-wide sops secret; a host opts out with
+    # `destinations.rsyncnet.enable = false`, which keeps it visible-but-off on the board.
+    {
+      custom.profiles.backup.destinations.rsyncnet = {
+        repositoryFile = lib.mkDefault config.sops.templates."restic-repo".path;
+        extraOptions = lib.mkDefault [
+          # A dedicated restic SSH key; rsync.net's host key is trusted in base.nix.
+          # -F /dev/null avoids permission issues with ~/.ssh/config in the Nix store.
+          sftpCommand
+        ];
+      };
+
+      # Job defaults. mkDefault throughout: `listOf` merges by CONCATENATION, so a host
+      # setting `retention` without this would append to the default rather than replace it,
+      # and restic would get two conflicting keep-policies.
+      custom.profiles.backup.jobs.daily = {
+        retention = lib.mkDefault [
+          "--keep-daily 7"
+          "--keep-weekly 4"
+          "--keep-monthly 6"
+        ];
+        timerConfig = lib.mkDefault {
+          # 03:00 and 15:00, NOT 00/6:00. Immich dumps its database at 02:00 and that dump is
+          # the only copy of albums, people, faces and EXIF; the old schedule paired a
+          # snapshot's files with a dump up to 22h older, so a restore could put assets on
+          # disk that the database cannot see. An hour after the dump makes the day's first
+          # snapshot an almost-consistent pair. The 15:00 run trades that (a ~13h-old dump)
+          # for a 12h file RPO; a restore wanting the consistent pair picks the 03:00 one.
+          OnCalendar = "03,15:00";
+          Persistent = true;
+        };
+      };
+
+      # Telemetry: a VictoriaMetrics consistent snapshot, taken via VM's /snapshot/create API
+      # so the backup is never torn, and deleted after the run (restic deduplicates, so the
+      # next snapshot costs almost nothing). RPO ≈ 6h. See ADR-0021.
+      custom.profiles.backup.jobs.telemetry = {
+        paths = lib.mkDefault [ "/var/cache/victoriametrics/snapshots" ];
+        retention = lib.mkDefault [ "--keep-daily 7" ];
+        timerConfig = lib.mkDefault {
+          OnCalendar = "00/6:00";
+          Persistent = true;
+        };
+        settings = lib.mkDefault {
+          backupPrepareCommand = ''
+            ${pkgs.curl}/bin/curl -sf http://localhost:8428/snapshot/create >/dev/null
+          '';
+          backupCleanupCommand = ''
+            ${pkgs.curl}/bin/curl -sf http://localhost:8428/snapshot/deleteAll >/dev/null || true
+          '';
+        };
+      };
+    }
+
+    # Restic secrets: shared by every destination that uses them, loaded whenever any job is
+    # enabled.
     (lib.mkIf (cfg.enable || cfg.monitoringTelemetry.enable) {
       sops.secrets.restic_password = {
         key = "restic/password";
@@ -341,6 +813,23 @@ in
           ExecStart = statusScript;
         };
       };
+      # One-time cleanup of the PRE-DESTINATION metric filenames. node-exporter exports every
+      # .prom file it finds, forever and with no notion of staleness, so files left behind by
+      # the old naming would go on publishing their old label sets: a phantom
+      # `{restic_job="daily"}` row with no destination next to the real one, and a
+      # `check_success` frozen at whatever it last was — the precise failure these metrics
+      # exist to rule out. Activation runs `systemd-tmpfiles --remove`, so a deploy clears
+      # them. Safe to delete this block once every host has activated once (after
+      # 2026-10-05).
+      systemd.tmpfiles.rules = map (f: "r ${cfg.metricsDir}/backup-restic-${f}.prom") (
+        lib.concatMap (job: [
+          "${job}-lastsuccess"
+          "lastprune-${job}"
+          "lastcheck-${job}"
+          "checksuccess-${job}"
+        ]) cfg.reportJobs
+      );
+
       systemd.timers.backup-restic-status = {
         description = "Periodic restic backup status metric refresh";
         wantedBy = [ "timers.target" ];
@@ -353,81 +842,54 @@ in
       };
     })
 
-    # Daily service-state backup.
-    (lib.mkIf cfg.enable {
-      services.restic.backups.daily = {
-        initialize = true;
-        passwordFile = config.sops.secrets.restic_password.path;
-        repositoryFile = config.sops.templates."restic-repo".path;
-        timerConfig = {
-          OnCalendar = "00/6:00";
-          Persistent = true;
-        };
-        # pruneOpts is deliberately EMPTY: retention is enforced by restic-prune-daily on its
-        # own timer. Setting it here would weld `unlock` and `forget --prune` into this unit's
-        # ExecStart list, which is what made a failed prune suppress the backup's own
-        # last-success stamp. Retention itself is unchanged — see `dailyRetention`.
-        pruneOpts = [ ];
-        extraOptions = [
-          # Use a dedicated Restic SSH key; rsync.net's public key is trusted in base.nix.
-          # -F /dev/null avoids permission issues with ~/.ssh/config in the Nix store.
-          sftpCommand
-        ];
-      };
-      # Stamp last-success after a successful run. ExecStartPost fires only when every
-      # ExecStart step succeeded — which, now that prune has moved to its own unit, means
-      # exactly "the backup succeeded". Feeds the Backups board's freshness.
-      systemd.services.restic-backups-daily.serviceConfig.ExecStartPost = [ (resticStamp "daily") ];
-    })
+    # THE CROSS PRODUCT. One restic job per (job × destination), each with its own
+    # last-success stamp, retention unit, and — on the elected host — the repository's prune
+    # and check.
+    {
+      services.restic.backups = lib.listToAttrs (map (p: lib.nameValuePair p.name (resticJob p)) pairs);
 
-    # Retention and verification for `daily`, each on its own timer. The retention policy is
-    # the one that used to live in this job's `pruneOpts` and is unchanged.
-    (lib.mkIf cfg.enable (
-      lib.mkMerge [
-        (pruneUnits "daily" [
-          "--keep-daily 7"
-          "--keep-weekly 4"
-          "--keep-monthly 6"
-        ])
-        (checkUnits "daily")
-      ]
-    ))
-
-    # Same pair for `telemetry`, with its shorter retention.
-    (lib.mkIf cfg.monitoringTelemetry.enable (
-      lib.mkMerge [
-        (pruneUnits "telemetry" [ "--keep-daily 7" ])
-        (checkUnits "telemetry")
-      ]
-    ))
-
-    # Telemetry backup: VictoriaMetrics consistent snapshot → rsync.net every 6h.
-    # Uses VM's /snapshot/create API so the backup is always consistent; local
-    # snapshots are deleted after each successful backup (restic deduplicates).
-    # RPO ≈ 6h. See ADR-0021.
-    (lib.mkIf cfg.monitoringTelemetry.enable {
-      services.restic.backups.telemetry = {
-        initialize = true;
-        passwordFile = config.sops.secrets.restic_password.path;
-        repositoryFile = config.sops.templates."restic-repo".path;
-        timerConfig = {
-          OnCalendar = "00/6:00";
-          Persistent = true;
-        };
-        # Empty for the same reason as `daily` above; retention lives in restic-prune-telemetry.
-        pruneOpts = [ ];
-        extraOptions = [ sftpCommand ];
-        paths = [ "/var/cache/victoriametrics/snapshots" ];
-        backupPrepareCommand = ''
-          ${pkgs.curl}/bin/curl -sf http://localhost:8428/snapshot/create >/dev/null
-        '';
-        backupCleanupCommand = ''
-          ${pkgs.curl}/bin/curl -sf http://localhost:8428/snapshot/deleteAll >/dev/null || true
-        '';
-      };
-      systemd.services.restic-backups-telemetry.serviceConfig.ExecStartPost = [
-        (resticStamp "telemetry")
+      systemd.services = lib.mkMerge [
+        backupStampServices
+        forgetServices
+        pruneServices
+        checkServices
       ];
-    })
+      systemd.timers = lib.mkMerge [
+        forgetTimers
+        pruneTimers
+        checkTimers
+      ];
+
+      assertions =
+        lib.mapAttrsToList (destName: dest: {
+          assertion =
+            ((dest.repository == null) != (dest.repositoryFile == null)) || (dest.environmentFile != null);
+          message = "custom.profiles.backup.destinations.${destName}: set exactly one of repository or repositoryFile (or supply RESTIC_REPOSITORY via environmentFile).";
+        }) usedDestinations
+        ++ lib.mapAttrsToList (jobName: job: {
+          # An enabled job with no paths is the quiet failure hosts/rk1/backup.nix warns
+          # about: restic exits 0 having backed up nothing, and the board goes green over an
+          # empty snapshot. `settings` can supply `command`/`dynamicFilesFrom` instead.
+          assertion = job.paths != [ ] || job.settings ? command || job.settings ? dynamicFilesFrom;
+          message = "custom.profiles.backup.jobs.${jobName} is enabled but has no paths — restic would succeed having backed up nothing. Give it paths, or disable the job.";
+        }) activeJobs
+        ++ lib.mapAttrsToList (
+          jobName: _job:
+          let
+            calendars = map (
+              p: (p.job.timerConfig // (p.dest.settings.timerConfig or { })).OnCalendar or null
+            ) (lib.filter (p: p.jobName == jobName) pairs);
+          in
+          {
+            # ADR-0035: with more than one destination, staggering is MANDATORY rather than
+            # hygiene. Two destinations firing the same job at the same minute read the same
+            # tree twice and saturate the same uplink twice, and each one's maintenance
+            # window then lands on the other's backup. Offset one with
+            # `destinations.<name>.settings.timerConfig`.
+            assertion = calendars == lib.unique calendars;
+            message = "custom.profiles.backup: job ${jobName} fires at the same time on more than one destination (${lib.concatStringsSep ", " (map toString calendars)}). Offset one with destinations.<name>.settings.timerConfig.";
+          }
+        ) activeJobs;
+    }
   ];
 }

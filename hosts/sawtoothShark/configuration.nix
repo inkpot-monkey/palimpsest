@@ -79,7 +79,7 @@
   #       HOLD: KEY_LEFTCTRL
   # '';
 
-  # services.restic.backups.daily.paths = lib.mkIf config.custom.profiles.backup.enable [ "/persist" ];
+  # custom.profiles.backup.jobs.daily.paths = [ "/persist" ];
 
   networking.hostName = "sawtoothShark";
   nixpkgs = {

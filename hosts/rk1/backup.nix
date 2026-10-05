@@ -27,9 +27,10 @@ let
   # for why this is the database backup rather than a pg_dump of our own.
   dumpDir = "${immich.mediaLocation}/backups";
 
-  # One missed Immich dump is tolerated, two is not. Immich dumps at 02:00 and this job runs
-  # at 00/6:00, so the newest dump is ~22h old at the 00:00 run in steady state; 48h leaves a
-  # full night of slack before failing. A single missed night therefore surfaces within a day.
+  # One missed Immich dump is tolerated, two is not — and since the job moved to 03:00/15:00
+  # (an hour after Immich's 02:00 dump) that is now exactly what 48h means: the 03:00 run sees
+  # a ~1h-old dump in steady state, ~25h if last night's dump was missed, and ~49h if two
+  # were. So the guard fires on the second consecutive miss and not before.
   maxDumpAgeSeconds = 48 * 60 * 60;
 
   # Fail the job loudly rather than ship a snapshot whose database half is stale. The whole
@@ -61,23 +62,38 @@ in
   # what cashes that deferral in: 782 assets imported from Google Photos as of 2026-09-28,
   # held on exactly one host, with no replica anywhere.
   #
-  # ⚠ UNVERIFIED UNTIL THE FIRST RUN, per #150: whether the rsync.net repo carries a stale
-  # exclusive lock (left by the long-deleted stargazer config) and whether the account is
-  # still active and has quota. Neither is testable except by running restic. Watch the first
-  # run rather than assuming the timer handles it:
-  #   systemctl start restic-backups-daily && journalctl -u restic-backups-daily -f
+  # VERIFIED LIVE 2026-10-05: 8 snapshots in the rsync.net repository and the fleet's first
+  # ever `restic check` reporting "no errors were found" over 10% of its pack data. The two
+  # unknowns #150 recorded are both settled — the account has quota, and the 212-day stale
+  # exclusive lock left by the decommissioned stargazer config was cleared by hand (the
+  # module's own `unlock` runs AFTER the backup, so it can never rescue a first run).
+  #
+  # Units are named per destination now: restic-backups-daily-rsyncnet.service, and
+  #   journalctl -u restic-backups-daily-rsyncnet -f
   custom.profiles.backup.enable = true;
 
   # Telemetry stays off — separate decision, separate RPO, and it is bulk metrics rather than
   # irreplaceable data. Listing BOTH jobs keeps the Backups board honest: `daily` draws as a
   # live edge and `telemetry` as a known-disabled one, instead of telemetry vanishing.
   custom.profiles.backup.monitoringTelemetry.enable = false;
+
+  # rk1b is the ELECTED MAINTAINER of the rsync.net repository: `prune` and `check` are
+  # repository-wide operations, not per-host ones (the whole fleet writes into one repository
+  # and snapshots are told apart by restic's own hostname field), so exactly one host must run
+  # them. rk1b is the right one — always on, and the largest contributor to the repository.
+  #
+  # ⚠ When phase 3 enables backups on kelpy, porcupineFish and sawtoothShark, leave
+  # `maintenance` at its default (false) there. Their retention still runs locally; only the
+  # repack and the integrity check belong to one host.
+  custom.profiles.backup.destinations.rsyncnet.maintenance = true;
   custom.profiles.backup.reportJobs = [
     "daily"
     "telemetry"
   ];
 
-  services.restic.backups.daily = lib.mkIf config.custom.profiles.backup.enable {
+  # WHAT to back up. The profile owns WHERE it goes (`destinations`), so this host declares
+  # its data once and any destination added later picks it up with no edit here.
+  custom.profiles.backup.jobs.daily = {
     # Named subtrees, NOT mediaLocation wholesale. Immich mixes irreplaceable originals with
     # large derived caches in one directory, and the split matters in both directions:
     #
@@ -110,7 +126,8 @@ in
 
     # Fail the job rather than ship a snapshot whose database half is stale. See the comment
     # on requireFreshDump — this is what stops a silently-broken Immich dump from presenting
-    # as a healthy backup.
-    backupPrepareCommand = "exec ${requireFreshDump}";
+    # as a healthy backup. Applies on every destination: a second copy of a stale pair is no
+    # better than the first.
+    settings.backupPrepareCommand = "exec ${requireFreshDump}";
   };
 }
