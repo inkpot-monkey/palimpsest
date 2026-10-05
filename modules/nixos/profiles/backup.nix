@@ -57,10 +57,57 @@ let
     ${pkgs.coreutils}/bin/mv -f "$tmp" "$metrics_dir/backup-restic-status.prom"
   '';
 
-  # Stamps `backup_restic_last_success_timestamp_seconds{restic_job}` — wired as ExecStartPost on
-  # the restic unit, so it runs ONLY after a backup actually succeeds and the file then
-  # persists across later failures (a broken backup keeps showing its last real success,
-  # not nothing). Runs as root, like the restic unit, so it can write the exporter dir.
+  # Stamps a single `<metric>{restic_job}` gauge into the textfile dir. Generalised from the
+  # original last-success stamp so the prune and check units below can report with the same
+  # shape — one file per metric per job, so a stale one never shadows a fresh one.
+  #
+  # Runs as root, like the restic units, so it can write the exporter dir. Best-effort on a
+  # host without monitoring-exporters: there is nowhere to publish, and that must never fail
+  # a backup.
+
+  # The original last-success stamp, kept at its existing filename and metric so the Backups
+  # board keeps its series. ⚠ Its MEANING changes with this commit: prune no longer runs in
+  # the backup unit, so ExecStartPost now fires when the BACKUP succeeded, which is what the
+  # metric name always claimed. Before, a failed `forget --prune` in the same ExecStart list
+  # suppressed it and the board went cold on a night the backup had in fact succeeded.
+  # Stamps a single `<metric>{restic_job}` gauge into the textfile dir. Generalised from the
+  # last-success stamp below so the prune and check units report with the same shape — one
+  # file per metric per job, so a stale file never shadows a fresh one.
+  #
+  # Runs as root, like the restic units, so it can write the exporter dir. Best-effort on a
+  # host without monitoring-exporters: there is nowhere to publish, and that must never fail
+  # a backup.
+  stampScript =
+    {
+      name,
+      job,
+      metric,
+      help,
+      # A SHELL snippet evaluated INSIDE the generated stamp script — which is a separate
+      # process, so it cannot read the caller's variables. To pass a runtime value, use "$1"
+      # and give it as an argument; `$ok` would be unbound there (and `set -u` would kill the
+      # stamp before it wrote anything). Defaults to now, which is what a "last <thing>"
+      # gauge wants.
+      value ? null,
+    }:
+    let
+      valueExpr = if value == null then "$(${pkgs.coreutils}/bin/date +%s)" else value;
+    in
+    pkgs.writeShellScript "backup-restic-stamp-${name}-${job}" ''
+      set -u
+      metrics_dir=${lib.escapeShellArg cfg.metricsDir}
+      [ -d "$metrics_dir" ] || exit 0
+      tmp="$(${pkgs.coreutils}/bin/mktemp "$metrics_dir/.backup-restic-${name}-${job}.XXXXXX")"
+      trap '${pkgs.coreutils}/bin/rm -f "$tmp"' EXIT
+      {
+        printf '%s\n' '# HELP ${metric} ${help}'
+        printf '%s\n' '# TYPE ${metric} gauge'
+        printf '${metric}{restic_job="%s"} %s\n' "${job}" "${valueExpr}"
+      } > "$tmp"
+      ${pkgs.coreutils}/bin/chmod 0644 "$tmp"
+      ${pkgs.coreutils}/bin/mv -f "$tmp" "$metrics_dir/backup-restic-${name}-${job}.prom"
+    '';
+
   resticStamp =
     job:
     pkgs.writeShellScript "backup-restic-stamp-${job}" ''
@@ -77,6 +124,123 @@ let
       ${pkgs.coreutils}/bin/chmod 0644 "$tmp"
       ${pkgs.coreutils}/bin/mv -f "$tmp" "$metrics_dir/backup-restic-${job}-lastsuccess.prom"
     '';
+
+  # Everything the out-of-band prune and check units need to talk to the same repository the
+  # backup unit uses. Derived from the same secrets rather than restated, so a rotation or a
+  # repository move cannot leave these two pointing somewhere else.
+  resticEnv = job: {
+    RESTIC_PASSWORD_FILE = config.sops.secrets.restic_password.path;
+    RESTIC_REPOSITORY_FILE = config.sops.templates."restic-repo".path;
+    # One cache per job, matching what the nixpkgs module does. restic keys its cache by
+    # repository ID internally so sharing would be safe, but a separate directory also keeps
+    # one job's cache eviction out of another's way.
+    RESTIC_CACHE_DIR = "/var/cache/restic-backups-${job}";
+  };
+
+  resticBin = "${lib.getExe pkgs.restic} -o ${sftpCommand}";
+
+  # PRUNE, OUT OF BAND. Deliberately not the nixpkgs module's `pruneOpts`, which appends
+  # `unlock` and `forget --prune` to the BACKUP unit's ExecStart list. Two problems with that:
+  #
+  #   1. ExecStartPost — where the last-success metric is stamped — fires only when every
+  #      ExecStart succeeded, so a prune that failed on a contended lock suppressed the
+  #      stamp for a backup that had in fact succeeded. The board went cold on a good night.
+  #   2. `forget --prune` is the only operation needing an EXCLUSIVE repository lock, and
+  #      `--retry-lock` cannot be reached through the module (`extraOptions` entries are all
+  #      prefixed `-o `, and `extraBackupArgs` reaches only the `backup` subcommand — see
+  #      nixpkgs#468191). Keeping prune on its own timer is therefore the only available way
+  #      to stop it contending, which matters more once a second destination exists.
+  #
+  # `unlock` first, as the module did: it clears STALE locks only (restic's own staleness
+  # test), so it cannot stomp a live operation.
+  pruneUnits = job: retention: {
+    systemd.services."restic-prune-${job}" = {
+      description = "restic forget+prune for the ${job} repository";
+      environment = resticEnv job;
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = [
+          "${resticBin} unlock"
+          "${resticBin} forget --prune ${lib.concatStringsSep " " retention}"
+        ];
+        ExecStartPost = [
+          (stampScript {
+            name = "lastprune";
+            inherit job;
+            metric = "backup_restic_last_prune_timestamp_seconds";
+            help = "Unix time of the last successful restic forget+prune for this job.";
+          })
+        ];
+      };
+    };
+    systemd.timers."restic-prune-${job}" = {
+      description = "Weekly restic forget+prune for ${job}";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        # Weekly, not per-backup: `forget --prune` rewrites pack files, so running it on every
+        # backup is expensive for no benefit. Retention is `--keep-daily 7`, so a weekly sweep
+        # holds at most ~14 days of snapshots — the cost of that slack is a little storage.
+        OnCalendar = cfg.pruneCalendar;
+        Persistent = true;
+        RandomizedDelaySec = "10m";
+        Unit = "restic-prune-${job}.service";
+      };
+    };
+  };
+
+  # CHECK. Nothing on this fleet verified a backup before this: the nixpkgs module only runs
+  # `check` when `checkOpts` is non-empty (`runCheck` defaults to `checkOpts != []`), and it
+  # was never set — so every "successful" backup was unverified. palimpsest#150 asks for
+  # exactly this.
+  #
+  # Its own unit rather than `checkOpts`, for the same reason prune is: `check` would
+  # otherwise join the backup unit's ExecStart list, where a transient read error during a
+  # multi-hundred-megabyte data read would fail the unit and suppress the backup's own
+  # last-success stamp.
+  #
+  # The script writes the success gauge itself — on both paths — and then exits with restic's
+  # status, so a failure is both visible on the board AND fails the unit.
+  checkUnits = job: {
+    systemd.services."restic-check-${job}" = {
+      description = "restic integrity check for the ${job} repository";
+      environment = resticEnv job;
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = pkgs.writeShellScript "restic-check-${job}" ''
+          set -u
+          ok=0
+          if ${resticBin} check ${lib.concatStringsSep " " cfg.checkOpts}; then ok=1; fi
+          ${
+            stampScript {
+              name = "checksuccess";
+              inherit job;
+              metric = "backup_restic_check_success";
+              help = "Whether the last restic integrity check for this job passed (1) or failed (0).";
+              value = "$1";
+            }
+          } "$ok"
+          ${stampScript {
+            name = "lastcheck";
+            inherit job;
+            metric = "backup_restic_last_check_timestamp_seconds";
+            help = "Unix time the last restic integrity check for this job ran, pass or fail.";
+          }}
+          [ "$ok" = 1 ] || exit 1
+        '';
+      };
+    };
+    systemd.timers."restic-check-${job}" = {
+      description = "Periodic restic integrity check for ${job}";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnCalendar = cfg.checkCalendar;
+        Persistent = true;
+        RandomizedDelaySec = "30m";
+        Unit = "restic-check-${job}.service";
+      };
+    };
+  };
+
 in
 {
   options.custom.profiles.backup = {
@@ -101,6 +265,40 @@ in
         currently enabled. A host that does off-site backup lists its jobs here so a
         disabled job still surfaces as a known-off edge (backup_restic_enabled = 0) rather
         than vanishing. Publishes only where monitoring-exporters provides the textfile dir.
+      '';
+    };
+
+    pruneCalendar = lib.mkOption {
+      type = lib.types.str;
+      default = "Sun 04:00";
+      description = ''
+        When `forget --prune` runs, for every enabled job. Out of band from the backup —
+        see the pruneUnits comment for why it is not the module's `pruneOpts`.
+      '';
+    };
+
+    checkCalendar = lib.mkOption {
+      type = lib.types.str;
+      default = "Sun 05:30";
+      description = ''
+        When the integrity check runs. After `pruneCalendar` by default, so a week's
+        rewritten pack files are the ones verified rather than the ones prune replaced.
+      '';
+    };
+
+    checkOpts = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ "--read-data-subset=10%" ];
+      example = [ "--read-data-subset=1/7" ];
+      description = ''
+        Options for `restic check`. The default verifies repository STRUCTURE plus a random
+        tenth of the pack data each run, so the whole repository is covered over ~10 weeks
+        while each run downloads only ~a tenth of it.
+
+        A bare structural `check` (`[ ]`) proves the index and metadata are consistent but
+        reads no pack data, so it cannot detect bit rot in the packs themselves — which is
+        the failure an off-site copy exists to survive. Hence a subset rather than nothing.
+        `--read-data` reads everything and costs a full download each run.
       '';
     };
 
@@ -165,21 +363,43 @@ in
           OnCalendar = "00/6:00";
           Persistent = true;
         };
-        pruneOpts = [
-          "--keep-daily 7"
-          "--keep-weekly 4"
-          "--keep-monthly 6"
-        ];
+        # pruneOpts is deliberately EMPTY: retention is enforced by restic-prune-daily on its
+        # own timer. Setting it here would weld `unlock` and `forget --prune` into this unit's
+        # ExecStart list, which is what made a failed prune suppress the backup's own
+        # last-success stamp. Retention itself is unchanged — see `dailyRetention`.
+        pruneOpts = [ ];
         extraOptions = [
           # Use a dedicated Restic SSH key; rsync.net's public key is trusted in base.nix.
           # -F /dev/null avoids permission issues with ~/.ssh/config in the Nix store.
           sftpCommand
         ];
       };
-      # Stamp last-success on the textfile dir after a successful run (ExecStartPost only
-      # fires when every ExecStart step succeeded). Feeds the Backups board's freshness.
+      # Stamp last-success after a successful run. ExecStartPost fires only when every
+      # ExecStart step succeeded — which, now that prune has moved to its own unit, means
+      # exactly "the backup succeeded". Feeds the Backups board's freshness.
       systemd.services.restic-backups-daily.serviceConfig.ExecStartPost = [ (resticStamp "daily") ];
     })
+
+    # Retention and verification for `daily`, each on its own timer. The retention policy is
+    # the one that used to live in this job's `pruneOpts` and is unchanged.
+    (lib.mkIf cfg.enable (
+      lib.mkMerge [
+        (pruneUnits "daily" [
+          "--keep-daily 7"
+          "--keep-weekly 4"
+          "--keep-monthly 6"
+        ])
+        (checkUnits "daily")
+      ]
+    ))
+
+    # Same pair for `telemetry`, with its shorter retention.
+    (lib.mkIf cfg.monitoringTelemetry.enable (
+      lib.mkMerge [
+        (pruneUnits "telemetry" [ "--keep-daily 7" ])
+        (checkUnits "telemetry")
+      ]
+    ))
 
     # Telemetry backup: VictoriaMetrics consistent snapshot → rsync.net every 6h.
     # Uses VM's /snapshot/create API so the backup is always consistent; local
@@ -194,7 +414,8 @@ in
           OnCalendar = "00/6:00";
           Persistent = true;
         };
-        pruneOpts = [ "--keep-daily 7" ];
+        # Empty for the same reason as `daily` above; retention lives in restic-prune-telemetry.
+        pruneOpts = [ ];
         extraOptions = [ sftpCommand ];
         paths = [ "/var/cache/victoriametrics/snapshots" ];
         backupPrepareCommand = ''
