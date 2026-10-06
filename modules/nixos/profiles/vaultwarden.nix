@@ -48,9 +48,21 @@
 #     `fields` and `data` are Bitwarden EncStrings; the server never holds a key that opens
 #     them (schema read at migrations/sqlite/2018-*/up.sql).
 #   * The metadata is NOT. Cleartext in db.sqlite3: the account email and display name, item
-#     and folder COUNTS, types, favourites, every created/updated timestamp, and — if the
-#     account ever enables TOTP — `users.totp_secret`, which is the account's own second
-#     factor in the clear (users#47's business).
+#     and folder COUNTS, types, favourites, every created/updated timestamp, and — now that
+#     users#47 has enrolled TOTP — the second factor's own shared secret. NOT in
+#     `users.totp_secret`, which this header used to name and which is DEAD CODE: the field is
+#     `_totp_secret` on the Db struct, never read, always written None, and the 2018 U2F
+#     migration nulled the column. The seed is the raw uppercase base32 string in
+#     `twofactor.data`, a plain TEXT column with no hashing or encryption anywhere, so whoever
+#     holds this file generates valid codes forever. Accepted rather than overlooked: users#47
+#     enrolled the factor against master-password DISCLOSURE, and against the disk-holder
+#     modelled here a second factor was never the control. WebAuthn is the only factor that
+#     would survive a DB read, and `rbw` cannot complete one.
+#   * The recovery code (`users.totp_recover`) is cleartext here too, and so is a personal API
+#     key (`users.api_key`) if one ever exists — which additionally BYPASSES 2FA outright
+#     (identity.rs: "Note that API key logins bypass 2FA"). users#47 made "never provision
+#     one" policy, and nothing here needs to: Vaultwarden issues no captcha, so `rbw login`
+#     never falls through to `rbw register`.
 #   * So the realistic threat is an offline attack on the vault blob by whoever holds the
 #     disk, which is exactly a brute-force against the master-password KDF. That is the
 #     reason the master password is long and the KDF left at the client's Argon2id default,
