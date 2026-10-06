@@ -39,11 +39,40 @@ in
       };
       globalConfig = "";
       extraConfig = ''
+        # ── THE TAILNET GUARD ─────────────────────────────────────────────────────────
+        # Every private service's only access control. 80/443 are open on ALL interfaces
+        # (below), because the public services need them — so this matcher, not the
+        # firewall, is what keeps forge, vault, photos and the rest off the internet.
+        #
+        # ⚠ THE ABORT MUST BE INSIDE A `handle`, AND THAT IS NOT A STYLE CHOICE. It was a
+        # bare `abort @not_internal` until 2026-10-06 and did nothing whatsoever:
+        # `handle` sorts AHEAD of `abort` in Caddy's directive order, and each vhost's own
+        # `handle { reverse_proxy … }` carries no matcher — so it matched every request and
+        # terminated the route chain before the abort was ever reached. Measured with
+        # `caddy adapt` on both forms:
+        #
+        #   bare abort:        route[0] subroute        match=ALL          ← reverse_proxy
+        #                      route[1] static_response match=not remote…  ← dead code
+        #   abort in a handle: route[0] subroute        match=not remote_ip
+        #                      route[1] subroute        match=ALL
+        #
+        # Confirmed live before the fix: a request from a PUBLIC source address to
+        # vault/forge/library/photos (right Host + SNI, against kelpy's public IP) was
+        # served 200. What had been protecting them was obscurity alone — a private
+        # service's published A record is kelpy's TAILSCALE address (parts/apps/dns), so
+        # the names do not resolve usefully from the internet. That is not a gate, and it
+        # stops being even obscurity for anyone who can guess a subdomain.
+        #
+        # Two `handle` blocks are mutually exclusive and keep their written order, so the
+        # guarded one has to be imported BEFORE the vhost's own handle. It is: the import
+        # sits at the top of every private vhost's extraConfig below.
         (internal_only) {
           @not_internal {
             not remote_ip 100.64.0.0/10 127.0.0.1 ::1 fd7a:115c:a1e0::/48
           }
-          abort @not_internal
+          handle @not_internal {
+            abort
+          }
         }
 
         (cloudflare_tls) {
