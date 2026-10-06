@@ -50,6 +50,7 @@
     backup = ./backup.nix;
     blocky = ./blocky.nix;
     forge = ./forge.nix;
+    vaultwarden = ./vaultwarden.nix;
     # Flat keys so each matches its enable option 1:1 (custom.profiles.<key>), the same
     # invariant every other profile follows. Nothing imports these à la carte; the bundle
     # picks them up via lib.collect.

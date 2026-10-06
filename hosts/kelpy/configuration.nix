@@ -69,6 +69,12 @@
         # the cgroup `oom_kill` counter, but a genuine runaway crash-loops past the start
         # limit into `failed` — which is exactly what this watch sees.
         "forgejo.service"
+        # The vault (users#39). Same alerting half of the same memory fence as the forge —
+        # and the stakes are higher: every credential this home reads goes through `rbw`,
+        # whose reads work offline from a cache, so a dead vault is INVISIBLE to the operator
+        # until the first write or the first uncached lookup. The off-host Gatus probe covers
+        # the vhost; this covers the unit.
+        "vaultwarden.service"
         "paperless-scheduler.service"
         "paperless-task-queue.service"
         "paperless-consumer.service"
@@ -104,6 +110,11 @@
       enable = true;
       units = [
         "forgejo.service" # the capped unit — the reason this module exists
+        # The vault's cap is provisional in exactly the way the forge's is, and for the same
+        # reason: no trustworthy footprint figure, so it is sized by what the host can spare.
+        # This series is what the tighten step reads — note the floor, though: verifying the
+        # /admin token runs Argon2id at m=64 MiB, so a cap near idle would OOM every login.
+        "vaultwarden.service"
         "tuwunel.service" # matrix homeserver; an OOM casualty in the immich incident
         "stalwart.service" # mail
         "caddy.service" # the edge, and the control series
@@ -121,6 +132,21 @@
     # to RAISE the cap, not to move the forge — the move to rk1b triggers only when the
     # raise would push kelpy below 1 GB available.
     forge.enable = true;
+    # The vault (users#32 / users#39) — Vaultwarden, tailnet-only, single-account, SQLite.
+    # kelpy and not rk1b, decided on users#37: it is co-located with the forge, carries no
+    # `origin`, and `caddyEdges = [ "kelpy" ]` already puts this host in the request path
+    # whichever machine serves — so rk1b would add a machine in series for no availability
+    # gain. State lands under /persistent, which this host's restic job already declares (and
+    # which is merely switched off above).
+    #
+    # ⚠ It is MEMORY-CAPPED (MemoryMax = 512M), provisional for the same reason the forge's
+    # is. Read the profile's `memoryMax` description before changing it: the floor is set by
+    # Argon2id at m=64 MiB on every /admin login, not by the idle footprint.
+    #
+    # ⚠ Reads from this vault are RELIED ON while it is down, not merely tolerated (users#37):
+    # `rbw`'s offline cache has no TTL, so consumers keep working — which is also why a dead
+    # vault is quiet, and why vaultwarden.service is in the unit-state watch above.
+    vaultwarden.enable = true;
     # Immich is NOT enabled here. It lives on rk1b (see hosts/default.nix and the
     # `immich` entry in parts/settings.nix); kelpy only fronts it with Caddy.
     # It ran here briefly and could not: 4G, no swap, and immich-server peaks

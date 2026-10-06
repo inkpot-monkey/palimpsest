@@ -222,6 +222,23 @@ let
         edge = "kelpy";
         port = 3000;
       };
+      # Vaultwarden — the operator's self-hosted password vault (users#32, ticket users#39).
+      # CO-LOCATED with the edge like the forge: it runs on kelpy, so there is no `origin`
+      # and Caddy proxies to 127.0.0.1. The vhost subdomain is this attribute name, so it is
+      # `vault` (not `vaultwarden`) — the same software/URL split photos/immich and
+      # music/navidrome already use; the profile that runs it is custom.profiles.vaultwarden.
+      #
+      # 8222 is Vaultwarden's own default port and is free on kelpy — checked against the
+      # LIVE listener set (`ss -lntp`, 2026-10-06), not just against this registry, which is
+      # the distinction the `torrent` note above explains the hard way.
+      #
+      # Monitored by default (ADR-0019), which is what we want: probed through Caddy at
+      # vault.<domain>, so one probe covers the vhost, the TLS cert and the backend. A vault
+      # noticed as down only when a login fails is noticed too late.
+      vault = {
+        edge = "kelpy";
+        port = 8222;
+      };
       slskd = {
         edge = "kelpy";
         port = 5030;
