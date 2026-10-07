@@ -1,7 +1,23 @@
 # rk1b's off-site restic job — the first one that actually runs anywhere on the fleet
-# (palimpsest#150). Scoped to the Immich photo library: that is now the only tree here whose
-# contents are neither re-acquirable (unlike `music`) nor replicated to a second host (unlike
-# `library`, which has the kelpy annex replica).
+# (palimpsest#150), and the host that holds the most irreplaceable data on it.
+#
+# ⚠ THIS FILE USED TO CLAIM the Immich photo library was "the only tree here whose contents are
+# neither re-acquirable (unlike `music`) nor replicated to a second host (unlike `library`,
+# which has the kelpy annex replica)". That was wrong in a way worth recording, because it ran
+# for two days as the fleet's only backup:
+#
+#   * `/var/cache/library` — the git-annex Supernote document library (ADR-0031, palimpsest#90:
+#     books, papers, notebooks, _originals). "Replicated to kelpy" is not a backup — both
+#     copies are live, so both follow a delete — and kelpy's own off-site job is still
+#     deferred. 26M of annex objects with no off-site copy at all, while this host uploaded
+#     13 GiB of photos nightly.
+#   * `/var/lib/supernote` — the Supernote server's own store: `supernote.db` is the device's
+#     view of that library, plus its config and jwt-secret. Restoring the annex tree without
+#     it gives you the files and not the library.
+#
+# Both are named below now. The gap was found by making the enumeration compulsory
+# (`classifyPersistence`, ADR-0036) rather than by anything failing — which is the argument
+# for targeting over bulk in one line.
 #
 # ⚠ kelpy's pattern DOES NOT TRANSFER. kelpy backs up `paths = [ "/persistent" ]` and that
 # works there only because impermanence binds its state into /persistent. rk1b's root is a 2G
@@ -94,35 +110,78 @@ in
   # WHAT to back up. The profile owns WHERE it goes (`destinations`), so this host declares
   # its data once and any destination added later picks it up with no edit here.
   custom.profiles.backup.jobs.daily = {
-    # Named subtrees, NOT mediaLocation wholesale. Immich mixes irreplaceable originals with
-    # large derived caches in one directory, and the split matters in both directions:
-    #
-    #   upload/   the originals. The only copy of the bytes. ~1.0G today.
-    #   library/  external libraries — empty today, but it holds ORIGINALS when used, so it is
-    #             listed now rather than discovered missing after someone mounts a folder.
-    #   profile/  user avatars. Tiny, not regenerable.
-    #   backups/  Immich's own nightly pg dump — where albums, people, faces, share links and
-    #             every asset's EXIF actually live. ~102M. The pixels are worth little without
-    #             it, which is why its freshness is enforced above.
-    #
-    # Deliberately NOT backed up — all of it is derived from upload/ and rebuilt by Immich's
-    # own jobs, so it is ~1.06G of pure cost today and growing:
-    #   thumbs/ (269M), clip/ (583M), facial-recognition/ (183M), ocr/ (21M),
-    #   encoded-video/, huggingface/ (model cache, re-downloaded on demand)
-    # These churn as the ML worker re-runs, so including them would also defeat restic's
-    # dedup and inflate every snapshot for no restore value.
-    #
-    # /var/cache/postgresql — the LIVE cluster — is also deliberately absent. Copying a
-    # running postgres data directory produces a snapshot that may not replay, and Immich
-    # already writes a consistent logical dump into backups/ on a schedule. A restore wants
-    # that file, not a torn cluster; two half-trustworthy copies of the database would be
-    # worse than one good one.
+    # Every directory impermanence keeps on this host must be classified below — backed up, or
+    # declined with a reason (ADR-0036). This is what surfaced the Supernote store; without it
+    # /var/lib/supernote was simply never considered by anybody.
+    classifyPersistence = "/persistent";
+
+    # ── Deliberately NOT backed up, and not expressible in `notBackedUp` ────────────────
+    # `notBackedUp` only covers the impermanence root, and the two biggest trees on this host
+    # live on the NVMe outside it:
+    #   /var/cache/music    the git-annex music library — bulk, re-acquirable media, and the
+    #                       largest thing here. ADR-0028/#150 decided re-download is its
+    #                       recovery path. `thin` hardlinks worktree files to annex objects,
+    #                       which restic reads as full content, so it would also go twice over.
+    #   /var/cache/postgresql  the LIVE Immich cluster. Copying a running postgres data
+    #                       directory produces a snapshot that may not replay; Immich's own
+    #                       consistent logical dump in backups/ is what a restore wants.
     paths = [
+      # ── The photo library ───────────────────────────────────────────────────────────────
+      #   upload/   the originals. The only copy of the bytes. ~1.0G today.
+      #   library/  external libraries — empty today, but it holds ORIGINALS when used, so it
+      #             is listed now rather than discovered missing after someone mounts a folder.
+      #   profile/  user avatars. Tiny, not regenerable.
+      #   backups/  Immich's own nightly pg dump — where albums, people, faces, share links
+      #             and every asset's EXIF actually live. ~102M. The pixels are worth little
+      #             without it, which is why its freshness is enforced above.
+      #
+      # Immich's derived caches are deliberately absent: thumbs/ (269M), clip/ (583M),
+      # facial-recognition/ (183M), ocr/ (21M), encoded-video/, huggingface/ (model cache).
+      # All of it is rebuilt from upload/ by Immich's own jobs, so it is ~1.06G of pure cost
+      # that also churns as the ML worker re-runs — which would defeat restic's dedup and
+      # inflate every snapshot for no restore value.
       "${immich.mediaLocation}/upload"
       "${immich.mediaLocation}/library"
       "${immich.mediaLocation}/profile"
       dumpDir
+
+      # ── The Supernote document library (ADR-0031, palimpsest#90) ────────────────────────
+      # The annex tree itself: books, papers, notebooks and _originals, 26M of objects. Its
+      # kelpy replica is a second LIVE copy, not a backup. #150 named this the highest
+      # priority of the whole rollout and it has been sitting here unprotected.
+      "/var/cache/library"
+      # ...and the server state that makes the tree a library rather than a pile of files:
+      # supernote.db (the device's index), config, and the jwt-secret that the paired device
+      # authenticates against. Restore order matters — see the ADR-0031 note in
+      # modules/nixos/profiles/supernote.nix.
+      "/persistent/var/lib/supernote"
     ];
+
+    # Everything else this host keeps across reboots, and why it does not travel.
+    notBackedUp = {
+      "/boot" = "regenerated by the bootloader installer on every deploy, from the flake";
+      "/etc/nixos" = "the flake is this repository: in git, pushed, and on every other host";
+      "/var/log" =
+        "logs churn every night, inflating each snapshot and defeating dedup; no restore anyone wants begins with last week's journal";
+      "/var/lib/private" =
+        "systemd state directories whose contents are either named explicitly above or belong to services listed here";
+      "/var/lib/nixos" =
+        "the uid/gid map. Worth keeping where restored FILES must match their owners — but the trees restored to this host are Immich's and git-annex's, both owned by service users this file does not recreate by hand";
+      "/var/lib/git-annex" =
+        "60K: the annex service user's home. Its SSH key is deployed from sops (hosts/rk1/git-annex.nix), so the home itself is reconstructible; the annex TREES are on the NVMe and handled above";
+      "/var/lib/grafana" =
+        "18M of grafana's own database. Every dashboard is provisioned from this repository, so what is left is local users, API keys and annotations — re-created, not restored. ⚠ a dashboard authored in the UI rather than in-repo would be lost, which is a reason to author in-repo";
+      "/var/lib/dmarc-metrics-exporter" = "derived: a cursor into a mailbox, rebuilt by polling it again";
+      "/var/lib/monitoring-tlsrpt" = "derived report state, rebuilt from the reports themselves";
+      "/var/lib/containers" = "podman image and layer store — re-pulled from registries on demand";
+      "/var/lib/tailscale" =
+        "a node identity, re-authed in one command, and better rotated than restored after an incident";
+      "/var/lib/qbittorrent" =
+        "a torrent client's session: the media it manages is the re-acquirable music library, and the client re-announces";
+      "/var/lib/jellyfin" =
+        "library metadata and watch state over re-acquirable media; Jellyfin rebuilds it by scanning";
+      "/var/lib/slskd" = "a Soulseek client's session and share index over the same re-acquirable media";
+    };
 
     # Fail the job rather than ship a snapshot whose database half is stale. See the comment
     # on requireFreshDump — this is what stops a silently-broken Immich dump from presenting
