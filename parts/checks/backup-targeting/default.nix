@@ -71,21 +71,23 @@ let
   };
 
   # 4. ...and it cannot contradict itself.
+  # Self-contained on purpose: rk1b backs up nothing under its impermanence root any more
+  # (its trees are on the NVMe), so a contradiction has to be constructed from both sides
+  # rather than borrowed from the real job.
   contradictory = variant {
-    notBackedUp = realJob.notBackedUp // {
-      "/var/lib/supernote" = "but it IS backed up, a few lines up";
-    };
+    paths = [ "/persistent/var/log" ];
+    inherit (realJob) notBackedUp;
   };
 
   claims = [
     {
-      name = "the real fleet passes: no host trips a targeting rule";
-      ok = lib.all (
-        h:
-        !(lib.any (r: lib.hasInfix r (lib.concatStringsSep "\n" (failures h.config))) (
-          lib.attrValues rules
-        ))
-      ) (lib.attrValues self.nixosConfigurations);
+      # ANY failing assertion, not just the targeting ones. The narrower version of this
+      # claim passed while rk1b was in fact broken: an earlier draft of its job added
+      # /var/lib/supernote, which custom.profiles.supernote forbids (ADR-0031), and a check
+      # looking only for its own four messages never saw it — `just deploy` did. A real host
+      # with any failing assertion cannot be deployed, so there is no reason to be selective.
+      name = "every real host evaluates with no failing assertion at all";
+      ok = lib.all (h: failures h.config == [ ]) (lib.attrValues self.nixosConfigurations);
     }
     {
       name = "rk1b's own enumeration classifies every directory it persists";
@@ -123,12 +125,11 @@ let
     {
       # Targeting is only safe if the thing it protects is still named. rk1b carries the
       # fleet's only live job, and these are the trees palimpsest#150 exists for.
-      name = "rk1b still names the photo library, the document library and the Supernote store";
+      name = "rk1b still names the photo library and the document library";
       ok = lib.all (x: lib.elem x realJob.paths) [
         "/var/cache/immich/upload"
         "/var/cache/immich/backups"
         "/var/cache/library"
-        "/persistent/var/lib/supernote"
       ];
     }
   ];

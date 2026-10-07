@@ -59,21 +59,30 @@ and forgotten. That is the mistake kelpy's own ADR-0031 exclude guard made.
 The rule paid for itself immediately, which is the strongest argument available for it.
 
 rk1b has been the fleet's only off-site job since 2026-10-05, uploading ~13 GiB of photos
-nightly. Requiring it to classify its own persisted state surfaced two trees it had never named:
+nightly. Requiring it to classify its own persisted state surfaced a tree it had never named:
+**`/var/cache/library`**, the git-annex Supernote document library (ADR-0031, palimpsest#90:
+books, papers, notebooks, `_originals`), 26M of annex objects. palimpsest#150 names this the
+**highest priority** of the whole backup rollout. The plan had it travelling off-site via
+kelpy's replica — but kelpy's job is still deferred, and a replica is not a backup: two live
+copies both follow a delete. It had **no off-site copy at all**.
 
-- **`/var/cache/library`** — the git-annex Supernote document library (ADR-0031,
-  palimpsest#90: books, papers, notebooks, `_originals`). 26M of annex objects. palimpsest#150
-  names this the **highest priority** of the whole backup rollout. The plan had it travelling
-  off-site via kelpy's replica — but kelpy's job is still deferred, and a replica is not a
-  backup: two live copies both follow a delete. It had **no off-site copy at all**.
-- **`/var/lib/supernote`** — the Supernote server's own store: `supernote.db` is the device's
-  index of that library, plus its config and `jwt-secret`. Restoring the annex tree without it
-  gives you the files and not the library.
+It was not found by anything failing. It was found by a rule that refuses to let a directory go
+unconsidered. The file that omitted it also *claimed* the photo library was "the only tree here
+whose contents are neither re-acquirable nor replicated" — a comment that was wrong, and that no
+test could contradict, because prose is not checked. Backing up the tree also completes an
+intent ADR-0031 had already recorded: `supernote.nix` notes an orphan "would replicate to kelpy
+(and offsite too, once this tree is backed up)".
 
-Both are now named. Neither was found by anything failing; they were found by a rule that
-refuses to let a directory go unconsidered. The file that omitted them also *claimed* the photo
-library was "the only tree here whose contents are neither re-acquirable nor replicated" — a
-comment that was wrong and that no test could contradict, because prose is not checked.
+**And the rule's first draft overreached, which an older guard caught.** That draft also added
+`/var/lib/supernote` — the Supernote server store — on the reasoning that restoring the annex
+tree without the device's index gives you files rather than a library. ADR-0031 had already
+decided otherwise, and `custom.profiles.supernote` asserts it: the store is rebuildable from
+the device and its live content is mirrored into `library/supernote`, which the new path
+covers. The assertion refused the deploy, naming the ADR. Worth recording for two reasons: a
+decision written down as an assertion stopped a plausible-sounding mistake months later, and
+the new check initially missed it — it looked only for its own four messages, so it reported a
+clean fleet while rk1b could not be deployed. It now requires every real host to evaluate with
+**no** failing assertion at all.
 
 ## Consequences
 
