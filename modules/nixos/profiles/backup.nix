@@ -228,6 +228,49 @@ let
         description = "When the backup runs. Offset per destination via `destinations.<name>.settings`.";
       };
 
+      notBackedUp = lib.mkOption {
+        type = lib.types.attrsOf lib.types.str;
+        default = { };
+        example = {
+          "/var/log" = "logs churn nightly and restore nothing anyone wants";
+        };
+        description = ''
+          Persisted directories this job deliberately does NOT back up, each with the reason.
+          Documentation with teeth: with `classifyPersistence` set, every persisted directory
+          must appear either under `paths` or here, so a path cannot be dropped silently and
+          a reason cannot be omitted.
+
+          Keys are absolute paths as `environment.persistence` declares them (so `/var/log`,
+          not `/persistent/var/log`). A key that is no longer persisted is a build error, so
+          this list cannot rot into a description of a machine that no longer exists.
+        '';
+      };
+
+      classifyPersistence = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
+        default = null;
+        example = "/persistent";
+        description = ''
+          An `environment.persistence` root whose every declared directory this job must
+          CLASSIFY — back up, or decline in `notBackedUp` with a reason.
+
+          This is the whole difference between a targeted backup and a bulk one. `paths = [
+          "/persistent" ]` is safe by default and wrong in every other way: it ships logs,
+          caches and re-downloadable media off-site, inflates every snapshot, and buries the
+          question of what is actually irreplaceable. Enumerating instead makes that question
+          explicit — but introduces its own failure, which is that a service added next year
+          persists its state and NOBODY NOTICES it is unprotected.
+
+          Setting this closes that hole. Impermanence already declares, exhaustively, every
+          directory the host keeps; requiring each one to be classified means adding a service
+          FAILS THE BUILD until someone decides whether its state matters. Enumeration with a
+          completeness check, rather than enumeration and hope.
+
+          Leave null on a host with no impermanence root (a workstation), where no such
+          declaration exists to check against.
+        '';
+      };
+
       settings = lib.mkOption {
         type = lib.types.attrs;
         default = { };
@@ -242,6 +285,85 @@ let
       };
     };
   };
+
+  # Roots that are bulk by construction: backing one up means "this whole machine", which is
+  # the thing a targeted backup is defined against (ADR-0036). Naming them individually
+  # rather than inferring "too shallow" from depth, because the mistake is specific — these
+  # are the paths someone reaches for when they want to stop thinking about what matters —
+  # and a depth heuristic would reject legitimate paths like /srv/data.
+  bulkRoots = [
+    "/"
+    "/etc"
+    "/home"
+    "/nix"
+    "/persist"
+    "/persistent"
+    "/root"
+    "/srv"
+    "/var"
+    "/var/cache"
+    "/var/lib"
+    "/var/log"
+  ];
+
+  # THE TARGETING CHECK. Returns the assertions that hold a job's enumeration honest against
+  # an impermanence root: every declared directory either backed up or explicitly declined.
+  #
+  # Deliberately evaluated for EVERY declared job, enabled or not. kelpy and sawtoothShark
+  # both carry a job whose backups are still deferred, and a check that only ran once they
+  # were switched on would be dormant for exactly the period in which the enumeration is
+  # written and then forgotten — the mistake kelpy's own ADR-0031 exclude guard made.
+  persistenceAssertions =
+    jobName: job:
+    let
+      root = job.classifyPersistence;
+      persistence = config.environment.persistence.${root} or null;
+
+      # Both halves of an impermanence declaration: the system directories and each user's.
+      # The user half is easy to forget and is exactly where the interesting judgement calls
+      # live (an agent host's checkouts, a workstation's keys), so a check that only read
+      # `directories` would quietly exempt them. `dirPath` is impermanence's own absolute
+      # path for an entry, which saves re-deriving a home directory it already deduced.
+      userDirs = lib.concatMap (u: u.directories or [ ]) (lib.attrValues (persistence.users or { }));
+      declared = map (d: d.dirPath) ((persistence.directories or [ ]) ++ userDirs);
+
+      # A directory counts as considered if any backed-up path IS it, CONTAINS it, or is a
+      # subtree OF it. The last case is deliberate: backing up only part of a tree is a
+      # decision someone made on purpose, and this check is about decisions, not coverage.
+      backedUp =
+        dir:
+        let
+          full = root + dir;
+        in
+        lib.any (p: p == full || lib.hasPrefix "${full}/" p || lib.hasPrefix "${p}/" full) job.paths;
+
+      declined = lib.attrNames job.notBackedUp;
+      unclassified = lib.filter (d: !(backedUp d) && !(lib.elem d declined)) declared;
+      stale = lib.filter (d: !(lib.elem d declared)) declined;
+      contradictory = lib.filter backedUp declined;
+    in
+    lib.optionals (root != null) [
+      {
+        assertion = persistence != null;
+        message = "custom.profiles.backup.jobs.${jobName}.classifyPersistence = \"${root}\", but environment.persistence has no such root on this host.";
+      }
+      {
+        assertion = unclassified == [ ];
+        message = "custom.profiles.backup.jobs.${jobName}: ${toString (lib.length unclassified)} persisted director${
+          if lib.length unclassified == 1 then "y is" else "ies are"
+        } neither backed up nor declined: ${lib.concatStringsSep ", " unclassified}. This host keeps that state across reboots, so SOMETHING thinks it matters — decide. Add it to `paths` (prefixed ${root}) if losing it would hurt, or to `notBackedUp` with the reason it would not. Do not leave it unclassified: that is how a new service's data ends up protected by nobody.";
+      }
+      {
+        assertion = stale == [ ];
+        message = "custom.profiles.backup.jobs.${jobName}.notBackedUp names ${lib.concatStringsSep ", " stale}, which this host no longer persists. Remove the entr${
+          if lib.length stale == 1 then "y" else "ies"
+        } so the list keeps describing the machine that exists.";
+      }
+      {
+        assertion = contradictory == [ ];
+        message = "custom.profiles.backup.jobs.${jobName}: ${lib.concatStringsSep ", " contradictory} is both backed up and listed in `notBackedUp`. One of the two is a mistake.";
+      }
+    ];
 
   activeDestinations = lib.filterAttrs (_: d: d.enable) cfg.destinations;
   activeJobs = lib.filterAttrs (name: _: jobEnabled name) cfg.jobs;
@@ -873,6 +995,20 @@ in
           assertion = job.paths != [ ] || job.settings ? command || job.settings ? dynamicFilesFrom;
           message = "custom.profiles.backup.jobs.${jobName} is enabled but has no paths — restic would succeed having backed up nothing. Give it paths, or disable the job.";
         }) activeJobs
+        ++ lib.mapAttrsToList (
+          jobName: job:
+          let
+            bulk = lib.filter (p: lib.elem (lib.removeSuffix "/" p) bulkRoots) job.paths;
+          in
+          {
+            # ADR-0036: enumerate what is irreplaceable; do not snapshot a machine. Checked
+            # for every DECLARED job, not just enabled ones, so the enumeration is written
+            # under the rule rather than audited after it ships.
+            assertion = bulk == [ ];
+            message = "custom.profiles.backup.jobs.${jobName} backs up ${lib.concatStringsSep ", " bulk}, which is a whole-machine root rather than a chosen path (ADR-0036). A bulk backup ships logs, caches and re-downloadable media off-site, inflates every snapshot, and hides the question of what is actually irreplaceable — on this fleet it is also the difference between a 3 GiB snapshot and a 143 GiB one. Name the subtrees that cannot be rebuilt, and record what you left out in `notBackedUp`.";
+          }
+        ) cfg.jobs
+        ++ lib.concatLists (lib.mapAttrsToList persistenceAssertions cfg.jobs)
         ++ lib.mapAttrsToList (
           jobName: _job:
           let
