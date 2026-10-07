@@ -102,15 +102,36 @@ in
                 '';
               };
             };
+            # THE LOGIN NAME IS THE PRINCIPAL, NOT THE ADDRESS, which is why `username` below is
+            # `%EMAILLOCALPART%` and not `%EMAILADDRESS%`. Stalwart's internal directory
+            # authenticates by principal name only: `Credentials::Plain { username, .. }` goes
+            # straight to `get_principal_id(username)`, which is a direct NameToId lookup with no
+            # email fallback, and the only other paths are the fallback-admin and master-user
+            # string matches. So a client that followed this document's earlier advice to log in
+            # as `%EMAILADDRESS%` could not authenticate at all — and Thunderbird is exactly the
+            # client that reads this file.
+            #
+            # `%EMAILLOCALPART%` is right while a principal equals the local part of its address,
+            # which is this fleet's convention (`thomas` for thomas@palebluebytes.space). It is
+            # necessarily approximate for an EXTRA domain, where an address is an alias on some
+            # other principal and no static document can name it; such a user corrects the
+            # username once at setup.
             mkAutoconfig = dom: {
               "autoconfig.${dom}" = {
                 extraConfig = ''
                   import cloudflare_tls
                   header Content-Type "application/xml"
-                  respond /mail/config-v1.1.xml "<?xml version='1.0' encoding='UTF-8'?><clientConfig version='1.1'><emailProvider id='${dom}'><domain>${dom}</domain><displayName>Stalwart Mail</displayName><displayShortName>Stalwart</displayShortName><incomingServer type='imap'><hostname>mail.${cfg.domain}</hostname><port>993</port><socketType>SSL</socketType><authentication>password-cleartext</authentication><username>%EMAILADDRESS%</username></incomingServer><outgoingServer type='smtp'><hostname>mail.${cfg.domain}</hostname><port>465</port><socketType>SSL</socketType><authentication>password-cleartext</authentication><username>%EMAILADDRESS%</username></outgoingServer></emailProvider></clientConfig>" 200
+                  respond /mail/config-v1.1.xml "<?xml version='1.0' encoding='UTF-8'?><clientConfig version='1.1'><emailProvider id='${dom}'><domain>${dom}</domain><displayName>Stalwart Mail</displayName><displayShortName>Stalwart</displayShortName><incomingServer type='imap'><hostname>mail.${cfg.domain}</hostname><port>993</port><socketType>SSL</socketType><authentication>password-cleartext</authentication><username>%EMAILLOCALPART%</username></incomingServer><outgoingServer type='smtp'><hostname>mail.${cfg.domain}</hostname><port>465</port><socketType>SSL</socketType><authentication>password-cleartext</authentication><username>%EMAILLOCALPART%</username></outgoingServer></emailProvider></clientConfig>" 200
                 '';
               };
             };
+            # NO `LoginName` HERE, DELIBERATELY. Autodiscover's response is meant to be computed
+            # per request from the POSTed address, and this is a static Caddy `respond`, so it
+            # cannot derive the principal the way the autoconfig document can with
+            # `%EMAILLOCALPART%`. It previously sent the literal `%EmailAddress%`, which is not a
+            # substitution Outlook performs in a response and is the wrong value even if it were
+            # (see the autoconfig note above on principals). Omitting the element leaves the client
+            # to ask, which is honest; asserting a login that cannot authenticate is not.
             mkAutodiscover = dom: {
               "autodiscover.${dom}" = {
                 extraConfig = ''
@@ -120,7 +141,7 @@ in
                       method POST
                       path /autodiscover/autodiscover.xml
                   }
-                  respond @post "<?xml version='1.0' encoding='utf-8'?><Autodiscover xmlns='http://schemas.microsoft.com/exchange/autodiscover/responseschema/2006'><Response xmlns='http://schemas.microsoft.com/exchange/autodiscover/outlook/responseschema/2006a'><Account><AccountType>email</AccountType><Action>settings</Action><Protocol><Type>IMAP</Type><Server>mail.${cfg.domain}</Server><Port>993</Port><SSL>on</SSL><AuthRequired>on</AuthRequired><LoginName>%EmailAddress%</LoginName></Protocol><Protocol><Type>SMTP</Type><Server>mail.${cfg.domain}</Server><Port>465</Port><SSL>on</SSL><AuthRequired>on</AuthRequired><LoginName>%EmailAddress%</LoginName></Protocol></Account></Response></Autodiscover>" 200
+                  respond @post "<?xml version='1.0' encoding='utf-8'?><Autodiscover xmlns='http://schemas.microsoft.com/exchange/autodiscover/responseschema/2006'><Response xmlns='http://schemas.microsoft.com/exchange/autodiscover/outlook/responseschema/2006a'><Account><AccountType>email</AccountType><Action>settings</Action><Protocol><Type>IMAP</Type><Server>mail.${cfg.domain}</Server><Port>993</Port><SSL>on</SSL><AuthRequired>on</AuthRequired></Protocol><Protocol><Type>SMTP</Type><Server>mail.${cfg.domain}</Server><Port>465</Port><SSL>on</SSL><AuthRequired>on</AuthRequired></Protocol></Account></Response></Autodiscover>" 200
                 '';
               };
             };
