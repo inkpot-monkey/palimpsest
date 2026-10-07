@@ -31,6 +31,17 @@ let
   localRepo = "/var/lib/restic-local";
   secondaryRepo = "/var/lib/restic-secondary";
 
+  # 2048M rather than the 1024M default on the two nodes that run restic. This suite grew from
+  # two nodes to three with the destinations refactor, and under `nix flake check` — where it
+  # competes with every other VM test on the machine — the `on` node died mid-script with a
+  # BrokenPipeError on a bare `systemctl is-enabled`, i.e. the VM went away rather than any
+  # assertion failing. It passes standalone either way, which is exactly the shape of a test
+  # that is fine until CI is busy. restic peaked at 493M RSS on the real host, so 1G for a
+  # node running it plus systemd plus the harness was never comfortable.
+  resticNodeResources = {
+    virtualisation.memorySize = 2048;
+  };
+
   # Satisfy the sops assertions without a real key or file, and bypass decryption by pointing
   # the restic secrets at plain /etc files — the same pattern parts/checks/supernote and
   # parts/checks/affine use. Nothing here decrypts.
@@ -85,6 +96,7 @@ pkgs.testers.nixosTest {
         backupModule
         inputs.sops-nix.nixosModules.sops
         mockSops
+        resticNodeResources
       ];
       _module.args.self = self;
 
@@ -110,6 +122,7 @@ pkgs.testers.nixosTest {
         backupModule
         inputs.sops-nix.nixosModules.sops
         mockSops
+        resticNodeResources
       ];
       _module.args.self = self;
 
