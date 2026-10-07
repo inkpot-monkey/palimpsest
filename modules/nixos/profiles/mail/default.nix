@@ -183,6 +183,16 @@ in
               "resolver.*" # Avoid warnings for default resolver settings
               "spam-filter.*" # Avoid warnings for default spam settings
               "webadmin.*"
+              # Exact key, not `http.*`, and it has to be here at all or the setting above is
+              # inert. `config.local-keys` decides which keys are read from THIS file; everything
+              # else is read from the database, and a non-local key found in the local config is
+              # merely warned about ("Database key defined in local configuration") while the
+              # database value continues to win. A bare key with no trailing `*` is an exact match
+              # (MatchType::Equal), so this claims `http.url` alone and leaves every other
+              # `http.*` key — `http.allowed-endpoint` and friends — editable in the web admin
+              # where they already are. Taking the whole prefix would silently drop any of those
+              # already set in the database.
+              "http.url"
             ];
             authentication.fallback-admin = {
               user = "admin";
@@ -193,6 +203,29 @@ in
               "login"
             ];
             authentication.directory = "internal"; # Use the internal directory (defined below)
+
+            # THE PUBLIC URL STALWART ADVERTISES, and the only key that sets it. Every absolute
+            # URL in `/.well-known/oauth-authorization-server`, `/.well-known/openid-configuration`
+            # and the JMAP session document is built from this, through `resolve_response_url`.
+            #
+            # Measured before it was set: every endpoint came back as
+            # `http://mail.palebluebytes.space:8082` — plain HTTP, on the internal management port,
+            # reachable from nowhere but this host and refused by any OAuth client, since browsers
+            # will not complete an OAuth flow over plaintext to a non-localhost origin. The
+            # built-in default is `protocol + '://' + config_get('server.hostname') + ':' +
+            # local_port`, and because Caddy terminates TLS the listener genuinely sees plain HTTP
+            # on 8082 — so the default is wrong in the scheme, the port AND the reachability at
+            # once, while looking plausible in the logs.
+            #
+            # QUOTED ON PURPOSE, and the quotes are load-bearing. `http.url` is an IfBlock, so its
+            # value is parsed as an EXPRESSION rather than taken as a literal: `/` is the division
+            # operator and `:` is not a legal expression character at all, so an unquoted URL is a
+            # parse error. That error is silent in the worst way — `Expression::try_parse` records
+            # it and returns None, which falls straight back to the broken default above — so a
+            # missing pair of inner quotes would look exactly like this fix not having been
+            # applied. The inner single quotes make it a string constant, the same way the
+            # built-in default quotes its own `'://'`.
+            http.url = "'https://mail.${cfg.domain}'";
 
             server = {
               hostname = "mail.${cfg.domain}";
@@ -224,7 +257,13 @@ in
                 "management" = {
                   bind = [ "127.0.0.1:${toString managementPort}" ];
                   protocol = "http";
-                  url = "https://mail.${cfg.domain}";
+                  # NO `url` HERE, AND THAT IS THE FIX RATHER THAN AN OMISSION. This listener
+                  # carried `url = "https://mail.<domain>"` for a long time and it did nothing:
+                  # `server.listener.<id>.url` is not a setting Stalwart has — nothing in 0.15.5
+                  # reads a `url` property under `server.listener`, and the shipped
+                  # resources/config/config.toml declares none either. It read exactly like the
+                  # public-URL setting, which is why the OAuth issuer being wrong went unnoticed
+                  # for so long. The real key is `http.url`, set in the settings block below.
                 };
                 "jmap" = {
                   bind = [ "127.0.0.1:8081" ]; # Internal JMAP port
