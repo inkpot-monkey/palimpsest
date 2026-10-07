@@ -59,7 +59,7 @@ This cannot be configured in Cloudflare or DnsControl.
 
 - Log in to your **VPS Provider Dashboard** (e.g. vpsFree).
 - Find the "Networking" or "IP" settings for this server (`37.205.14.206`).
-- Set the **Reverse DNS / PTR Record** to `mail.palebluebytes.xyz`.
+- Set the **Reverse DNS / PTR Record** to `mail.palebluebytes.space` — it must match the server's own hostname (`server.hostname`, which is also the SMTP HELO name), not one of the extra domains.
 - *Without this, most emails will go to Spam.*
 
 ## 4. Create Admin User & Mailboxes
