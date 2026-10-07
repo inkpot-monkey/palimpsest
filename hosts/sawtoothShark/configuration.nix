@@ -79,7 +79,63 @@
   #       HOLD: KEY_LEFTCTRL
   # '';
 
-  # custom.profiles.backup.jobs.daily.paths = [ "/persist" ];
+  # WHAT the workstation would back up — ENUMERATED (ADR-0036). Declared now, inert until
+  # `backup.enable` flips: #150's rollout reaches this host after kelpy.
+  #
+  # This is the host where bulk backup breaks down most obviously. /home/inkpotmonkey is
+  # 143 GiB, against a 112 GiB soft quota at rsync.net — the old commented-out
+  # `paths = [ "/persist" ]` could not have run even once. Nearly all of it is reconstructible:
+  # Steam 18G, node/pnpm stores 3.5G, a KDE file index 2.5G, model caches 3.3G, five browser
+  # profiles ~11G, 57G of `code` that is pushed to git, 14G of Downloads. What is actually
+  # irreplaceable comes to roughly 2 GiB, and it is listed here.
+  #
+  # Unlike kelpy and porcupineFish this host has no impermanence root, so there is no
+  # declarative enumeration of its state to check the list against — `classifyPersistence`
+  # stays null and `notBackedUp` below is documentation of an audit rather than something the
+  # build can verify. Re-walk ~ by size when this is enabled, and when it changes shape.
+  custom.profiles.backup.reportJobs = [ "daily" ];
+  custom.profiles.backup.jobs.daily = {
+    paths = [
+      # Personal documents. Not a git repository, not synced anywhere, and the largest single
+      # irreplaceable thing on the machine.
+      "/home/inkpotmonkey/Documents"
+      # The live Anki collection: the scheduling history, which is the part that cannot be
+      # rebuilt by re-importing decks. ~/anki-backups is deliberately left out below.
+      "/home/inkpotmonkey/.local/share/Anki2"
+      # The ~/Pictures git-annex. Small (22 files, 1.2M of annex objects) and content IS
+      # present here. kelpy carries a replica, but a replica follows a delete — two live
+      # copies are not a backup, which is the distinction CONTEXT.md's "Pictures annex"
+      # entry turns on.
+      "/home/inkpotmonkey/Pictures"
+      # Artifacts and project material produced locally rather than fetched.
+      "/home/inkpotmonkey/Claude"
+    ];
+
+    # The audit. Unchecked here (no impermanence root to compare against), so it is written
+    # to be re-read: each entry says what makes the thing recoverable without us.
+    notBackedUp = {
+      "/home/inkpotmonkey/code" =
+        "57G of working copies of repositories that live in git and are pushed, plus 96 node_modules/target/.direnv trees inside them. Uncommitted work is not protected — an argument for committing, not for a 57G nightly upload";
+      "/home/inkpotmonkey/Downloads" =
+        "14G of transient downloads; by the time something there matters it belongs somewhere else";
+      "/home/inkpotmonkey/.local/share" =
+        "28G of Steam, pnpm stores, a baloo index, agent and whisper model caches — all re-downloadable. The one exception, Anki2, is named in `paths` above";
+      "/home/inkpotmonkey/.config" =
+        "12G of browser, Slack and Electron profiles. The emacs config in here is a home-manager symlink farm, so the real configuration is in this repository; its 138M `var/` is package state";
+      "/home/inkpotmonkey/Android" = "an SDK, re-downloadable";
+      "/home/inkpotmonkey/Videos" =
+        "re-acquirable media, on the same ADR-0028 reasoning that keeps the music library out of restic";
+      "/home/inkpotmonkey/anki-backups" =
+        "537M of exports OF the collection that is backed up above; restic's own snapshot history gives the same protection against Anki corrupting itself, without storing compressed duplicates that cannot dedup";
+      "/home/inkpotmonkey/playground" =
+        "scratch experiments, disposable by name and intent — anything here that stops being disposable belongs in code/ or Documents/";
+      "/home/inkpotmonkey/scratch" = "as playground";
+      "/home/inkpotmonkey/nltk_data" = "a downloadable corpus";
+      "/home/inkpotmonkey/.ssh" =
+        "⚠ NOT a judgement that these do not matter — they matter more than anything else here. This repository's restic password is one fleet-wide sops secret, so every host with the backup profile can read the repository; once #150 reaches kelpy, putting the admin key in there would hand it to a headless agent host, which AGENTS.md forbids outright. These keys need their own custody path, not this one";
+      "/home/inkpotmonkey/.gnupg" = "as ~/.ssh — same shared-repository problem, same open question";
+    };
+  };
 
   networking.hostName = "sawtoothShark";
   nixpkgs = {

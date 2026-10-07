@@ -281,35 +281,103 @@
     inherit (settings.nodes.kelpy) hostName domain;
   };
 
-  # WHAT this host backs up. The profile decides WHERE (its `destinations`) and WHETHER
-  # (`backup.enable`), so declaring the paths here is safe while backups are still deferred —
-  # no restic unit is instantiated until the profile turns the job on. That is a change from
-  # the old `services.restic.backups.daily` form, which had to be wrapped in `mkIf` to stop
-  # an incomplete job failing the module's repository/password assertions.
+  # WHAT this host backs up — ENUMERATED, not a machine snapshot (ADR-0036).
+  #
+  # kelpy holds more irreplaceable state than anything else on the fleet: the mail store that
+  # replaces Gmail, the credential store, scanned paper, the forge, the Matrix homeserver and
+  # its bridges, and two git-annex replicas. It also holds a few hundred megabytes of logs,
+  # caches and agent checkouts, and the old `paths = [ "/persistent" ]` shipped all of it
+  # off-site every night — inflating every snapshot, defeating restic's dedup on the churning
+  # parts, and burying the question of what actually matters.
+  #
+  # `classifyPersistence` makes that question compulsory rather than optional: every directory
+  # impermanence keeps must appear below, either in `paths` or in `notBackedUp` with a reason.
+  # Add a service that persists state and the build FAILS until someone decides. That is the
+  # one real weakness of enumerating — silently missing a new service — closed.
+  #
+  # Paths name the BACKING STORE (/persistent/...) rather than the bind-mounted view, which is
+  # the same bytes without traversing a bind mount, and is what the ADR-0031 guard below
+  # already assumes.
   custom.profiles.backup.jobs.daily = {
-    paths = [ "/persistent" ];
-    # The music replica must never go off-site: it is bulk, re-acquirable data, not
-    # personal documents — and once seeded it is by far the largest thing on this 90G
-    # host. This is not hypothetical housekeeping: `paths` is /persistent wholesale,
-    # and hosts/kelpy/git-annex.nix persists /var/lib/git-annex into it, so the day
-    # `backup.enable` flips true (see the note above — it is off by deferral, and is meant
-    # to come back) the entire library would ship to rsync.net. `thin` makes the worktree
-    # files hardlinks to the annex
-    # objects, which restic reads as full content, so it would go twice over.
-    #
-    # Scoped to `music` deliberately: the `pictures` repo alongside it is personal
-    # photos and SHOULD be backed up. Do not widen this to /var/lib/git-annex — the
-    # Supernote document library replica (`/var/lib/git-annex/library`, ADR-0031 /
-    # palimpsest#90) lives there too and is DELIBERATELY included offsite (personal
-    # documents, not re-acquirable media), so it must stay out of this exclude list.
-    # NOTE: `backup.enable` is currently false above (deferred — palimpsest#150), so nothing
-    # ships until it returns; when it does, `library` goes offsite via the /persistent path.
-    #
-    # The music and slskd-downloads excludes that used to sit here are GONE with the
-    # data: custom.profiles.media and the `music` git-annex replica both moved to rk1b,
-    # so neither path exists on this host any more and excluding them would be dead
-    # config. The `library` replica below is the only annex tree left here that this
-    # backup touches, and it is deliberately NOT excluded.
+    classifyPersistence = "/persistent";
+
+    paths = [
+      # ── The things that exist nowhere else ──────────────────────────────────────────────
+      # Mail. Once the Google account is emptied this is the ONLY copy of the archive, and
+      # Stalwart keeps messages, folders and credentials here together.
+      "/persistent/var/lib/stalwart-mail"
+      # The fleet's credential store. Losing it locks us out of everything it holds, and
+      # nothing else has a copy — by design.
+      "/persistent/var/lib/vaultwarden"
+      # Scanned paper. The point of scanning it was to throw the paper away.
+      "/persistent/var/lib/paperless"
+      # The forge. Some repositories here have no GitHub remote, so a push is not a backup.
+      "/persistent/var/lib/forgejo"
+      # Both git-annex replicas, and both qualify for different reasons: `library` is the
+      # Supernote document library that ADR-0031/#90 requires off-site, and `pictures` is the
+      # passive replica of the workstation's ~/Pictures — personal photos whose only other
+      # copy is that workstation. A replica is not a backup: two live copies both follow a
+      # delete. (Whether the pictures annex and the Immich library should converge is open —
+      # see ADR-0034 and CONTEXT.md. Until it is settled, this tree is backed up.)
+      "/persistent/var/lib/git-annex"
+
+      # ── Matrix: the homeserver and the bridge identities ────────────────────────────────
+      # Rooms, message history and device keys. Re-creating the homeserver loses the history
+      # and every device verification with it.
+      "/persistent/var/lib/private/tuwunel"
+      # WhatsApp bridge session: losing it means re-pairing the phone by QR code.
+      "/persistent/var/lib/mautrix-whatsapp"
+      "/persistent/var/lib/private/matrix-dm-whatsapp"
+      "/persistent/var/lib/private/jmap-bridge"
+      # Bridge state and the room/space IDs the alerting wiring points at. Kilobytes each,
+      # and regenerating them means re-creating rooms by hand and re-pointing webhooks — the
+      # cheapest entries here by far and among the most tedious to lose.
+      "/persistent/var/lib/matrix-hookshot"
+      "/persistent/var/lib/private/matrix-dm-hookshot"
+      "/persistent/var/lib/matrix-hookshot-adminroom"
+      "/persistent/var/lib/private/matrix-hookshot-space"
+      "/persistent/var/lib/matrix-hookshot-notifications-adminroom"
+      "/persistent/var/lib/matrix-hookshot-notifications-room"
+      "/persistent/var/lib/matrix-hookshot-github-token"
+      "/persistent/var/lib/matrix-infra-alerts"
+
+      # ── Small, load-bearing on the way back ─────────────────────────────────────────────
+      # The uid/gid map. Tiny, and without it a rebuilt host can assign different numbers to
+      # the same names — at which point every restored file is owned by the wrong service.
+      # This is the entry most likely to be dismissed as uninteresting and most likely to
+      # make a restore hurt.
+      "/persistent/var/lib/nixos"
+      # The ACME account key. Certificates re-issue on their own; the ACME ACCOUNT does not,
+      # and re-registering under rate limits during an outage is a bad time to find out.
+      "/persistent/var/lib/acme"
+      # The relay agent's accumulated session history and memory. 20M, and the only record of
+      # what the agent has been asked and has learned; the credentials beside it re-auth.
+      "/persistent/home/inkpotmonkey/.claude"
+    ];
+
+    # Everything impermanence keeps that is deliberately NOT shipped off-site. The reason is
+    # the point: "we decided" has to be distinguishable from "we forgot", and a stale entry
+    # here fails the build so the list keeps describing the machine that exists.
+    notBackedUp = {
+      "/var/log" =
+        "logs churn every night, so they both inflate each snapshot and defeat restic's dedup — and no restore anyone wants starts by recovering last week's journal";
+      "/var/cache/private" = "a cache; rebuilt by whatever filled it";
+      "/var/lib/redis-paperless" =
+        "paperless's redis is a work queue and a cache, rebuilt on start from the postgres state that IS backed up";
+      "/var/lib/caddy" =
+        "certificates re-issue automatically over DNS-01, and nothing else here survives a restore usefully";
+      "/var/lib/tailscale" =
+        "a node identity, re-authed in one command — and better rotated than restored after an incident";
+      "/etc/nixos" = "the flake is this repository: in git, pushed, and on every other host";
+      "/home/inkpotmonkey/code" =
+        "the agent's working copies of repositories that live in git and are pushed; 359M of re-clonable checkouts. Uncommitted work here is NOT protected, which is an argument for committing, not for a bigger backup";
+    };
+
+    # The music and slskd-downloads excludes that used to sit here are GONE with the data:
+    # custom.profiles.media and the `music` git-annex replica both moved to rk1b, so neither
+    # path exists on this host any more and excluding them would be dead config. Enumerating
+    # `paths` makes most excludes unnecessary anyway — you cannot exclude what you never
+    # named. The `library` replica is deliberately INCLUDED above; see the assertion below.
     exclude = [ ];
   };
 
