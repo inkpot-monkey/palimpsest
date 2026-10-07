@@ -925,6 +925,17 @@ in
       '';
     })
 
+    # ...and the converse. A host that stops claiming any off-site job loses the unit that
+    # writes the status file, but NOT the file: node-exporter exports every .prom it finds,
+    # forever and with no notion of staleness, so the last value written would be published
+    # for the life of the machine. That is how porcupineFish kept reporting a `daily` job
+    # after ADR-0036 concluded it has nothing to back up — the same stale-metric trap the
+    # phase-0 filenames left, arrived at from the other direction. Removing a producer has to
+    # remove its output too.
+    (lib.mkIf (cfg.reportJobs == [ ]) {
+      systemd.tmpfiles.rules = [ "r ${cfg.metricsDir}/backup-restic-status.prom" ];
+    })
+
     # Restic status metrics for the Backups board. Emitted whenever this host claims any
     # off-site job, ENABLED OR NOT, so a switched-off job stays visible as a disabled edge.
     (lib.mkIf (cfg.reportJobs != [ ]) {
