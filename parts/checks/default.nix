@@ -147,6 +147,13 @@
         backup_status = import ./backup-status {
           inherit pkgs self inputs;
         };
+        # The targeting rules for off-site backups (ADR-0036). The module assertions already
+        # fail a real host that bulk-backs-up a machine or leaves a persisted directory
+        # unclassified; this proves they still REJECT those configurations, which no amount of
+        # green builds can show on its own.
+        backup_targeting = import ./backup-targeting {
+          inherit pkgs self inputs;
+        };
         # Supernote fork Private Cloud server (ADR-0031, palimpsest#92): runs the real
         # packaged server, drives a login/bootstrap end-to-end, and proves the MCP port is
         # firewalled off the LAN while the sync port is reachable.
