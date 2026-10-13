@@ -83,9 +83,64 @@ in
         users.groups.stalwart-mail.gid = 981;
         users.groups.stalwart-mail.members = [ "caddy" ];
 
-        systemd.services.stalwart.serviceConfig.LoadCredential = [
-          "admin_password:${config.sops.secrets.stalwart_admin_password.path}"
-        ];
+        systemd.services.stalwart.serviceConfig = {
+          LoadCredential = [
+            "admin_password:${config.sops.secrets.stalwart_admin_password.path}"
+          ];
+
+          # The third blast-radius fence on this host, and the one that was missing when it
+          # mattered. On 2026-10-13 a first full IMAP sync of thomas@ drove Stalwart to
+          # 2.38 GB RSS (6.4 GB virtual) in the THIRTEEN SECONDS between the client's login
+          # and the kill, and because this unit had no `MemoryMax` the limit it hit was the
+          # CONTAINER's: `oom_memcg=/osctl/…/lxc.payload.29542`, with `redis-server` as the
+          # allocator that happened to touch the ceiling and Stalwart chosen as the victim
+          # only because it was the biggest thing in the container. tuwunel (599 MB) or the
+          # vault would have served the kernel just as well. The client's unbounded
+          # `PipelineDepth` is fixed on the other side of that sync (users#56), but a client
+          # that can do this must not get to decide which fleet service dies.
+          #
+          # Why `MemoryMax` and not `MemoryHigh`: see forge.nix's `serviceConfig` note. kelpy
+          # has no swap, so past `MemoryHigh` the kernel cannot reclaim an anonymous heap and
+          # throttles the process towards sleep indefinitely while `systemctl is-active` still
+          # says `active` — a mail server that hangs forever and tells nobody. `MemoryHigh`
+          # rides along as a brake on reclaimable page cache and must never replace the cap.
+          #
+          # MEASURED, unlike its two predecessors, which were both sized by what the host could
+          # spare for want of a footprint. The full first sync ran to completion on
+          # 2026-10-13 with the client bounded, sampled every 30s off this cgroup: 168 MB
+          # idle, a working set oscillating 490–540 MB for the half hour it took, and a
+          # high-water mark of **719 MB** for 21,337 messages / 3.1 GB of mailbox. That is the
+          # most this service has ever legitimately needed, because a full initial sync is the
+          # heaviest thing anyone can ask it for; the steady state after it is five-minute
+          # incremental polls.
+          #
+          # So the cap is sized against the RUNAWAY, not against the measurement. 1.5G leaves
+          # 2.1x headroom over the 719 MB peak — enough that a mailbox half again as large
+          # still fits — while still catching the 2.2 GB class of event twice over, which is
+          # the only failure this fence exists for. A cap at the forge's 1G would have sat
+          # just 1.4x above a measured legitimate peak, which buys no extra protection (2.2 GB
+          # is caught either way) and spends it on false kills during exactly the rare,
+          # expensive operation nobody wants to restart.
+          #
+          # Note the runaway is NOT only this home's to prevent. Thunderbird caused the second
+          # of the two kills on its own, with no mbsync running, and it is the one client here
+          # that cannot be configured from the users flake (users#55) — so the client-side
+          # `PipelineDepth` fix does not retire this fence, it just stops one client walking
+          # into it.
+          #
+          # `OOMPolicy` is left UNSET on purpose, unlike forge.nix which pins it — and that is
+          # a reading of the effective value, not an omission. This unit inherits
+          # `OOMPolicy=stop` from the host's `DefaultOOMPolicy`, which sounds like it would
+          # strand the mail server after a cgroup-local kill; it does not, because
+          # `Restart=on-failure` is already set and systemd applies it to an `oom-kill`
+          # result. Measured today rather than reasoned: the 2026-10-13 kill logged
+          # `The kernel OOM killer killed some processes in this unit` — systemd's own
+          # OOMPolicy detection path — and then `Scheduled restart job`, back up in five
+          # seconds. So the fence above turns a container-wide lottery into a five-second
+          # mail outage, which is the whole point of adding it.
+          MemoryMax = "1.5G";
+          MemoryHigh = "1G";
+        };
         services.caddy.virtualHosts =
           let
             allDomains = [ cfg.domain ] ++ cfg.extraDomains;
