@@ -27,6 +27,15 @@
         immich_db_dump_freshness = import ./immich-db-dump-freshness {
           inherit pkgs self;
         };
+        # The vault dump-freshness guard (hosts/kelpy/configuration.nix, users#57). kelpy's job
+        # EXCLUDES the vault's live db.sqlite3 — copying an open WAL database is not a
+        # restorable artifact — and ships a nightly `VACUUM INTO` dump instead. This pins that
+        # the guard refuses when that dump stops, including the case its Immich sibling has no
+        # equivalent of: a live database sitting right there in the same directory is not a
+        # backup, so "a .sqlite3 exists" must never satisfy it.
+        vaultwarden_dump_freshness = import ./vaultwarden-dump-freshness {
+          inherit pkgs self;
+        };
         networking = import ./networking {
           inherit pkgs inputs self;
         };

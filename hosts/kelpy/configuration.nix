@@ -7,6 +7,39 @@
   settings,
   ...
 }:
+let
+  vw = config.custom.profiles.vaultwarden;
+
+  # The vault's state directory, as RESTIC will see it: the BACKING STORE under /persistent,
+  # which is the same bytes without traversing the bind mount and is what every path in the job
+  # below already assumes. Derived from the profile (which computes it from
+  # `system.stateVersion`) so it cannot drift from where the vault actually writes.
+  #
+  # It is also the DUMP directory, and not by choice: `VACUUM INTO` writes beside the database.
+  # So one path here is at once the thing backed up, the thing partly excluded from the backup,
+  # and the thing the freshness gate looks in.
+  vaultStateDir = "/persistent${vw.dataDir}";
+
+  # 20h, and the arithmetic is the whole argument. The dump timer fires at 02:30 and this job
+  # runs at 03:00/15:00, so a healthy dump is 0.5h old at the first run and 12.5h at the
+  # second; a single MISSED dump puts those at 24.5h and 36.5h, and both fail.
+  #
+  # Deliberately stricter than the Immich guard's 48h, which tolerates one miss on purpose.
+  # Immich's dump is scheduled INSIDE Immich, by a setting this repo cannot see or restart, so
+  # a missed night there is weather. This dump is taken by a unit declared in
+  # modules/nixos/profiles/vaultwarden.nix that waits for its own artifact, integrity-checks it
+  # and alerts when it cannot — so a miss here is a bug on this host, and the first one should
+  # be loud rather than the second.
+  maxVaultDumpAgeSeconds = 20 * 60 * 60;
+
+  # Refuse the whole job rather than ship a snapshot with no vault in it. Imported from the
+  # module so `parts/checks/vaultwarden-dump-freshness` exercises the same file this host runs.
+  requireFreshVaultDump = import ../../modules/nixos/profiles/vaultwarden-dump-freshness.nix {
+    inherit pkgs;
+    dumpDir = vaultStateDir;
+    maxAgeSeconds = maxVaultDumpAgeSeconds;
+  };
+in
 {
   imports = [
     inputs.vpsFree.nixosModules.containerUnstable
@@ -308,7 +341,13 @@
       "/persistent/var/lib/stalwart-mail"
       # The fleet's credential store. Losing it locks us out of everything it holds, and
       # nothing else has a copy — by design.
-      "/persistent/var/lib/vaultwarden"
+      #
+      # ⚠ The DIRECTORY is named, but its live database is EXCLUDED below and a nightly
+      # `VACUUM INTO` dump travels in its place (users#57). What this entry actually ships is
+      # the attachments, the sends, the RSA keypair Vaultwarden generates on first start, and
+      # those dumps. Read the exclude and the `backupPrepareCommand` together with it: on their
+      # own, either one would be a quiet way to back up no vault at all.
+      vaultStateDir
       # Scanned paper. The point of scanning it was to throw the paper away.
       "/persistent/var/lib/paperless"
       # The forge. Some repositories here have no GitHub remote, so a push is not a backup.
@@ -378,7 +417,32 @@
     # path exists on this host any more and excluding them would be dead config. Enumerating
     # `paths` makes most excludes unnecessary anyway — you cannot exclude what you never
     # named. The `library` replica is deliberately INCLUDED above; see the assertion below.
-    exclude = [ ];
+    #
+    # ── The ONE exclusion that is about correctness, not cost (users#57) ──────────────────
+    # The vault's LIVE database, and the two files SQLite keeps beside it. This is not a
+    # size or churn decision: `db.sqlite3` is open with WAL, so copying it off a running
+    # service captures a torn page set, and the `-wal`/`-shm` it would have to be paired with
+    # cannot be captured in the same instant. The result looks like a database and may simply
+    # not open — the worst possible shape for the one artifact a restore depends on.
+    #
+    # What travels instead is the `db_<UTC>.sqlite3` dump that
+    # `vaultwarden-db-dump.service` takes every night with Vaultwarden's own `VACUUM INTO`, in
+    # this same directory. The same reasoning rk1b applies to Immich's live postgres cluster,
+    # which it also excludes in favour of a logical dump — with one difference worth knowing
+    # before touching this: there, dropping the exclude would ship a redundant copy, while
+    # here the `backupPrepareCommand` below is what guarantees the replacement artifact
+    # EXISTS. Remove that and this exclude silently becomes "back up no vault".
+    exclude = [
+      "${vaultStateDir}/db.sqlite3"
+      "${vaultStateDir}/db.sqlite3-wal"
+      "${vaultStateDir}/db.sqlite3-shm"
+    ];
+
+    # Refuse the job if the vault's dump has stopped. See maxVaultDumpAgeSeconds above for the
+    # threshold and modules/nixos/profiles/vaultwarden-dump-freshness.nix for why this is a
+    # hard failure: with the live database excluded, a snapshot taken without a fresh dump
+    # carries the attachments and NO VAULT, and restic would report success over it.
+    settings.backupPrepareCommand = "${requireFreshVaultDump}";
   };
 
   # Enforce the ADR-0031/#90 divergence from music: the document library replica MUST go
@@ -398,6 +462,21 @@
           e: lib.hasPrefix e "/persistent/var/lib/git-annex/library"
         ) config.custom.profiles.backup.jobs.daily.exclude;
       message = "hosts/kelpy: a restic exclude now covers the Supernote document library replica (/persistent/var/lib/git-annex/library), but ADR-0031/#90 requires it backed up offsite. Do not widen the music exclusion to /var/lib/git-annex.";
+    }
+    {
+      # The vault's exclude and its freshness gate are ONE decision written in two places, and
+      # either half alone is worse than neither: the exclude without the gate backs up no
+      # vault and reports success, and the gate without the exclude fails the job over a dump
+      # whose absence no longer matters. Neither mistake shows up in a build or a test run, so
+      # it is asserted — the same move the ADR-0031 guard above makes, and for the same reason
+      # (a comment cannot stop the edit).
+      assertion =
+        vw.enable
+        -> (
+          lib.elem "${vaultStateDir}/db.sqlite3" config.custom.profiles.backup.jobs.daily.exclude
+          && (config.custom.profiles.backup.jobs.daily.settings.backupPrepareCommand or "") != ""
+        );
+      message = "hosts/kelpy: the vault is enabled, so its live db.sqlite3 must stay excluded from the daily job AND that job must keep a backupPrepareCommand gating the dump's freshness (users#57). One without the other is a backup that quietly contains no vault, or a job that fails for no reason.";
     }
   ];
 

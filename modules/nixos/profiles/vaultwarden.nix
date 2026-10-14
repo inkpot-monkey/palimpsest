@@ -22,11 +22,14 @@
 #   * NO signups, ever. The invitation above is the only way an account comes into being.
 #   * NO second user. Serving friends and family is out of scope on users#32; it would need
 #     public HTTPS, SMTP and restore drills other people depend on.
-#   * NO offsite backup wired here. kelpy's restic job already declares /persistent and is
-#     merely switched OFF; turning it on is a fleet-wide question (palimpsest#150), and
-#     PROVING a restore is still open on users#32. Note Vaultwarden ships its own
-#     SQLite-consistent dump (`vaultwarden backup`, or SIGUSR1) — a file-level copy of a live
-#     db.sqlite3 is not the same artifact, and whichever job eventually runs should use it.
+#   * NO offsite backup wired here, still — but the ARTIFACT a backup would need now EXISTS
+#     (users#57). `vaultwarden-db-dump.service` takes Vaultwarden's own `VACUUM INTO` dump
+#     every night, and the host's restic job ships THAT while excluding the live db.sqlite3;
+#     see hosts/kelpy/configuration.nix for the exclude and the freshness gate. Whether any
+#     restic job runs on this host at all is still fleet-wide (palimpsest#150) and still off.
+#     ⚠ The old note here said kelpy's job "already declares /persistent". It no longer does:
+#     ADR-0036 replaced the bulk root with an enumerated path list, in which
+#     /persistent/var/lib/vaultwarden is named explicitly.
 #   * NO account provisioning oneshot, unlike forge.nix. There is nothing to call: the
 #     binary's only subcommands are `hash` and `backup` (users#32's Notes), so account #1 is
 #     invited through `/admin` and its master password is set in the browser, by hand, once.
@@ -176,6 +179,59 @@ in
         `bitwarden` preset — m=64 MiB, t=3, p=4 — so a cap near the idle footprint would turn
         every admin login into an OOM kill.
       '';
+    };
+
+    dataDir = lib.mkOption {
+      type = lib.types.path;
+      readOnly = true;
+      default = dataDir;
+      defaultText = lib.literalExpression ''"/var/lib/vaultwarden"'';
+      description = ''
+        Read-only: where the vault's state lives, including the dumps. Exposed so a host's
+        backup job can DERIVE its paths, its exclude and its freshness gate from the profile
+        instead of restating the literal — the pattern `custom.profiles.immich.mediaLocation`
+        already sets for hosts/rk1/backup.nix.
+
+        It is computed from `system.stateVersion` (upstream's rule, restated here because
+        upstream exposes the result nowhere) and an assertion reads the unit back to prove the
+        two still agree. On an impermanence host the BACKING STORE is `/persistent` + this.
+      '';
+    };
+
+    dump = {
+      onCalendar = lib.mkOption {
+        type = lib.types.str;
+        default = "02:30";
+        description = ''
+          When to take the nightly `VACUUM INTO` dump, as a systemd `OnCalendar=`.
+
+          COUPLED to the host's restic schedule and not freely choosable: kelpy's `daily` job
+          runs at 03:00/15:00, so 02:30 leaves half an hour of slack and makes the day's first
+          snapshot an almost-consistent pair — the same argument backup.nix makes for pairing
+          03:00 with Immich's 02:00 dump. The timer deliberately carries NO
+          `RandomizedDelaySec`: jitter is harmless for the drift check beside it and a hazard
+          here, where 15 minutes of it would let the dump land on top of the restic run.
+
+          Move this and move `maxDumpAgeSeconds` in hosts/kelpy/configuration.nix with it.
+        '';
+      };
+
+      keep = lib.mkOption {
+        type = lib.types.ints.positive;
+        default = 3;
+        description = ''
+          How many dumps to keep. Retention is OURS: upstream's `backup_sqlite()` writes
+          `db_<UTC>.sqlite3` and never prunes, so an unattended nightly signal would grow one
+          full copy of the vault per day inside the state directory, forever.
+
+          Small on purpose, and the reason is not disk. Every dump is a COMPLETE copy of the
+          vault blob — and of the metadata that is cleartext in it, the TOTP seed in
+          `twofactor.data` included (see the third-party-hardware note in this file's header).
+          Keeping ten would mean ten copies of that on hardware this operator does not own, to
+          buy a restore point nobody wants: an older dump is a vault missing whatever was added
+          since. Three is "last night, plus two chances to notice something wrong with it".
+        '';
+      };
     };
   };
 
@@ -390,6 +446,157 @@ in
         Persistent = true;
         RandomizedDelaySec = "15m";
         Unit = "vaultwarden-config-drift.service";
+      };
+    };
+
+    # ── THE BACKUP ARTIFACT (users#57) ───────────────────────────────────────────────────
+    # A nightly `VACUUM INTO` dump, because the live database cannot be backed up by copying
+    # it. `db.sqlite3` is open with WAL, so a file-level copy is a torn page set plus a
+    # `-wal`/`-shm` pair no backup tool can capture atomically beside it — the artifact looks
+    # like a database and may not open. The host's restic job therefore EXCLUDES the live
+    # triple and ships the dumps instead (hosts/kelpy/configuration.nix).
+    #
+    # Read out of this pin's source (src/db/mod.rs `backup_sqlite`, 1.37.3), because the whole
+    # design depends on exactly what it does: it opens a SECOND, READ-ONLY connection to the
+    # database and runs `VACUUM INTO 'db_<UTC %Y%m%d_%H%M%S>.sqlite3'` into the PARENT
+    # DIRECTORY OF THE DATABASE. Three consequences, none of them negotiable:
+    #   * the dump lands inside the state dir — not a choice, and the reason no new path or
+    #     persistence entry is needed here;
+    #   * one file per invocation, with upstream pruning NOTHING, so retention is ours (`keep`);
+    #   * the target must not already exist — `VACUUM INTO` refuses to overwrite — so two
+    #     triggers inside the same UTC second produce one dump and one logged error.
+    #
+    # SIGUSR1 rather than the `vaultwarden backup` subcommand, which exists in this version and
+    # would also work. The signal hands the job to the process that already holds the database,
+    # on the connection it already has; the subcommand would need this unit to carry
+    # DATABASE_URL and the rest of the sops-rendered environment, duplicating the one thing
+    # that must not drift. Upstream registers the handler only when the active backend is
+    # SQLite (main.rs), which it is.
+    #
+    # ⚠ THE SIGNAL IS ASYNCHRONOUS, and that is the trap this unit is shaped around.
+    # `systemctl kill` returns as soon as the signal is queued; the VACUUM runs in the vault's
+    # own task. A unit that signalled and exited would report SUCCESS for having sent a signal
+    # — green forever while the backup rots — so this one WAITS for the artifact, verifies it
+    # is a readable database, and fails otherwise. That is what makes the exit status mean
+    # something, and what lets the freshness gate on the host be a second line rather than the
+    # only one.
+    systemd.services.vaultwarden-db-dump = {
+      description = "Take a consistent VACUUM INTO dump of the vault database (users#57)";
+      # After, but NOT Requires/Requisite: a dependency failure here would say "job failed"
+      # and nothing else, where the script can say which of the three states it found. It also
+      # must not be able to START the vault — a dump is not a reason to bring up a password
+      # store that something else deliberately stopped.
+      after = [ "vaultwarden.service" ];
+      unitConfig.RequiresMountsFor = [ dataDir ];
+      path = [
+        pkgs.coreutils
+        pkgs.findutils
+        pkgs.sqlite
+        config.systemd.package
+      ];
+      serviceConfig = {
+        Type = "oneshot";
+        # Root: the state dir is 0700 vaultwarden and the dumps are 0600 inside it, so this
+        # unit cannot read its own output without either root or the vault's identity — and
+        # taking the vault's identity would let it write the database it is meant to copy.
+        User = "root";
+      };
+      script =
+        let
+          post = alertPost.mkPost {
+            name = "vaultwarden-db-dump";
+            webhookUrlFile = config.custom.profiles.matrix.infraAlerts.webhookUrlFile or null;
+            # In-band only, as the drift check beside it: this runs ON kelpy and posts to
+            # kelpy's loopback hookshot, so a kelpy outage stops the unit and there is no
+            # message left to rescue.
+            outOfBand = null;
+          };
+          dir = lib.escapeShellArg dataDir;
+        in
+        ''
+          set -euo pipefail
+          ${post}
+
+          if ! systemctl is-active --quiet vaultwarden.service; then
+            post "🚨 [${config.networking.hostName}] vaultwarden — no database dump taken: vaultwarden.service is not active, so there is no process to signal. The live db.sqlite3 is excluded from the backup, so tonight's restic run will refuse rather than ship a vault-less snapshot (users#57)."
+            echo "vaultwarden-db-dump: vaultwarden.service is not active — nothing to signal." >&2
+            exit 1
+          fi
+
+          # -1 second: the dump's mtime is the time of the VACUUM, which is at or after the
+          # signal, and filesystem/clock granularity should not be able to hide it by a tick.
+          t0=$(( $(date +%s) - 1 ))
+          systemctl kill -s USR1 vaultwarden.service
+
+          dump=""
+          deadline=$(( t0 + 120 ))
+          while :; do
+            dump=$(find ${dir} -maxdepth 1 -type f -name 'db_*.sqlite3' -newermt "@$t0" \
+              -printf '%T@ %p\n' | sort -rn | head -1 | cut -d' ' -f2-)
+            [ -n "$dump" ] && break
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              post "🚨 [${config.networking.hostName}] vaultwarden — the database dump did not appear within 120s of SIGUSR1. The vault is running but produced no db_*.sqlite3; look for 'Backup failed' in its journal. The live db.sqlite3 is excluded from the backup, so the next restic run will refuse (users#57)."
+              echo "vaultwarden-db-dump: no new db_*.sqlite3 in ${dataDir} within 120s of SIGUSR1." >&2
+              exit 1
+            fi
+            sleep 2
+          done
+
+          # Mode first, before anything else reads it: restic preserves modes, so a dump left
+          # group- or world-readable would be restored that way OUTSIDE the 0700 directory
+          # that is currently its only protection. Upstream's UMask is 0077 today and this
+          # file does not own that, so set it rather than assert it.
+          chmod 0600 "$dump"
+
+          # The one check that distinguishes a dump from a file: a truncated or torn VACUUM
+          # output is still a plausible-looking sqlite3 file, and the time to find out is not
+          # during a restore.
+          if ! check=$(sqlite3 -readonly "$dump" 'PRAGMA integrity_check;' 2>&1) \
+            || [ "$check" != "ok" ]; then
+            # DELETE the bad dump, deliberately. Leaving it would make it the newest file in
+            # the directory, so the host's freshness gate would pass and restic would ship a
+            # CORRUPT vault; removing it lets the gate fall back to last night's good dump and
+            # start failing on its own once that ages out. A stale vault beats an unopenable
+            # one, and this unit has already failed either way.
+            rm -f "$dump"
+            post "🚨 [${config.networking.hostName}] vaultwarden — the database dump FAILED ITS INTEGRITY CHECK and has been deleted: $check. The backup will fall back to the previous dump until it ages past the freshness limit, then refuse (users#57)."
+            echo "vaultwarden-db-dump: integrity_check on $dump said: $check" >&2
+            exit 1
+          fi
+
+          # Logged every night on purpose: these two numbers are what a restore is verified
+          # against (users#57's drill compares them to the live vault), and a vault that
+          # silently loses rows is otherwise invisible until someone looks for a password.
+          total=$(sqlite3 -readonly "$dump" 'select count(*) from ciphers;')
+          live=$(sqlite3 -readonly "$dump" \
+            'select count(*) from ciphers where deleted_date is null;')
+          echo "vaultwarden-db-dump: $dump — integrity ok, $total ciphers ($live live, $(( total - live )) in trash), $(stat -c %s "$dump") bytes."
+
+          # Retention. Upstream prunes nothing, so without this the state directory grows one
+          # full copy of the vault per night, forever.
+          find ${dir} -maxdepth 1 -type f -name 'db_*.sqlite3' -printf '%T@ %p\n' \
+            | sort -rn \
+            | tail -n +${toString (cfg.dump.keep + 1)} \
+            | cut -d' ' -f2- \
+            | while read -r old; do
+                echo "vaultwarden-db-dump: pruning $old (keeping ${toString cfg.dump.keep})"
+                rm -f "$old"
+              done
+        '';
+    };
+
+    systemd.timers.vaultwarden-db-dump = {
+      description = "Nightly consistent dump of the vault database (users#57)";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnCalendar = cfg.dump.onCalendar;
+        # A missed dump is taken at boot rather than skipped — the host's freshness gate is
+        # tuned on the assumption that downtime does not cost a dump.
+        Persistent = true;
+        # NO RandomizedDelaySec, unlike the drift check above: this one has to land before the
+        # host's restic run, and jitter is exactly what would let it land during one.
+        AccuracySec = "1m";
+        Unit = "vaultwarden-db-dump.service";
       };
     };
 
