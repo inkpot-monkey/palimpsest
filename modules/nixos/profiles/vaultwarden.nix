@@ -66,6 +66,16 @@
 #     (identity.rs: "Note that API key logins bypass 2FA"). users#47 made "never provision
 #     one" policy, and nothing here needs to: Vaultwarden issues no captcha, so `rbw login`
 #     never falls through to `rbw register`.
+#   * NO STANDING OFF-MACHINE EXPORT, and the reasoning is worth keeping because it inverts
+#     what users#32's fog said (operator's call, users#57, 2026-10-14). The fog note had the
+#     export covering "a forgotten master password" — but users#37 already custodies that, on
+#     paper, off-machine. What an export actually insures against is FORMAT and SOFTWARE risk:
+#     restic hands back the dump and nothing can open it. That is remote, slow-moving, and —
+#     decisively — an export can be taken at any time while the vault still works, so holding
+#     one in advance buys almost nothing against a second complete copy of every password, plus
+#     custody of that copy's own encryption password. So one is taken only at a NAMED TRIGGER:
+#     before a master-password rotation, before a KDF change, or before a migration off
+#     Vaultwarden. Not on a cadence, and not "just in case".
 #   * So the realistic threat is an offline attack on the vault blob by whoever holds the
 #     disk, which is exactly a brute-force against the master-password KDF. That is the
 #     reason the master password is long and the KDF left at the client's Argon2id default,
