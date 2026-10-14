@@ -574,13 +574,24 @@ in
             exit 1
           fi
 
-          # Logged every night on purpose: these two numbers are what a restore is verified
-          # against (users#57's drill compares them to the live vault), and a vault that
-          # silently loses rows is otherwise invisible until someone looks for a password.
-          total=$(sqlite3 -readonly "$dump" 'select count(*) from ciphers;')
-          live=$(sqlite3 -readonly "$dump" \
-            'select count(*) from ciphers where deleted_date is null;')
-          echo "vaultwarden-db-dump: $dump — integrity ok, $total ciphers ($live live, $(( total - live )) in trash), $(stat -c %s "$dump") bytes."
+          # Logged every night on purpose: these numbers are what a restore is verified against
+          # (users#57's drill compares them to the live vault), and a vault that silently loses
+          # rows is otherwise invisible until someone goes looking for a password.
+          #
+          # ⚠ NON-FATAL, and that is the fix for how this unit failed its first real run. The
+          # column is `deleted_at` (src/db/schema.rs); the first version of this line asked for
+          # `deleted_date`, sqlite3 exited non-zero, and `set -e` failed the whole unit — AFTER
+          # it had taken a perfectly good dump and integrity-checked it, and BEFORE it pruned.
+          # So a reporting query took down the artifact it was reporting on. The counts are a
+          # journal nicety; the gate is the integrity check above. Upstream renaming a column
+          # should degrade this line, not lose a good dump and skip retention with it.
+          counts="counts unavailable (schema changed? see src/db/schema.rs)"
+          if total=$(sqlite3 -readonly "$dump" 'select count(*) from ciphers;' 2>/dev/null) \
+            && live=$(sqlite3 -readonly "$dump" \
+              'select count(*) from ciphers where deleted_at is null;' 2>/dev/null); then
+            counts="$total ciphers ($live live, $(( total - live )) in trash)"
+          fi
+          echo "vaultwarden-db-dump: $dump — integrity ok, $counts, $(stat -c %s "$dump") bytes."
 
           # Retention. Upstream prunes nothing, so without this the state directory grows one
           # full copy of the vault per night, forever.
