@@ -61,31 +61,37 @@ in
     # the sudo password as defense-in-depth. `just deploy kelpy` supplies it via
     # --ask-sudo-password (prompted once, up front).
     proxy.enable = true;
-    # DEFERRED, not blocked — a scheduling decision, and the last host where it is still
-    # pending. Every reason this note used to give for being off is now spent:
+    # ON, 2026-10-14 — the second host on the fleet to ship off-site, and the one holding the
+    # data that exists nowhere else (#150). Deferred here since 2026-06-21; every reason the
+    # old note gave for staying off was spent:
     #   • rsync.net is not merely reachable, it is IN USE. rk1b has run the fleet's off-site
     #     job since 2026-10-05: 8 snapshots and a `restic check` reporting no errors over 10%
-    #     of its pack data. So the account is active and has quota.
+    #     of its pack data. So the account is active and works.
     #   • the stale exclusive lock was real — 212 days old, left by the decommissioned
     #     stargazer config — and was cleared BY HAND on rk1b. Note the module's own `unlock`
     #     runs AFTER the backup, so it can never rescue a first run; see hosts/rk1/backup.nix.
-    #   • "the library lives on two git-annex replicas and nowhere else" was true and is NOT
+    #   • "the library lives on two git-annex replicas and nowhere else" was true and is not
     #     any more: rk1b backs up `/var/cache/library` directly, which is the ADR-0031/#90
     #     requirement met. This host's replica is a second copy of something already off-site.
     #
-    # ⚠ So what is unprotected here is no longer the library — it is the two things that exist
+    # ⚠ So what this protects is NOT primarily the library — it is the two things that exist
     # on this host and nowhere else at all: the MAIL STORE, and the VAULT, whose nightly
-    # `VACUUM INTO` dumps (users#57) are durable on /persistent and on no other machine. That
-    # is the reason to flip this, and it is sharper than the one this comment used to give.
+    # `VACUUM INTO` dumps (users#57) were durable on /persistent and on no other machine until
+    # this line changed. The file set was made restorable first, deliberately: `paths` below is
+    # enumerated per ADR-0036, the vault's live db.sqlite3 is EXCLUDED in favour of its dump
+    # (a file-level copy would have restored a vault eight days stale — SQLite had not
+    # checkpointed since the vault was created), and `backupPrepareCommand` refuses the whole
+    # job rather than ship a snapshot whose vault half is missing.
     #
-    # The file set is ready: `paths` below is enumerated per ADR-0036 (NOT the old
-    # `paths = [ "/persistent" ]` this note once claimed), the vault's live db.sqlite3 is
-    # excluded in favour of its dump, and `backupPrepareCommand` refuses the job if that dump
-    # has gone stale. When it flips, leave `destinations.rsyncnet.maintenance` at its default:
-    # rk1b is the elected maintainer of the shared repository and only one host may prune.
+    # Quota: the rsync.net soft quota is 112 GiB (see hosts/sawtoothShark/configuration.nix,
+    # where it is what rules out backing up a 143 GiB home). The paths below are the mail
+    # store, the forge, scanned paper, the Matrix state and two small git-annex replicas —
+    # single-digit GiB — so this host is not the one that pressures it. sawtoothShark is.
     #
-    # Tracked in palimpsest#150, which carries the fleet-wide picture.
-    backup.enable = false;
+    # `destinations.rsyncnet.maintenance` is deliberately LEFT AT ITS DEFAULT (false): `prune`
+    # and `check` are repository-wide, every host writes into one repository, and rk1b is the
+    # elected maintainer. Setting it here would give the repository two.
+    backup.enable = true;
     # Still surface this host's off-site job on the Backups board — as a known-off edge.
     backup.reportJobs = [ "daily" ];
     monitoring-server.enable = false; # moved to rk1b (ADR-0021)
@@ -455,6 +461,23 @@ in
     # hard failure: with the live database excluded, a snapshot taken without a fresh dump
     # carries the attachments and NO VAULT, and restic would report success over it.
     settings.backupPrepareCommand = "${requireFreshVaultDump}";
+  };
+
+  # ⚠ FENCE THE BACKUP, because this host has already shown what an unfenced service does to
+  # it. kelpy is a 4 GB vpsAdminOS container WITH NO SWAP, and `custom.profiles.backup` sets no
+  # memory limit on the restic units — which is the exact shape that made Stalwart the victim
+  # twice in one afternoon (users#56): it was the one service on this host with no `MemoryMax`,
+  # so when mbsync's unbounded pipelining pushed it to 2.38 GB the CONTAINER's OOM killer chose
+  # it while forge sat behind 1 G and the vault behind 512 M. restic's footprint scales with the
+  # index it builds, and a first run over the mail store is the largest it will ever be.
+  #
+  # Sized as a fence rather than a tuning knob, like Stalwart's: a backup that dies against this
+  # ceiling fails loudly, alerts, and retries tonight, whereas the container choosing a victim
+  # takes down mail or the vault with no warning. If the first run hits it, raise it here on the
+  # measurement rather than removing it.
+  systemd.services."restic-backups-daily-rsyncnet".serviceConfig = {
+    MemoryMax = "1G";
+    MemoryHigh = "768M";
   };
 
   # Enforce the ADR-0031/#90 divergence from music: the document library replica MUST go
