@@ -83,6 +83,41 @@
 #   * DISABLE_ICON_DOWNLOAD closes the other leak: by default the SERVER fetches a favicon
 #     for every URI in the vault, which hands kelpy's network path the operator's site list.
 #
+# ── HOW TO RESTORE (drilled 2026-10-14, users#57) ────────────────────────────────────────
+# Not theory: this was performed end to end against the live vault, and the numbers below are
+# what it produced. Four steps, and the only one needing thought is the first.
+#
+#   1. Take the dump dir out of the backup. What a restore needs is ONE `db_<UTC>.sqlite3`
+#      (the newest), plus the RSA keypair Vaultwarden generated on first start — the `rsa_key`
+#      pair in the state dir, which signs every auth token, so without it every client is
+#      logged out — plus `attachments/` and `sends/` when they exist. `icon_cache/` and `tmp/`
+#      are disposable. ⚠ There is NO `db.sqlite3` in the snapshot by design, and
+#      that is not a gap: see the exclude in hosts/kelpy/configuration.nix.
+#   2. `cp db_<newest>.sqlite3 <datadir>/db.sqlite3`. That is the whole restore — a
+#      `VACUUM INTO` output is a complete, standalone database, not a delta.
+#   3. Start Vaultwarden over it with `DATA_FOLDER` pointed at that directory. Same version
+#      ideally; a newer one runs its migrations on first start.
+#   4. Verify from BOTH sides, because they catch different failures. Server-side:
+#      `sqlite3 -readonly db.sqlite3 'PRAGMA integrity_check;'` and
+#      `select count(*) from ciphers;` / `… where deleted_at is null;`. Client-side: an actual
+#      decrypt. `RBW_PROFILE=restore` is what makes that safe to do beside a live vault — rbw
+#      derives its config dir, cache dir, agent socket and pidfile from that name (dirs.rs),
+#      so the drill cannot touch the live cache or reach the live agent.
+#
+# What the 2026-10-14 drill measured: integrity ok, 402 ciphers (400 live, 2 in trash) in a
+# 712,704-byte dump, one folder, one enabled second factor; a scratch 1.37.3 came up on it;
+# `rbw login` against the restored instance required BOTH the master password and a TOTP code
+# — so the second factor survives a restore — and `rbw list` returned exactly 400 entries
+# against the 400 live ciphers.
+#
+# ⚠ AND THE REASON THE EXCLUDE IS NOT PEDANTRY. Measured in the same drill: the live
+# `db.sqlite3` was 753,664 bytes last modified 2026-10-06, with a 4,124,152-byte `-wal` beside
+# it from that same afternoon. SQLite had not checkpointed since the vault was created, so
+# every change in eight days lived in the WAL — a file-level copy of `db.sqlite3` alone would
+# have restored a vault EIGHT DAYS STALE, silently, while the backup reported success. The
+# torn-page argument is the one usually made for excluding a live database; this one is worse
+# and simpler.
+#
 # ── Reverse proxy ─────────────────────────────────────────────────────────────────────────
 # Caddy fronts this at vault.<domain> behind the `internal_only` tailnet guard, derived from
 # the `vault` entry in parts/settings.nix (proxy.nix: the registry attribute name IS the vhost
