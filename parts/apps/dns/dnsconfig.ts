@@ -84,9 +84,31 @@ const PROXY_ON = CF_PROXY_ON;
 const PROXY_OFF = CF_PROXY_OFF;
 
 /**
- * Per-service A/AAAA records. Public services resolve to a node's public IP (optionally
- * Cloudflare-proxied); private services resolve, DNS-only, to a node's tailscale IP —
- * not publicly routable, so they're reachable only from the tailnet.
+ * Per-service A/AAAA records. EVERY service — public and private alike — resolves to its
+ * edge node's PUBLIC IP here; only the Cloudflare proxy status still varies.
+ *
+ * Private services pointed at the edge's TAILSCALE IP until 2026-10-09, which made this
+ * zone a second, redundant copy of the split-horizon answer: a tailnet client never reads
+ * it (blocky is the tailnet's global nameserver and answers privates from its own hosts
+ * file, profiles/blocky.nix), and anyone off the tailnet got a 100.64/10 address with no
+ * route to it — a connection that times out with no server there to explain itself.
+ *
+ * Pointing it at the public IP spends that dead record on the one thing it can buy: the
+ * tailnet guard in profiles/proxy.nix now has a reachable listener, so an off-tailnet
+ * visitor gets a 403 help page telling them to switch Tailscale on. That audience is the
+ * point — non-technical friends on phones reaching the music platform (ADR-0027), for whom
+ * an unexplained browser error reads as "it is broken" and becomes a message to the admin.
+ *
+ * SPLIT-HORIZON IS UNAFFECTED, which is what makes this safe: tailnet clients still get the
+ * tailscale address from blocky and still reach the real service. What *is* given up is
+ * that every private name now resolves and completes TLS from anywhere, leaving the guard's
+ * `remote_ip` matcher as the only protection — see the long note in proxy.nix. The names
+ * themselves were never secret: each is published in the public Certificate Transparency
+ * logs by its own Let's Encrypt certificate.
+ *
+ * `NodeInfo.tailscale` is deliberately kept on the interface though nothing here reads it
+ * any more — dns-data.json is a dump of the whole `settings.nodes` tree, so the field is
+ * really present, and describing the data accurately is not the same as using it.
  */
 function getServiceRecords(
   svcs: Record<string, ServiceInfo>,
@@ -100,7 +122,7 @@ function getServiceRecords(
     const node = infra.nodes[svc.edge];
     if (!node) continue;
 
-    const net = isPublic ? node.public : node.tailscale;
+    const net = node.public;
     if (!net || !net.ip4) continue;
 
     const proxyStatus = isPublic && svc.proxy === true ? PROXY_ON : PROXY_OFF;
