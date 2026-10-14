@@ -61,18 +61,30 @@ in
     # the sudo password as defense-in-depth. `just deploy kelpy` supplies it via
     # --ask-sudo-password (prompted once, up front).
     proxy.enable = true;
-    # DEFERRED, not blocked — the reason this is off is a scheduling decision, not an
-    # obstacle. The older note here said rsync.net was unreachable and held a stale
-    # exclusive lock from stargazer; both halves have decayed:
-    #   • zh2046.rsync.net is REACHABLE — TCP 22 connects from this host (checked
-    #     2026-08-19). "Unreachable" has not been true for some time.
-    #   • stargazer no longer configures backup at all, so nothing there can still be
-    #     taking a lock. Whether the repo carries a leftover one is untested, and is only
-    #     testable by running restic.
-    # Turning this on is what ships the document library replica offsite (see the paths /
-    # exclude / assertion below — the wiring is already correct and needs no path change).
-    # Tracked in palimpsest#150, which carries the fleet-wide picture and the open
-    # questions. Until then the library lives on two git-annex replicas and nowhere else.
+    # DEFERRED, not blocked — a scheduling decision, and the last host where it is still
+    # pending. Every reason this note used to give for being off is now spent:
+    #   • rsync.net is not merely reachable, it is IN USE. rk1b has run the fleet's off-site
+    #     job since 2026-10-05: 8 snapshots and a `restic check` reporting no errors over 10%
+    #     of its pack data. So the account is active and has quota.
+    #   • the stale exclusive lock was real — 212 days old, left by the decommissioned
+    #     stargazer config — and was cleared BY HAND on rk1b. Note the module's own `unlock`
+    #     runs AFTER the backup, so it can never rescue a first run; see hosts/rk1/backup.nix.
+    #   • "the library lives on two git-annex replicas and nowhere else" was true and is NOT
+    #     any more: rk1b backs up `/var/cache/library` directly, which is the ADR-0031/#90
+    #     requirement met. This host's replica is a second copy of something already off-site.
+    #
+    # ⚠ So what is unprotected here is no longer the library — it is the two things that exist
+    # on this host and nowhere else at all: the MAIL STORE, and the VAULT, whose nightly
+    # `VACUUM INTO` dumps (users#57) are durable on /persistent and on no other machine. That
+    # is the reason to flip this, and it is sharper than the one this comment used to give.
+    #
+    # The file set is ready: `paths` below is enumerated per ADR-0036 (NOT the old
+    # `paths = [ "/persistent" ]` this note once claimed), the vault's live db.sqlite3 is
+    # excluded in favour of its dump, and `backupPrepareCommand` refuses the job if that dump
+    # has gone stale. When it flips, leave `destinations.rsyncnet.maintenance` at its default:
+    # rk1b is the elected maintainer of the shared repository and only one host may prune.
+    #
+    # Tracked in palimpsest#150, which carries the fleet-wide picture.
     backup.enable = false;
     # Still surface this host's off-site job on the Backups board — as a known-off edge.
     backup.reportJobs = [ "daily" ];
