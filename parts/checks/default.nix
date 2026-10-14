@@ -36,6 +36,17 @@
         vaultwarden_dump_freshness = import ./vaultwarden-dump-freshness {
           inherit pkgs self;
         };
+        # The tailnet guard's route order (palimpsest#218's deferred follow-up). `internal_only`
+        # is the whole of the access control on every private service, and a bare `abort` loses
+        # Caddy's directive order to the vhost's own matcher-less handle — which is how vault,
+        # forge, library and photos came to serve 200 to the internet. This runs `caddy adapt`
+        # so the subject is Caddy's RESOLVED order, asserts every private vhost is guarded at
+        # route[0] and every public one is not, and proves the predicate rejects the broken
+        # shapes. The ADR-0019 probes cannot cover this: they resolve to a tailscale address and
+        # pass the matcher either way, so a regression is green on every board the fleet has.
+        caddy_internal_guard = import ./caddy-internal-guard {
+          inherit pkgs self;
+        };
         networking = import ./networking {
           inherit pkgs inputs self;
         };

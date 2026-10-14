@@ -89,9 +89,21 @@ in
         # ever resolve publicly: it stays under 500, so a help page cannot start reporting
         # a service as healthy, and cannot start alerting for a service that is fine.
         #
-        # Two `handle` blocks are mutually exclusive and keep their written order, so the
-        # guarded one has to be imported BEFORE the vhost's own handle. It is: the import
-        # sits at the top of every private vhost's extraConfig below.
+        # Two `handle` blocks are mutually exclusive, and Caddy SORTS them — it does not keep
+        # their written order. Measured on 2.11.4 while building
+        # parts/checks/caddy-internal-guard, which is also where the cases are pinned:
+        # `handle /b` before `handle /a` adapts to `/a, /b`, and a matcher-less catch-all
+        # always sorts LAST. The guard carries a matcher and every vhost's own handle is a
+        # catch-all, so the guard wins wherever the import is written.
+        #
+        # ⚠ This corrects what this comment said until then — that written order is kept, so the
+        # import "has to be" first. It is first below, and that reads well, but nothing depends
+        # on it: believing otherwise means believing a guard moved below the handle would be a
+        # hole, and it would not. What a hole DOES require is the guard losing the sort
+        # altogether, which is what a bare `abort` did. The check asserts the resolved order
+        # from `caddy adapt` rather than either of these claims, and it holds a passing case for
+        # the late import so that a future Caddy honouring written order fails loudly instead of
+        # making this paragraph quietly wrong again.
         (internal_only) {
           @not_internal {
             not remote_ip 100.64.0.0/10 127.0.0.1 ::1 fd7a:115c:a1e0::/48
