@@ -10,6 +10,15 @@
 let
   cfg = config.custom.profiles.proxy;
   inherit (settings.admin) email;
+
+  # The page the tailnet guard serves to a request from outside the tailnet, as a
+  # directory because `file_server` serves a root rather than a file. Kept as real
+  # HTML in its own file and NOT inlined into the Caddyfile below: a Caddyfile parses
+  # `{` as the start of a placeholder, so every CSS rule in an inlined page would have
+  # to be escaped, and `caddy adapt` reports that as a config error a long way from the
+  # brace that caused it. A file also means the copy can be edited and reviewed as
+  # copy, by someone not reading Nix.
+  helpRoot = pkgs.writeTextDir "index.html" (builtins.readFile ./tailnet-help.html);
 in
 {
   options.custom.profiles.proxy = {
@@ -44,7 +53,7 @@ in
         # (below), because the public services need them — so this matcher, not the
         # firewall, is what keeps forge, vault, photos and the rest off the internet.
         #
-        # ⚠ THE ABORT MUST BE INSIDE A `handle`, AND THAT IS NOT A STYLE CHOICE. It was a
+        # ⚠ THE GUARD MUST BE INSIDE A `handle`, AND THAT IS NOT A STYLE CHOICE. It was a
         # bare `abort @not_internal` until 2026-10-06 and did nothing whatsoever:
         # `handle` sorts AHEAD of `abort` in Caddy's directive order, and each vhost's own
         # `handle { reverse_proxy … }` carries no matcher — so it matched every request and
@@ -58,10 +67,27 @@ in
         #
         # Confirmed live before the fix: a request from a PUBLIC source address to
         # vault/forge/library/photos (right Host + SNI, against kelpy's public IP) was
-        # served 200. What had been protecting them was obscurity alone — a private
-        # service's published A record is kelpy's TAILSCALE address (parts/apps/dns), so
-        # the names do not resolve usefully from the internet. That is not a gate, and it
-        # stops being even obscurity for anyone who can guess a subdomain.
+        # served 200. This matcher is now the WHOLE of the protection, with no obscurity
+        # behind it: until 2026-10-09 a private service's published A record was kelpy's
+        # TAILSCALE address, so the names did not resolve usefully from the internet, and
+        # that accident was doing some of the work. The records point at kelpy's PUBLIC
+        # address now (parts/apps/dns) so that the help page below has a reachable
+        # listener to be served from — which also means every private name resolves and
+        # completes TLS from anywhere, and only this matcher stands between that and the
+        # service. Nothing was really given up: Caddy requests a per-vhost Let's Encrypt
+        # certificate, and every one of those names was already published in the public
+        # Certificate Transparency logs.
+        #
+        # It serves a PAGE rather than `abort`ing because the audience is a non-technical
+        # friend on a phone who has let Tailscale drop (ADR-0027 — the tailnet is not
+        # single-person). `abort` closes the connection with no response, which a phone
+        # renders as an unexplained browser error and the friend reads as "it is broken".
+        #
+        # 403 and not 200, because the ADR-0019 uptime probes assert `[STATUS] < 500`
+        # (monitoring/watcher.nix) and resolve through blocky to a TAILSCALE address, so
+        # they pass this matcher and never see this page. 403 keeps it that way should one
+        # ever resolve publicly: it stays under 500, so a help page cannot start reporting
+        # a service as healthy, and cannot start alerting for a service that is fine.
         #
         # Two `handle` blocks are mutually exclusive and keep their written order, so the
         # guarded one has to be imported BEFORE the vhost's own handle. It is: the import
@@ -71,7 +97,16 @@ in
             not remote_ip 100.64.0.0/10 127.0.0.1 ::1 fd7a:115c:a1e0::/48
           }
           handle @not_internal {
-            abort
+            # `rewrite` collapses every path onto the one page, so a deep bookmark
+            # (…/album/123) explains itself instead of 404ing. no-store because the
+            # answer depends on where the visitor is, not on the URL: a cached copy
+            # would survive them connecting and reloading.
+            root * ${helpRoot}
+            rewrite * /index.html
+            header Cache-Control "no-store"
+            file_server {
+              status 403
+            }
           }
         }
 
