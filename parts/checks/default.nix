@@ -47,6 +47,17 @@
         caddy_internal_guard = import ./caddy-internal-guard {
           inherit pkgs self;
         };
+        # The untagged-snapshot predicate behind the daily probe on the elected restic
+        # maintainer (palimpsest#150). Every forget unit is scoped `--host X --tag <job>`, so a
+        # snapshot with no tag is outside every retention policy permanently — three sat in the
+        # rsync.net repository for seven months, invisible to the Backups board (per-host status
+        # files, nothing failing) and to `restic check` (structure and packs, not policy). The
+        # predicate's only dangerous failure is reporting ZERO while orphans exist, which looks
+        # exactly like a clean repository, so this pins all three spellings restic uses for an
+        # untagged snapshot — absent key, null, and empty list.
+        restic_untagged = import ./restic-untagged {
+          inherit pkgs self;
+        };
         networking = import ./networking {
           inherit pkgs inputs self;
         };

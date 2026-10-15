@@ -31,6 +31,16 @@ let
   # Used to scope `forget` to THIS host's snapshots — see forgetServices.
   hostName = config.networking.hostName;
 
+  # Shared alert delivery (modules/shared/alert-post.nix): in-band to #infra-alerts, with the
+  # ADR-0020 push relay as a fallback where the host declares one. Used by the untagged-snapshot
+  # probe below, which is the one unit here whose finding nothing else would surface.
+  alertPost = import ../../shared/alert-post.nix { inherit lib pkgs; };
+
+  # The untagged-snapshot predicate, kept out of this file so parts/checks/restic-untagged can
+  # exercise the SAME script the probe runs. Reads `restic snapshots --json` on stdin and prints
+  # one line per untagged snapshot, nothing when there are none.
+  untaggedSnapshots = import ./restic-untagged-snapshots.nix { inherit pkgs; };
+
   sftpCommand = "sftp.command='ssh -F /dev/null -i ${config.sops.secrets.restic_ssh_private.path} zh2046@zh2046.rsync.net -s sftp'";
 
   # A restic job's enabled state, mapped from the profile's two toggles. The toggles, not the
@@ -153,6 +163,16 @@ let
         description = ''
           When the integrity check runs. After `pruneCalendar` by default, so a week's
           rewritten pack files are the ones verified rather than the ones prune replaced.
+        '';
+      };
+
+      untaggedCalendar = lib.mkOption {
+        type = lib.types.str;
+        default = "daily";
+        description = ''
+          When the untagged-snapshot probe runs on the elected maintainer. Daily, unlike the
+          weekly `check`: it is a metadata read with no data transfer, and the condition it
+          looks for is one a single mis-run backup can create.
         '';
       };
 
@@ -534,6 +554,130 @@ let
       ${pkgs.coreutils}/bin/chmod 0644 "$tmp"
       ${pkgs.coreutils}/bin/mv -f "$tmp" "$metrics_dir/backup-restic-${name}.prom"
     '';
+
+  # POLICY COVERAGE, per destination, on the elected host. Distinct from `check`, which asks
+  # whether the repository is INTACT; this asks whether everything in it is GOVERNED.
+  #
+  # ⚠ Why this exists, measured rather than imagined (palimpsest#150, 2026-10-15). Three
+  # snapshots — two from kelpy (5.527 and 4.713 GiB) and one from porcupineFish — sat in the
+  # rsync.net repository for SEVEN MONTHS outside every retention policy on the fleet, and
+  # nothing could have surfaced them:
+  #
+  #   * the Backups board reads per-host status files, and no host was failing;
+  #   * `restic check` verifies structure and pack data, not policy — they were perfectly
+  #     intact, which is the problem;
+  #   * every `forget` unit is scoped `--host X --tag <job>` (see forgetServices, where both
+  #     filters are load-bearing on a shared repository) — so a snapshot with NO tag is
+  #     outside all of them, for ever, by construction.
+  #
+  # They were found only because a restore drill happened to list snapshots by hand. The
+  # content made it worse than housekeeping: all three predated ADR-0036's enumeration, so they
+  # were bulk `/persistent` snapshots of March's logs, caches, checkouts and a tailscale node
+  # identity — precisely what ADR-0036 exists to stop shipping — and porcupineFish's asserted
+  # off-site coverage for a host whose config declines every directory and sets `paths = [ ]`.
+  # That is the data-side twin of the stale-metric trap documented further down this file:
+  # removing a producer has to remove its output too, and nothing was watching the output.
+  #
+  # SCOPE: untagged only, deliberately. The honest invariant is wider — every snapshot's
+  # (host, tag) pair should be reachable by some forget job — but a host cannot see the other
+  # hosts' jobs at runtime, and reaching for them at eval time means one host's config
+  # evaluating the whole fleet's. Untagged is the case that is unambiguous from a single host
+  # and is the one that actually happened; a snapshot tagged for a job that no longer exists
+  # would still slip through, and is left as a known gap rather than a pretended guarantee.
+  #
+  # On the MAINTAINER only, like prune and check: the condition is a property of the
+  # repository, not of a host, so running it everywhere would raise N alerts for one fact.
+  untaggedServices = lib.mapAttrs' (
+    destName: dest:
+    lib.nameValuePair "restic-untagged-${destName}" (
+      lib.mkMerge [
+        (maintenanceService destName dest)
+        {
+          description = "restic untagged-snapshot probe for the ${destName} repository";
+          serviceConfig.ExecStart =
+            let
+              post = alertPost.mkPost {
+                name = "restic-untagged-${destName}";
+                webhookUrlFile = config.custom.profiles.matrix.infraAlerts.webhookUrlFile or null;
+                # This host observes a repository that lives elsewhere, which is exactly the
+                # rescuable case ADR-0020 describes — so take the out-of-band leg where the
+                # host has one. oobFromWatcher yields null on a host without the relay.
+                outOfBand = alertPost.oobFromWatcher config;
+              };
+              stampCount = stampScript {
+                name = "untagged-${destName}";
+                labels.restic_dest = destName;
+                metric = "backup_restic_untagged_snapshots";
+                help = "Snapshots in this repository carrying no tag, and therefore reachable by no retention policy. -1 means the probe could not read the repository.";
+                value = "$1";
+              };
+              stampTime = stampScript {
+                name = "lastuntagged-${destName}";
+                labels.restic_dest = destName;
+                metric = "backup_restic_last_untagged_check_timestamp_seconds";
+                help = "Unix time the untagged-snapshot probe last ran, pass or fail.";
+              };
+            in
+            pkgs.writeShellScript "restic-untagged-${destName}" ''
+              set -u
+              ${post}
+
+              # --no-lock: a metadata read must not contend with a running backup, nor hold
+              # anything a prune would wait on. --json because the tag list is the subject and
+              # the table's tag COLUMN cannot be parsed reliably (it is empty for the very
+              # snapshots this looks for).
+              if ! snapshots=$(${resticBin dest} snapshots --json --no-lock 2>&1); then
+                # -1, NOT 0. node-exporter republishes every .prom it finds for the life of the
+                # machine with no notion of staleness, so a count that could not be computed
+                # must not read as a healthy zero — that is the trap this file already
+                # documents from the other direction. A negative count cannot be mistaken for
+                # "nothing to see".
+                ${stampCount} -1
+                ${stampTime}
+                post "🚨 [${hostName}] restic — the untagged-snapshot probe could not read the ${destName} repository, so nothing is checking whether its snapshots are governed by any retention policy (palimpsest#150)."
+                echo "restic-untagged: could not list snapshots:" >&2
+                printf '%s\n' "$snapshots" >&2
+                exit 1
+              fi
+
+              # One pass, one source of truth: the predicate prints a line per untagged
+              # snapshot and nothing when there are none, so the count is the line count.
+              # `grep -c .` rather than `wc -l` because an empty string still contains one
+              # newline once it has been through a shell variable, and `wc -l` would call that
+              # one untagged snapshot — a false ALARM where the dangerous direction is the
+              # silent false negative, but wrong either way.
+              rows=$(printf '%s' "$snapshots" | ${untaggedSnapshots})
+              untagged=$(printf '%s' "$rows" | ${pkgs.gnugrep}/bin/grep -c . || true)
+              ${stampCount} "$untagged"
+              ${stampTime}
+
+              if [ "$untagged" -gt 0 ]; then
+                post "🚨 [${hostName}] restic — $untagged snapshot(s) in the ${destName} repository carry NO TAG, so every forget unit (--host X --tag <job>) skips them and they are kept for ever: $(printf '%s' "$rows" | ${pkgs.coreutils}/bin/tr '\n' ';'). Either forget them or tag them into a policy (palimpsest#150)."
+                echo "restic-untagged: $untagged untagged snapshot(s) in ${destName}:" >&2
+                printf '%s\n' "$rows" >&2
+                exit 1
+              fi
+
+              echo "restic-untagged: every snapshot in ${destName} carries a tag — OK."
+            '';
+        }
+      ]
+    )
+  ) maintained;
+
+  untaggedTimers = lib.mapAttrs' (
+    destName: dest:
+    lib.nameValuePair "restic-untagged-${destName}" {
+      description = "Daily untagged-snapshot probe for ${destName}";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnCalendar = dest.untaggedCalendar;
+        Persistent = true;
+        RandomizedDelaySec = "30m";
+        Unit = "restic-untagged-${destName}.service";
+      };
+    }
+  ) maintained;
 
   # Everything the out-of-band forget, prune and check units need to reach the same repository
   # the backup unit uses. Derived from the destination rather than restated, so a rotation or a
@@ -986,11 +1130,13 @@ in
         forgetServices
         pruneServices
         checkServices
+        untaggedServices
       ];
       systemd.timers = lib.mkMerge [
         forgetTimers
         pruneTimers
         checkTimers
+        untaggedTimers
       ];
 
       assertions =
