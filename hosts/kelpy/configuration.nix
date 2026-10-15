@@ -454,6 +454,19 @@ in
       "${vaultStateDir}/db.sqlite3"
       "${vaultStateDir}/db.sqlite3-wal"
       "${vaultStateDir}/db.sqlite3-shm"
+
+      # Paperless ships two derived subtrees inside the path that carries its documents, so
+      # ADR-0036's rule never got to see them — enumerating `paths` keeps whole trees out, not
+      # parts of one. Measured in the live snapshot: `log` was 21.2 MiB against 13.4 MiB of
+      # actual paperless state, i.e. the logs were bigger than the thing they describe, and
+      # they rewrite nightly, which is the shape that both inflates every snapshot and gives
+      # restic's dedup nothing to match. `index` is the Whoosh search index, rebuilt by
+      # `document_index reindex` and rewritten whenever a document changes.
+      #
+      # Everything else under paperless stays: its database and `media`, which is where the
+      # scanned originals land.
+      "/persistent/var/lib/paperless/log"
+      "/persistent/var/lib/paperless/index"
     ];
 
     # Refuse the job if the vault's dump has stopped. See maxVaultDumpAgeSeconds above for the
