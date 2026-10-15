@@ -29,8 +29,27 @@
 
       # Infrastructure
       vpsfree-client
-      gh # GitHub CLI (PRs, issues, Actions)
       cachix # push uncached kernel outputs to palebluebytes.cachix.org (see `just cache-kernel`)
+
+      # NO `gh` HERE, DELIBERATELY — it comes from the home, already authenticated.
+      # A devshell package is PREPENDED to PATH, so listing gh here shadowed the
+      # vault-backed wrapper at ~/.nix-profile/bin/gh (~/code/users, modules/github.nix)
+      # with a bare nixpkgs binary holding no credential. The result was a gh that is
+      # unauthenticated *only inside this repo* — "To get started with GitHub CLI, please
+      # run: gh auth login" — which is both the most confusing possible place for it to
+      # happen and precisely where every gh recipe this repo documents gets run:
+      # `gh auth token` in the rate-limit workaround (AGENTS.md § Operational gotchas),
+      # `gh release list` for the jmap-bridge tag pin, and all of
+      # docs/agents/issue-tracker.md. Every one of those failed in the devshell and worked
+      # outside it, which cost a session an hour and a false lead into an expired token.
+      #
+      # It must not be re-added as the wrapper either: that lives in the private `users`
+      # flake, and depending on it here would break public eval and CI, which run against
+      # the ADR-0012 mocks and do not have that input.
+      #
+      # On a seat whose home carries no gh (the cli floor, which drops it on purpose),
+      # the failure is now "command not found" rather than a 401 — which is the failure
+      # modules/github.nix explicitly argues for.
 
       # Secrets
       sops
