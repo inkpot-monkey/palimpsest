@@ -84,14 +84,21 @@ const PROXY_ON = CF_PROXY_ON;
 const PROXY_OFF = CF_PROXY_OFF;
 
 /**
- * Per-service A/AAAA records. EVERY service — public and private alike — resolves to its
- * edge node's PUBLIC IP here; only the Cloudflare proxy status still varies.
+ * Per-service A records resolve to the edge node's PUBLIC IP, public and private alike;
+ * only the Cloudflare proxy status varies. A private service emits NO AAAA at all — see
+ * the long warning at the emit site below, which is the sharper half of this.
  *
  * Private services pointed at the edge's TAILSCALE IP until 2026-10-09, which made this
- * zone a second, redundant copy of the split-horizon answer: a tailnet client never reads
- * it (blocky is the tailnet's global nameserver and answers privates from its own hosts
- * file, profiles/blocky.nix), and anyone off the tailnet got a 100.64/10 address with no
- * route to it — a connection that times out with no server there to explain itself.
+ * zone a near-redundant copy of the split-horizon answer: for an A query a tailnet client
+ * does not read it, because blocky is the tailnet's global nameserver and answers that
+ * from its own hosts file (profiles/blocky.nix). Anyone off the tailnet got a 100.64/10
+ * address with no route to it — a connection that times out with no server to explain
+ * itself.
+ *
+ * "Near-redundant" and not "redundant", because the A query is the only half that holds.
+ * blocky's hosts file carries no v6, and it forwards an unmatched type upstream instead of
+ * answering NODATA, so for AAAA this zone WAS the tailnet's answer. That is why the AAAA
+ * is now withheld rather than repointed.
  *
  * Pointing it at the public IP spends that dead record on the one thing it can buy: the
  * tailnet guard in profiles/proxy.nix now has a reachable listener, so an off-tailnet
@@ -128,7 +135,33 @@ function getServiceRecords(
     const proxyStatus = isPublic && svc.proxy === true ? PROXY_ON : PROXY_OFF;
 
     recs.push(A(name, net.ip4, proxyStatus));
-    if (net.ip6) {
+
+    // ⚠ A TAILNET-SCOPED SERVICE PUBLISHES NO AAAA, AND THAT IS LOAD-BEARING.
+    //
+    // blocky's generated hosts file is IPv4-ONLY — profiles/blocky.nix builds it from
+    // `tailscale ip -4` — and blocky does not answer NODATA for a type it has no entry
+    // for: it FORWARDS the query upstream. Measured 2026-10-15 against kelpy's blocky,
+    // which returned `fd7a:115c:a1e0::173b:be09` for a name whose only hosts-file entry
+    // is a 100.64/10 address. That answer came from Cloudflare, not from the hosts file.
+    //
+    // So the public AAAA is not redundant for a tailnet client the way the public A is —
+    // it is the ONLY v6 answer that client gets, and publishing the edge's public v6 here
+    // would hand every dual-stack tailnet device a public address for a private name. The
+    // device would leave the tunnel, arrive at Caddy from a public source address, fail
+    // the guard and be shown the help page while connected. A friend's phone on a v6
+    // mobile network is exactly that device.
+    //
+    // Emitting no AAAA removes the hazard rather than papering over it: the AAAA lookup
+    // gets NODATA, Happy Eyeballs falls back to the A, and the A is answered from blocky's
+    // hosts file on the tailnet and by this record off it. The cost is that a private
+    // service is v4-only, which costs nothing in practice — tailscale always assigns a
+    // 100.64/10 v4 address, so there is no v6-only client on the tailnet to strand.
+    //
+    // To restore v6, teach the blocky generator to emit `tailscale ip -6` entries FIRST,
+    // deploy it to every host in `dns.nameserverHosts` (a partial deploy makes the name
+    // resolve intermittently — see the warning in parts/settings.nix), and only then
+    // publish an AAAA here.
+    if (isPublic && net.ip6) {
       recs.push(AAAA(name, net.ip6, proxyStatus));
     }
   }
