@@ -110,7 +110,34 @@ in
         PER HOST, not shared: Forgejo names tokens, so minting one per host buys independent
         revocation for the cost of one extra key (#209). The token is created by
         `forgejo admin user generate-access-token` on kelpy — which takes no password, so
-        minting needs no credential beyond shell access as the forgejo user.
+        minting needs no credential beyond shell access as the forgejo user:
+
+        ```
+        --scopes write:issue,write:repository,write:user
+        ```
+
+        ⚠ `write:user` IS REQUIRED and #209 got this wrong (it specified `read:user`). The
+        endpoint that creates a repository for the authenticated user, `POST /user/repos`,
+        is the one the whole map needs — new private projects — and it lives inside the
+        `/user` route group, which carries a GROUP-LEVEL `tokenRequiresScopes(…User)` that
+        runs BEFORE the route's own. Forgejo's router even comments the route "(repo
+        scope)", and that comment is wrong; the live server answers
+
+          403 {"message":"token does not have at least one of required scope(s):
+               [write:user]"}
+
+        `write:user` subsumes `read:user` (the bitmap ORs the read bits in), so it replaces
+        rather than joins it. Scopes CANNOT be edited after minting — a wrong set means
+        deleting the token in the web UI and minting a new one.
+
+        What this deliberately does NOT include is `write:admin`, which is the boundary that
+        matters on a single-account forge: the account is the site admin, so a token with
+        all-repo write and `write:user` is already able to do anything the human does with
+        their own content, but not to administer the instance.
+
+        No repo pinning, though Forgejo 16 supports it
+        (`CreateAccessTokenOption.Repositories`): new projects keep appearing, and a
+        repo-pinned token needs re-minting for each one.
 
         ⚠ Adding a third host means a new key here AND a new recipient on the sops file.
         Both, or that host installs none of its secrets — see `secretFile`.

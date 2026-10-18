@@ -37,6 +37,11 @@
     # materializes once a runtime exists, which is what this enables.
     docker.enable = true;
     fonts.enable = true;
+    # The agent's client for the private forge (palimpsest#213): `tea` on PATH with a login
+    # rendered from this host's own token, so wayfinding against a forge-hosted tracker
+    # works from the workstation. See the same line in hosts/kelpy for the sops recipient
+    # constraint that keeps this host-scoped rather than fleet-wide.
+    forge-client.enable = true;
     gaming.enable = true;
     bluetooth.enable = true;
     impermanence.enable = false;

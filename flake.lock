@@ -1153,11 +1153,11 @@
     "secrets": {
       "flake": false,
       "locked": {
-        "lastModified": 1792339366,
-        "narHash": "sha256-HIN/sWRVogzdyhun7eKHNumxNc6yVW5UfroMvdr0MqI=",
+        "lastModified": 1792355790,
+        "narHash": "sha256-J+pEs+Qv8W6Ger28cp3aSvXD37xBS1PhOuPiYnXjUdA=",
         "ref": "refs/heads/main",
-        "rev": "bd0e876cde5812fccbf9f11cd90c910258ca7b5e",
-        "revCount": 82,
+        "rev": "54577593bddfe8ccd9eda8347bbc8541faaa6d71",
+        "revCount": 84,
         "type": "git",
         "url": "ssh://git@github.com/inkpot-monkey/stash.git"
       },

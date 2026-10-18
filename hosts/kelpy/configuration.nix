@@ -183,6 +183,16 @@ in
     # to RAISE the cap, not to move the forge — the move to rk1b triggers only when the
     # raise would push kelpy below 1 GB available.
     forge.enable = true;
+    # The AGENT'S side of the same forge (palimpsest#213): `tea` on PATH with a login
+    # rendered from this host's own token. Separate from `forge.enable` because the two are
+    # independent — kelpy happens to be both the server and a machine that runs agent
+    # sessions as the operator account, and a forge host need not be a client of itself.
+    #
+    # ⚠ HOST-SCOPED ON PURPOSE. It reads secrets/profiles/forgejo.yaml, whose recipients are
+    # &admin, &kelpy and &sawtoothShark only. Enabling it on a fourth host without adding
+    # that host's key AND a token_<host> entry makes `sops-install-secrets` fail there — and
+    # it is all-or-nothing per host, so that machine would install none of its secrets.
+    forge-client.enable = true;
     # The vault (users#32 / users#39) — Vaultwarden, tailnet-only, single-account, SQLite.
     # kelpy and not rk1b, decided on users#37: it is co-located with the forge, carries no
     # `origin`, and `caddyEdges = [ "kelpy" ]` already puts this host in the request path
