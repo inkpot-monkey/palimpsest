@@ -185,6 +185,15 @@
         backup_targeting = import ./backup-targeting {
           inherit pkgs self inputs;
         };
+        # The rendered `tea` login for the private forge (palimpsest#213). The agent's whole
+        # tracker surface rests on a config.yml this repo hand-renders from sops, so the risk
+        # is upstream `tea` moving its Login struct under it. Asserts on the WIRE rather than
+        # the exit code, because a renamed `token` field makes `tea repos ls` exit 0 with no
+        # Authorization header at all — and covers the sops trailing-newline trap the
+        # renderer's field order exists to absorb.
+        forge_client = import ./forge-client {
+          inherit pkgs self;
+        };
         # Supernote fork Private Cloud server (ADR-0031, palimpsest#92): runs the real
         # packaged server, drives a login/bootstrap end-to-end, and proves the MCP port is
         # firewalled off the LAN while the sync port is reachable.
