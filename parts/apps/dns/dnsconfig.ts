@@ -233,6 +233,49 @@ function getEdgeOnlyRecords(domain: string): any[] {
 }
 
 /**
+ * Domain-ownership proofs for third-party services: apex TXT records whose only job is
+ * to let somebody else's verifier read a string back and believe we control this zone.
+ *
+ * They belong to neither of the other two sets. Stalwart does not know about them, so
+ * they cannot ride in with the mail records; nothing resolves them to a listener, so
+ * they are not services. Hardcoded here for the same reason `mta-sts` is: the string IS
+ * the configuration, and there is nothing about it to derive.
+ *
+ * **Declaring them here is not a style choice.** The primary apex IGNORE below covers
+ * `A,AAAA,CNAME` only, so dnscontrol manages apex TXT and deletes any it does not find
+ * in this file. A verification record pasted into the Cloudflare dashboard therefore
+ * survives until the next push and then vanishes, taking the verification with it —
+ * usually long enough after the fact that nobody connects the two events.
+ *
+ * Each entry records who issued the token and which account it is bound to. A proof is
+ * worthless to anyone but its issuer, so an unattributed one can never be safely retired:
+ * nothing says what would break.
+ */
+const OWNERSHIP_PROOFS: string[] = [
+  // Google Postmaster Tools, bound to the tsdkelly@gmail.com Google account.
+  //
+  // Added 2026-10-18 while diagnosing Gmail filing this domain's outbound calendar
+  // invitations to Spam (users#69). Authentication was never the cause and this record
+  // does not address it — Google's own DMARC aggregate reports already show dkim=pass
+  // and spf=pass for mail from kelpy, with the RSA selector verifying and the ed25519
+  // one failing. What was missing is any view of the REPUTATION half, which is what the
+  // Postmaster dashboards hold.
+  //
+  // Expect them to stay empty: Google populates them only above a sending volume this
+  // domain comes nowhere near (67 messages in its lifetime, 10 of them ever to gmail).
+  // So this is registration against a future where that changes, not a fix for today —
+  // the working instrument remains the DMARC aggregate reports arriving at dmarc@.
+  "google-site-verification=z7aRZBVACqnuMb9I_Qikyll3ATJH5xbmetlMfSCPmqY",
+];
+
+function getOwnershipRecords(): any[] {
+  const recs: any[] = [];
+  for (let i = 0; i < OWNERSHIP_PROOFS.length; i++)
+    recs.push(TXT("@", OWNERSHIP_PROOFS[i]));
+  return recs;
+}
+
+/**
  * One dynamic Single Redirect: collapse the path onto `target`, carry the query.
  *
  * dnscontrol only maintains **dynamic** redirects, so the static form's "preserve query
@@ -387,6 +430,10 @@ for (let d = 0; d < mailDomains.length; d++) {
         .concat(getEdgeOnlyRecords(domain))
     : [];
 
+  // Ownership proofs are the primary zone's alone: each token is issued against one
+  // domain, and the extra mail domains carry mail records and nothing else.
+  const ownershipRecs = isPrimary ? getOwnershipRecords() : [];
+
   // The primary apex is a Cloudflare Worker Custom Domain (worker-managed): leave its
   // address record alone. dnscontrol still manages the apex MX/TXT (mail) for every domain.
   const apexIgnore = isPrimary ? [IGNORE("@", "A,AAAA,CNAME")] : [];
@@ -397,6 +444,7 @@ for (let d = 0; d < mailDomains.length; d++) {
     DnsProvider(CF),
     serviceRecs,
     getMailRecords(domain, isPrimary),
+    ownershipRecs,
     apexIgnore,
     // Never purge in-flight ACME DNS-01 challenges (Caddy + Stalwart both use them).
     IGNORE("_acme-challenge", "TXT"),
