@@ -41,18 +41,33 @@ env:
   # locally — so keep the list short, and always record why. The skip is printed in the
   # discover job so it never becomes invisible.
   #
-  #   contract_seat, host_fleet_coherence, netns_container_binding
+  #   contract_seat, host_fleet_coherence, netns_container_binding, backup_targeting
   #     evaluate the whole fleet/user configuration, which needs the *second* private
   #     flake input, `users` (ssh://git@github.com/palebluebytes/users). ADR-0012's mock
   #     fallback covers `secrets` only, so these fail at eval with "Failed to fetch git
   #     repository". Re-enable by giving the workflow a read-only deploy key for that
   #     repo — nothing in the checks themselves needs changing.
   #
+  #     `backup_targeting` joined this list late and cost three days of red main. It is
+  #     NOT fixable by stubbing a host: its own header explains that each case extends a
+  #     REAL host precisely so the cases stay honest, and `self.nixosConfigurations` is
+  #     what makes it need `users`. So it belongs here rather than being reshaped to suit
+  #     CI.
+  #
+  #     ⚠ THIS LIST IS THE ONE MANUAL STEP IN AN OTHERWISE SELF-DISCOVERING WORKFLOW, and
+  #     that asymmetry is what bit. `discover` enumerates checks straight from the flake
+  #     "so a newly added check is picked up without editing this file" — which means a new
+  #     fleet-evaluating check is picked up, is not excluded, and turns main red on its
+  #     first push. The exclusion cannot auto-derive (a genuine failure and a missing-input
+  #     failure must not be conflated), so the real exit is the deploy key above: with it,
+  #     all four come back and this list shrinks to git_annex_alert. Four entries is the
+  #     argument for doing that rather than adding a fifth.
+  #
   #   git_annex_alert
   #     git-annex is not substitutable for this nixpkgs rev, so CI builds it from source
   #     and git-annex's OWN test suite fails in the runner sandbox. Upstream's problem,
   #     and ~9 minutes of runner time to rediscover it each run.
-  EXCLUDE: contract_seat host_fleet_coherence netns_container_binding git_annex_alert
+  EXCLUDE: contract_seat host_fleet_coherence netns_container_binding backup_targeting git_annex_alert
 
   # Checks held out of the push gate for WALL-CLOCK, not because anything is wrong with
   # them — a different reason from EXCLUDE above, so a different list. The jobs fan out
