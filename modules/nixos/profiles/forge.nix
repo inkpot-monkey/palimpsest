@@ -349,12 +349,27 @@ in
       requires = [ "forgejo-state-dirs.service" ];
       unitConfig.RequiresMountsFor = [ stateDir ];
       serviceConfig = {
-        # ── THE MEMORY FENCE (#211) ───────────────────────────────────────────────────────
-        # The fleet's first memory cap. Provisional and deliberately generous: NO trustworthy
-        # footprint figure for Forgejo exists (#207), so this is a fence sized by what kelpy
-        # can spare (2.2 GB available, measured), not by what Forgejo needs. #215 carries the
-        # measure-and-tighten step, and the cgroup-memory metric that lands in the SAME
-        # deploy is what it will read.
+        # ── THE MEMORY FENCE (#211, tightened by #215) ────────────────────────────────────
+        # The fleet's first memory cap, and no longer provisional: #215 measured the forge
+        # under deliberate load and this fence is now sized by what Forgejo needs rather
+        # than by what kelpy can spare.
+        #
+        # What was measured (#215, 2026-10-18), via the cgroup-memory metric this host
+        # already exports:
+        #
+        #   idle, days after boot ........................ 101 MiB current / 134 MiB peak
+        #   charting a map: repo + 10 labels + 8 issues,
+        #     dependency edges, ~40 API calls ............ 163 MiB peak
+        #   + a 55 MB push, a clone back, 150 API calls .. 215 MiB peak
+        #   a concurrent `git gc` on that 55 MB repo ..... +73 MiB RSS, in THIS cgroup
+        #
+        # So ~215 MiB under load this forge will not see in normal use, and ~290 MiB as an
+        # absolute worst case with the cron gc landing on top of it. `memory.events` stayed
+        # all-zero throughout: the old 768M MemoryHigh was never even approached.
+        #
+        # 1G was therefore 4.8x the real ceiling. 512M is 1.8x the worst case and 2.4x the
+        # measured peak, which is the margin a fence wants and the headroom a tuning knob
+        # would not need.
         #
         # MemoryMax is the mechanism. MemoryHigh is NOT — and the intuitive reading of it
         # ("the gentler limit, so prefer it") is exactly backwards on this host. kelpy has NO
@@ -365,8 +380,14 @@ in
         # which only looks for non-active. So MemoryHigh survives here only as a brake on
         # page cache (which IS reclaimable), and MemoryMax must never be dropped in its
         # favour.
-        MemoryMax = "1G";
-        MemoryHigh = "768M";
+        #
+        # One more reason the gap between the two narrowed from 256M to 64M: on a swapless
+        # host MemoryHigh's throttle is the BAD failure (an invisible hang), and the only
+        # thing that ends it is MemoryMax's kill. A narrow gap means anonymous growth past
+        # MemoryHigh reaches MemoryMax almost immediately, so the hang has no room to last.
+        # Widening it again would restore the hang window, not add safety.
+        MemoryMax = "512M";
+        MemoryHigh = "448M";
         # A pin, not a change: systemd's DefaultOOMPolicy on this host is already `stop`
         # (measured). Stated because the fence's whole purpose is that a cgroup-local kill
         # takes down the forge and nothing else — that behaviour should be visible here
