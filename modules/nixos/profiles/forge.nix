@@ -159,6 +159,34 @@ in
       }
     ];
 
+    # ── PINNED ids, and why this is not optional on this host ─────────────────────────────
+    # Upstream's `users.users.forgejo` pins NOTHING, so the uid/gid are auto-allocated — and
+    # on kelpy that is a live hazard, because the whole state tree is persisted across a
+    # tmpfs-root reboot. If the allocation moves, every persisted file keeps the OLD numeric
+    # owner and the service can no longer read its own data. This fleet has been bitten
+    # repeatedly (stalwart and openclaw both lost state that way), which is why stump.nix
+    # pins its ids too.
+    #
+    # IT HAPPENED HERE, and it is worth recording how it hid. After kelpy's 2026-10-18
+    # reboot the map moved and forgejo spent 15 hours in `start-limit-hit` on:
+    #
+    #   [F] unable to create chunked upload directory:
+    #       /var/lib/forgejo/data/tmp/package-upload (mkdir: permission denied)
+    #
+    # The top two levels looked CORRECT — `forgejo-state-dirs` re-runs upstream's tmpfiles
+    # rules, whose `d`/`z` entries re-chown the directories they declare, so it had silently
+    # repaired `/var/lib/forgejo` and `/var/lib/forgejo/data` to the new owner. `z` is not
+    # recursive, so everything beneath kept the dead ids (980:976) and the failure read as a
+    # permissions bug rather than an ownership one. Checking only the state dir's owner — it
+    # matched — actively points away from the cause.
+    #
+    # 997:997 is kelpy's CURRENT allocation, chosen so no chown is needed to adopt the pin.
+    # ⚠ It is NOT free fleet-wide: on rk1b 997 is sshd. #211's tripwire contemplates moving
+    # this service there, and that move must re-pick these ids AND `chown -R` the tree — a
+    # redeploy will not do it for you.
+    users.users.forgejo.uid = 997;
+    users.groups.forgejo.gid = 997;
+
     services.forgejo = {
       enable = true;
       # NOT the module default. `mkPackageOption pkgs "forgejo-lts"` gives the 15.x LTS line;
