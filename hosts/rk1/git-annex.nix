@@ -44,6 +44,15 @@
     enable = true;
     sshKeyFile = config.sops.secrets.git_annex_ssh_key.path;
 
+    # PINNED to what this host already has (verified live: uid 990, gid 987, and the trees
+    # at /var/cache/{music,library} owned 990 with the shared 978/977 groups). This host had
+    # NOT drifted — the pin is prophylaxis, taken while fixing kelpy, because this is the
+    # node holding the authoritative library and a reshuffle here would stop replication
+    # silently. Deliberately DIFFERENT from kelpy's 995: replication is over SSH, so only the
+    # `music`/`library` gids must agree across hosts, and those are pinned where declared.
+    uid = 990;
+    gid = 987;
+
     repositories.music = {
       # Read from Navidrome's own MusicFolder rather than hardcoded, so the library path has a
       # single source of truth (beets.nix does the same).

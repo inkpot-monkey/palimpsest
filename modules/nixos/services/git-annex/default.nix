@@ -263,6 +263,45 @@ in
       default = { };
       description = "Declarative git-annex repositories.";
     };
+
+    # ── PINNED ids ────────────────────────────────────────────────────────────────────────
+    # Both default to null, i.e. exactly today's behaviour (auto-allocated), so no host is
+    # forced to adopt a pin it has not chowned for.
+    #
+    # WHY A HOST SHOULD SET THEM. The annex tree is persisted across a tmpfs-root reboot,
+    # and an auto-allocated id is not a stable fact: if the map moves, every file keeps the
+    # OLD numeric owner and the git-annex user can no longer read the tree it owns. On kelpy
+    # (2026-10-18) `/var/lib/git-annex` was left `drwx------ 983:979` against a live 995:995,
+    # and the consequence was not a clean stop — `git-annex-init-*` failed, and
+    # `git-annex-assistant-library` then crash-looped **5,593 times in 15 hours** (its
+    # `Restart = always` + `RestartSec = 10` can never trip systemd's 5-in-10s start limit),
+    # flooding a size-capped journal and evicting real history.
+    #
+    # THE IDS NEED NOT MATCH ACROSS HOSTS, and deliberately do not: kelpy runs 995 and rk1b
+    # 990. Replication is over SSH, not shared storage, so only the SHARING GROUP gids
+    # (`music` 977 / `library` 978) have to agree between hosts — and those are pinned where
+    # they are declared. Pin each host to the ids it ALREADY has; changing one means
+    # `chown -R` over the tree, which a redeploy will not do.
+    uid = lib.mkOption {
+      type = lib.types.nullOr lib.types.ints.positive;
+      default = null;
+      example = 995;
+      description = ''
+        Pin the `git-annex` user's uid. Leave null to let NixOS allocate one — acceptable
+        only on a host whose annex tree is not persisted across a reboot that could
+        reshuffle the map.
+      '';
+    };
+
+    gid = lib.mkOption {
+      type = lib.types.nullOr lib.types.ints.positive;
+      default = null;
+      example = 995;
+      description = ''
+        Pin the `git-annex` group's gid. See `uid`. This is the git-annex user's OWN group,
+        not a sharing group — those are declared by the profiles that share the tree.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -281,9 +320,10 @@ in
       openssh.authorizedKeys.keys = [
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKXnHps1Xb0Qbe9g+w9klMqU3yIKw0ZZ0wzjpwPrleQD git-annex@fleet"
       ];
-    };
+    }
+    // lib.optionalAttrs (cfg.uid != null) { inherit (cfg) uid; };
 
-    users.groups.git-annex = { };
+    users.groups.git-annex = lib.optionalAttrs (cfg.gid != null) { inherit (cfg) gid; };
 
     system.activationScripts.git-annex-repair = ''
       # Check if any git-annex repositories are missing their .git directory
@@ -410,6 +450,19 @@ in
             };
             # Wait for SSH key file if configured (e.g. sops secret)
             unitConfig.ConditionPathExists = lib.optional (cfg.sshKeyFile != null) cfg.sshKeyFile;
+
+            # Wait for the MOUNTS the repo lives on, same as git-annex-ssh-key above and for
+            # the same reason it needed it: on an impermanence host these paths are bind
+            # mounts, and the `install -d` below runs as root, so without this the unit can
+            # cheerfully create the tree on the tmpfs UNDERNEATH and have the mount hide it.
+            # Both paths are named because they diverge in practice — the base dir holds
+            # `.ssh`/`.gnupg` while a repo may sit on a different filesystem entirely (rk1b
+            # keeps its repos on the NVMe `/var/cache`). systemd resolves each to the nearest
+            # enclosing mount, so naming a non-mountpoint is harmless.
+            unitConfig.RequiresMountsFor = [
+              "/var/lib/git-annex"
+              repo.path
+            ];
 
             serviceConfig.ExecStartPre = [
               # Create the repository directory as root and hand it to the repo user.

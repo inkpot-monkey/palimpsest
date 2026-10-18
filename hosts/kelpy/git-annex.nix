@@ -16,6 +16,15 @@
   services.git-annex = {
     enable = true;
     sshKeyFile = config.sops.secrets.git_annex_ssh_key.path;
+
+    # PINNED to what this host already has, so adopting the pin needs no chown. Not
+    # cosmetic: the 2026-10-18 reboot moved the map out from under the persisted tree
+    # (`drwx------ 983:979` against a live 995:995), the init units failed, and the
+    # library assistant then crash-looped 5,593 times in 15 hours into a capped journal.
+    # Changing either number later means `chown -R` over /var/lib/git-annex — a redeploy
+    # will not do it. 995 is free on this host only; rk1b pins its own pair.
+    uid = 995;
+    gid = 995;
     repositories.pictures = {
       path = "/var/lib/git-annex/pictures";
       description = "kelpy-pictures";
