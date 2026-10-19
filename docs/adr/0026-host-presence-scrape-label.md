@@ -21,7 +21,7 @@ signal red; an always-on host down is the real alarm.
 
 - **Model** — `presence` is a plain key on the freeform `settings.nodes` attrset
   (`parts/settings.nix`). It is a *fact about the machine*, not a monitoring
-  policy: there is no per-host opt-out, and alert-worthiness is `presence == "always-on"`, computed in the query. (CONTEXT.md → **Always-on host** /
+  policy: there is no per-host opt-out, and alert-worthiness is `presence == "always-on"`, computed in the query. (GLOSSARY.md → **Always-on host** /
   **On-demand host**.)
 - **Label plumbing** — `server.nix`'s `makeTargets` emits one `static_config` per
   host carrying `labels.presence` (defaulting `on-demand` when a host omits the

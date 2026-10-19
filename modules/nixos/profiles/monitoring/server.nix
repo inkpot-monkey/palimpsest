@@ -15,7 +15,7 @@ let
   # case-insensitive, so the camelCase node names resolve fine.
   #
   # One static_config per host so each carries a `presence` label (always-on /
-  # on-demand, from settings.nodes — CONTEXT.md, ADR-0026). That label rides onto `up`
+  # on-demand, from settings.nodes — GLOSSARY.md, ADR-0026). That label rides onto `up`
   # and every series the target emits, letting boards derive alert-worthiness by
   # presence (an on-demand host being unreachable is expected, never a fault). A node
   # without an explicit presence defaults to on-demand (fail-safe-quiet).

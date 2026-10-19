@@ -56,7 +56,7 @@ ADR-0005's: full code-exec as that user. The boundary is therefore:
 
 - **A headless emacs daemon on kelpy running `claude-code.el`** (the original framing) —
   rejected. The emacs/`ai` home profiles are gui-only (`profiles.nix`, gated on
-  `hostFacts.granted.gui`), and kelpy can't take `gui` (an *incapacity* per CONTEXT.md, not
+  `hostFacts.granted.gui`), and kelpy can't take `gui` (an *incapacity* per GLOSSARY.md, not
   a policy). It would mean decoupling emacs from `gui`, a custom Lucid build for remote
   frames, and ghostel-in-TUI nesting — all to add **nothing** to persistence (a multiplexer
   does that), notifications (CLI hooks do that), or inject-back (`send-keys` does that).

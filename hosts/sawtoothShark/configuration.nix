@@ -109,7 +109,7 @@
       "/home/inkpotmonkey/.local/share/Anki2"
       # The ~/Pictures git-annex. Small (22 files, 1.2M of annex objects) and content IS
       # present here. kelpy carries a replica, but a replica follows a delete — two live
-      # copies are not a backup, which is the distinction CONTEXT.md's "Pictures annex"
+      # copies are not a backup, which is the distinction GLOSSARY.md's "Pictures annex"
       # entry turns on.
       "/home/inkpotmonkey/Pictures"
       # Artifacts and project material produced locally rather than fetched.

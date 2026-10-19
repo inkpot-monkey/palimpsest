@@ -385,7 +385,7 @@ in
       # passive replica of the workstation's ~/Pictures — personal photos whose only other
       # copy is that workstation. A replica is not a backup: two live copies both follow a
       # delete. (Whether the pictures annex and the Immich library should converge is open —
-      # see ADR-0034 and CONTEXT.md. Until it is settled, this tree is backed up.)
+      # see ADR-0034 and GLOSSARY.md. Until it is settled, this tree is backed up.)
       "/persistent/var/lib/git-annex"
 
       # ── Matrix: the homeserver and the bridge identities ────────────────────────────────

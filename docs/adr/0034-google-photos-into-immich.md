@@ -141,5 +141,5 @@ Personal photos exist in **two unrelated collections** — the `pictures` git-an
 (`~/Pictures` on `sawtoothShark`, replicated to a passive repo on `kelpy`) and the Immich
 library on `rk1b` — plus the Drive-download staging trees on the workstation. They are different
 data classes with different lifecycles, not two copies of one thing; see the **Pictures annex**
-and **Photo library** entries in `CONTEXT.md`. Whether they should converge, and in which
+and **Photo library** entries in `GLOSSARY.md`. Whether they should converge, and in which
 direction, is a real decision with real cost and is **not** settled by this ADR.

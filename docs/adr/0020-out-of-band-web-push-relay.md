@@ -4,7 +4,7 @@ ______________________________________________________________________
 
 ## Status: accepted (supersedes the "ntfy is the sole out-of-band channel" consequence of [ADR-0019](0019-uptime-alerting.md))
 
-[ADR-0019](0019-uptime-alerting.md) deferred the **out-of-band channel** — the notification path that shares none of `kelpy`'s failure domain — to "ntfy" (the public ntfy.sh). ntfy.sh is no longer free, so we replace it with a **self-hosted, ntfy-compatible web-push relay**: a **Cloudflare Worker written in Rust→WASM** that accepts a publish from the `rk1b` **watcher** and delivers a browser **push notification** to the operator's installed phone **PWA**. It is off-site (so it survives `kelpy` being down) and fires *only* when the Matrix delivery path itself can't deliver. See the **Push relay** and **Out-of-band channel** terms in [CONTEXT.md](../../CONTEXT.md).
+[ADR-0019](0019-uptime-alerting.md) deferred the **out-of-band channel** — the notification path that shares none of `kelpy`'s failure domain — to "ntfy" (the public ntfy.sh). ntfy.sh is no longer free, so we replace it with a **self-hosted, ntfy-compatible web-push relay**: a **Cloudflare Worker written in Rust→WASM** that accepts a publish from the `rk1b` **watcher** and delivers a browser **push notification** to the operator's installed phone **PWA**. It is off-site (so it survives `kelpy` being down) and fires *only* when the Matrix delivery path itself can't deliver. See the **Push relay** and **Out-of-band channel** terms in [GLOSSARY.md](../../GLOSSARY.md).
 
 ## Considered Options
 
