@@ -45,6 +45,11 @@ Configuration arrives by environment, all required except BOOKS_METRICS_DIR:
     BOOKS_QUIESCE_SECS   ignore anything modified more recently than this
     BOOKS_METRICS_DIR    node-exporter textfile dir; empty or absent disables metrics
 
+Run with `--dry-run <file>...` to report what a pass WOULD decide about those files, writing
+nothing and needing only BOOKS_INBOX/BOOKS_DEST/BOOKS_QUIESCE_SECS. That is the triage path for
+"why is this book still in the inbox?", and the only honest answer to "will this file?" short of
+dropping it and waiting out the timer — see `dry_run` for why guessing from the file instead is a
+trap. Exits non-zero unless every named file would be filed.
 """
 
 import os
@@ -372,6 +377,121 @@ def write_metrics(metrics_dir, stuck, started):
             scratch.unlink()
 
 
+# Stands in for the library root when it cannot be read, so `destination.exists()` is a
+# definite "no" rather than an EACCES — paired with a note saying the check did not really run.
+UNREADABLE_DEST = Path("/nonexistent/book-filer-dry-run")
+
+
+def dry_run(arguments):
+    """Report what a pass would decide about each named file. Writes nothing; returns an exit code.
+
+    This exists because "will this book file?" had no cheap answer. The only way to find out was
+    to copy the book to the filing host, wait out the timer and read a gauge — slow enough that
+    the temptation is to guess from the file instead, and guessing is a trap: the author role is
+    namespaced metadata, so `<opf:meta refines="#id" property="role">aut</opf:meta>` and `<meta
+    ...>` are the SAME element to a parser and different strings to a grep. A grep that misses it
+    concludes a book will be rejected when it will file perfectly well, and the repair it then
+    invites is an edit to an irreplaceable original. So: ask the parser, cheaply.
+
+    Two shapes of question, told apart by where the file is:
+      * under BOOKS_INBOX — the real relative path, so the subject folder, the arrival window and
+        the collision check all apply. This answers "why is this one still sitting there?".
+      * anywhere else (a download, before it is sent) — there is no subject yet, so one is
+        borrowed from `--subject` or left as a placeholder, and the arrival window is skipped.
+    """
+    subject = None
+    paths = []
+    rest = list(arguments)
+    while rest:
+        argument = rest.pop(0)
+        if argument == "--subject":
+            if not rest:
+                log("--subject needs a value")
+                return 2
+            subject = rest.pop(0)
+        else:
+            paths.append(Path(argument))
+
+    if not paths:
+        log("usage: book-filer --dry-run [--subject <Subject>] <file.epub>...")
+        return 2
+
+    configured_inbox = os.environ.get("BOOKS_INBOX", "")
+    inbox = Path(configured_inbox).resolve() if configured_inbox else None
+    quiesce = int(os.environ.get("BOOKS_QUIESCE_SECS", "0") or 0)
+
+    # The library tree is 2770 git-annex:library and the human who drops books is deliberately
+    # NOT in that group (the profile's `dropUser` explains why), so a human running this cannot
+    # stat the destination — and an unreadable root makes every collision check VACUOUSLY pass.
+    # Reporting a clean "would file" that was never actually checked is the one way this tool
+    # could do real harm, so the reachability is tested up front and said out loud.
+    configured_dest = os.environ.get("BOOKS_DEST", "")
+    dest_root = Path(configured_dest) if configured_dest else None
+    dest_readable = bool(dest_root and os.access(dest_root, os.R_OK))
+
+    now = int(time.time())
+    worst = 0
+    for path in paths:
+        print(path)
+        if not path.exists():
+            print("  verdict   no such file")
+            worst = max(worst, 1)
+            continue
+
+        resolved = path.resolve()
+        notes = []
+        relative = None
+        if inbox:
+            try:
+                relative = resolved.relative_to(inbox)
+            except ValueError:
+                relative = None
+        if relative is None:
+            relative = Path(subject or "<Subject>") / resolved.name
+            notes.append(
+                f"not under BOOKS_INBOX — subject assumed as {relative.parts[0]!r}"
+                + ("" if subject else ", pass --subject to name one")
+            )
+
+        verdict = classify(
+            resolved,
+            relative,
+            dest_root if dest_readable else UNREADABLE_DEST,
+            now,
+            quiesce if inbox and resolved.is_relative_to(inbox) else 0,
+        )
+
+        if verdict.title is not None:
+            print(f"  title     {verdict.title}")
+            print(f"  author    {verdict.author}")
+        if verdict.destination is not None:
+            # Show the real absolute path only when it IS the real root. Printing the sentinel
+            # would hand the reader a path that does not exist and invite them to go look at it.
+            print(
+                f"  filed as  {verdict.destination if dest_readable else relative.parent / verdict.destination.name}"
+            )
+        print(
+            f"  verdict   {'would file' if verdict.outcome == 'file' else verdict.outcome}"
+        )
+        # On success the composed line only restates the destination in the inbox's own terms,
+        # which for an Anna's-Archive filename is a screenful. The reasons are what need words.
+        if verdict.outcome != "file":
+            print(f"  because   {verdict.message}")
+
+        if verdict.outcome == "file" and not dest_readable:
+            notes.append(
+                "collision NOT checked: BOOKS_DEST is unset or unreadable from this account "
+                "(run it on the filing host as root to check)"
+            )
+        for note in notes:
+            print(f"  note      {note}")
+
+        if verdict.outcome != "file":
+            worst = max(worst, 1)
+
+    return worst
+
+
 def main():
     inbox = Path(os.environ["BOOKS_INBOX"])
     dest_root = Path(os.environ["BOOKS_DEST"])
@@ -417,4 +537,6 @@ def main():
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] in ("-n", "--dry-run"):
+        sys.exit(dry_run(sys.argv[2:]))
     main()

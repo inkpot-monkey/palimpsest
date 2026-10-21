@@ -340,6 +340,72 @@ pkgs.testers.nixosTest {
         assert 'books_inbox_stuck_files{reason="collision"} 1' in prom, prom
         assert machine.succeed("ls ${booksPath}/Cookery | wc -l").strip() == "2"
 
+    # ── The dry-run, checked against an inbox whose real outcomes are now known ───────────────
+    # Every assertion below names a file whose ACTUAL fate the pass above already settled, which
+    # is the only way to test a triage tool: it is useful exactly to the extent that it agrees
+    # with the filer, and worthless — worse, misleading — the moment it drifts. Hence the shared
+    # `classify`, and hence fixtures with verdicts already on disk rather than fresh ones.
+    with subtest("the dry-run reports each stuck file's real reason, and exits non-zero"):
+        for path, reason in [
+            ("${inboxPath}/Cookery/no-title.epub", "no-metadata"),
+            ("${inboxPath}/Food/collide.epub", "collision"),
+            ("${inboxPath}/loose-at-the-root.epub", "bad-path"),
+            ("${inboxPath}/Cookery/notes.pdf", "unsupported-format"),
+        ]:
+            out = machine.fail(f"book-filer-dry-run '{path}' 2>&1")
+            assert f"verdict   {reason}" in out, (path, reason, out)
+
+        # The collision verdict is only worth anything if it names what it collided WITH.
+        out = machine.fail("book-filer-dry-run ${inboxPath}/Food/collide.epub 2>&1")
+        assert "Invitation to a Banquet - Fuchsia Dunlop.epub" in out, out
+
+    with subtest("the dry-run answers the pre-drop question, role-aware, without a subject folder"):
+        # A book still sitting in Downloads, not yet sent anywhere — the question that motivated
+        # this tool. Note the `.epub` name: the fixture store paths have no extension, and the
+        # dry-run honours the extension rule exactly as the filer does (asserted just below), so
+        # giving it a realistic name is part of posing the realistic question.
+        machine.succeed("cp ${cleanEpub} /tmp/pre-drop.epub")
+
+        # `cleanEpub` lists a TRANSLATOR first, so a dry-run that is not role-aware reports the
+        # wrong name here — the same mistake the filer itself is tested against above.
+        out = machine.succeed("book-filer-dry-run --subject Nature /tmp/pre-drop.epub 2>&1")
+        assert "verdict   would file" in out, out
+        # ABSOLUTE, because the test driver is root and can therefore read the corpus — which is
+        # the proof that the collision half of the verdict actually ran. An unprivileged caller
+        # gets the relative form plus the "NOT checked" caveat instead (asserted below).
+        assert (
+            "filed as  ${booksPath}/Nature/Invitation to a Banquet - Fuchsia Dunlop.epub" in out
+        ), out
+        assert "Translator" not in out, out
+
+        # With no --subject it still answers the metadata half rather than refusing.
+        out = machine.succeed("book-filer-dry-run /tmp/pre-drop.epub 2>&1")
+        assert "author    Fuchsia Dunlop" in out, out
+        assert "pass --subject to name one" in out, out
+
+        # The same bytes under a name with no extension are REFUSED, because the filer would
+        # refuse them. A triage tool that is more permissive than the thing it predicts is the
+        # failure mode worth guarding: it would promise a filing that never happens.
+        out = machine.fail("book-filer-dry-run --subject Nature ${cleanEpub} 2>&1")
+        assert "verdict   unsupported-format" in out, out
+
+    with subtest("the dry-run never claims a collision check it could not perform"):
+        # The human who drops books is NOT in `library`, so they cannot stat the corpus and the
+        # collision check is vacuous for them. A confident "would file" there is the one way this
+        # tool could do harm, so the caveat is load-bearing: collide.epub WOULD collide, and as
+        # this user the dry-run must not pretend otherwise.
+        out = machine.succeed("su inkpotmonkey -c 'book-filer-dry-run ${inboxPath}/Food/collide.epub' 2>&1")
+        assert "collision NOT checked" in out, out
+        # Same file, same tool, as root: the check runs for real and the verdict flips.
+        assert "verdict   collision" in machine.fail("book-filer-dry-run ${inboxPath}/Food/collide.epub 2>&1")
+
+    with subtest("the dry-run writes nothing: it is safe to point at the live inbox"):
+        before = machine.succeed("find ${inboxPath} ${booksPath} ${stagingPath} -printf '%p %s\\n' | sort")
+        machine.succeed("book-filer-dry-run --subject Nature /tmp/pre-drop.epub >/dev/null 2>&1")
+        machine.fail("book-filer-dry-run ${inboxPath}/Cookery/no-title.epub >/dev/null 2>&1")
+        after = machine.succeed("find ${inboxPath} ${booksPath} ${stagingPath} -printf '%p %s\\n' | sort")
+        assert before == after, (before, after)
+
     with subtest("the timer is armed, so filing happens without anyone starting a unit"):
         machine.succeed("systemctl is-active book-filer.timer")
   '';

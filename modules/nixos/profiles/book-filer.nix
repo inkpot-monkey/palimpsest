@@ -74,6 +74,20 @@ let
     exec ${pkgs.python3}/bin/python ${./book-filer.py}
   '';
 
+  # `book-filer-dry-run <file>…` — what WOULD this pass decide? It shares the service's
+  # environment on purpose: a triage tool pointed at a different inbox or a different library
+  # than the filer actually uses would answer confidently about the wrong tree. It needs no
+  # privilege to read metadata, so the human who drops books can run it against their own
+  # download before sending it — but the corpus is 2770 and that human is deliberately not in
+  # `library`, so the collision half only really runs under sudo. The tool says so rather than
+  # implying a check it could not make.
+  dryRun = pkgs.writeShellScriptBin "book-filer-dry-run" ''
+    export BOOKS_INBOX=${lib.escapeShellArg cfg.inboxPath}
+    export BOOKS_DEST=${lib.escapeShellArg cfg.destPath}
+    export BOOKS_QUIESCE_SECS=${toString cfg.quiesceSeconds}
+    exec ${pkgs.python3}/bin/python ${./book-filer.py} --dry-run "$@"
+  '';
+
   # The library tree's own convention (hosts/rk1/library.nix): setgid so group `library` flows
   # down to everything created inside, and no world access — these are personal documents.
   treeDirMode = "2770";
@@ -210,6 +224,11 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # Discoverability is the point of putting this on PATH: the question it answers ("will this
+    # book file?") arrives while a human is holding a download, so the answer has to be a command
+    # on the filing host, not a script they must remember lives in the nixos repo.
+    environment.systemPackages = [ dryRun ];
+
     assertions = [
       {
         # The filer writes into a tree it does not create; without the library repository it

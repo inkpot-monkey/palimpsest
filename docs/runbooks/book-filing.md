@@ -39,6 +39,54 @@ It never overwrites, never renames around a collision, never deletes, and never 
 Every failure leaves your file **exactly where you put it**. Nothing is ever lost by dropping a
 book that cannot be filed — it just sits there until you deal with it.
 
+## Asking what will happen, before it happens
+
+`book-filer-dry-run` reports what a pass would decide about a file and writes nothing. Use it
+instead of guessing from the file, and instead of dropping a book to find out:
+
+```console
+$ ssh rk1b "book-filer-dry-run --subject Fiction '/tmp/Violeta … Anna'\''s Archive.epub'"
+/tmp/Violeta … Anna's Archive.epub
+  title     Violeta [English Edition]: A Novel
+  author    Isabel Allende
+  filed as  Fiction/Violeta [English Edition]: A Novel - Isabel Allende.epub
+  verdict   would file
+  note      not under BOOKS_INBOX — subject assumed as 'Fiction'
+  note      collision NOT checked: BOOKS_DEST is unset or unreadable from this account …
+```
+
+It exits 0 only if every file named would be filed, so it chains:
+
+```console
+$ book-filer-dry-run --subject Fiction book.epub && scp book.epub rk1b:/var/cache/books-inbox/Fiction/
+```
+
+Point it at a file already **in** the inbox and it uses the real path, so the subject folder, the
+arrival window and the collision check all apply — this is the fastest answer to "why is this one
+still sitting there?", and it agrees with the stuck-file gauge by construction (both come from the
+same `classify` function in `book-filer.py`).
+
+**Mind the two caveats it prints.** `collision NOT checked` means exactly that: the corpus is
+`2770 git-annex:library` and the account that drops books is deliberately outside that group, so
+a human cannot stat the destination and the collision half of the verdict never ran. Use `sudo`
+on rk1b for a verdict that includes it. And `subject assumed` means the subject folder is a guess
+from `--subject` (or a placeholder) rather than where the file actually is.
+
+### Do not diagnose an EPUB with a grep
+
+The dry-run exists because the obvious shortcut is wrong. The author role is **namespaced**
+metadata, so these two are the same element to a parser and different strings to `grep`:
+
+```xml
+<meta     refines="#id-1" property="role">aut</meta>
+<opf:meta refines="#id-1" property="role">aut</opf:meta>
+```
+
+A grep for `<meta` misses the second spelling, concludes the book declares no author, and predicts
+a `no-metadata` rejection for a file that would have filed perfectly well — and the "repair" that
+follows edits an irreplaceable original for nothing. Ask the dry-run, which asks the parser the
+filer uses.
+
 ## Finding out that something is stuck
 
 ```console
@@ -68,17 +116,22 @@ The EPUB has no usable `dc:title` / `dc:creator` — empty, absent, or only non-
 (translators, editors). Also covers a file that will not open as an EPUB at all: a truncated
 download, or something with the wrong extension.
 
-Repair the metadata by hand and re-drop. Deliberately out of scope for the filer — there is no
-Google Books or OpenLibrary lookup, by design:
+First confirm the filer really cannot read it — `book-filer-dry-run <file>` prints the title and
+author it resolves, and a grep over the OPF does not (see above). If it genuinely has none, repair
+the metadata by hand and re-drop. Deliberately out of scope for the filer — there is no Google
+Books or OpenLibrary lookup, by design:
 
 ```console
 $ nix shell nixpkgs#calibre -c ebook-meta book.epub --title 'Real Title' --authors 'Real Author'
 ```
 
-Then check it took, and re-drop:
+Then check it took — with the dry-run, not `ebook-meta`, because the two disagree. `ebook-meta`
+reports the author it would *display*, which can be right while the OPF it wrote is still wrong:
+`--authors` does not remove a `dc:creator` already in the file, so a book whose only declared role
+is `trl` keeps that role and keeps being declined. The dry-run reads it the way the filer does:
 
 ```console
-$ nix shell nixpkgs#calibre -c ebook-meta book.epub
+$ book-filer-dry-run --subject Fiction book.epub
 ```
 
 ### `collision`
