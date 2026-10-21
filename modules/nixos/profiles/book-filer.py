@@ -44,6 +44,7 @@ Configuration arrives by environment, all required except BOOKS_METRICS_DIR:
     BOOKS_GROUP          group the filed files/dirs must carry
     BOOKS_QUIESCE_SECS   ignore anything modified more recently than this
     BOOKS_METRICS_DIR    node-exporter textfile dir; empty or absent disables metrics
+
 """
 
 import os
@@ -52,6 +53,7 @@ import sys
 import time
 import zipfile
 from pathlib import Path
+from typing import NamedTuple
 from xml.etree import ElementTree
 
 # OPF/EPUB namespaces. `dc` is where the metadata actually lives; `opf` carries the role
@@ -168,6 +170,109 @@ def filed_name(title, author):
     return f"{stem}.epub"
 
 
+class Verdict(NamedTuple):
+    """What a pass has decided about one file, BEFORE anything has been done about it.
+
+    `outcome` is `file`, `waiting` (still arriving — ask again next pass), `ignore` (not a file
+    anyone is waiting on) or one of REASONS. `message` is the operator-facing line, composed here
+    so the journal and the dry-run say the same words about the same file.
+    """
+
+    outcome: str
+    message: str
+    title: str | None = None
+    author: str | None = None
+    destination: Path | None = None
+
+
+def classify(source, relative, dest_root, now, quiesce):
+    """Decide what should happen to `source`. Reads only — nothing here moves or writes anything.
+
+    Every judgement a pass makes lives in this one function, and the caller owns the consequences
+    (logging, counting, actually filing). That split is what `--dry-run` is built on: a triage
+    tool that reimplemented these rules would be worse than none at all, because it would be
+    believed in exactly the cases where it had drifted.
+    """
+    # Hidden files are somebody else's business — an in-flight rsync temp, an editor swapfile, a
+    # macOS `._` turd. Ignored rather than counted: they are not files a human is waiting on, and
+    # counting them would make the gauge cry wolf.
+    if any(part.startswith(".") for part in relative.parts):
+        return Verdict("ignore", f"hidden, not ours to touch: {relative}")
+
+    # THE QUIESCENCE GATE, and the reason it comes before every other check. `scp` writes in
+    # place with no temp-and-rename, so a run can meet a half-arrived book — whose OPF is
+    # unreadable, and which would therefore report as `no-metadata` and bump the gauge, only
+    # to file cleanly two minutes later. That would teach you to ignore the gauge. Keeping
+    # "still arriving" and "genuinely broken" as distinct states is the whole point.
+    #
+    # A zero window disables it, which is what a dry-run over a file that is NOT in the inbox
+    # wants: that question is about the file's CONTENT, and its mtime is then meaningless.
+    if quiesce and now - source.stat().st_mtime < quiesce:
+        return Verdict(
+            "waiting", f"still arriving, leaving for the next pass: {relative}"
+        )
+
+    # The subject folder IS the curation decision (ADR-0031: the libraries are SERIES_BASED,
+    # one folder is one series), and it is the one input only a human can supply. A book
+    # dropped at the inbox root has not been given a subject, and filing it to the `books/`
+    # root would create a seriesless orphan in a library whose scan pattern is immutable.
+    if len(relative.parts) < 2:
+        return Verdict(
+            "bad-path",
+            f"no subject folder (drop it in books-inbox/<Subject>/): {relative}",
+        )
+
+    if source.suffix.lower() != ".epub":
+        # Out of scope by decision, not oversight — but COUNTED, so a PDF you meant to file
+        # surfaces as "needs a human" instead of sitting in the inbox invisibly forever.
+        return Verdict(
+            "unsupported-format", f"not an EPUB, leaving in place: {relative}"
+        )
+
+    try:
+        title, author = read_epub_metadata(source)
+    except (zipfile.BadZipFile, KeyError, ElementTree.ParseError, OSError) as exc:
+        return Verdict(
+            "no-metadata", f"unreadable EPUB, leaving in place: {relative} ({exc})"
+        )
+
+    if not title or not author:
+        return Verdict(
+            "no-metadata",
+            f"no usable dc:title/dc:creator, leaving in place: {relative} "
+            "(repair with `ebook-meta` and re-drop)",
+            title,
+            author,
+        )
+
+    name = filed_name(title, author)
+    if not name:
+        return Verdict(
+            "no-metadata",
+            f"metadata sanitises to an empty name, leaving in place: {relative}",
+            title,
+            author,
+        )
+
+    destination = dest_root / relative.parent / name
+    if destination.exists():
+        return Verdict(
+            "collision",
+            f"destination exists, refusing to overwrite: {relative} -> {destination}",
+            title,
+            author,
+            destination,
+        )
+
+    return Verdict(
+        "file",
+        f"filed {relative} -> {destination.relative_to(dest_root)}",
+        title,
+        author,
+        destination,
+    )
+
+
 def ensure_dir(path):
     """Create `path` (and parents) inside the tree with the tree's own convention.
 
@@ -280,71 +385,27 @@ def main():
 
     for source in sorted(p for p in inbox.rglob("*") if p.is_file()):
         relative = source.relative_to(inbox)
+        verdict = classify(source, relative, dest_root, started, quiesce)
 
-        # Hidden files are somebody else's business — an in-flight rsync temp, an editor
-        # swapfile, a macOS `._` turd. Skipped silently and NOT counted: they are not files a
-        # human is waiting on, and counting them would make the gauge cry wolf.
-        if any(part.startswith(".") for part in relative.parts):
+        # `ignore` is the one outcome that stays out of the journal entirely — see classify.
+        if verdict.outcome == "ignore":
             continue
 
-        # THE QUIESCENCE GATE, and the reason it comes before every other check. `scp` writes in
-        # place with no temp-and-rename, so a run can meet a half-arrived book — whose OPF is
-        # unreadable, and which would therefore report as `no-metadata` and bump the gauge, only
-        # to file cleanly two minutes later. That would teach you to ignore the gauge. Keeping
-        # "still arriving" and "genuinely broken" as distinct states is the whole point.
-        if started - source.stat().st_mtime < quiesce:
-            log(f"still arriving, leaving for the next pass: {relative}")
+        if verdict.outcome == "waiting":
+            log(verdict.message)
             continue
 
-        # The subject folder IS the curation decision (ADR-0031: the libraries are SERIES_BASED,
-        # one folder is one series), and it is the one input only a human can supply. A book
-        # dropped at the inbox root has not been given a subject, and filing it to the `books/`
-        # root would create a seriesless orphan in a library whose scan pattern is immutable.
-        if len(relative.parts) < 2:
-            log(f"no subject folder (drop it in books-inbox/<Subject>/): {relative}")
-            stuck["bad-path"] += 1
-            continue
-
-        if source.suffix.lower() != ".epub":
-            # Out of scope by decision, not oversight — but COUNTED, so a PDF you meant to file
-            # surfaces as "needs a human" instead of sitting in the inbox invisibly forever.
-            log(f"not an EPUB, leaving in place: {relative}")
-            stuck["unsupported-format"] += 1
+        if verdict.outcome != "file":
+            log(verdict.message)
+            stuck[verdict.outcome] += 1
             continue
 
         try:
-            title, author = read_epub_metadata(source)
-        except (zipfile.BadZipFile, KeyError, ElementTree.ParseError, OSError) as exc:
-            log(f"unreadable EPUB, leaving in place: {relative} ({exc})")
-            stuck["no-metadata"] += 1
-            continue
-
-        if not title or not author:
-            log(
-                f"no usable dc:title/dc:creator, leaving in place: {relative} "
-                "(repair with `ebook-meta` and re-drop)"
-            )
-            stuck["no-metadata"] += 1
-            continue
-
-        name = filed_name(title, author)
-        if not name:
-            log(f"metadata sanitises to an empty name, leaving in place: {relative}")
-            stuck["no-metadata"] += 1
-            continue
-
-        destination = dest_root / relative.parent / name
-        if destination.exists():
-            log(
-                f"destination exists, refusing to overwrite: {relative} -> {destination}"
-            )
-            stuck["collision"] += 1
-            continue
-
-        try:
-            if file_book(source, destination, staging):
+            # The success line is logged only once the move has actually happened, so a failed
+            # file_book never leaves "filed X" in the journal for a book still in the inbox.
+            if file_book(source, verdict.destination, staging):
                 filed += 1
-                log(f"filed {relative} -> {destination.relative_to(dest_root)}")
+                log(verdict.message)
         except OSError as exc:
             log(f"failed to file {relative}: {exc}")
             stuck["no-metadata"] += 1
