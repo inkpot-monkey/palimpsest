@@ -36,11 +36,21 @@
         vaultwarden_dump_freshness = import ./vaultwarden-dump-freshness {
           inherit pkgs self;
         };
-        # The nightly paperless dump script (modules/nixos/profiles/paperless-db-dump.nix). The
-        # document index is the half of a paperless archive that cannot be copied live, so this
-        # proves the dump is a complete standalone database that reads back intact, that a
-        # garbage source leaves no half-dump behind, that a schema change degrades the journal
-        # line instead of losing a good dump, and that retention keeps the newest.
+        # The paperless dump-freshness guard (hosts/kelpy/configuration.nix). Scanned paper has
+        # the vault's two-halves shape: `media/` holds the originals as inert files, and
+        # `db.sqlite3` holds the only record of what any of them ARE — correspondents, tags,
+        # dates, OCR content, and the row-to-file mapping. The live database is excluded for the
+        # same WAL reason the vault's is, so this pins that the guard refuses when the nightly
+        # dump stops, including over a full media tree and a live database sitting in the very
+        # directory it globs.
+        paperless_dump_freshness = import ./paperless-dump-freshness {
+          inherit pkgs self;
+        };
+        # ...and the script that PRODUCES that dump. The gate above only proves a fresh file
+        # exists; this proves the file is a complete standalone database that reads back intact,
+        # that a garbage source leaves no half-dump behind to make the gate green over an
+        # unopenable index, that a schema change degrades the journal line instead of losing a
+        # good dump, and that retention keeps the newest rather than the oldest.
         paperless_db_dump = import ./paperless-db-dump {
           inherit pkgs self;
         };

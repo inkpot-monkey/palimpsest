@@ -39,6 +39,60 @@ let
     dumpDir = vaultStateDir;
     maxAgeSeconds = maxVaultDumpAgeSeconds;
   };
+
+  # ── The same arrangement for paperless, for the same reason ──────────────────────────────
+  # Scanned paper has the same two-halves shape the vault does, and the half that cannot be
+  # copied is the same kind of file. `media/` holds the originals as inert files, which restic
+  # ships verbatim; `db.sqlite3` holds the only record of what they ARE — correspondent, type,
+  # tags, dates, the OCR'd content, and the mapping from a row to a file on disk — and it is
+  # open with WAL. A file-level copy of it is a torn page set beside a `-wal`/`-shm` pair no
+  # backup tool can capture in the same instant, so it is EXCLUDED below and the nightly
+  # `VACUUM INTO` dump travels in its place (modules/nixos/profiles/paperless-db-dump.nix).
+  #
+  # Restore the media without that dump and what comes back is a directory of PDFs named by a
+  # format string. Every byte is present and the archive is gone.
+  paperlessStateDir = "/persistent${config.services.paperless.dataDir}";
+
+  # 20h, by the same arithmetic as the vault's: the dump timer fires at 02:45 and this job runs
+  # at 03:00/15:00, so a healthy dump is 0.25h old at the first run and 12.25h at the second,
+  # while a single MISSED dump puts those at 24.25h and 36.25h — and both fail. Strict for the
+  # same reason: the dump unit verifies its own artifact and alerts when it cannot, so a miss
+  # here is a bug on this host rather than weather, and the first one should be loud.
+  maxPaperlessDumpAgeSeconds = 20 * 60 * 60;
+
+  requireFreshPaperlessDump = import ../../modules/nixos/profiles/paperless-dump-freshness.nix {
+    inherit pkgs;
+    dumpDir = paperlessStateDir;
+    maxAgeSeconds = maxPaperlessDumpAgeSeconds;
+  };
+
+  # Every live-database gate this job must pass. The LIST is the thing an edit touches, and the
+  # assertions below require each gate to still be in it — so dropping one is a build failure
+  # rather than a silently weaker backup. (Asserting on the composed script's text instead would
+  # mean `builtins.readFile` on a derivation output, i.e. building a script to evaluate a host.)
+  backupGates = [
+    requireFreshVaultDump
+    requireFreshPaperlessDump
+  ];
+
+  # BOTH gates, and both RUN even when the first refuses. The naive composition — one gate then
+  # the other under `set -e` — would hide the second service's state behind the first's, so a
+  # night on which both dumps had stopped would be two nights of diagnosis. Each gate prints its
+  # own verdict; the exit code is the OR of the failures.
+  #
+  # Still one `backupPrepareCommand`, because that is what the restic module takes: a string,
+  # which it places in the unit's preStart.
+  requireFreshDumps = pkgs.writeShellScript "kelpy-backup-prepare" (
+    ''
+      rc=0
+    ''
+    + lib.concatMapStrings (gate: ''
+      ${gate} || rc=1
+    '') backupGates
+    + ''
+      exit "$rc"
+    ''
+  );
 in
 {
   imports = [
@@ -430,7 +484,7 @@ in
         "logs churn every night, so they both inflate each snapshot and defeat restic's dedup — and no restore anyone wants starts by recovering last week's journal";
       "/var/cache/private" = "a cache; rebuilt by whatever filled it";
       "/var/lib/redis-paperless" =
-        "paperless's redis is a work queue and a cache, rebuilt on start from the postgres state that IS backed up";
+        "paperless's redis is a work queue and a cache, rebuilt on start from the document database that IS backed up (as a dump; this host runs paperless on SQLite, not postgres as this line used to claim)";
       "/var/lib/caddy" =
         "certificates re-issue automatically over DNS-01, and nothing else here survives a restore usefully";
       "/var/lib/tailscale" =
@@ -477,13 +531,30 @@ in
       # scanned originals land.
       "/persistent/var/lib/paperless/log"
       "/persistent/var/lib/paperless/index"
+
+      # ── And the second correctness exclusion, the vault's argument applied to paper ───────
+      # Paperless's LIVE database and the two files SQLite keeps beside it, excluded for the
+      # reason the vault's triple above is: open with WAL, so what a file-level copy restores
+      # is a torn page set at best and an index days behind its own media at worst. The
+      # `db_<UTC>.sqlite3` dumps written by paperless-db-dump.service sit in this same
+      # directory and are NOT matched by these patterns (no underscore in `db.sqlite3`), so
+      # they travel.
+      #
+      # ⚠ Same pairing as the vault, same failure if half of it is edited away: without the
+      # dump these three lines mean "back up the paper and not the archive". The assertion
+      # below holds the pair together.
+      "${paperlessStateDir}/db.sqlite3"
+      "${paperlessStateDir}/db.sqlite3-wal"
+      "${paperlessStateDir}/db.sqlite3-shm"
     ];
 
-    # Refuse the job if the vault's dump has stopped. See maxVaultDumpAgeSeconds above for the
-    # threshold and modules/nixos/profiles/vaultwarden-dump-freshness.nix for why this is a
-    # hard failure: with the live database excluded, a snapshot taken without a fresh dump
-    # carries the attachments and NO VAULT, and restic would report success over it.
-    settings.backupPrepareCommand = "${requireFreshVaultDump}";
+    # Refuse the job if EITHER live-database service's dump has stopped — the vault's or
+    # paperless's. See maxVaultDumpAgeSeconds / maxPaperlessDumpAgeSeconds above for the
+    # thresholds and the two `*-dump-freshness.nix` modules for why this is a hard failure
+    # rather than a warning: with a live database excluded, a snapshot taken without its fresh
+    # dump carries the attachments and NO VAULT, or the scanned paper and no record of what any
+    # of it is — and restic would report success over either.
+    settings.backupPrepareCommand = "${requireFreshDumps}";
   };
 
   # ⚠ FENCE THE BACKUP, because this host has already shown what an unfenced service does to
@@ -528,13 +599,33 @@ in
       # whose absence no longer matters. Neither mistake shows up in a build or a test run, so
       # it is asserted — the same move the ADR-0031 guard above makes, and for the same reason
       # (a comment cannot stop the edit).
+      #
+      # ⚠ It names THIS guard in `backupGates` and pins the job to the composed script, not
+      # just that SOME backupPrepareCommand is set. There are two gates now, and a `!= ""` test
+      # would have gone on passing with either of them deleted — which is exactly the half-edit
+      # the assertion exists to catch.
       assertion =
         vw.enable
         -> (
           lib.elem "${vaultStateDir}/db.sqlite3" config.custom.profiles.backup.jobs.daily.exclude
-          && (config.custom.profiles.backup.jobs.daily.settings.backupPrepareCommand or "") != ""
+          && lib.elem "${requireFreshVaultDump}" (map toString backupGates)
+          && config.custom.profiles.backup.jobs.daily.settings.backupPrepareCommand == "${requireFreshDumps}"
         );
-      message = "hosts/kelpy: the vault is enabled, so its live db.sqlite3 must stay excluded from the daily job AND that job must keep a backupPrepareCommand gating the dump's freshness (users#57). One without the other is a backup that quietly contains no vault, or a job that fails for no reason.";
+      message = "hosts/kelpy: the vault is enabled, so its live db.sqlite3 must stay excluded from the daily job AND that job's backupPrepareCommand must still invoke the vault's freshness gate (users#57). One without the other is a backup that quietly contains no vault, or a job that fails for no reason.";
+    }
+    {
+      # The same pair, for paperless. Scanned paper is the thing the operator threw the originals
+      # away for, and its index is the half that cannot be copied live — so the exclude and the
+      # gate are one decision here too, and either half alone fails the same two ways.
+      assertion =
+        config.custom.profiles.paperless.enable
+        -> (
+          config.custom.profiles.paperless.dump.enable
+          && lib.elem "${paperlessStateDir}/db.sqlite3" config.custom.profiles.backup.jobs.daily.exclude
+          && lib.elem "${requireFreshPaperlessDump}" (map toString backupGates)
+          && config.custom.profiles.backup.jobs.daily.settings.backupPrepareCommand == "${requireFreshDumps}"
+        );
+      message = "hosts/kelpy: paperless is enabled, so its nightly dump must stay on (custom.profiles.paperless.dump.enable), its live db.sqlite3 must stay excluded from the daily job, AND that job's backupPrepareCommand must still invoke the paperless freshness gate. Any one of the three missing is a snapshot holding scanned documents with no record of what they are — correspondents, tags, dates, OCR content and the row-to-file mapping all live in that database.";
     }
   ];
 
