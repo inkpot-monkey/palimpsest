@@ -36,6 +36,14 @@
         vaultwarden_dump_freshness = import ./vaultwarden-dump-freshness {
           inherit pkgs self;
         };
+        # The nightly paperless dump script (modules/nixos/profiles/paperless-db-dump.nix). The
+        # document index is the half of a paperless archive that cannot be copied live, so this
+        # proves the dump is a complete standalone database that reads back intact, that a
+        # garbage source leaves no half-dump behind, that a schema change degrades the journal
+        # line instead of losing a good dump, and that retention keeps the newest.
+        paperless_db_dump = import ./paperless-db-dump {
+          inherit pkgs self;
+        };
         # The tailnet guard's route order (palimpsest#218's deferred follow-up). `internal_only`
         # is the whole of the access control on every private service, and a bare `abort` loses
         # Caddy's directive order to the vhost's own matcher-less handle — which is how vault,
