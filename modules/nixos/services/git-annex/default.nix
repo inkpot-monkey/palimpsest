@@ -20,32 +20,46 @@ in
       description = ''
         The git-annex package every unit here runs.
 
-        The default skips ONE test. git-annex runs its suite at build time, and the
-        nixpkgs bump to 2026-09-28 fails on `bup remote`:
+        ⚠ THE SUITE IS OFF (2026-11-09, temporary — see the end of this note).
+
+        git-annex runs its tests at build time, and this fleet always builds it: the
+        package is NOT substitutable at this nixpkgs rev, overridden or not. Measured
+        2026-11-09, both narinfos are 404 on cache.nixos.org:
+
+            r2xbnslcwcwbwcrbsqa5xzsd8c1ssi9x  (plain pkgs.git-annex)
+            inyvz6d05j49y9zcqxx4852vgvvj1zm7  (this override)
+
+        So dropping the override buys nothing — there is no cached binary behind it —
+        and the whole Haskell closure compiles on whichever machine runs the deploy.
+        What the suite adds on top of that compile is pure wall-clock on every
+        `nixos-rebuild` of kelpy, rk1b and sawtoothShark, for a package nixpkgs has
+        already tested upstream.
+
+        WHAT THIS GAVE UP. The previous default ran 6 of the 7 test groups and skipped
+        one, `bup remote`, via `checkFlags` reaching tasty directly (nixpkgs' checkPhase
+        is literally `git-annex test $checkFlags`) — chosen over `dontCheck` precisely
+        so the other six kept running. That skip was for a bup-side bug in how it parses
+        a local remote path, which the 2026-09-28 bump exposed:
 
             initremote failed with unexpected exit code
             error: remote /build/.../tmprepo0/dir has no colon
             git-annex: bup init failed
 
-        That is a bup-side bug about how it parses a local remote path, not a
-        git-annex fault and nothing to do with this fleet's config — 6 of the 7 test
-        groups pass, and the one that fails takes the whole build down, and with it
-        every deploy of a host that runs git-annex.
+        Not a git-annex fault, and nothing this fleet can reach — ssh and rsync special
+        remotes only, no bup anywhere.
 
-        `checkFlags` reaches tasty directly (nixpkgs' checkPhase is literally
-        `git-annex test $checkFlags`), so the skip is that one group by name rather
-        than `dontCheck`, which would have thrown away the other six. This fleet uses
-        ssh and rsync special remotes and no bup anywhere, so what is skipped is a
-        test for a remote type nothing here can reach.
+        ⚠ REVISIT, and do not let "for now" become the permanent state. Two things end
+        it, and either is better than this: nixpkgs carrying a fixed bup (restore the
+        `checkFlags` form below, which is still the right shape), or git-annex becoming
+        substitutable again at the pinned rev (drop the override entirely and the
+        question disappears). Check the narinfos above before assuming neither has
+        happened.
 
-        Same shape as the music-assistant skip in profiles/music-assistant.nix.
-        Revisit when nixpkgs carries a fixed bup.
+            # the form to restore:
+            # checkFlags = (old.checkFlags or [ ]) ++ [ "-p" "!/bup/" ];
       '';
-      default = pkgs.git-annex.overrideAttrs (old: {
-        checkFlags = (old.checkFlags or [ ]) ++ [
-          "-p"
-          "!/bup/"
-        ];
+      default = pkgs.git-annex.overrideAttrs (_old: {
+        doCheck = false;
       });
     };
 
