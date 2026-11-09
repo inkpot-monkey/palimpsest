@@ -10,6 +10,14 @@ result-*
 # Direnv environment loader
 .direnv
 
+# Local credentials loaded by hand (e.g. CACHIX_AUTH_TOKEN for a cache push).
+# Named here and not only in ~/.config/git/ignore: a global ignore protects THIS
+# checkout on THIS machine, and nothing at all in a fresh clone — which is the one
+# place a stray `git add -A` would commit a live token.
+.env
+.env.*
+!.env.example
+
 # SSH keys generated for bootstrapping (should not be committed)
 keys/
 !users/*/keys
