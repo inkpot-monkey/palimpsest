@@ -15,13 +15,21 @@ let
 
   matrixSecrets = self.lib.getSecretFile "matrix";
 
-  # GitHub profile picture, pinned by content hash so the avatar is reproducible
-  # (https://github.com/inkpot-monkey.png — 460x460 PNG). Uploaded once to the
-  # homeserver media repo and set as the admin avatar by registerAdmin below.
-  adminAvatar = pkgs.fetchurl {
-    url = "https://github.com/inkpot-monkey.png";
-    hash = "sha256-8pj6GjyU1qBZuDckMIhPEN8AKLxR6meHbAm3v7LKHgY=";
-  };
+  # GitHub profile picture (460x460 RGBA PNG), uploaded once to the homeserver media
+  # repo and set as the admin avatar by registerAdmin below.
+  #
+  # ⚠ VENDORED, not fetched, and the reason is worth keeping. This used to be a
+  # `pkgs.fetchurl` of https://github.com/inkpot-monkey.png pinned by content hash — which
+  # reads like reproducibility and is the opposite of it: the URL is MUTABLE, so when GitHub
+  # re-encoded the bytes behind it (2026-11-08, same image, different file) the pin went stale
+  # and EVERY kelpy build broke, with no commit between the green one and the red one. The
+  # failure cascades a long way from its cause: fetchurl → tuwunel-register-admin →
+  # system-units → etc → toplevel, i.e. "cannot build the host" over a cosmetic avatar.
+  #
+  # A fixed-output derivation over someone else's CDN is a time bomb by construction: the
+  # hash promises the bytes do not change, and nothing on that side promises it back. 352 KiB
+  # committed once, that will never churn, buys the property the pin only claimed.
+  adminAvatar = ./inkpot-monkey.png;
 
   # Populate tuwunel's appservice_dir from the loaded credentials at start.
   # Runs as the service user (which can read $CREDENTIALS_DIRECTORY and write the
