@@ -170,6 +170,30 @@ in
       (lib.mkIf cfg.dump.enable {
         paperless-db-dump = {
           description = "Take a consistent VACUUM INTO dump of the paperless document database";
+          # ⚠ ALSO RUN AT ACTIVATION AND BOOT, not only on the timer. This closes a
+          # BOOTSTRAP HOLE that took kelpy's backup down on 2026-11-10, the very first
+          # deploy carrying it:
+          #
+          #   restic-backups-daily-rsyncnet-pre-start:
+          #     paperless-dump-freshness: no db_*.sqlite3 in /persistent/var/lib/paperless.
+          #     ... Refusing.
+          #
+          # The gate in hosts/kelpy refuses the job when no dump exists — correctly, that
+          # is its whole job — but on a fresh deploy the timer has not fired yet, so there
+          # IS no dump, so the gate refused, so NOTHING was backed up. Not just paperless:
+          # the mail store and the vault too, the two things on that host which exist
+          # nowhere else. A guard meant to protect one service had switched off the
+          # backup for all of them, and would have stayed off until 02:45.
+          #
+          # `wantedBy multi-user.target` on a `oneshot` with no `RemainAfterExit` means
+          # switch-to-configuration starts it on every switch, and systemd on every boot,
+          # so an artifact exists from the moment the profile lands. A VACUUM INTO of a
+          # single-digit-MB index is instant, and retention still prunes to `keep`.
+          #
+          # The vault's dump unit next door has the same shape and the same latent hole;
+          # it never fired only because its dumps predated its gate. Worth the same line
+          # if a second host ever enables it.
+          wantedBy = [ "multi-user.target" ];
           # NO `after = [ "paperless-web.service" ]` and no dependency on the service at all:
           # `VACUUM INTO` opens its own SQLite connection, so a dump does not need paperless
           # running — and must not be able to start it, nor be skipped because it is stopped.
