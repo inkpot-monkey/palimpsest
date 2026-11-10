@@ -12,6 +12,37 @@
     # back in VERSION without being abandoned. A pinned rev would rot.
     nixpkgs-stable.url = "github:nixos/nixpkgs/nixos-26.05";
 
+    # A FROZEN nixpkgs, held at the rev this fleet ran before the 2026-11-09 bump, used
+    # for ONE package: the in-repo `stump` (pkgs/stump).
+    #
+    # WHY IT CANNOT GO TO `nixpkgs-stable` like the others: stump is not in the stable
+    # branch at all, and it is OUR derivation rather than upstream's — so there is no
+    # pre-built binary anywhere to point at. Building our file against stable's package
+    # set would produce a new store path and therefore a from-source Rust build, which is
+    # the exact cost this avoids. Built against THIS rev it reproduces
+    # `dgfx0q5dmk5gvhnvfx6szqw1s6vjgp0v-stump-0.1.6` — byte-identical to what rk1b is
+    # already running — so the pin costs no build at all. Verified by evaluation before
+    # it was adopted.
+    #
+    # WHAT IT IS AVOIDING: nixpkgs' `*-sys` → system-library migration takes two bites at
+    # this package. `zstd-sys` fails first, in a build script; fix that and ~20 minutes
+    # later `libsqlite3-sys` fails at the final link with `cannot find -lsqlite3`.
+    # Upstream's own stump 0.1.11 has neither library in `buildInputs` either, so it is
+    # broken the same way — and it pulls in gtk3/webkitgtk, which pkgs/stump deliberately
+    # avoids by building only the server binary. There is no fixed version to move to.
+    #
+    # ⚠ THE COST, stated plainly: this freezes stump's ENTIRE dependency closure at
+    # 2026-09-28 — openssl and sqlite included. Stump is the tailnet-only reading catalog,
+    # which is what makes that acceptable rather than reckless. It is still a frozen
+    # network service and should not be left here indefinitely.
+    #
+    # ⚠ THE EXIT is to add `zstd` and `sqlite` to pkgs/stump's `buildInputs` (that commit
+    # is in history at fd96490, reverted alongside this pin because carrying it would
+    # change the derivation hash and reintroduce the build). Do that when nixpkgs settles,
+    # or when stump needs a version bump anyway — at which point it has to be rebuilt
+    # regardless and the pin buys nothing.
+    nixpkgs-frozen.url = "github:NixOS/nixpkgs/7a0f122f5090cf4c2ade2a13a0e229d4e19ba71f";
+
     home-manager = {
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";

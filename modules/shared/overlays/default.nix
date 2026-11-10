@@ -121,6 +121,27 @@ let
         inherit (stable) matrix-tuwunel stalwart matrix-hookshot;
       };
 
+    # stump, built against the FROZEN nixpkgs rather than the fleet one.
+    #
+    # Same cause as the three above (nixpkgs moving `*-sys` crates onto system libraries)
+    # but it cannot be solved the same way: stump is not in the stable branch, and this is
+    # OUR derivation — so there is no upstream binary to borrow. The frozen rev is the one
+    # thing that reproduces the store path rk1b is ALREADY RUNNING
+    # (dgfx0q5dmk5gvhnvfx6szqw1s6vjgp0v-stump-0.1.6), making this pin free: no Rust rebuild
+    # on the fleet's one aarch64 builder.
+    #
+    # ⚠ `callPackage` from the frozen set, NOT an override of the package produced by the
+    # `additions` overlay — the point is to evaluate the file against the frozen stdenv and
+    # rustPlatform, and overriding an already-built-against-unstable derivation would not.
+    # pkgs/stump must therefore stay free of `zstd`/`sqlite` in `buildInputs` while this
+    # pin stands: adding them changes the derivation hash and the free rebuild stops being
+    # free. flake.nix carries the full reasoning and the exit condition.
+    stump-pin = _final: _prev: {
+      stump = inputs.nixpkgs-frozen.legacyPackages.${_prev.stdenv.hostPlatform.system}.callPackage (
+        inputs.self + /pkgs/stump
+      ) { };
+    };
+
     # antigravity = final: prev: {
     #   antigravity = prev.antigravity.overrideAttrs (_: {
     #     version = "1.19.5";
@@ -146,6 +167,7 @@ in
     modifications.tree-sitter
     modifications.snapcast
     modifications.stable-until-fixed
+    modifications.stump-pin
     # modifications.antigravity
     flexget
   ];

@@ -757,6 +757,22 @@
         "type": "github"
       }
     },
+    "nixpkgs-frozen": {
+      "locked": {
+        "lastModified": 1790578696,
+        "narHash": "sha256-ZoxIApko70jCdbH3l20HWXOBaT2HZd87orzd2yJ9dVE=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "7a0f122f5090cf4c2ade2a13a0e229d4e19ba71f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "7a0f122f5090cf4c2ade2a13a0e229d4e19ba71f",
+        "type": "github"
+      }
+    },
     "nixpkgs-lib": {
       "locked": {
         "lastModified": 1788057806,
@@ -1123,6 +1139,7 @@
         "nixos-raspberrypi": "nixos-raspberrypi",
         "nixos-turing-rk1": "nixos-turing-rk1",
         "nixpkgs": "nixpkgs_7",
+        "nixpkgs-frozen": "nixpkgs-frozen",
         "nixpkgs-stable": "nixpkgs-stable_2",
         "openclaw-nix": "openclaw-nix",
         "secrets": "secrets",
