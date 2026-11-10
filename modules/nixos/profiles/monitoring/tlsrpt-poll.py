@@ -68,7 +68,11 @@ def env(name: str, default: str | None = None) -> str:
 def parse_iso8601(s: str) -> int | None:
     """RFC 8460 date-time (ISO 8601, e.g. '2026-07-09T23:59:59Z') → unix epoch."""
     try:
-        return int(datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp())
+        # No `.replace("Z", "+00:00")`: fromisoformat has accepted a trailing Z since
+        # Python 3.11, and this runs under pkgs.python3 (3.14). Verified equivalent on
+        # 3.14.7 for 'Z', '+00:00' and fractional-second forms. ruff flags the old form
+        # (and calls the fix unsafe, because it would NOT hold on a pre-3.11 interpreter).
+        return int(datetime.fromisoformat(s).timestamp())
     except (ValueError, AttributeError):
         return None
 
