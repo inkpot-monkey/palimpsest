@@ -75,15 +75,83 @@ let
       sleep 2
     done
 
-    pass="$(cat "$CREDENTIALS_DIRECTORY/admin_password")"
-    # Reply kept so the failure branch can show the homeserver's errcode; printed only
-    # when there is no access_token, so a successful login never logs one.
-    resp="$(${pkgs.curl}/bin/curl -s -X POST "$url/_matrix/client/v3/login" \
-      -H 'content-type: application/json' \
-      -d "$(${pkgs.jq}/bin/jq -nc --arg u "${adminLocalpart}" --arg p "$pass" \
-        '{type:"m.login.password",identifier:{type:"m.id.user",user:$u},password:$p}')")"
-    at="$(${pkgs.jq}/bin/jq -r '.access_token // empty' <<<"$resp" 2>/dev/null || true)"
-    [ -n "$at" ] || { echo "hookshot-space: admin login failed: $resp" >&2; exit 1; }
+    # ── THE ACCESS TOKEN IS CACHED, AND THAT IS NOT AN OPTIMISATION ────────────────────
+    # This unit used to log in on EVERY run. It cannot simply skip the login when the
+    # space already exists — everything below the marker branch (avatar, favourite,
+    # filing the DM and the infra-alerts/notifications rooms) needs the token, and those
+    # are deliberate idempotent re-applications that heal drift: on first boot the
+    # @hookshot DM does not exist yet, so it is a LATER run that files it.
+    #
+    # But a login per run is a login per DEPLOY, and this host restarts every Matrix
+    # provisioning oneshot at once on a switch — hookshot-space, hookshot-adminroom, the
+    # two notification rooms, matrix-dm-hookshot, matrix-dm-whatsapp,
+    # matrix-infra-alerts-room and tuwunel-register-admin — each authenticating as the
+    # SAME admin account. tuwunel rate-limits that, and on 2026-11-10 this unit was the
+    # one that lost:
+    #
+    #   admin login failed: {"errcode":"M_LIMIT_EXCEEDED","retry_after_ms":331000,
+    #     "error":"M_LIMIT_EXCEEDED: Too many login attempts for this account."}
+    #
+    # which failed the unit, and `switch-to-configuration` then exited 4 and reported the
+    # whole deploy as failed. A cached token takes this unit out of the storm entirely:
+    # in steady state it makes NO login call at all.
+    #
+    # Second reason, independent of the storm: every login mints a Matrix DEVICE, and
+    # nothing here logs out. A login per deploy is a device list that grows forever.
+    #
+    # The token lives in the StateDirectory (0700, DynamicUser) beside the space marker,
+    # so `matrix-reset` wipes it with everything else — a from-scratch run re-logs in,
+    # which is correct.
+    token_file="$STATE_DIRECTORY/access-token"
+    at=""
+    if [ -s "$token_file" ]; then
+      at="$(cat "$token_file")"
+      # Validate before trusting it: a token can be revoked, or survive a homeserver
+      # whose database was rebuilt underneath it. whoami is the cheapest call that
+      # answers "is this token still good".
+      if ! ${pkgs.curl}/bin/curl -sf -H "Authorization: Bearer $at" \
+        "$url/_matrix/client/v3/account/whoami" >/dev/null 2>&1; then
+        echo "hookshot-space: cached token rejected, logging in again" >&2
+        at=""
+      fi
+    fi
+
+    if [ -z "$at" ]; then
+      pass="$(cat "$CREDENTIALS_DIRECTORY/admin_password")"
+      # Bounded retry, because the cold path can still land mid-storm — on a first boot
+      # every one of those oneshots logs in for real. The homeserver tells us how long to
+      # wait; the cap is ours, because `retry_after_ms` can be minutes (331s was the
+      # observed value) and a oneshot that sleeps that long inside `switch-to-configuration`
+      # hangs the deploy rather than failing it. Four tries at up to 15s is enough to ride
+      # out a burst and bounded enough not to stall a switch.
+      for attempt in 1 2 3 4; do
+        # Reply kept so the failure branch can show the homeserver's errcode; printed only
+        # when there is no access_token, so a successful login never logs one.
+        resp="$(${pkgs.curl}/bin/curl -s -X POST "$url/_matrix/client/v3/login" \
+          -H 'content-type: application/json' \
+          -d "$(${pkgs.jq}/bin/jq -nc --arg u "${adminLocalpart}" --arg p "$pass" \
+            '{type:"m.login.password",identifier:{type:"m.id.user",user:$u},password:$p}')")"
+        at="$(${pkgs.jq}/bin/jq -r '.access_token // empty' <<<"$resp" 2>/dev/null || true)"
+        [ -n "$at" ] && break
+
+        # Only M_LIMIT_EXCEEDED is worth waiting out. A wrong password is not going to
+        # become right, and retrying it just burns the rate limit for everyone else.
+        errcode="$(${pkgs.jq}/bin/jq -r '.errcode // empty' <<<"$resp" 2>/dev/null || true)"
+        [ "$errcode" = "M_LIMIT_EXCEEDED" ] || break
+        [ "$attempt" = 4 ] && break
+
+        wait_ms="$(${pkgs.jq}/bin/jq -r '.retry_after_ms // 5000' <<<"$resp" 2>/dev/null || echo 5000)"
+        wait_s=$(( wait_ms / 1000 + 1 ))
+        [ "$wait_s" -gt 15 ] && wait_s=15
+        echo "hookshot-space: rate-limited, retrying in ''${wait_s}s (attempt $attempt/4)" >&2
+        sleep "$wait_s"
+      done
+      [ -n "$at" ] || { echo "hookshot-space: admin login failed: $resp" >&2; exit 1; }
+
+      # Write 0600 before anything else can look: this is a credential, and the 0700
+      # StateDirectory is the only other thing protecting it.
+      ( umask 077; printf '%s' "$at" > "$token_file" )
+    fi
     auth=(-H "Authorization: Bearer $at")
 
     # Create or reuse the Space.
