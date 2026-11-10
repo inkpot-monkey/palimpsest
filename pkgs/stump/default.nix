@@ -65,6 +65,7 @@
   openssl,
   dbus,
   glib,
+  zstd,
   pkg-config,
   makeWrapper,
 }:
@@ -134,6 +135,15 @@ rustPlatform.buildRustPackage (finalAttrs: {
     openssl
     dbus
     glib
+    # zstd is NOT a stump dependency we chose — it is the system library the `zstd-sys` crate
+    # now links against. nixpkgs moved that crate onto pkg-config via `default-crate-overrides`
+    # (2026-06-16), so every dependent must supply the library or fail at build:
+    #   error: could not find system library 'libzstd' required by the 'zstd-sys' crate
+    # Upstream is adding it package by package for its own tree; this one is ours, so it is
+    # added here rather than worked around. Unlike the stable-sourced packages in
+    # modules/shared/overlays, there is no cache argument against building it: an in-repo
+    # package is never substitutable anyway.
+    zstd
   ];
 
   # Upstream's `cargo test` runs over the entire workspace — including the Tauri
