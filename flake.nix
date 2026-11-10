@@ -3,7 +3,14 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    nixpkgs-stable.url = "github:nixos/nixpkgs/nixos-25.11";
+    # The latest NixOS RELEASE branch, as the fallback for packages that cannot build on
+    # unstable. Bumped 25.11 → 26.05 on 2026-11-10: it had sat a full release behind with no
+    # consumers at all, so nothing had noticed.
+    #
+    # A release branch, NOT a frozen rev, and that distinction is the whole point of using it
+    # here: it keeps receiving backported security fixes, so a package parked on it is held
+    # back in VERSION without being abandoned. A pinned rev would rot.
+    nixpkgs-stable.url = "github:nixos/nixpkgs/nixos-26.05";
 
     home-manager = {
       url = "github:nix-community/home-manager";

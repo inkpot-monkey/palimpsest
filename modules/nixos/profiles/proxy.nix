@@ -42,9 +42,20 @@ in
     services.caddy = {
       enable = true;
       inherit email;
+      # ⚠ THE HASH FOLLOWS CADDY'S VERSION, NOT THE PLUGIN'S. This is the vendor hash of
+      # caddy's Go module set WITH the plugin added, so a nixpkgs bump of caddy invalidates
+      # it even though the plugin pin below has not moved — and the failure arrives as a
+      # `nixpkgs` bump breaking the EDGE, several steps from its cause:
+      #   caddy-src-with-plugins → caddy → Caddyfile-formatted → etc → toplevel
+      # Last seen 2026-11-09 on caddy 2.11.4 → 2.11.9.
+      #
+      # To re-derive after a bump: build and take the `got:` hash from the mismatch. Nothing
+      # unpinned is being accepted — the caddy version comes from the locked nixpkgs and the
+      # plugin is pinned to a tag — so the new value is a function of the two pins, not of
+      # whatever upstream happens to serve today.
       package = pkgs.caddy.withPlugins {
         plugins = [ "github.com/caddy-dns/cloudflare@v0.2.1" ];
-        hash = "sha256-jNV5COlQTKSJJk8gUZ3KEs8SGC8Z7Aiy5fk7/DvkXIo=";
+        hash = "sha256-88e3zkffSC9RgOA1OtNKRakrbOxoNA5Kl1u9tFeozI0=";
       };
       globalConfig = "";
       extraConfig = ''

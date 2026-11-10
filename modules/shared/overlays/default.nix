@@ -64,6 +64,63 @@ let
       };
     };
 
+    # ── PACKAGES TAKEN FROM THE STABLE RELEASE, BECAUSE THEY CANNOT BUILD ON UNSTABLE ──
+    # Taken from `nixpkgs-stable` (the current NixOS release branch — see flake.nix). Each
+    # entry is a package that FAILS TO BUILD on unstable, not one we merely prefer older.
+    #
+    # ⚠ AND THESE ARE NOT DOWNGRADES. Measured 2026-11-10, stable carries the SAME VERSIONS
+    # unstable is trying and failing to build — matrix-tuwunel 1.9.4, stalwart 0.15.5,
+    # matrix-hookshot 7.6.0 — and all three are substitutable there (narinfo 200) where the
+    # unstable paths are 404. So this costs no version and no build: it is the identical
+    # software, from the branch where it was actually compiled.
+    #
+    # THE SHARED CAUSE. nixpkgs is midway through moving Rust `*-sys` crates onto system
+    # libraries via `default-crate-overrides` — zstd-sys (2026-06-16), libsqlite3-sys
+    # (2026-10-20), aws-lc-sys (2026-10-23 and 10-30). Each flip requires every dependent
+    # package to gain that library in `buildInputs`, and upstream adds those one package at a
+    # time (cargo-nextest, vrc-get, topgrade and mqttui all carry "add aws-lc" commits). The
+    # 2026-11-07 channel rev sits in the middle of that fallout, so these die in a build
+    # script or at link time:
+    #
+    #   matrix-tuwunel   aws-lc-sys       "AWS_LC_SYS_USE_SYSTEM=1 requires a system-installed
+    #                                      AWS-LC, but none was found"
+    #   stalwart         zstd-sys         "The system library `libzstd` required by crate
+    #                    (via trunk → webadmin)   `zstd-sys` was not found"
+    #   matrix-hookshot  libsqlite3-sys   ld: cannot find -lsqlite3, linking
+    #                    (via matrix-sdk-crypto-nodejs)  matrix-sdk-crypto-nodejs
+    #
+    # There is no newer unstable to escape to: f4a03c00 IS nixos-unstable's head (2026-11-10).
+    #
+    # WHY STABLE AND NOT A PINNED REV OR A PATCH.
+    #   * A frozen rev (the pre-bump unstable) was written first and rejected: it stops
+    #     receiving security fixes, and these three are a federated homeserver, a mail server
+    #     and a bridge — the worst possible set to abandon. It was also strictly worse on
+    #     version, pinning tuwunel back to 1.9.3. A RELEASE BRANCH keeps getting backports.
+    #   * An overlay adding the missing `buildInputs` is what upstream is doing and does work,
+    #     but the result is in no cache, so every deploy would compile three large Rust trees
+    #     from source.
+    #
+    # ⚠ REMOVE ENTRIES AS UPSTREAM FIXES THEM — this is a waiting room, not an architecture.
+    # Check with:
+    #   gh search commits --repo NixOS/nixpkgs matrix-tuwunel
+    #   gh search commits --repo NixOS/nixpkgs "trunk zstd"
+    # To re-test one, drop it here and build the host; a 404 narinfo on the unstable path means
+    # it is still broken.
+    #
+    # ⚠ AND WATCH FOR MODULE/PACKAGE SKEW, which this repo has already been bitten by: the
+    # paperless note in profiles/paperless.nix records a stable PACKAGE under an unstable
+    # MODULE failing at eval, because the module read a passthru only the newer package had.
+    # Module and package come from one pin by default for a reason; every entry here breaks
+    # that deliberately, so each one needs the host to actually BUILD, not just evaluate.
+    stable-until-fixed =
+      _final: prev:
+      let
+        stable = inputs.nixpkgs-stable.legacyPackages.${prev.stdenv.hostPlatform.system};
+      in
+      {
+        inherit (stable) matrix-tuwunel stalwart matrix-hookshot;
+      };
+
     # antigravity = final: prev: {
     #   antigravity = prev.antigravity.overrideAttrs (_: {
     #     version = "1.19.5";
@@ -88,6 +145,7 @@ in
     additions
     modifications.tree-sitter
     modifications.snapcast
+    modifications.stable-until-fixed
     # modifications.antigravity
     flexget
   ];
