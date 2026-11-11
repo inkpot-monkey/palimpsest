@@ -64,7 +64,15 @@ from typing import Any, NoReturn
 STT_PORT = 10300
 TTS_PORT = 10200
 TTS_VOICE = "en_US-lessac-medium"
-STT_LANG = TTS_LANG = "en"
+# The two engines do NOT agree on how a language is spelled, so they get their own
+# constants. piper advertises only region-qualified codes (en_GB, en_US, ...) and
+# rejects a bare "en" with `tts-not-supported`, which surfaces in the companion app
+# as nothing more useful than "Oops, an error has occurred". faster-whisper is the
+# other way round: it advertises bare "en" and no en_US. assert_engine_language()
+# checks both against what the engines actually report, so a mismatch fails the unit
+# instead of the user's Assist. Keep TTS_LANG consistent with TTS_VOICE's locale.
+STT_LANG = "en"
+TTS_LANG = "en_US"
 
 BASE = os.environ.get("HA_URL", "http://127.0.0.1:8123").rstrip("/")
 CLIENT_ID = BASE + "/"
@@ -678,6 +686,41 @@ def engines_by_role(ws, wy_ids):
     return stt, tts
 
 
+def assert_engine_language(ws: WS, kind: str, engine_id: str, lang: str) -> None:
+    """Fail loudly if an engine does not advertise the language we are about to set.
+
+    This is the check whose absence let a stale `tts_language` sit in the pipeline
+    for weeks: HA accepts the pipeline update, and the mismatch only shows up when
+    someone actually talks to Assist. Reading the engine's own supported_languages
+    moves the failure to provision time, where a red unit is the whole point.
+    """
+    res = ws.try_cmd({"type": f"{kind}/engine/list"})
+    if not res.get("success"):
+        # Not fatal: an HA version that does not expose the listing should not block
+        # provisioning. The pipeline update below still validates engine + language.
+        log(
+            f"[{kind}] cannot list engines ({(res.get('error') or {}).get('code')}), skipping check"
+        )
+        return
+    result = res["result"]
+    providers = result.get("providers", result) if isinstance(result, dict) else result
+    for e in providers:
+        if e.get("engine_id") != engine_id:
+            continue
+        supported = e.get("supported_languages")
+        if supported is None:
+            return
+        if lang not in supported:
+            die(
+                f"{engine_id} does not support language {lang!r}. It advertises "
+                f"{sorted(supported)}. Fix the language constant in this script — "
+                f"piper wants a region-qualified code (en_US), faster-whisper a bare one (en)."
+            )
+        log(f"[{kind}] {engine_id} supports {lang!r}")
+        return
+    die(f"{engine_id} is not in the {kind} engine list; cannot verify its languages")
+
+
 def ensure_voice(token, ws):
     """Idempotently ensure a Wyoming STT + TTS entry exists; return their engines.
     Re-runnable: existing entries are detected via their entities and reused."""
@@ -704,11 +747,19 @@ def wire_pipeline(ws, stt_engine, tts_engine):
     pipelines = listing["pipelines"]
     pref = listing.get("preferred_pipeline")
     target = next((p for p in pipelines if p["id"] == pref), pipelines[0])
-    already = (
-        target.get("stt_engine") == stt_engine
-        and target.get("tts_engine") == tts_engine
+    # Compare the languages too. Leaving them out is what let a pipeline carrying
+    # tts_language="en" survive every run while piper rejected it at speak time.
+    already = all(
+        target.get(k) == v
+        for k, v in (
+            ("stt_engine", stt_engine),
+            ("tts_engine", tts_engine),
+            ("tts_voice", TTS_VOICE),
+            ("stt_language", STT_LANG),
+            ("tts_language", TTS_LANG),
+        )
     )
-    if already and target.get("tts_voice") == TTS_VOICE:
+    if already:
         log(f"[pipeline] {target['name']!r} already wired for local voice")
         return target["id"]
     updated = ws.cmd(
@@ -748,9 +799,14 @@ def verify(ws, pipeline_id, stt_engine, tts_engine):
         die(f"tts_engine not persisted: {p.get('tts_engine')!r} != {tts_engine!r}")
     if p.get("tts_voice") != TTS_VOICE:
         die(f"tts_voice not persisted: {p.get('tts_voice')!r} != {TTS_VOICE!r}")
+    if p.get("stt_language") != STT_LANG:
+        die(f"stt_language not persisted: {p.get('stt_language')!r} != {STT_LANG!r}")
+    if p.get("tts_language") != TTS_LANG:
+        die(f"tts_language not persisted: {p.get('tts_language')!r} != {TTS_LANG!r}")
     log(
         f"[verify] pipeline {p['name']!r} confirmed: "
-        f"stt={p['stt_engine']} tts={p['tts_engine']} voice={p['tts_voice']}"
+        f"stt={p['stt_engine']}/{p['stt_language']} "
+        f"tts={p['tts_engine']}/{p['tts_language']} voice={p['tts_voice']}"
     )
 
 
@@ -775,6 +831,8 @@ def main() -> None:
         if want_http:
             ws, token = ensure_http(ws, token, want_http)
         stt_engine, tts_engine = ensure_voice(token, ws)
+        assert_engine_language(ws, "stt", stt_engine, STT_LANG)
+        assert_engine_language(ws, "tts", tts_engine, TTS_LANG)
         pipeline_id = wire_pipeline(ws, stt_engine, tts_engine)
         verify(ws, pipeline_id, stt_engine, tts_engine)
         bulbs = _env_json("HA_BULBS", [])
