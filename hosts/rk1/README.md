@@ -13,9 +13,10 @@ profiles they enable (set in `../default.nix`).
 > NVMe `/var/cache` and a **Beets ingest pipeline** (drop files in `/var/cache/music-inbox`
 > → fingerprint/tag/file into the library, uncertain matches quarantined to
 > `/var/cache/music-review`; see `docs/runbooks/beets-ingest.md`) — plus the monitoring
-> server and the fleet's aarch64 remote builder, all on its NVMe. `openclaw`, the LLM's sole consumer, is disabled and can
-> return later pointed at a funded cloud model. Cloud models remain available
-> fleet-wide through kelpy's LiteLLM gateway.
+> server and the fleet's aarch64 remote builder, all on its NVMe. It also runs the
+> fleet's **agent runtime** (`hermes`) and the **LiteLLM gateway** it talks to over
+> loopback — `openclaw`, the retired local LLM's sole consumer, was replaced by Hermes
+> rather than revived. Cloud models remain available fleet-wide through that gateway.
 
 ## Quick Specs
 

@@ -40,7 +40,6 @@
     affine = ./affine;
     litellm = ./litellm.nix;
     hermes = ./hermes.nix;
-    openclaw = ./openclaw.nix;
     homeassistant = ./homeassistant.nix;
     navidrome = ./navidrome.nix;
     music-assistant = ./music-assistant.nix;

@@ -161,10 +161,6 @@
       url = "github:NousResearch/hermes-agent";
     };
 
-    openclaw-nix = {
-      url = "github:openclaw/nix-openclaw";
-    };
-
     # Community repackaging of the Claude Desktop app for Linux (no official
     # Linux build exists). Extracts the macOS app's resources, stubs the
     # macOS-native modules (@ant/claude-swift, @ant/claude-native) with a Linux

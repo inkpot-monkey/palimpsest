@@ -130,10 +130,13 @@ in
                 # negotiable. Fallbacks are ALLOWED but only within that pinned pool, so a
                 # busy provider is routed around rather than failing the call. That
                 # distinction matters more than it looks: with fallbacks off, a measured
-                # upstream 429 fired openclaw's Sonnet fallback — which would have recorded
+                # upstream 429 fired the agent's Sonnet fallback — which would have recorded
                 # "the open model failed the task" when the truth was "a provider was
                 # rate-limited", quietly poisoning the one number this month exists to
-                # produce. Ten fp8 endpoints serve this model (Chutes, Near AI, Wafer,
+                # produce. (That agent-side fallback belonged to the retired openclaw
+                # profile; Hermes has no primary/fallback for the main turn, so if the
+                # behaviour is wanted back it belongs in `litellm_settings.fallbacks`
+                # here — where the spend metric would record it directly.) Ten fp8 endpoints serve this model (Chutes, Near AI, Wafer,
                 # PrimeIntellect, Mancer, Tenstorrent, Reka, AkashML, Parasail, CoreWeave),
                 # so the pool is deep. `require_parameters` also earns its place: CoreWeave
                 # and SiliconFlow advertise some models without tool support and are
