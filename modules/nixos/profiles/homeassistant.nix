@@ -44,6 +44,17 @@ let
     ];
   };
 
+  # Where Home Assistant keeps its state, and who owns it — both read back from the
+  # upstream module rather than restated, so the dump unit and the host's backup paths
+  # cannot drift from where the service actually writes.
+  haConfigDir = config.services.home-assistant.configDir;
+  haUser = config.systemd.services.home-assistant.serviceConfig.User;
+
+  # Shared alert delivery (modules/shared/alert-post.nix), as every other timer-driven
+  # watcher on the fleet uses: in-band to #infra-alerts, falling back to the ADR-0020 push
+  # relay where a host declares one.
+  alertPost = import ../../shared/alert-post.nix { inherit lib pkgs; };
+
   # Bulbs, flattened into the shape ha-provision.py consumes. Keys are snake_case
   # because they are passed straight into tuya_local's config flow.
   haBulbs = lib.mapAttrsToList (slug: b: {
@@ -108,6 +119,108 @@ in
 {
   options.custom.profiles.homeassistant = {
     enable = lib.mkEnableOption "Home Assistant + local Wyoming voice (STT/TTS)";
+
+    logging = {
+      fileLog = lib.mkOption {
+        type = lib.types.bool;
+        default = false;
+        description = ''
+          Let Home Assistant keep its own `home-assistant.log` in the config directory,
+          in addition to the journal.
+
+          OFF, because on this fleet it is a second copy of a log that already has a
+          home. Home Assistant writes every line to stdout, which systemd puts in the
+          journal, which Vector ships to VictoriaLogs (ADR-0021) — so the file duplicates
+          all of it inside the one directory on this host that gets BACKED UP, where it
+          churns every night and defeats restic's deduplication for no restore value.
+          `HA_DISABLE_LOG_FILE` is Home Assistant's own supported switch for exactly this
+          (it is what a supervised install uses, where the supervisor owns logging), so
+          this is a documented mode and not a trick.
+
+          What it costs: Settings → System → Logs loses its "Load full logs" download,
+          because that endpoint serves this file. The panel's live error list is in-memory
+          and unaffected, and the full history is `journalctl -u home-assistant` or the
+          Logs dashboard — which is the fleet's answer for every other service.
+
+          Turning it back on does not retrieve what was already renamed: on the deploy
+          that disables it, Home Assistant renames any existing log to
+          `home-assistant.log.old` and leaves it. The backup excludes
+          `home-assistant.log*`, so neither the file nor that leftover travels.
+        '';
+      };
+    };
+
+    backup = {
+      dump = {
+        enable = lib.mkOption {
+          type = lib.types.bool;
+          default = true;
+          description = ''
+            Take a nightly `VACUUM INTO` dump of the recorder database beside the live one.
+
+            On by default, because a host that backs up this directory at all would
+            otherwise be shipping a torn copy of an open WAL database — see
+            modules/nixos/profiles/ha-db-dump.nix for why that is not a restorable
+            artifact, and for the argument that the long-term statistics inside it are the
+            one part of Home Assistant's state that nothing can regenerate. Three copies
+            of a single-digit-MB database is a cheap default.
+
+            Harmless on a host that does NOT back up: the dumps simply sit in the config
+            directory, pruned to `keep`. What makes them load-bearing is the host naming
+            ha-dump-freshness.nix as its `backupPrepareCommand`.
+          '';
+        };
+
+        onCalendar = lib.mkOption {
+          type = lib.types.str;
+          default = "02,14:45";
+          description = ''
+            When to take the dump, as a systemd `OnCalendar=` — 02:45 and 14:45.
+
+            ⚠ THE SPELLING IS A TRAP, and it cost a deploy. `OnCalendar` is
+            `<hours>:<minutes>:<seconds>`, so two times a day is an HOUR LIST —
+            `02,14:45`. The obvious-looking `"02:45,14:45"` is accepted silently and
+            means something else entirely: systemd reads it as hours `02`, minutes
+            `45,14`, seconds `45`, and normalises it to `*-*-* 02:14,45:45` — two runs in
+            the small hours and nothing in the afternoon. Nothing fails; the dump simply
+            stops being where the backup needs it. `systemd-analyze calendar "<value>"`
+            prints the normalised form, and parts/checks/ha-dump-schedule runs that real
+            parser over this value against the host's restic schedule, so the next person
+            gets a build failure instead of a silently misplaced dump.
+
+            COUPLED to the host's restic schedule and not freely choosable: the `daily` job
+            runs at 03:00/15:00, so this leaves a quarter of an hour of slack before each
+            run and makes BOTH snapshots an almost-consistent pair of history and
+            configuration.
+
+            Twice, where paperless's equivalent dumps once at 02:45 and lets its 15:00
+            snapshot carry a 12h-old index. The difference is cost: this dump is a
+            single-digit-MB file produced in under a second, so there is no reason for the
+            afternoon snapshot to carry stale history, whereas paperless's is a bigger
+            index on a host whose only storage is 90G.
+
+            The timer carries NO `RandomizedDelaySec`: jitter here is what would let a dump
+            land on top of the restic run it exists to feed.
+
+            Move this and move `maxDumpAgeSeconds` in hosts/rk1/ha-backup.nix with it.
+          '';
+        };
+
+        keep = lib.mkOption {
+          type = lib.types.ints.positive;
+          default = 3;
+          description = ''
+            How many dumps to keep. Retention is ours — nothing else prunes them, so an
+            unattended nightly would grow one full copy of the recorder per run, forever,
+            on a host whose only real storage is a 29 GB eMMC already at 79%.
+
+            Three is "the last run, plus two chances to notice something wrong with it".
+            An older dump is not a better restore point: it is history missing everything
+            since, against a configuration that has moved on.
+          '';
+        };
+      };
+    };
 
     provision = {
       enable = lib.mkEnableOption ''
@@ -260,6 +373,33 @@ in
           # the only remaining way to hold them from nix.
         };
 
+        # ── LOGGING ──────────────────────────────────────────────────────────────────────
+        # One log path, not two. Home Assistant writes every line to stdout AND, by
+        # default, to its own rotating `home-assistant.log` in the config directory. On
+        # this fleet the first is the real one: systemd puts it in the journal and Vector
+        # ships it to VictoriaLogs (ADR-0021). The second is a duplicate living in the one
+        # directory on this host that is BACKED UP. See `logging.fileLog` for what turning
+        # it off costs in the UI.
+        systemd.services.home-assistant.environment = lib.mkIf (!cfg.logging.fileLog) {
+          HA_DISABLE_LOG_FILE = "1";
+        };
+
+        # Home Assistant's severity is in its MESSAGE, not in journald's PRIORITY — it
+        # logs to stdout, so journald stamps every line, errors included, PRIORITY=6
+        # (info). Vector derives `level` from PRIORITY, and `level` is what the Logs
+        # dashboard's whole Errors/Warnings half selects on — so before this, 396 HA
+        # ERROR/WARNING lines in 24h on rk1a were invisible to every error view the fleet
+        # has while reading perfectly well in `journalctl`. The pattern is anchored on HA's
+        # own log format (timestamp, level, `(Thread)`) so a line that merely contains the
+        # word "error" is not promoted; see monitoring/client.nix for the mechanism and for
+        # what deliberately stays unmatched (traceback continuation lines).
+        #
+        # Declared unconditionally: the option exists whether or not this host enables the
+        # monitoring client, and the consuming module is mkIf-gated, so on a host without
+        # Vector this is an inert fact rather than a dependency.
+        custom.profiles.monitoring-client.levelFromMessage."home-assistant.service" =
+          ''^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+ (?P<lvl>DEBUG|INFO|WARNING|ERROR|CRITICAL) \('';
+
         # STT: faster-whisper over Wyoming, loopback only, on `small-int8`.
         #
         # This was `base-int8` until the transcriptions were actually measured: across ten
@@ -317,6 +457,86 @@ in
         # broadcast and the upstream turing-rk1 module owns the LAN interface name. See ADR-0015.
         networking.firewall.allowedUDPPorts = [ 5353 ];
       }
+
+      # ── THE BACKUP ARTIFACT ────────────────────────────────────────────────────────────
+      # A nightly consistent dump of the recorder database, because the live one cannot be
+      # backed up by copying it. The whole argument — why a dump, why not Home Assistant's
+      # own backup integration, why it needs nothing from the running service, and how to
+      # restore from it — is in ha-db-dump.nix, which holds the script so
+      # parts/checks/ha-db-dump can exercise the real one.
+      (lib.mkIf (cfg.enable && cfg.backup.dump.enable) {
+        systemd.services.ha-db-dump = {
+          description = "Take a consistent VACUUM INTO dump of the Home Assistant recorder database";
+          # ⚠ ALSO RUN AT ACTIVATION AND BOOT, not only on the timer. This closes the
+          # BOOTSTRAP HOLE that took kelpy's backup down on 2026-11-10, the very first
+          # deploy carrying its paperless equivalent: the freshness gate refuses the job
+          # when no dump exists — correctly, that is its whole job — but on a fresh deploy
+          # the timer has not fired yet, so there was no dump, so the gate refused, so
+          # NOTHING was backed up on that host. A guard meant to protect one service had
+          # switched the backup off for all of them. `wantedBy = multi-user.target` on a
+          # `RemainAfterExit`-less oneshot means it runs on this deploy and every boot, so
+          # an artifact exists from the moment the profile lands.
+          #
+          # (ha-dump-freshness.nix also refuses to repeat that outage from the other end:
+          # with no live database there is nothing being excluded, so it passes rather than
+          # blocking `.storage`. Both ends, because either alone leaves the hole open in
+          # one direction.)
+          wantedBy = [ "multi-user.target" ];
+          # NO dependency on home-assistant.service, deliberately: `VACUUM INTO` opens its
+          # own SQLite connection, so a dump does not need Home Assistant running — and
+          # must not be able to START it, nor be skipped because it is stopped. A dump is
+          # most wanted precisely when the service is crash-looping.
+          unitConfig.RequiresMountsFor = [ haConfigDir ];
+          path = [
+            pkgs.sqlite
+            pkgs.coreutils
+            pkgs.findutils
+          ];
+          serviceConfig = {
+            Type = "oneshot";
+            # The database's owner, not root. See the ⚠ in ha-db-dump.nix: root opening a
+            # WAL database can leave root-owned `-shm`/`-wal` files behind it, and Home
+            # Assistant then cannot write its own database on next start.
+            User = haUser;
+            Group = haUser;
+            # 0600 from creation rather than only after the explicit chmod, so the dump is
+            # never momentarily readable by anything that can reach this directory.
+            UMask = "0077";
+          };
+          script = toString (
+            import ./ha-db-dump.nix {
+              inherit pkgs lib;
+              configDir = haConfigDir;
+              inherit (cfg.backup.dump) keep;
+              inherit (config.networking) hostName;
+              post = alertPost.mkPost {
+                name = "ha-db-dump";
+                # Null on rk1a, which holds no matrix credential (profiles/matrix.yaml is
+                # keyed to admin, kelpy and rk1b only) — so `post` degrades to a log line
+                # and the journal is the signal. Read from the option rather than hardcoded
+                # so a host that DOES serve #infra-alerts gets the alert for free.
+                webhookUrlFile = config.custom.profiles.matrix.infraAlerts.webhookUrlFile or null;
+                outOfBand = alertPost.oobFromWatcher config;
+              };
+            }
+          );
+        };
+
+        systemd.timers.ha-db-dump = {
+          description = "Consistent dump of the Home Assistant recorder database";
+          wantedBy = [ "timers.target" ];
+          timerConfig = {
+            OnCalendar = cfg.backup.dump.onCalendar;
+            # A missed dump is taken at boot rather than skipped — the host's freshness
+            # gate is tuned on the assumption that downtime does not cost a dump.
+            Persistent = true;
+            # NO RandomizedDelaySec: this has to land before the host's restic run, and
+            # jitter is exactly what would let it land during one.
+            AccuracySec = "1m";
+            Unit = "ha-db-dump.service";
+          };
+        };
+      })
 
       # Post-start provisioner (opt-in): codify the one-time UI wiring of the Assist
       # pipeline to the local Wyoming STT/TTS, the HTTP settings HA stopped reading

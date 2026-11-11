@@ -54,6 +54,28 @@
         paperless_db_dump = import ./paperless-db-dump {
           inherit pkgs self;
         };
+        # The Home Assistant dump-freshness guard (hosts/rk1/ha-backup.nix). Home Assistant has
+        # the vault's two-halves shape with the halves reversed in importance: `.storage` holds
+        # what makes this THIS house (config entries, registries, auth, dashboards) and travels
+        # verbatim, while `home-assistant_v2.db` holds its past — including the long-term
+        # statistics nothing can regenerate — and is excluded for the same WAL reason the vault's
+        # database is. This pins that the guard refuses when the nightly dump stops, that a live
+        # database sitting in the very directory it globs never satisfies it, that a drifted path
+        # with no `.storage` is caught too, AND that the fresh-host case (no database at all,
+        # nothing excluded) PASSES rather than taking the whole host's backup down — which is the
+        # outage kelpy's equivalent caused on 2026-11-10.
+        ha_dump_freshness = import ./ha-dump-freshness {
+          inherit pkgs self;
+        };
+        # ...and the script that PRODUCES that dump. The gate above only proves a fresh file
+        # exists; this proves the file is a complete standalone database that reads back intact,
+        # that its name cannot collide with the excluded live triple, that a garbage source
+        # leaves no half-dump behind to make the gate green over unopenable history, that a
+        # recorder schema change degrades the journal line instead of losing a good dump, and
+        # that an absent database exits 0 WITHOUT alerting.
+        ha_db_dump = import ./ha-db-dump {
+          inherit pkgs self;
+        };
         # The tailnet guard's route order (palimpsest#218's deferred follow-up). `internal_only`
         # is the whole of the access control on every private service, and a bare `abort` loses
         # Caddy's directive order to the vhost's own matcher-less handle — which is how vault,
