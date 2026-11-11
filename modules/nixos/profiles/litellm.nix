@@ -73,7 +73,24 @@ in
         # — the difference between a cheap month and an expensive one. NOT enterprise-
         # gated in 1.108.0 (no `premium_user` guard in integrations/prometheus.py);
         # re-check on a major bump before trusting the dashboards.
-        litellm_settings.callbacks = [ "prometheus" ];
+        litellm_settings = {
+          callbacks = [ "prometheus" ];
+
+          # /metrics authenticates by default, which silently defeats the whole point: the
+          # scrape job returned 401 on every attempt and VictoriaMetrics held the target
+          # `down` while the proxy itself served traffic perfectly happily. Nothing alerts
+          # on that -- you simply find an empty dashboard a month later. Caught by checking
+          # the target after deploying; there is no error on this side to notice.
+          #
+          # Unauthenticated is the right call here rather than handing Prometheus the
+          # master key: the scrape is loopback (monitoring is co-located on rk1b), and it
+          # matches how every other exporter in this fleet already works -- node-exporter,
+          # gatus and blocky are all open on the tailnet. The cost is that anyone on the
+          # tailnet can read spend-by-model through the Caddy vhost, which is not nothing
+          # given the tailnet is not single-person (ADR-0027), but it is per-model totals
+          # and latencies, never prompts or keys.
+          require_auth_for_metrics_endpoint = false;
+        };
 
         # MEASUREMENT MONTH (started 2026-11-10). Exactly TWO open models, one per hardware
         # tier under consideration, so a month of real traffic answers three questions that
