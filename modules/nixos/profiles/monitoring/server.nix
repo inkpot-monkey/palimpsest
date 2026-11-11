@@ -255,6 +255,22 @@ in
                   { targets = [ "127.0.0.1:${toString config.services.gatus.settings.web.port}" ]; }
                 ];
               }
+            ]
+            # LiteLLM's per-request cost and token counters, enabled by the `prometheus`
+            # callback in profiles/litellm.nix. Co-located on rk1b like gatus, so loopback
+            # again — the proxy does bind 0.0.0.0 off-edge, but there is no reason to scrape
+            # it over the tailnet from the same box. The series that matter are
+            # `litellm_spend_metric` (actual euros, labelled by model) and the
+            # cached/creation token counters, which together answer whether buying a local
+            # box would have been cheaper than renting.
+            ++ lib.optionals (config.custom.profiles.litellm.enable or false) [
+              {
+                job_name = "litellm";
+                metrics_path = "/metrics";
+                static_configs = [
+                  { targets = [ "127.0.0.1:${toString settings.services.private.litellm.port}" ]; }
+                ];
+              }
             ];
           };
         };

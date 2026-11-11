@@ -1,0 +1,280 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LiteLLM — models and why</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #fbfbfa;
+        --fg: #1a1a18;
+        --dim: #5f5f58;
+        --rule: #e2e2dc;
+        --card: #ffffff;
+        --accent: #7a5c00;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #14140f;
+          --fg: #ececdf;
+          --dim: #9a9a8c;
+          --rule: #2c2c24;
+          --card: #1b1b15;
+          --accent: #e0bb4a;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          15px/1.6 ui-sans-serif,
+          system-ui,
+          -apple-system,
+          "Segoe UI",
+          sans-serif;
+      }
+      main {
+        max-width: 54rem;
+        margin: 0 auto;
+        padding: 2.5rem 1.25rem 4rem;
+      }
+      h1 {
+        font-size: 1.5rem;
+        margin: 0 0 0.25rem;
+        letter-spacing: -0.01em;
+      }
+      h2 {
+        font-size: 1rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--dim);
+        margin: 2.5rem 0 0.75rem;
+        font-weight: 600;
+      }
+      .sub {
+        color: var(--dim);
+        margin: 0 0 1.5rem;
+      }
+      .asof {
+        display: inline-block;
+        border: 1px solid var(--rule);
+        border-radius: 999px;
+        padding: 0.15rem 0.7rem;
+        font-size: 0.8rem;
+        color: var(--dim);
+        background: var(--card);
+      }
+      .asof strong {
+        color: var(--accent);
+      }
+      .wrap {
+        overflow-x: auto;
+        border: 1px solid var(--rule);
+        border-radius: 8px;
+        background: var(--card);
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        min-width: 42rem;
+        font-size: 0.875rem;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 0.6rem 0.8rem;
+        border-bottom: 1px solid var(--rule);
+        vertical-align: top;
+      }
+      th {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--dim);
+        font-weight: 600;
+      }
+      tr:last-child td {
+        border-bottom: none;
+      }
+      code {
+        font:
+          0.85em ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+        background: color-mix(in srgb, var(--fg) 7%, transparent);
+        padding: 0.1em 0.35em;
+        border-radius: 4px;
+      }
+      p,
+      li {
+        max-width: 42rem;
+      }
+      .note {
+        border-left: 3px solid var(--accent);
+        padding: 0.1rem 0 0.1rem 1rem;
+        margin: 1.25rem 0;
+        color: var(--dim);
+      }
+      footer {
+        margin-top: 3rem;
+        padding-top: 1.25rem;
+        border-top: 1px solid var(--rule);
+        color: var(--dim);
+        font-size: 0.8rem;
+      }
+      footer code {
+        background: none;
+        padding: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>LiteLLM: what is served here, and why</h1>
+      <p class="sub">
+        The fleet's model gateway. Everything that talks to a language model goes through
+        this proxy, so this page is the one place that says what is reachable and on whose
+        hardware it runs.
+      </p>
+      <p class="asof">Model list last reviewed: <strong>2026-11-10</strong></p>
+
+      <h2>Why this list looks odd on purpose</h2>
+      <p>
+        These are not the best models money can buy. They are, deliberately, the models
+        that would <em>fit on a 32&nbsp;GB consumer GPU</em> — because this gateway is
+        currently running a measurement: a month of real traffic against rentable versions
+        of models we could host ourselves, to find out what owning the hardware would have
+        cost and whether the output would have been good enough.
+      </p>
+      <p>
+        Renting a model no home box could run would answer neither question. So
+        DeepSeek-V4, GLM-5.3, Kimi&nbsp;K3, MiniMax and Qwen3-Coder-480B are absent even
+        though several of them are better. Claude stays, as the baseline to beat.
+      </p>
+
+      <h2>Open models — the self-hostable set</h2>
+      <div class="wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Served by</th>
+              <th>Would be, locally</th>
+              <th>Why this one</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>qwen3.8-27b</code></td>
+              <td>OpenRouter, pinned&nbsp;fp8</td>
+              <td>27B dense, UD-Q5_K_XL, 20.88&nbsp;GB</td>
+              <td>
+                Most-downloaded model on HuggingFace and the one practitioners actually
+                name for agent work. Q5 is the measured quality knee — Q6 buys 0.06&nbsp;pp.
+              </td>
+            </tr>
+            <tr>
+              <td><code>qwen3.6-35b-a3b</code></td>
+              <td>OpenRouter, pinned&nbsp;fp8</td>
+              <td>35B MoE / 3B active, UD-Q4_K_XL, 22.36&nbsp;GB</td>
+              <td>
+                The throughput option. Measured at 117.8&nbsp;tok/s on the card we would
+                buy, which is what would make scheduled and long-running agents bearable.
+              </td>
+            </tr>
+            <tr>
+              <td><code>qwen3.8-27b-eu</code></td>
+              <td>OVHcloud AI Endpoints — Gravelines,&nbsp;FR</td>
+              <td>same as <code>qwen3.8-27b</code></td>
+              <td>
+                Same model, single French datacentre, prompts not retained. The nightly
+                fleet-log review routes here, because those prompts carry hostnames, IPs
+                and service topology.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>Claude — the baseline</h2>
+      <div class="wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Upstream</th>
+              <th>Used for</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>haiku-5.5</code></td>
+              <td>Anthropic, direct</td>
+              <td>Summarisation and triage. The nightly log review is not a reasoning job.</td>
+            </tr>
+            <tr>
+              <td><code>sonnet-5.5</code></td>
+              <td>Anthropic, direct</td>
+              <td>Agent fallback when an open model fails a run. Those failures are the measurement.</td>
+            </tr>
+            <tr>
+              <td><code>opus-5.5</code></td>
+              <td>Anthropic, direct</td>
+              <td>Only where it earns its 2× cost over Sonnet.</td>
+            </tr>
+            <tr>
+              <td><code>whisper</code></td>
+              <td>DeepInfra</td>
+              <td>
+                Audio transcription. Not part of the experiment — a separate capability that
+                predates it.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Claude is routed <em>direct</em> rather than through a reseller, funded by the Max
+        plan's monthly Console API credit. That credit does not cover Claude Code, which
+        still bills against the subscription.
+      </p>
+
+      <h2>Two things to know when reading the results</h2>
+      <div class="note">
+        <p>
+          <strong>No provider serves GGUF.</strong> Our self-host targets sit at
+          5.1–6.2&nbsp;bits per weight; providers offer fp4, fp8 and bf16. fp8 is the
+          closest tier and is pinned in the request body, so quality measured here is a
+          mild <em>upper</em> bound on what self-hosting would give.
+        </p>
+        <p>
+          <strong>This cannot measure prefill latency.</strong> A provider's datacentre GPU
+          produces first tokens far faster than the card we would buy, and prefill — not
+          generation — is what dominates long agent loops. Responsiveness here is not
+          responsiveness we would own.
+        </p>
+      </div>
+
+      <h2>Where the numbers live</h2>
+      <p>
+        LiteLLM exports per-request cost and token counters, scraped by the monitoring
+        server on the same host. <code>litellm_spend_metric</code> is real money by model;
+        the cached-token counters say whether prompt caching is working, which is the
+        difference between a cheap month and an expensive one.
+      </p>
+
+      <footer>
+        Served by Caddy on the tailnet. Config revision <code>@REV@</code>, last modified
+        <code>@LASTMOD@</code> — if that is far newer than the review date above, this page
+        has drifted from the model list and should be re-read against
+        <code>modules/nixos/profiles/litellm.nix</code>.
+      </footer>
+    </main>
+  </body>
+</html>
