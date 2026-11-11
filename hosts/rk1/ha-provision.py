@@ -63,7 +63,7 @@ from typing import Any, NoReturn
 # Wyoming loopback endpoints + piper voice — fixed by the homeassistant profile.
 STT_PORT = 10300
 TTS_PORT = 10200
-TTS_VOICE = "en_US-lessac-medium"
+TTS_VOICE = "en_GB-northern_english_male-medium"
 # The two engines do NOT agree on how a language is spelled, so they get their own
 # constants. piper advertises only region-qualified codes (en_GB, en_US, ...) and
 # rejects a bare "en" with `tts-not-supported`, which surfaces in the companion app
@@ -72,7 +72,7 @@ TTS_VOICE = "en_US-lessac-medium"
 # checks both against what the engines actually report, so a mismatch fails the unit
 # instead of the user's Assist. Keep TTS_LANG consistent with TTS_VOICE's locale.
 STT_LANG = "en"
-TTS_LANG = "en_US"
+TTS_LANG = "en_GB"
 
 BASE = os.environ.get("HA_URL", "http://127.0.0.1:8123").rstrip("/")
 CLIENT_ID = BASE + "/"
@@ -686,6 +686,30 @@ def engines_by_role(ws, wy_ids):
     return stt, tts
 
 
+# Config-entry domains to remove if HA ever creates them. Onboarding sets up a
+# Google Translate TTS entry unconditionally, but google_translate is deliberately
+# not in extraComponents — this host speaks through local piper — so its `gtts`
+# dependency is absent and the entry fails to set up on every single start,
+# printing a traceback that buries real errors. A cloud TTS is against the point of
+# the host anyway, so the entry is removed rather than made to work.
+UNWANTED_DOMAINS = ("google_translate",)
+
+
+def prune_unwanted_entries(token) -> None:
+    """Remove config entries for domains this host deliberately does not serve."""
+    entries = rest("GET", "/api/config/config_entries/entry", token=token)
+    for e in entries:
+        if e.get("domain") not in UNWANTED_DOMAINS:
+            continue
+        rest(
+            "DELETE",
+            f"/api/config/config_entries/entry/{e['entry_id']}",
+            token=token,
+            allow=(200, 404),
+        )
+        log(f"[prune] removed the {e['domain']} entry {e.get('title')!r}")
+
+
 def assert_engine_language(ws: WS, kind: str, engine_id: str, lang: str) -> None:
     """Fail loudly if an engine does not advertise the language we are about to set.
 
@@ -830,6 +854,7 @@ def main() -> None:
         want_http = _env_json("HA_HTTP_CONFIG", None)
         if want_http:
             ws, token = ensure_http(ws, token, want_http)
+        prune_unwanted_entries(token)
         stt_engine, tts_engine = ensure_voice(token, ws)
         assert_engine_language(ws, "stt", stt_engine, STT_LANG)
         assert_engine_language(ws, "tts", tts_engine, TTS_LANG)

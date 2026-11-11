@@ -271,11 +271,14 @@ in
           device = "cpu";
         };
 
-        # TTS: piper over Wyoming, loopback only.
+        # TTS: piper over Wyoming, loopback only. The voice must stay in step with
+        # ha-provision.py's TTS_VOICE/TTS_LANG, and piper only accepts a
+        # region-qualified language — a bare "en" is rejected at speak time, which
+        # reaches the user as an unexplained error in the companion app.
         services.wyoming.piper.servers.en = {
           enable = true;
           uri = "tcp://127.0.0.1:10200";
-          voice = "en_US-lessac-medium";
+          voice = "en_GB-northern_english_male-medium";
         };
 
         # Persist HA state, and declare its owner. On a fresh host, impermanence creates
