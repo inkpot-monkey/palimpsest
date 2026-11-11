@@ -120,6 +120,27 @@ in
             customDNS = {
               customTTL = "1h";
               mapping = publicMapping;
+              # A customDNS mapping also claims every SUBDOMAIN of its key, and with the
+              # upstream default (`filterUnmappedTypes = true`) blocky answers NOERROR/NODATA
+              # for every record type it has no mapping for rather than forwarding it. So the
+              # four public names above became black holes for everything that is not an A
+              # record — on BOTH resolvers, for the whole fleet.
+              #
+              # That silently broke the mail cert. `security.acme` solves DNS-01 through
+              # Cloudflare, then has lego verify propagation through the system resolver
+              # (127.0.0.1 → blocky): the TXT at `_acme-challenge.mail.<domain>` is a
+              # subdomain of the mapped `mail.<domain>`, so blocky returned NODATA forever and
+              # every renewal died with "did not return the expected TXT record". It went
+              # unnoticed for a month because lego only ATTEMPTS a renewal inside the 30-day
+              # window — before that the unit exits 0 with nothing to do.
+              #
+              # The same hole swallowed the DANE/TLSA records under `_25._tcp.mail.<domain>`
+              # that profiles/mail/dane-autoupdate.nix publishes: present at Cloudflare,
+              # invisible to anything on the fleet that asked its own resolver.
+              #
+              # `false` makes blocky forward the unmapped TYPE to the upstream group instead.
+              # A/AAAA still come from the mapping, which is the whole point of having it.
+              filterUnmappedTypes = false;
             };
 
             # Tailscale-targeted services come from a hosts file regenerated at runtime
