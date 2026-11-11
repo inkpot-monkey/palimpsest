@@ -104,7 +104,15 @@ nix flake update secrets
 
 Because the owner username is changing from the migration-era `inkpotmonkey` to
 `admin`, the account must be re-created: wipe HA's state so the oneshot onboards
-fresh (state is otherwise reproduced by this script, so nothing of value is lost):
+fresh.
+
+> ⚠ **This is no longer "nothing of value is lost".** It was true while HA had been
+> running for days with nothing in it. The provisioner reproduces the config entries,
+> the areas and the pipeline — but not the recorder's history (state history and the
+> long-term statistics the energy dashboard draws on, which nothing regenerates), nor
+> anything renamed or built in the UI, nor the Companion app's tokens. Take a dump
+> first (`systemctl start ha-db-dump`, then copy `/var/lib/hass/db_*.sqlite3` somewhere
+> off the host) and expect to re-pair the phone. See the "Backups and logs" section.
 
 ```bash
 ssh rk1a 'sudo systemctl stop home-assistant home-assistant-provision \
@@ -115,3 +123,53 @@ ssh rk1a 'systemctl is-active home-assistant-provision'   # -> active (exited)
 
 After a *deliberate* state wipe later, re-run with
 `systemctl start home-assistant-provision`.
+
+## Backups and logs
+
+Both are declarative and need nothing from this runbook in normal operation; this
+section is the map for when something looks wrong.
+
+**Logs** go nowhere special: Home Assistant writes to stdout, systemd puts that in
+the journal, and Vector ships it to VictoriaLogs like every other unit on the fleet
+(ADR-0021). Two deliberate consequences:
+
+- HA's own `home-assistant.log` is **off** (`HA_DISABLE_LOG_FILE`), because it is a
+  second copy inside the directory this host backs up. So Settings → System → Logs
+  has no "Load full logs" download — use `journalctl -u home-assistant` or the Logs
+  dashboard. Flip `custom.profiles.homeassistant.logging.fileLog = true` to get it
+  back.
+- HA's severity is parsed out of its **message text**, not journald's `PRIORITY`.
+  Everything it writes to stdout is PRIORITY=6, so without that its errors would
+  arrive labelled `info` and the Logs dashboard's Errors/Warnings panels — which
+  select on `level` — would show zero no matter how loudly it was failing. The
+  pattern lives in `custom.profiles.monitoring-client.levelFromMessage`; a traceback's
+  continuation lines deliberately stay `info` (one error, not twenty).
+
+Check it end to end from rk1b:
+
+```bash
+ssh rk1b 'curl -s http://localhost:9428/select/logsql/query \
+  --data-urlencode "query=host:rk1a AND unit:home-assistant.service AND level:in(error,warning) | stats count() n" \
+  --data-urlencode "start=24h"'
+```
+
+**Backups** are rk1a's `daily` restic job (`hosts/rk1/ha-backup.nix`): `.storage`,
+`blueprints` and the recorder **dump**, plus `/var/lib/nixos` so a restore lands on
+the right `hass` uid. The live `home-assistant_v2.db` triple is excluded — copying an
+open WAL database is not a restorable artifact — and
+`ha-db-dump.service`/`.timer` writes `db_<UTC>.sqlite3` beside it at 02:45 and 14:45,
+fifteen minutes before each restic run.
+
+```bash
+ssh rk1a 'systemctl status ha-db-dump.timer --no-pager | head -5
+           sudo ls -la /var/lib/hass/db_*.sqlite3
+           journalctl -u ha-db-dump -n 3 --no-pager'
+ssh rk1a 'systemctl list-timers restic-backups-daily-rsyncnet --no-pager'
+```
+
+If the dumps stop, `ha-dump-freshness` **refuses the whole job** rather than ship a
+snapshot with stale history (20h limit, so one missed dump is tolerated and two are
+not). That shows up as the job going cold on the Backups board, not as an alert —
+rk1a holds no matrix credential. The restore procedure, and why it is a dump rather
+than HA's own backup integration, are in the header of
+`modules/nixos/profiles/ha-db-dump.nix`.
