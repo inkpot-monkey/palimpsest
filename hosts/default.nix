@@ -155,17 +155,62 @@ in
           # secret. See modules/nixos/profiles/homeassistant.nix + the runbook.
           custom.profiles.homeassistant.provision.enable = true;
 
-          # The Antela G120 in the office. Driven locally over the Tuya protocol
-          # rather than flashed with ESPHome, because its firmware is past Tuya's
-          # patch (ADR-0037). `protocolVersion` is the version tuya_local's probe
-          # settled on; `deviceType` is the config it matched, at 100% quality.
-          custom.profiles.homeassistant.provision.bulbs.bulb_office = {
-            title = "bulb office";
-            deviceId = "bfad3cfdefffd705a3tgsq";
-            host = "192.168.1.27";
-            deviceType = "rgbcw_lightbulb_xld_cl002";
-            protocolVersion = "3.5";
-            area = "Office";
+          # The Antela bulbs, driven locally over the Tuya protocol rather than
+          # flashed with ESPHome, because their firmware is past Tuya's patch
+          # (ADR-0037). Every one matched `rgbcw_lightbulb_xld_cl002`; the two on
+          # protocol 3.3 are an older batch than the four on 3.5. Each `host` is
+          # reserved in the router — tuya_local is configured with an address, so a
+          # lease change would silently break control. Local keys are
+          # `local_key_<attr>` in the homeassistant sops secret.
+          custom.profiles.homeassistant.provision.bulbs = {
+            bulb_office = {
+              title = "bulb office";
+              deviceId = "bfad3cfdefffd705a3tgsq";
+              host = "192.168.1.27";
+              deviceType = "rgbcw_lightbulb_xld_cl002";
+              protocolVersion = "3.5";
+              area = "Office";
+            };
+            dining_table = {
+              title = "Dining table";
+              deviceId = "bfd519936cf949908fbafw";
+              host = "192.168.1.32";
+              deviceType = "rgbcw_lightbulb_xld_cl002";
+              protocolVersion = "3.5";
+              area = "Living Room";
+            };
+            living_room_standing = {
+              title = "living room standing";
+              deviceId = "bf3555f8dd1143df31ixi3";
+              host = "192.168.1.28";
+              deviceType = "rgbcw_lightbulb_xld_cl002";
+              protocolVersion = "3.3";
+              area = "Living Room";
+            };
+            bedroom = {
+              title = "bedroom";
+              deviceId = "bf55a5063e75172f5dya4g";
+              host = "192.168.1.31";
+              deviceType = "rgbcw_lightbulb_xld_cl002";
+              protocolVersion = "3.3";
+              area = "Bedroom";
+            };
+            entry = {
+              title = "entry";
+              deviceId = "bfee9b7704b1da0360ecyo";
+              host = "192.168.1.25";
+              deviceType = "rgbcw_lightbulb_xld_cl002";
+              protocolVersion = "3.5";
+              area = "Entry";
+            };
+            bathroom_hallway = {
+              title = "bathroom hallway";
+              deviceId = "bfd2b9a47e86b3ee216dm9";
+              host = "192.168.1.29";
+              deviceType = "rgbcw_lightbulb_xld_cl002";
+              protocolVersion = "3.5";
+              area = "Hallway";
+            };
           };
         }
       ];
