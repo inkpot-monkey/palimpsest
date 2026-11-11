@@ -388,6 +388,36 @@ in
   # numbers are real, and there is no noise to silence. The failure is a property of the
   # container, not of the setting.
   systemd.settings.Manager.DefaultIPAccounting = false;
+
+  # The same container limitation, reached from the other end: node-exporter's hardware
+  # collectors cannot read the sysfs trees they need, and each failure is logged at ERROR on
+  # every scrape. Four of them, once a minute, is 5,760 error lines a day — measured here, and
+  # they were the single largest source of genuine-looking errors on the fleet:
+  #
+  #   level=ERROR source=collector.go:168 msg="collector failed" name=powersupplyclass
+  #     err="could not get power_supply class info: … open /sys/class/power_supply: permission denied"
+  #
+  # `permission denied` rather than `no such file`: vpsAdminOS masks these trees, so the
+  # collectors cannot ever work here — this is not a transient or a missing-hardware case that
+  # might change. Nothing in the stack consumes `node_power_supply_*`, `node_hwmon_*`,
+  # `node_nvme_*` or `node_infiniband_*` on this host, so they were pure cost.
+  #
+  # ⚠ Fixed at the CAUSE rather than by relabelling the lines. The fleet gained a
+  # `demoteToDebug` escape hatch at the same time as this (monitoring/client.nix), and reaching
+  # for it here would have been the wrong move: these errors were real, they were just
+  # reporting something we should stop asking for. Host-scoped for the reason the line above is
+  # — on bare metal these collectors work, and a failure there is a signal worth seeing.
+  #
+  # `enabledCollectors` ADDS to node-exporter's defaults and cannot restrict them, hence flags
+  # (modules/nixos/profiles/monitoring/exporters.nix says so too); `extraFlags` concatenates, so
+  # this merges with the profile's textfile-directory flag rather than replacing it. Same shape
+  # as sawtoothShark's single `--no-collector.powersupplyclass`.
+  services.prometheus.exporters.node.extraFlags = [
+    "--no-collector.powersupplyclass"
+    "--no-collector.hwmon"
+    "--no-collector.nvme"
+    "--no-collector.infiniband"
+  ];
   # NOTE: signing is intentionally NOT granted here. It is now a home-sops feature
   # (contract ADR-0002, slice 13) decryptable only by the user's own key, which a headless
   # agent host lacks — and the agent should not sign commits as inkpotmonkey anyway.
