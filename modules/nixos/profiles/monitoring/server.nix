@@ -266,7 +266,15 @@ in
             ++ lib.optionals (config.custom.profiles.litellm.enable or false) [
               {
                 job_name = "litellm";
-                metrics_path = "/metrics";
+                # TRAILING SLASH IS LOAD-BEARING. litellm 1.108.0 serves the registry at
+                # `/metrics/` and 307s the bare path; vmagent does not follow the redirect,
+                # so `/metrics` scrapes nothing and the target just sits `down`. There is
+                # also a second metrics server on port+1 (the multiproc aggregator) which
+                # answers `/metrics` without a slash but carries ZERO litellm_* series in
+                # this single-process deployment -- scraping it would look healthy and
+                # collect nothing, which is worse. Verified: 84 litellm_* series here, 0
+                # there. Re-check both on a major litellm bump.
+                metrics_path = "/metrics/";
                 static_configs = [
                   { targets = [ "127.0.0.1:${toString settings.services.private.litellm.port}" ]; }
                 ];
