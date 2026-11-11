@@ -118,6 +118,20 @@ in
             "esphome"
           ];
 
+          # Local control of the Antela bulbs. Their stock firmware (v1.6.3, Tuya SDK
+          # 3.3.44, built 2024-12-12) is on tuya-cloudcutter's confirmed-patched list, so
+          # ESPHome cannot be flashed onto them over the air and ADR-0015's transport is
+          # void for this hardware — see ADR-0037. tuya_local speaks the Tuya protocol
+          # straight to the bulb's LAN address instead, so control never leaves the house.
+          # nixpkgs packages it along with its tinytuya dependency, which keeps it
+          # declarative — no HACS, no runtime pip. No firewall rule is needed: HA dials the
+          # bulb outbound on TCP 6668 and the device pushes state back over that same
+          # connection. Each bulb is a UI config entry, because the integration is
+          # config-flow only and declares no discovery (no dhcp/zeroconf/ssdp in its
+          # manifest), so HA cannot find it on its own: host, device id and local key are
+          # entered by hand.
+          customComponents = [ pkgs.home-assistant-custom-components.tuya_local ];
+
           # A declarative config is required for the module to manage configuration.yaml. The
           # Assist pipeline and the Wyoming STT/TTS integrations are config-entry integrations,
           # added once in the UI (stored under /var/lib/hass/.storage) — they can't live here.

@@ -1,5 +1,14 @@
 # Runbook: Antela A60 bulbs → Home Assistant (ESPHome via cloudcutter)
 
+> **This procedure does not apply to the bulbs we own.** Their firmware (v1.6.3, Tuya SDK 3.3.44)
+> is on cloudcutter's confirmed-patched list, so step ③C — the go/no-go gate — cannot succeed:
+> there is no profile to find and no exploit to run. Those bulbs are controlled through
+> `tuya_local` instead; see [ADR-0037](../adr/0037-antela-bulbs-controlled-locally-over-tuya.md).
+>
+> Kept because it is still correct for an *unpatched* bulb, and because steps ① and ② (deploy,
+> and seed the stash secret) are both done and are shared with a future serial flash. A serial
+> flash would replace only step ③C.
+
 How to bring an Antela Filament A60 WiFi bulb under local Home Assistant control by flashing ESPHome onto it with tuya-cloudcutter. Decision rationale and rejected alternatives are in [ADR-0015](../adr/0015-bulbs-run-esphome-via-cloudcutter.md); the per-bulb config lives in [`esphome/`](../../esphome/); work is tracked in `.scratch/antela-bulbs/` (local, gitignored).
 
 ## The shape of it
