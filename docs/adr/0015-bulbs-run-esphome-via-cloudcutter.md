@@ -4,7 +4,8 @@
 > The prerequisite stated under Consequences below — the bulb's firmware being old enough to be
 > exploitable — fails on our hardware (v1.6.3, Tuya SDK 3.3.44), so the over-the-air cloudcutter
 > path is closed and local control of the stock firmware was adopted instead. The chip findings
-> and the ESPHome configs here remain valid, and are what a serial flash would use.
+> and the ESPHome configs here remain valid, and are what a serial flash would use — though
+> note the hardware is an RGBCW G120 globe, not the filament A60 assumed throughout.
 
 The Antela smart bulbs are WiFi/Tuya devices, so the obvious path is Home Assistant's built-in `tuya` cloud integration. We instead flash them with ESPHome (LibreTiny) over-the-air using [tuya-cloudcutter](https://github.com/tuya-cloudcutter/tuya-cloudcutter) and adopt them through HA's native ESPHome integration. This keeps the fleet's local-first, tailnet-only posture — the bulbs never depend on Tuya's cloud — and makes each bulb's firmware a version-controlled ESPHome YAML, consistent with the declarative ethos.
 

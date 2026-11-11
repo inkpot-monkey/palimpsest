@@ -1,3 +1,12 @@
+# HARDWARE CORRECTION (ADR-0037): the bulb this was written for is not a filament
+# A60. tuya_local identified it as an ANTELA Smart Bulb G120 (product id
+# o4hbt2okpqdzohes) and matched the `rgbcw_lightbulb_xld_cl002` config at 100%
+# quality — an RGBCW colour globe. So Variant A below (two-channel CCT) is the
+# WRONG shape for it; an RGB+CCT driver is. Its live datapoints were
+# {20: on/off, 21: work mode, 22: brightness, 23: colour temp, 24: HSV colour,
+# 25: scene, 26: countdown}. The `a60` naming is kept only because the stash
+# secret keys (api_key_antela_a60_1, ota_password_antela_a60_1) are named after it.
+#
 # DRAFT ESPHome config for an Antela Filament A60 on LibreTiny (BK7231N).
 #
 # This is a TEMPLATE — copy to `antela-a60-<n>.yaml`, set the substitutions, and finalise
