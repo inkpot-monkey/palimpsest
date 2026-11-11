@@ -142,8 +142,15 @@ the journal, and Vector ships it to VictoriaLogs like every other unit on the fl
   Everything it writes to stdout is PRIORITY=6, so without that its errors would
   arrive labelled `info` and the Logs dashboard's Errors/Warnings panels — which
   select on `level` — would show zero no matter how loudly it was failing. The
-  pattern lives in `custom.profiles.monitoring-client.levelFromMessage`; a traceback's
-  continuation lines deliberately stay `info` (one error, not twenty).
+  pattern is `self.lib.logLevelPatterns.pythonLogging`, declared through
+  `custom.profiles.monitoring-client.levelFromMessage`; a traceback's continuation
+  lines deliberately stay `info` (one error, not twenty).
+- **One message is demoted to `debug`**: `Received binary message for non-existing handler`. `assist_pipeline` is the only user of binary websocket handlers, and the
+  Companion app keeps streaming audio for a moment after a run unregisters its
+  handler — one ERROR per late chunk, which was 340 of this host's 396 daily errors.
+  The line is still in the journal verbatim. ⚠ If Assist ever starts losing audio
+  mid-utterance, un-demote this first: `custom.profiles.monitoring-client.demoteToDebug`
+  in the profile.
 
 Check it end to end from rk1b:
 
