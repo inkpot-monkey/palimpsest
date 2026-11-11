@@ -148,6 +148,19 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # Hermes Agent (Nous Research) — the fleet's agent runtime, replacing openclaw. Ships
+    # its own NixOS module, so only host glue lives here
+    # (modules/nixos/profiles/hermes.nix).
+    #
+    # Its nixpkgs is deliberately NOT followed. The package is a uv2nix Python closure plus
+    # a pnpm Node build, both locked against the nixpkgs the upstream flake pins and tests;
+    # repointing those at ours is the kind of version mismatch that surfaces as a wheel
+    # failing to build on aarch64, a long way from this line. The openclaw-nix input it
+    # replaces was unfollowed for the same reason.
+    hermes-agent = {
+      url = "github:NousResearch/hermes-agent";
+    };
+
     openclaw-nix = {
       url = "github:openclaw/nix-openclaw";
     };
