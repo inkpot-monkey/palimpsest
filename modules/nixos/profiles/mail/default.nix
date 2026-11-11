@@ -65,6 +65,15 @@ in
             dnsProvider = "cloudflare";
             environmentFile = config.sops.templates.cloudflare_acme_env.path;
             group = "stalwart-mail";
+            # Check DNS-01 propagation against a PUBLIC resolver, not the host's own.
+            # Unset, lego checks for the `_acme-challenge` TXT through the system resolver,
+            # which on every fleet host is the local blocky (networking.nameservers =
+            # 127.0.0.1) — a split-horizon resolver that holds opinions about this very
+            # domain and caches aggressively (minTime 5m). That coupling already cost a
+            # month of failed renewals once (see the customDNS note in profiles/blocky.nix);
+            # pinning the check to 1.1.1.1 means renewal can no longer be broken by a change
+            # to the fleet's internal DNS policy.
+            dnsResolver = "1.1.1.1:53";
           };
         };
 
