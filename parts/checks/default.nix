@@ -87,6 +87,20 @@
         ha_dump_schedule = import ./ha-dump-schedule {
           inherit pkgs self;
         };
+        # The fleet's log-format catalogue (modules/shared/log-level-patterns.nix), which is
+        # the only thing standing between a service's errors and total invisibility: journald
+        # stamps every stdout line PRIORITY=6, and `level` is what every error view on the
+        # fleet selects on. The failure mode is silence — a pattern that stops matching after
+        # an upstream format change labels everything `info` again and nothing complains — so
+        # this runs the REAL generated VRL through the REAL compiler over verbatim journal
+        # lines captured from the fleet, pinning both that each service's severity is read and
+        # that look-alikes are not: blocky's `response_code=NOERROR` (1.5M lines a month), a
+        # postgres DETAIL, immich's multi-line Postgres notices, a python traceback. It also
+        # refuses a pattern with no case and a wired unit with no corpus entry, in both
+        # directions.
+        log_levels = import ./log-levels {
+          inherit pkgs self;
+        };
         # The tailnet guard's route order (palimpsest#218's deferred follow-up). `internal_only`
         # is the whole of the access control on every private service, and a bare `abort` loses
         # Caddy's directive order to the vhost's own matcher-less handle — which is how vault,

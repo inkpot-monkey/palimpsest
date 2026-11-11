@@ -1,0 +1,178 @@
+{
+  "units": {
+    "blocky.service": {
+      "pattern": "blocky"
+    },
+    "prometheus-node-exporter.service": {
+      "pattern": "goSlog"
+    },
+    "postgresql.service": {
+      "pattern": "postgres"
+    },
+    "podman-gluetun.service": {
+      "pattern": "gluetun"
+    },
+    "vaultwarden.service": {
+      "pattern": "vaultwarden"
+    },
+    "litellm.service": {
+      "pattern": "litellm"
+    },
+    "music-assistant.service": {
+      "pattern": "pythonLogging"
+    },
+    "matrix-hookshot.service": {
+      "pattern": "hookshot"
+    },
+    "immich-server.service": {
+      "pattern": "nestjs"
+    },
+    "home-assistant.service": {
+      "pattern": "pythonLogging",
+      "demote": ["Received binary message for non-existing handler"]
+    },
+    "sshd.service": {
+      "pattern": null
+    }
+  },
+  "cases": [
+    {
+      "unit": "blocky.service",
+      "expect": "error",
+      "why": "blocky's real errors, invisible before this: 10,939 of them in 30 days",
+      "msg": "[2026-10-18 03:56:05] ERROR caching: can't prefetch 'cloudflare-dns.com' upstream 'https://one.one.one.one/dns-query': all 3 attempts to resolve via upstream https://one."
+    },
+    {
+      "unit": "blocky.service",
+      "expect": "info",
+      "why": "THE case the anchor exists for: `response_code=NOERROR` on an ordinary query log. 1.5M lines in 30 days, and an unanchored pattern calls every one an error",
+      "msg": "[2026-10-19 12:01:51]  INFO queryLog: query resolved answer=CNAME (dualstack.n.sni.global.fastly.net.), AAAA (2a04:4e42:600::347), AAAA (2a04:4e42::347), AAAA (2a04:4e42:"
+    },
+    {
+      "unit": "prometheus-node-exporter.service",
+      "expect": "error",
+      "why": "go slog logfmt. These particular ones were fixed at the cause (kelpy cannot read /sys/class/* in a container), but the format must still be read correctly",
+      "msg": "time=2026-10-12T21:15:15.325+02:00 level=ERROR source=collector.go:168 msg=\"collector failed\" name=powersupplyclass duration_seconds=0.001868113 err=\"could not get power_"
+    },
+    {
+      "unit": "postgresql.service",
+      "expect": "warning",
+      "why": "the collation version mismatch, 4353 a day across three databases — a real latent issue that nothing could see while it was labelled info",
+      "msg": "[539976] WARNING:  database \"immich\" has a collation version mismatch"
+    },
+    {
+      "unit": "postgresql.service",
+      "expect": "info",
+      "why": "postgres calls its informational level LOG, which is not one of the names the dashboards use; the mapping table turns it into info rather than inventing a `log` label",
+      "msg": "[2936024] LOG:  checkpoint starting: time"
+    },
+    {
+      "unit": "postgresql.service",
+      "expect": "info",
+      "why": "a continuation line of the WARNING above it. Must NOT match: counting DETAIL and HINT separately would treble every postgres warning",
+      "msg": "[490576] DETAIL:  The database was created using collation version 2.42, but the operating system provides version 2.44."
+    },
+    {
+      "unit": "podman-gluetun.service",
+      "expect": "error",
+      "why": "the VPN tunnel's own errors. Given that gluetun dies with its unit still active, these are the highest-value lines on rk1b",
+      "msg": "2026-10-13T13:23:49Z ERROR [port forwarding] adding port mapping: executing remote procedure call: reading from udp connection: read udp 10.2.0.2:36080->10.2.0.1:5351: re"
+    },
+    {
+      "unit": "podman-gluetun.service",
+      "expect": "info",
+      "why": "same format, informational — proves the pattern reads the level rather than matching the shape",
+      "msg": "2026-10-17T08:58:51Z INFO [dns] downloading hostnames and IP block lists\n"
+    },
+    {
+      "unit": "vaultwarden.service",
+      "expect": "error",
+      "why": "vaultwarden's bracketed format, three fields before the level",
+      "msg": "[2026-10-19 02:35:21.918][vaultwarden::auth][ERROR] Token has expired"
+    },
+    {
+      "unit": "vaultwarden.service",
+      "expect": "info",
+      "why": "the same format at info",
+      "msg": "[2026-10-19 02:30:01.277][vaultwarden][INFO] Backup to '/var/lib/vaultwarden/db_20261019_003001.sqlite3' was successful"
+    },
+    {
+      "unit": "litellm.service",
+      "expect": "error",
+      "why": "LiteLLM's own proxy logger",
+      "msg": "09:54:54 - LiteLLM Proxy:ERROR: auth_exception_handler.py:207 - litellm.proxy.proxy_server.user_api_key_auth(): Exception occured - Malformed API Key passed in. Ensure Ke"
+    },
+    {
+      "unit": "litellm.service",
+      "expect": "warning",
+      "why": "the same logger at warning",
+      "msg": "09:54:21 - LiteLLM Proxy:WARNING: login_throttle.py:126 - trusted_proxy_ranges is not set or not a valid list of ranges, so failed Admin UI sign-in attempts are limited p"
+    },
+    {
+      "unit": "litellm.service",
+      "expect": "info",
+      "why": "uvicorn's access log, a SECOND format in the same unit. Deliberately unmatched: it is already info, and it is one line per scrape",
+      "msg": "INFO:     100.64.0.1:37118 - \"GET / HTTP/1.1\" 200 OK"
+    },
+    {
+      "unit": "music-assistant.service",
+      "expect": "warning",
+      "why": "Music Assistant shares Home Assistant's python format but colours every line, which is why the pattern tolerates an ANSI prefix",
+      "msg": "\u001b[33m2026-10-14 21:56:54.854 WARNING (MainThread) [music_assistant.tasks] Background task Sync OpenSubsonic Media Server Library podcasts failed: 501, message='Not Implem"
+    },
+    {
+      "unit": "music-assistant.service",
+      "expect": "info",
+      "why": "the same, at info, in a different colour",
+      "msg": "\u001b[32m2026-10-19 22:59:02.138 INFO (MainThread) [music_assistant.music.genre] Genre mapping scan completed: 0 items mapped (0.1s)\u001b[0m"
+    },
+    {
+      "unit": "matrix-hookshot.service",
+      "expect": "error",
+      "why": "level first, then the timestamp",
+      "msg": "ERROR 13:38:47:193 [GitHubWatcher] An error occurred getting notifications: RequestError [HttpError]: other side closed"
+    },
+    {
+      "unit": "matrix-hookshot.service",
+      "expect": "info",
+      "why": "the same shape at info",
+      "msg": "INFO 02:01:39:983 [GenericHookConnection] onGenericHook !REDACTED_ROOM_ID REDACTED020488c86bb8811a5c2a2f4fbd007ea64c279b9b226be2cc12"
+    },
+    {
+      "unit": "immich-server.service",
+      "expect": "info",
+      "why": "NestJS, with the level right-padded between escape sequences",
+      "msg": "\u001b[32m[Nest] 2936364  - \u001b[39m10/19/2026, 12:40:00 PM \u001b[32m    LOG\u001b[39m \u001b[33m[Microservices:VersionService]\u001b[39m \u001b[32mFound v3.3.3, released at 10/14/2026, 6:56:21 PM\u001b[39m"
+    },
+    {
+      "unit": "immich-server.service",
+      "expect": "info",
+      "why": "⚠ a continuation line of a multi-line Postgres notice immich dumps — 68 a day. Without the `[Nest]` anchor every one is a false error",
+      "msg": "  severity: 'WARNING',"
+    },
+    {
+      "unit": "home-assistant.service",
+      "expect": "error",
+      "why": "the python format, uncoloured",
+      "msg": "2026-10-19 12:25:41.197 ERROR (MainThread) [homeassistant.components.samsungtv] Error occurred loading flow for integration samsungtv: No module named 'getmac'"
+    },
+    {
+      "unit": "home-assistant.service",
+      "expect": "info",
+      "why": "a traceback's continuation line. Stays at its journald level on purpose: the ERROR that opened it is the error, and one traceback is not twenty",
+      "msg": "Traceback (most recent call last):"
+    },
+    {
+      "unit": "home-assistant.service",
+      "expect": "debug",
+      "why": "⚠ THE DEMOTION. assist_pipeline is the only user of binary websocket handlers, and the companion app keeps streaming audio after a pipeline run unregisters its handler — one ERROR per late audio chunk, 340 of HA's 396 daily errors. Promoted by the format pattern, then put back down.",
+      "msg": "2026-11-11 18:28:12.542 ERROR (MainThread) [homeassistant.components.websocket_api.http.connection] [277431756935136] Received binary message for non-existing handler 1"
+    },
+    {
+      "unit": "sshd.service",
+      "expect": "info",
+      "why": "sshd is deliberately NOT wired. Nearly every line it writes carries no level of its own (`Invalid user ...`, `Accepted publickey ...`), and the one that does is this: 704 a day on kelpy, all from internet scanners, about the REMOTE client's algorithm choice rather than anything about our host. Promoting it would add 704 unactionable warnings and nothing else.",
+      "msg": "WARNING: connection from 198.51.100.7 port 36532 is not using a post-quantum key exchange algorithm: \"curve25519-sha256\" [preauth]"
+    }
+  ]
+}
