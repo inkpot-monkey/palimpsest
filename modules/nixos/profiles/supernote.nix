@@ -278,8 +278,8 @@ in
         # A private, static system user. uid/gid are PINNED: the store lives on persisted disk,
         # and an auto-allocated id reshuffle across a reboot would orphan every blob/DB file in
         # place (this fleet has been bitten by exactly that — see [[kelpy-uid-map-drift]], and the
-        # same reasoning openclaw/library pin theirs). 982 is free fleet-wide (977/978/981/987/993
-        # gids and 985/988/989 uids are already taken; 982 is unclaimed).
+        # same reasoning hermes/library pin theirs). 982 is free fleet-wide (976/977/978/981/
+        # 987/993 gids and 976/985/988/990 uids are already taken; 982 is unclaimed).
         users.users.supernote = {
           isSystemUser = true;
           group = "supernote";

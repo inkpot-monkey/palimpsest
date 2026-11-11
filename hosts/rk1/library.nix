@@ -50,7 +50,7 @@
   # GID is pinned deliberately: the tree's group ownership lives on persistent NVMe, and an
   # auto-allocated GID reshuffle would orphan every file's group in place (this fleet has been
   # bitten by exactly that — see [[kelpy-uid-map-drift]]). 977 is free fleet-wide and unclaimed
-  # by any other pinned id here (music=978, stalwart-mail=981, openclaw=987).
+  # by any other pinned id here (hermes=976, music=978, stalwart-mail=981, git-annex=987).
   users.groups.library.gid = 977;
 
   # git-annex joins `library` so the tree it owns is group-readable to future members (the

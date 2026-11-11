@@ -316,9 +316,12 @@ in
         # NVMe, and an auto-allocated uid/gid reshuffle across a reboot would orphan every one of those
         # files in place — this fleet has been bitten by exactly that (see [[kelpy-uid-map-drift]]:
         # stalwart and openclaw both lost their state to it). Upstream's `users.users.stump` pins
-        # nothing. 979 is free fleet-wide: the claimed ids here are gids 977 (library), 978 (music),
-        # 981 (stalwart-mail), 982 (supernote), 987 (openclaw), 993 (media) and uids 982 (supernote),
-        # 985 (stalwart-mail), 988 (qbittorrent), 989 (openclaw).
+        # nothing. 979 is free fleet-wide: the claimed ids here are gids 976 (hermes), 977
+        # (library), 978 (music), 981 (stalwart-mail), 982 (supernote), 987 (git-annex), 993
+        # (media) and uids 976 (hermes), 982 (supernote), 985 (stalwart-mail), 988
+        # (qbittorrent), 990 (git-annex). This list credited 987/989 to `openclaw` until
+        # 2026-11-11; openclaw held neither — it was never enabled on any host, and 987 is
+        # git-annex's.
         users.users.stump = {
           uid = 979;
           # Read the corpus through the tree's sharing group — Stump never writes it. Whether this
