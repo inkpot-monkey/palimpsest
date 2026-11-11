@@ -11,7 +11,7 @@ The whole set of machines this repo builds and deploys, as one unit.
 _Avoid_: cluster, estate.
 
 **Host**:
-A single machine with a `nixosConfiguration`, named by a marine/animal codename (`kelpy`, `porcupineFish`, `stargazer`, …). The RK1 LLM boxes `rk1a`/`rk1b` are hosts too — "node" is just a more specific word for them, not a separate category.
+A single machine with a `nixosConfiguration`, named by a marine/animal codename (`kelpy`, `porcupineFish`, `sawtoothShark`, …). The RK1 LLM boxes `rk1a`/`rk1b` are hosts too — "node" is just a more specific word for them, not a separate category.
 _Avoid_: box, server.
 
 **Always-on host** / **On-demand host**:
@@ -168,7 +168,7 @@ How a person is bound to a host. This fleet uses **build-time binding** exclusiv
 authored: `hosts/default.nix` names each user and its affordances, and `bindContractUsers` reads the
 index, selects the mode, confers the grant and realizes the account. The contract also ships a
 **runtime binding** — the greeter, taking a flake URL, a username and a password — which **no host
-here runs**: the desktop seats are SDDM + Plasma, and stargazer's `regreet` is explicitly disabled
+here runs**: the desktop seats are SDDM + Plasma, and a seat's `regreet` is explicitly disabled
 in favour of it. The greeter's proofs are the contract's own; what this repo proves is its own bind
 (`contract_seat`, `host_fleet_coherence`).
 _Avoid_: enable (a user is never bound by enabling itself; the host's bind binds).

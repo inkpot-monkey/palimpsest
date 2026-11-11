@@ -18,7 +18,6 @@ graph TD
     B --> B2[shells.nix]
     B --> B3[git-hooks.nix]
     
-    C --> C1[stargazer]
     C --> C2[sawtoothShark]
     C --> C3[kelpy]
     C --> C4[porcupineFish]

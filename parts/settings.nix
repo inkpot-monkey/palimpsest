@@ -323,7 +323,7 @@ in
       rk1b = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM8vcWJlfVAx0p384OZniUuuo66oYnC9XlPaeajMZtTM";
       porcupineFish = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPB1Szi8Wcy14xVp8t1dldg7zeRcjuUFN2Im+d2MExsq";
       sawtoothShark = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIICKpf3TlWKUf4U2JlOQqY43sJ0T/Q3stMfiz6uz9qWr";
-      # stargazer, weedySeadragon and potbelliedSeahorse are absent because they were
+      # weedySeadragon and potbelliedSeahorse are absent because they were
       # powered off when this was populated, not because they are excluded. Add them with
       # the command above; an absent host simply keeps the old first-contact prompt.
     };
@@ -420,14 +420,6 @@ in
       diskFloorGiB = 5;
     };
 
-    nodes.stargazer = {
-      hostName = "stargazer";
-      presence = "on-demand";
-      # UNMEASURED: on-demand and off for the whole retention window, so it published no
-      # filesystem series to backtest against. Holds the fleet default until it does.
-      diskFloorGiB = 5;
-    };
-
     nodes.sawtoothShark = {
       hostName = "sawtoothShark";
       presence = "on-demand";
@@ -441,7 +433,8 @@ in
     nodes.weedySeadragon = {
       hostName = "weedySeadragon";
       presence = "on-demand";
-      # UNMEASURED, as stargazer.
+      # UNMEASURED: on-demand and off for the whole retention window, so it published no
+      # filesystem series to backtest against. Holds the fleet default until it does.
       diskFloorGiB = 5;
     };
 

@@ -407,15 +407,6 @@
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "stargazer" },
-            "properties": [
-              {
-                "id": "color",
-                "value": { "mode": "fixed", "fixedColor": "#d55181" }
-              }
-            ]
-          },
-          {
             "matcher": { "id": "byName", "options": "weedySeadragon" },
             "properties": [
               {
@@ -512,15 +503,6 @@
               {
                 "id": "color",
                 "value": { "mode": "fixed", "fixedColor": "#e66767" }
-              }
-            ]
-          },
-          {
-            "matcher": { "id": "byName", "options": "stargazer" },
-            "properties": [
-              {
-                "id": "color",
-                "value": { "mode": "fixed", "fixedColor": "#d55181" }
               }
             ]
           },

@@ -48,15 +48,6 @@ let
 in
 {
   flake.nixosConfigurations = {
-    stargazer = mkSystem {
-
-      modules = [
-        ./stargazer/configuration.nix
-        guiSeat
-        (bindUsers { inkpotmonkey = operator; })
-      ];
-    };
-
     weedySeadragon = mkSystem {
 
       modules = [
@@ -152,9 +143,11 @@ in
           # modules/nixos/profiles/homeassistant.nix. The real-time STT is the small
           # base-int8 faster-whisper; voice latency isn't critical so it's fine on CPU.
           # Voice is light on disk (no GGUF), so it fits rk1a's 29 GB eMMC without an NVMe.
-          # (Heavyweight WhisperX batch transcription lives on stargazer now — its Zen 5 CPU
-          # is ~8-10x faster than the A76s for large-v3, so an hour of audio takes ~15 min
-          # vs ~2h.)
+          # (Heavyweight WhisperX batch transcription HAS NO HOME since stargazer was
+          # removed on 2026-11-11. It ran there on a Zen 5 CPU at ~8-10x the A76s for
+          # large-v3 — an hour of audio in ~15 min against ~2h — so moving it onto these
+          # boards is not a like-for-like swap. The `whisper` model on the LiteLLM gateway
+          # is the cloud path if transcription is wanted back before new hardware.)
           custom.profiles.homeassistant.enable = true;
           # Codify the Assist-pipeline wiring (Wyoming STT/TTS) as a fail-loud,
           # idempotent post-start oneshot instead of a manual UI step. Owner

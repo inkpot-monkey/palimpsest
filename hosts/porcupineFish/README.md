@@ -41,7 +41,9 @@ _clock-stability_ trade discussed in the RUNBOOK, which is a separate decision.
 
 ## Deployment
 
-Deploy updates directly from your laptop (Stargazer). This command builds the system locally and pushes it to the Pi.
+Deploy updates directly from whichever workstation you are on (`sawtoothShark` today — this
+said "Stargazer" until that machine was removed on 2026-11-11). The command builds the
+system locally and pushes it to the Pi.
 
 ```bash
 nixos-rebuild switch --flake .#porcupineFish --target-host root@porcupineFish --accept-flake-config
