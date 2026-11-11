@@ -304,6 +304,13 @@ in
           # change of address. Binds 0.0.0.0 + tailscale0 only, like Immich.
           custom.profiles.litellm.enable = true;
 
+          # Hermes Agent — the fleet's agent runtime (replaces openclaw). Here rather than
+          # anywhere else because LiteLLM is on this host: the agent reaches the model over
+          # LOOPBACK instead of a tailnet hop, and this is the only node with both the RAM
+          # headroom and the NVMe for a growing session store. kelpy cannot host it (1 GB
+          # of 4 free) and rk1a has the RAM but 6.5 GB on a 77%-full eMMC.
+          custom.profiles.hermes.enable = true;
+
           # Music Assistant — the library-plane brain (ADR-0031). Reads Navidrome (over loopback,
           # co-located here) and pushes audio to porcupineFish's snapserver in external-server mode,
           # so the Navidrome library plays out the Pi's speakers, controlled from Home Assistant on
@@ -415,6 +422,13 @@ in
               "jellyfin.service"
               "podman-qbittorrent-app.service" # torrent
               "podman-slskd.service" # Soulseek music seeder (ADR-0029)
+              # The agent runtime. Loopback-only and deliberately NOT in settings.services
+              # (see profiles/hermes.nix), so the off-host Gatus probe cannot reach it and
+              # this watch is the only thing that would ever report it dead. Both units are
+              # long-running daemons, so neither has the oneshot spam problem that keeps
+              # timer jobs off this list.
+              "hermes-agent.service" # the gateway: cron dispatch + sessions
+              "hermes-backend.service" # the admin panel / api sockets
             ];
           };
 

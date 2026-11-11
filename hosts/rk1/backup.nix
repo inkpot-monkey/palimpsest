@@ -155,6 +155,28 @@ in
       # kelpy replica is a second LIVE copy, not a backup. #150 named this the highest
       # priority of the whole rollout and it has been sitting here unprotected.
       "/var/cache/library"
+
+      # ── The agent runtime's state (profiles/hermes.nix) ─────────────────────────────────
+      # This travels because it is the one thing here that the flake CANNOT rebuild. Hermes
+      # cron jobs are not declarative — they live in jobs.json and are created with the
+      # `hermes` CLI or the dashboard — and the same tree holds hand-written skills and the
+      # session store. Losing it loses the schedule itself, silently: a restored host would
+      # come up healthy, with the gateway running and nothing ever firing.
+      # The /persistent prefix is what the classifier matches (`root + dir`), and it is
+      # also where the bytes actually are: impermanence bind-mounts this onto /var/lib/hermes.
+      "/persistent/var/lib/hermes"
+    ];
+
+    # Two subtrees of /var/lib/hermes that would otherwise dominate the snapshot without
+    # adding anything a restore wants:
+    #   cron/output   one markdown file per run, and NOTHING auto-prunes it (unlike the
+    #                 2 MB/2000-line cap OpenClaw put on its run log). It grows forever and
+    #                 churns nightly, which also defeats restic's dedup.
+    #   workspace     the agent's working tree — clones and scratch, re-acquirable from the
+    #                 forge, and the one directory here that a long agent run will inflate.
+    exclude = [
+      "/persistent/var/lib/hermes/.hermes/cron/output"
+      "/persistent/var/lib/hermes/workspace"
     ];
 
     # Everything else this host keeps across reboots, and why it does not travel.

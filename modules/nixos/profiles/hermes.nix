@@ -61,13 +61,19 @@ in
       CUSTOM_API_KEY=${config.sops.placeholder.litellm_key}
     '';
 
-    # Pin the uid/gid, inherited from the openclaw profile this replaces. Otherwise
-    # auto-allocated, they get reshuffled by a reboot that re-derives the system-user map,
-    # which orphans /var/lib/hermes (its sqlite ends up owned by another service's id) and
-    # crash-loops the gateway. The upstream module creates the user; only the numbers here
-    # are ours.
-    users.users.hermes.uid = 989;
-    users.groups.hermes.gid = 987;
+    # Pin the uid/gid. Otherwise auto-allocated, they get reshuffled by a reboot that
+    # re-derives the system-user map, which orphans /var/lib/hermes (its sqlite ends up
+    # owned by another service's id) and crash-loops the gateway. The upstream module
+    # creates the user; only the numbers here are ours.
+    #
+    # ⚠ NOT openclaw's old 989/987. Those were never deployed, and gid 987 ALREADY BELONGS
+    # to git-annex (hosts/rk1/git-annex.nix) — a latent collision that stayed invisible
+    # only because openclaw was enabled on no host. `nix flake check` catches it the moment
+    # anything lands them on one machine (`trace: Duplicate gid 987`). On rk1b every gid
+    # from 977 up is taken, so this pair comes from below that block: 968-976 is unclaimed
+    # on every host and by every pin in this repo.
+    users.users.hermes.uid = 976;
+    users.groups.hermes.gid = 976;
 
     services.hermes-agent = {
       enable = true;

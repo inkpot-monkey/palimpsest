@@ -39,6 +39,7 @@
     docker = ./docker.nix;
     affine = ./affine;
     litellm = ./litellm.nix;
+    hermes = ./hermes.nix;
     openclaw = ./openclaw.nix;
     homeassistant = ./homeassistant.nix;
     navidrome = ./navidrome.nix;
