@@ -15,49 +15,14 @@ in
 {
   imports = [
     ./exporters.nix
+    # `levelFromMessage` / `demoteToDebug` — declared next door so a service profile can set
+    # them by importing that file, without dragging Vector in. See its header.
+    ./log-levels.nix
   ];
 
   options.custom.profiles.monitoring-client = {
     enable = lib.mkEnableOption "monitoring client (Vector, exporters) configuration";
 
-    levelFromMessage = lib.mkOption {
-      type = lib.types.attrsOf lib.types.str;
-      default = { };
-      example = lib.literalExpression ''
-        {
-          "home-assistant.service" =
-            "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d+ (?P<lvl>WARNING|ERROR|CRITICAL) ";
-        }
-      '';
-      description = ''
-        Units whose own severity must be read out of the MESSAGE TEXT, keyed by unit name,
-        each with the regex that finds it (one named capture group, `lvl`).
-
-        WHY THIS EXISTS. `level` is derived from journald's `PRIORITY`, which is the only
-        thing journald knows — and a service that writes to stdout gets PRIORITY=6 for every
-        line it ever emits, errors included. Nothing is lost in the journal (the text still
-        says `ERROR`), but every query, panel and alert that selects on `level` goes blind:
-        the Logs dashboard's entire Errors/Warnings half is `level:in(error,…)`, so such a
-        service contributes zero to it no matter how loudly it is failing. Measured on rk1a
-        before this landed: 396 Home Assistant ERROR/WARNING lines in 24h, of which
-        `level:in(error,warning,critical,fatal)` returned none.
-
-        The fix has to be per-service because the FORMAT is per-service — only the service
-        knows how it spells its own severity — so a service profile declares its own pattern
-        here rather than this module guessing. Anchored patterns, so a line that merely
-        mentions the word "error" is not promoted.
-
-        ⚠ Write a pattern as an INDENTED (two single quotes) string, or double every
-        backslash: a regular Nix string eats `\d` into a literal `d`, which then silently
-        matches nothing.
-
-        ⚠ Lines that do not match keep their journald level. For a Python service that means
-        a traceback's continuation lines stay `info` while the `ERROR` line opening it is
-        promoted. Deliberate: merging them needs a stateful `reduce` transform, which buffers
-        each unit's last event until the next arrives and so makes the live tail lag — and
-        this is the better count anyway, since a 20-line traceback is one error, not twenty.
-      '';
-    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -121,12 +86,39 @@ in
               .level = "debug"
             }
           ''
-          # Promote the severity a service writes into its own message text. The journald
+          # Promote the severity a service writes into its own message text, then demote the
+          # lines a service calls errors that this fleet has decided are not. The journald
           # source can only report PRIORITY, and a service logging to stdout is PRIORITY=6
-          # for every line — so without this its errors arrive labelled `info` and the
-          # fleet's error views cannot see them at all. One anchored pattern per unit,
-          # declared by the service's own profile; see `levelFromMessage` above for the
-          # measurement that prompted it and for what deliberately stays unmatched.
+          # for every line — so without the first half its errors arrive labelled `info` and
+          # the fleet's error views cannot see them at all. See `levelFromMessage` and
+          # `demoteToDebug` above for the measurements, and for what deliberately stays
+          # unmatched.
+          + lib.optionalString (cfg.levelFromMessage != { }) ''
+
+            # Whatever a service calls its levels, mapped onto the five the dashboards and
+            # the PRIORITY table above use. Every promotion goes through this, so an
+            # unrecognised token leaves `level` ALONE rather than inventing a new label
+            # value — postgres says LOG and NOTICE, blocky can say WARN, go services say
+            # FATAL, and a dashboard filtering `level:in(error,critical,fatal)` must not
+            # have to know that.
+            level_names = {
+              "trace": "debug",
+              "debug": "debug",
+              "info": "info",
+              "notice": "info",
+              "log": "info",
+              "warn": "warning",
+              "warning": "warning",
+              "err": "error",
+              "error": "error",
+              "crit": "critical",
+              "critical": "critical",
+              "alert": "critical",
+              "fatal": "fatal",
+              "panic": "fatal",
+              "emerg": "fatal"
+            }
+          ''
           + lib.concatStrings (
             lib.mapAttrsToList (unit: pattern: ''
 
@@ -135,18 +127,28 @@ in
                 if matched != null {
                   # No `??` on to_string: it is infallible for a capture group, and VRL
                   # REFUSES an unnecessary error-coalesce (E651) rather than ignoring it.
-                  found = downcase(to_string(matched.lvl))
-                  # `warn` is what some loggers spell it; VictoriaLogs' Grafana plugin and
-                  # every panel in logs.json expect `warning`, as the PRIORITY map above emits.
-                  if found == "warn" {
-                    found = "warning"
-                  }
-                  if found != "" {
-                    .level = found
+                  mapped = get(level_names, [downcase(to_string(matched.lvl))]) ?? null
+                  if mapped != null {
+                    .level = mapped
                   }
                 }
               }
             '') cfg.levelFromMessage
+          )
+          # LAST, so a demotion always beats the promotion above: a service that logs a
+          # known-benign condition at ERROR gets promoted by its own format pattern and then
+          # put back down, which is the correct order — the journal keeps what the service
+          # said, and the error views keep their meaning.
+          + lib.concatStrings (
+            lib.mapAttrsToList (unit: needles: ''
+
+              if .unit == ${builtins.toJSON unit} {
+                demote_msg = to_string(._msg) ?? ""
+                if ${lib.concatMapStringsSep " || " (n: "contains(demote_msg, ${builtins.toJSON n})") needles} {
+                  .level = "debug"
+                }
+              }
+            '') cfg.demoteToDebug
           );
         };
 

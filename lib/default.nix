@@ -16,6 +16,12 @@ let
   helpers = lib // {
     inherit overlays;
 
+    # Per-service log-format regexes for monitoring/client.nix's `levelFromMessage`, exposed
+    # through `self.lib` so a profile at any depth reaches them the same way and so
+    # parts/checks/log-levels can enumerate the whole catalogue. See the file's header for the
+    # escaping trap that is the main reason they live in one place.
+    logLevelPatterns = import ../modules/shared/log-level-patterns.nix;
+
     mkPkgs =
       system:
       import inputs.nixpkgs {

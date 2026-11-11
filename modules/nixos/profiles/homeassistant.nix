@@ -117,6 +117,13 @@ let
   '';
 in
 {
+  imports = [
+    # Declares `levelFromMessage`/`demoteToDebug`, which this profile sets below. Imported
+    # rather than assumed: a VM test imports this profile without the monitoring client,
+    # and a definition for an option nobody declared is an eval error.
+    ./monitoring/log-levels.nix
+  ];
+
   options.custom.profiles.homeassistant = {
     enable = lib.mkEnableOption "Home Assistant + local Wyoming voice (STT/TTS)";
 
@@ -384,21 +391,35 @@ in
           HA_DISABLE_LOG_FILE = "1";
         };
 
-        # Home Assistant's severity is in its MESSAGE, not in journald's PRIORITY — it
-        # logs to stdout, so journald stamps every line, errors included, PRIORITY=6
-        # (info). Vector derives `level` from PRIORITY, and `level` is what the Logs
-        # dashboard's whole Errors/Warnings half selects on — so before this, 396 HA
-        # ERROR/WARNING lines in 24h on rk1a were invisible to every error view the fleet
-        # has while reading perfectly well in `journalctl`. The pattern is anchored on HA's
-        # own log format (timestamp, level, `(Thread)`) so a line that merely contains the
-        # word "error" is not promoted; see monitoring/client.nix for the mechanism and for
-        # what deliberately stays unmatched (traceback continuation lines).
+        # Home Assistant's severity is in its MESSAGE, not in journald's PRIORITY — it logs
+        # to stdout, so journald stamps every line, errors included, PRIORITY=6 (info).
+        # Vector derives `level` from PRIORITY, and `level` is what the Logs dashboard's
+        # whole Errors/Warnings half selects on — so before this, 396 HA ERROR/WARNING lines
+        # in 24h on rk1a were invisible to every error view the fleet has while reading
+        # perfectly well in `journalctl`. The pattern is the shared python-logging one from
+        # the catalogue (Music Assistant uses the same); see
+        # modules/shared/log-level-patterns.nix.
         #
-        # Declared unconditionally: the option exists whether or not this host enables the
+        # ...and one demotion, which is what the error view is worth protecting from.
+        # `assist_pipeline` is the ONLY user of binary websocket handlers (verified in
+        # 2026.10.4's source: it is the sole caller of `async_register_binary_handler`), and
+        # the Companion app keeps streaming audio for a moment after a pipeline run
+        # unregisters its handler — so every late audio chunk becomes one ERROR. That is 340
+        # of this host's 396 daily errors, in bursts that line up exactly with the recorded
+        # voice runs. The cause is a race in someone else's client and the condition is
+        # harmless; the line stays in the journal verbatim, it simply stops drowning the
+        # board. If Home Assistant ever starts losing audio mid-utterance, this is the first
+        # thing to un-demote.
+        #
+        # Declared unconditionally: the options exist whether or not this host enables the
         # monitoring client, and the consuming module is mkIf-gated, so on a host without
-        # Vector this is an inert fact rather than a dependency.
-        custom.profiles.monitoring-client.levelFromMessage."home-assistant.service" =
-          ''^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+ (?P<lvl>DEBUG|INFO|WARNING|ERROR|CRITICAL) \('';
+        # Vector these are inert facts rather than a dependency.
+        custom.profiles.monitoring-client = {
+          levelFromMessage."home-assistant.service" = self.lib.logLevelPatterns.pythonLogging;
+          demoteToDebug."home-assistant.service" = [
+            "Received binary message for non-existing handler"
+          ];
+        };
 
         # STT: faster-whisper over Wyoming, loopback only, on `small-int8`.
         #
