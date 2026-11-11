@@ -79,14 +79,31 @@ let
       };
     };
     private = {
-      # LiteLLM — the cloud-model proxy (DeepInfra). Moved off kelpy to rk1b for
-      # memory: it was ~292M on a 4G host and holds no state, so it is the cheapest
-      # thing to relocate. Caddy still fronts it at litellm.<domain>, so consumers
-      # see no change. DEPLOY BOTH HOSTS.
+      # LiteLLM — the fleet's model gateway. Moved off kelpy to rk1b for memory: it was
+      # ~292M on a 4G host and holds no state, so it is the cheapest thing to relocate.
+      # Caddy still fronts it at litellm.<domain>, so consumers see no change.
+      # DEPLOY BOTH HOSTS.
+      #
+      # `about` is a plain HTML page Caddy serves itself, saying which models are reachable,
+      # on whose hardware, and why those and not better ones. The model list is currently an
+      # experiment rather than a set of sensible defaults, so it needs the explanation more
+      # than most services do — and being served by the edge rather than proxied, it answers
+      # even when rk1b is down.
+      #
+      # `atRoot` puts it on `/` too. That is safe HERE specifically: LiteLLM's root is only
+      # its Swagger UI, and nothing automated goes there — agents hit /v1/… directly, so the
+      # only visitor to the bare hostname is a person wondering what this is. `rootAt` hands
+      # the Swagger UI back at /api-docs (Caddy rewrites to `/` upstream) so it is moved
+      # rather than deleted; it has no other route, as /docs 404s on this build.
       litellm = {
         edge = "kelpy";
         port = 4000;
         origin = "rk1b";
+        about = {
+          page = ../modules/nixos/profiles/litellm-about.html;
+          atRoot = true;
+          rootAt = "/api-docs";
+        };
       };
       monitoring = {
         edge = "kelpy";

@@ -72,6 +72,33 @@
       .asof strong {
         color: var(--accent);
       }
+      nav {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin: 1.25rem 0 0.75rem;
+      }
+      nav a {
+        border: 1px solid var(--rule);
+        background: var(--card);
+        border-radius: 6px;
+        padding: 0.35rem 0.8rem;
+        font-size: 0.85rem;
+        text-decoration: none;
+        color: var(--fg);
+      }
+      nav a:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      .moved {
+        font-size: 0.82rem;
+        color: var(--dim);
+        margin: 0 0 1.5rem;
+      }
+      .moved a {
+        color: var(--accent);
+      }
       .wrap {
         overflow-x: auto;
         border: 1px solid var(--rule);
@@ -144,10 +171,42 @@
       </p>
       <p class="asof">Model list last reviewed: <strong>2026-11-10</strong></p>
 
+      <nav>
+        <a href="/ui/">Dashboard</a>
+        <a href="/api-docs">Swagger UI</a>
+        <a href="/redoc">API reference</a>
+        <a href="/openapi.json">OpenAPI spec</a>
+      </nav>
+      <p class="moved">
+        This page replaced the Swagger UI at <code>/</code>, which now lives at
+        <a href="/api-docs">/api-docs</a> — nothing was removed. Permalink for this page:
+        <a href="/_about">/_about</a>.
+      </p>
+
+      <h2>One model per box</h2>
+      <p>
+        Two hardware options are under consideration — a ~32&nbsp;GB GPU and a 128&nbsp;GB
+        unified-memory machine — so there is exactly one open model for each, and nothing
+        else. <code>qwen3.8-27b</code> fits the smaller box; <code>nemotron-3.5-super-vl</code>
+        needs the larger one. If the big model measures no better than the small one, that
+        is evidence the 128&nbsp;GB box buys nothing; note its SWE-bench Pro 51.78 roughly
+        equals a 15.88&nbsp;GB model's 51.2.
+      </p>
+      <p>
+        The caveat on the larger tier: the model a 128&nbsp;GB owner would actually run is
+        <strong>Qwen3.8-Flash-Next</strong> — the overwhelming community choice for that
+        hardware — and no mainstream provider serves it per-token, so it can be bought but
+        not cheaply tested. Nemotron loses to it on NVIDIA's own published numbers
+        (SWE-bench Pro 51.78 against 60.37), so this tier is being measured by its weakest
+        credible representative. Careful with the near-miss, too:
+        <code>qwen3.8-flash</code> is a different, managed model, and several providers
+        resell it while quoting Flash-Next's specifications.
+      </p>
+
       <h2>Why this list looks odd on purpose</h2>
       <p>
-        These are not the best models money can buy. They are, deliberately, the models
-        that would <em>fit on a 32&nbsp;GB consumer GPU</em> — because this gateway is
+        These are not the best models money can buy. They are, deliberately, models that
+        would <em>fit on hardware we are considering buying</em> — because this gateway is
         currently running a measurement: a month of real traffic against rentable versions
         of models we could host ourselves, to find out what owning the hardware would have
         cost and whether the output would have been good enough.
@@ -180,22 +239,14 @@
               </td>
             </tr>
             <tr>
-              <td><code>qwen3.6-35b-a3b</code></td>
-              <td>OpenRouter, pinned&nbsp;fp8</td>
-              <td>35B MoE / 3B active, UD-Q4_K_XL, 22.36&nbsp;GB</td>
+              <td><code>nemotron-3.5-super-vl</code></td>
+              <td>OpenRouter, pinned&nbsp;nvfp4</td>
+              <td>120B MoE / 12B active, UD-Q4_K_XL, 86.91&nbsp;GB</td>
               <td>
-                The throughput option. Measured at 117.8&nbsp;tok/s on the card we would
-                buy, which is what would make scheduled and long-running agents bearable.
-              </td>
-            </tr>
-            <tr>
-              <td><code>qwen3.8-27b-eu</code></td>
-              <td>OVHcloud AI Endpoints — Gravelines,&nbsp;FR</td>
-              <td>same as <code>qwen3.8-27b</code></td>
-              <td>
-                Same model, single French datacentre, prompts not retained. The nightly
-                fleet-log review routes here, because those prompts carry hostnames, IPs
-                and service topology.
+                <strong>The 128&nbsp;GB tier.</strong> It does not fit 32&nbsp;GB, which is
+                exactly why it is here — it is the only entry that tells the two boxes
+                apart. Read it as a floor, not a ceiling: what a 128&nbsp;GB owner would
+                really run is Qwen3.8-Flash-Next, and that is effectively unrentable.
               </td>
             </tr>
           </tbody>
@@ -258,6 +309,15 @@
           produces first tokens far faster than the card we would buy, and prefill — not
           generation — is what dominates long agent loops. Responsiveness here is not
           responsiveness we would own.
+        </p>
+        <p>
+          <strong>Nothing here is EU-resident.</strong> An EU-pinned route for the nightly
+          log review was priced at roughly five times the cheapest path and dropped as not
+          worth it for one month. So for the duration, fleet-log prompts — hostnames, IPs,
+          service topology — go to whichever fp8 provider OpenRouter selects. Retention is
+          constrained by <code>zdr</code> and <code>data_collection: deny</code>; geography
+          is not constrained at all. A decision to keep renting rather than buy should
+          reopen this, because at that point it stops being temporary.
         </p>
       </div>
 

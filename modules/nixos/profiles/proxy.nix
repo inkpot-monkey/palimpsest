@@ -19,6 +19,26 @@ let
   # brace that caused it. A file also means the copy can be edited and reviewed as
   # copy, by someone not reading Nix.
   helpRoot = pkgs.writeTextDir "index.html" (builtins.readFile ./tailnet-help.html);
+
+  # A service may ship a human-readable page explaining itself, served at `/_about` on its
+  # own vhost (see `about` in parts/settings.nix). Same file-not-inlined reasoning as
+  # helpRoot above, plus two substitutions so the page can date itself: a hand-maintained
+  # review date lives in the copy, and these two say when the CONFIG last moved. When the
+  # second is far ahead of the first, the page has drifted from what it describes — which
+  # is the failure mode a static page has, made visible instead of silent.
+  #
+  # `self.rev` is absent on a dirty tree, so both fall back rather than failing the build.
+  aboutRoot =
+    file:
+    pkgs.writeTextDir "index.html" (
+      builtins.replaceStrings
+        [ "@REV@" "@LASTMOD@" ]
+        [
+          (self.rev or "dirty")
+          (self.lastModifiedDate or "unknown")
+        ]
+        (builtins.readFile file)
+    );
 in
 {
   options.custom.profiles.proxy = {
@@ -167,6 +187,43 @@ in
             extraConfig = ''
               ${lib.optionalString (!svc.isPublic) "import internal_only"}
               import cloudflare_tls
+              ${lib.optionalString (svc ? about) (
+                let
+                  a = svc.about;
+                  # `/_about` is the stable permalink and always present. `atRoot` ALSO puts
+                  # the page on `/`, which is only right where the app's own root page is
+                  # expendable — a human typing the bare hostname wants to know what the
+                  # service is, and an agent never goes there (it hits /v1/… directly).
+                  paths = [ "/_about" ] ++ lib.optional (a.atRoot or false) "/";
+                in
+                ''
+                  # Served by Caddy itself, NOT proxied — so it answers even when the
+                  # upstream is down, which is exactly when someone wants to know what this
+                  # host was supposed to be serving. Matched handles sort ahead of the
+                  # catch-all below; the tailnet guard still sorts ahead of all of them,
+                  # which parts/checks/caddy-internal-guard asserts rather than assumes.
+                  #
+                  # These are EXACT paths, not prefixes: Caddy's `path` matcher is exact
+                  # without a trailing `*`, so `/` here cannot swallow `/ui/` or `/v1/…`.
+                  @about path ${lib.concatStringsSep " " paths}
+                  handle @about {
+                    root * ${aboutRoot a.page}
+                    rewrite * /index.html
+                    header Cache-Control "no-store"
+                    file_server
+                  }
+                ''
+                + lib.optionalString (a ? rootAt) ''
+                  # Taking `/` would otherwise DELETE whatever the app served there. This
+                  # hands it back at a new path by rewriting to `/` upstream, so nothing is
+                  # lost — only moved. For LiteLLM that is its Swagger UI, which has no
+                  # other route (/docs is a 404 on this build).
+                  handle ${a.rootAt} {
+                    rewrite * /
+                    reverse_proxy ${upstream}:${toString svc.port}
+                  }
+                ''
+              )}
               handle {
                 reverse_proxy ${upstream}:${toString svc.port}
               }
