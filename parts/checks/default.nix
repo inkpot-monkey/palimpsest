@@ -76,6 +76,17 @@
         ha_db_dump = import ./ha-db-dump {
           inherit pkgs self;
         };
+        # ...and that the dump actually lands where the backup needs it. A post-mortem: the
+        # dump calendar was first written `"02:45,14:45"`, which systemd silently reads as
+        # 02:14:45 and 02:45:45 — two runs in the small hours and nothing in the afternoon. It
+        # deployed green, because nothing on this fleet measures whether a snapshot's history is
+        # 15 minutes or 12 hours behind its configuration. This runs `systemd-analyze calendar`
+        # — systemd's OWN parser, not a Nix-side regex that would have agreed with the author
+        # instead of with systemd — over rk1a's live dump and restic calendars, and asserts
+        # every restic run is fed by a dump taken 5-30 minutes earlier.
+        ha_dump_schedule = import ./ha-dump-schedule {
+          inherit pkgs self;
+        };
         # The tailnet guard's route order (palimpsest#218's deferred follow-up). `internal_only`
         # is the whole of the access control on every private service, and a bare `abort` loses
         # Caddy's directive order to the vhost's own matcher-less handle — which is how vault,

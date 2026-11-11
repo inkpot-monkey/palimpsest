@@ -131,6 +131,11 @@ in
     rk1a = mkSystem {
       modules = [
         ./rk1/common.nix
+        # rk1a's off-site restic job: Home Assistant's `.storage` (every config entry, the
+        # registries, the auth store), the recorder dump beside it, and the uid map that makes
+        # restoring either one land on the right owner. The sibling of ./rk1/backup.nix, which
+        # is rk1b's.
+        ./rk1/ha-backup.nix
         (bindUsers { inkpotmonkey = operator; })
         {
           networking.hostName = "rk1a";
