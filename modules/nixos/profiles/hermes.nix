@@ -123,6 +123,59 @@ in
       (builtins.toJSON config.services.hermes-agent.settings)
     ];
 
+    # ── THE STATE DIRECTORIES HAVE TO EXIST BEFORE THE UNITS CHDIR INTO THEM ───────────────
+    # Both units set `WorkingDirectory=/var/lib/hermes/workspace`, and systemd applies that
+    # to ExecStartPre as well — so if the directory is missing the unit does not start
+    # degraded, it dies at step CHDIR before running a single line:
+    #
+    #   hermes-agent.service: Changing to the requested working directory failed:
+    #     No such file or directory
+    #   hermes-agent.service: Failed at step CHDIR spawning …-hermes-agent-pre-start
+    #
+    # Which is exactly what happened on rk1b on 2026-11-11, on the FIRST activation that
+    # carried this profile: both units crash-looped on arrival and stayed down.
+    #
+    # ⚠ THE UPSTREAM UNIT ALREADY ORDERS ITSELF `After=systemd-tmpfiles-setup.service`, and
+    # that is not enough, which is the whole subtlety. On this host /var/lib/hermes is an
+    # IMPERMANENCE BIND MOUNT over /persistent/var/lib/hermes, and the sequence on a first
+    # deploy is:
+    #
+    #   1. boot: systemd-tmpfiles-setup runs — the mount does not exist yet, so the rules
+    #      land on the tmpfs root, where nothing will ever look for them;
+    #   2. switch: var-lib-hermes.mount is created and mounts an EMPTY persistent directory
+    #      over the top, hiding whatever step 1 made;
+    #   3. switch: the hermes units start. `After=systemd-tmpfiles-setup` is satisfied
+    #      INSTANTLY — that unit has been active since boot — and NixOS's switch-time
+    #      equivalent, systemd-tmpfiles-resetup.service, is nothing the unit knows about.
+    #
+    # A plain reboot does not show this: there the mount is a local-fs unit ordered before
+    # local-fs.target, and tmpfiles-setup runs after it. Only the activation path is broken,
+    # which is why it survived until the first host actually deployed the profile.
+    #
+    # So make it a PRECONDITION rather than an ordering hope. `Requires=` + `After=` on a
+    # oneshot that is not RemainAfterExit means it runs before EVERY start of either unit,
+    # including a bare `systemctl start hermes-agent` months later with the directory gone.
+    # It costs milliseconds and it cannot drift from the real rules, because it applies the
+    # module's OWN tmpfiles declarations rather than restating their paths, modes and owner.
+    systemd.services.hermes-state-dirs = {
+      description = "Create Hermes' state directories before the agent chdirs into them";
+      # The directories only mean anything once the persistent bind mount is in place —
+      # creating them on the tmpfs root underneath it is precisely step 1's mistake.
+      unitConfig.RequiresMountsFor = [ "/var/lib/hermes" ];
+      serviceConfig = {
+        Type = "oneshot";
+        # Deliberately NOT RemainAfterExit: as a one-shot that goes inactive on success, a
+        # `Requires=` from the units below re-runs it on every start, so this is a guard
+        # rather than a one-time bootstrap.
+        ExecStart = "${config.systemd.package}/bin/systemd-tmpfiles --create --prefix=/var/lib/hermes";
+      };
+    };
+
+    systemd.services.hermes-agent.requires = [ "hermes-state-dirs.service" ];
+    systemd.services.hermes-agent.after = [ "hermes-state-dirs.service" ];
+    systemd.services.hermes-backend.requires = [ "hermes-state-dirs.service" ];
+    systemd.services.hermes-backend.after = [ "hermes-state-dirs.service" ];
+
     environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
       directories = [ "/var/lib/hermes" ];
     };
