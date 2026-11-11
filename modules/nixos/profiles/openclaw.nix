@@ -69,14 +69,26 @@ in
           };
         };
         agents = {
-          # Default agent (`main`) runs on a cloud model via LiteLLM. The local rk1 MoE that
-          # once backed a slow background agent was retired with the local-LLM stack (ADR-0027),
-          # so there is no local brain to route to; the generous run-timeout ceiling is a cap,
-          # not a delay, and is harmless for the fast cloud agent.
+          # MEASUREMENT MONTH (from 2026-11-10). The default agent now runs on
+          # `qwen3.8-27b` — a model that FITS a 32 GB consumer GPU — so a month of real
+          # exploratory runs measures what owning one would have cost and whether its
+          # output is good enough. That is the whole point: DeepSeek-V4-Flash was a fine
+          # agent brain but nothing we could ever host, so running it told us nothing
+          # about the buy decision.
+          #
+          # Sonnet is the fallback rather than a peer, deliberately. When the open model
+          # fails a run, the fallback firing IS the measurement — count those, because
+          # the failure rate over long tool-calling loops is the number that decides this,
+          # far more than tokens/sec. Expect it to fire: practitioners report local models
+          # grinding for hours on tasks Opus closes in fifteen minutes.
+          #
+          # The generous run-timeout ceiling is a cap, not a delay. It matters more now
+          # than it did with a fast cloud model — a 27B at fp8 on a long agent loop will
+          # use more of it.
           defaults = {
             model = {
-              primary = "litellm/deepseek-flash";
-              fallbacks = [ "litellm/deepseek-pro" ];
+              primary = "litellm/qwen3.8-27b";
+              fallbacks = [ "litellm/sonnet-5.5" ];
             };
             timeoutSeconds = 7200;
           };
