@@ -114,13 +114,39 @@ in
     # level right-padded between escape sequences), and the postgres cluster this profile
     # brings up logs `[pid] LEVEL:` on stderr.
     #
-    # ⚠ Promoting postgres SURFACES A REAL ISSUE rather than tidying one away: 4353 WARNING
-    # lines a day, every one `database "<x>" has a collation version mismatch`, for
-    # template1, postgres AND immich. The databases were created under a different glibc
-    # collation, so text index ordering may no longer match the collation postgres believes
-    # it is using. The fix is `REINDEX DATABASE` then `ALTER DATABASE … REFRESH COLLATION
-    # VERSION`, which is a data operation on the photo library and so not something a config
-    # change should do quietly. It stays loud on the board until someone deals with it.
+    # ⚠ Promoting postgres SURFACED A REAL ISSUE rather than tidying one away, and it is
+    # worth knowing how it was dealt with, because glibc will move again.
+    #
+    # 2026-11-11: 4,353 WARNING lines a day, every one `database "<x>" has a collation
+    # version mismatch`, for template1, postgres AND immich — glibc had gone 2.42 → 2.44
+    # under a cluster created at 2.42, so text index ordering no longer necessarily matched
+    # the collation postgres believed it was using. Invisible for as long as it was labelled
+    # `info`. Fixed by hand (a data operation on the photo library is not something a config
+    # change should do quietly) and verified; the recipe, should it recur:
+    #
+    #   1. `pg_dump -Fc` immich somewhere outside the restic paths, and `pg_restore -l` it.
+    #   2. Record row counts AND an ordering fingerprint —
+    #      `select md5(string_agg(name, '|' order by name)) from geodata_places;` — because
+    #      a count cannot show a mis-ordered index.
+    #   3. Stop immich-server + immich-machine-learning. REINDEX takes ACCESS EXCLUSIVE.
+    #   4. ⚠ Reindex only the COLLATION-DEPENDENT indexes, generated from the catalogue:
+    #        select 'REINDEX INDEX ' || quote_ident(n.nspname) || '.' || quote_ident(c.relname) || ';'
+    #        from pg_index i join pg_class c on c.oid = i.indexrelid
+    #          join pg_namespace n on n.oid = c.relnamespace
+    #        where exists (select 1 from unnest(i.indcollation) y where y <> 0 and y <> 950);
+    #      34 of 459 here. `REINDEX DATABASE` would also rebuild the two pgvector/vchord
+    #      indexes, which depend on no collation and are expensive to rebuild. (950 is the
+    #      `C` collation, which never changes.)
+    #   5. `ALTER COLLATION … REFRESH VERSION` for each stale named collation IN EACH
+    #      DATABASE, then `ALTER DATABASE … REFRESH COLLATION VERSION` for immich, postgres
+    #      and template1. template0 reports no version and needs nothing.
+    #   6. Restart, and check the counts and fingerprints are byte-identical.
+    #
+    # A REINDEX failure here is DETECTION, not damage: the old index stays until the new one
+    # is built, and a unique index that now sees a duplicate fails loudly. None did.
+    #
+    # Recurrence needs no new watcher — the warnings are `level=warning` on the Logs
+    # dashboard now, which is exactly how this one was found.
     custom.profiles.monitoring-client.levelFromMessage = {
       "immich-server.service" = self.lib.logLevelPatterns.nestjs;
       "postgresql.service" = self.lib.logLevelPatterns.postgres;
