@@ -74,6 +74,20 @@ in
             # pinning the check to 1.1.1.1 means renewal can no longer be broken by a change
             # to the fleet's internal DNS policy.
             dnsResolver = "1.1.1.1:53";
+            # Hand the renewed cert to Stalwart. Without this the renewal is only HALF a
+            # renewal: acme writes a new cert to /var/lib/acme and Stalwart, which read the
+            # old one through `%{file:…}%` at startup, keeps serving it on 25/465/993 until
+            # something restarts it — measured 2026-11-11, ninety minutes after a
+            # successful renewal the wire on 993 still presented the previous cert, byte for
+            # byte. Nothing would have restarted it before Dec 5, so the first working
+            # renewal in months would still have expired on the clients.
+            #
+            # Stalwart declares no ExecReload, so `try-reload-or-restart` resolves to a
+            # restart: a few seconds of mail downtime roughly every 60 days, which is the
+            # correct trade against serving an expired certificate. It also un-breaks
+            # mail-dane-autoupdate, whose published TLSA is derived from the cert Stalwart
+            # has LOADED — see the wait in dane-autoupdate.nix.
+            reloadServices = [ "stalwart.service" ];
           };
         };
 
