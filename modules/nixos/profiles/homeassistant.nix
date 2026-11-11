@@ -58,10 +58,10 @@ let
   # faster-whisper 1.2.x fetches the whisper tokenizer from HuggingFace at model load
   # UNLESS `tokenizer.json` is present in the model directory — and huggingface-hub 1.10.2
   # crash-loops that fetch ("Cannot send a request, as the client has been closed"), so the
-  # STT service never starts. The rhasspy `base-int8` repo that `model = "base-int8"` pulls
+  # STT service never starts. The rhasspy int8 repo that a bare `model` name pulls
   # ships only the ct2 essentials (model.bin/config.json/vocabulary.txt), no tokenizer.json.
   # Assemble a self-contained model dir — rhasspy's int8 weights + the matching tokenizer.json
-  # from Systran's base repo — and point `model` at it. faster-whisper then loads the tokenizer
+  # from Systran's repo — and point `model` at it. faster-whisper then loads the tokenizer
   # from disk, never touches HuggingFace, and the model isn't re-downloaded to /tmp every boot.
   hfFile =
     {
@@ -73,32 +73,32 @@ let
       url = "https://huggingface.co/${repo}/resolve/main/${file}";
       inherit hash;
     };
-  fasterWhisperBaseInt8 = pkgs.runCommandLocal "faster-whisper-base-int8-model" { } ''
+  fasterWhisperSmallInt8 = pkgs.runCommandLocal "faster-whisper-small-int8-model" { } ''
     mkdir -p "$out"
     cp ${
       hfFile {
-        repo = "rhasspy/faster-whisper-base-int8";
+        repo = "rhasspy/faster-whisper-small-int8";
         file = "model.bin";
-        hash = "sha256-rhP3TbTSPCdGhjiA6H8Vv3gL0u4Ki5x92We5NDoicIE=";
+        hash = "sha256-Tx7H0RRRUm8swyB6WhHCvfigNgGUAu8uHTP1j19TqlQ=";
       }
     } "$out/model.bin"
     cp ${
       hfFile {
-        repo = "rhasspy/faster-whisper-base-int8";
+        repo = "rhasspy/faster-whisper-small-int8";
         file = "config.json";
         hash = "sha256-yd7j1nXDHDdjwe48nnI1BQ6Hfa3ZACxbPGA2bj2B2io=";
       }
     } "$out/config.json"
     cp ${
       hfFile {
-        repo = "rhasspy/faster-whisper-base-int8";
+        repo = "rhasspy/faster-whisper-small-int8";
         file = "vocabulary.txt";
         hash = "sha256-NM4/4cUEECez+NQpEicJk/mG28S7NM8n+VHjSh5FORM=";
       }
     } "$out/vocabulary.txt"
     cp ${
       hfFile {
-        repo = "Systran/faster-whisper-base";
+        repo = "Systran/faster-whisper-small";
         file = "tokenizer.json";
         hash = "sha256-+3tjGR6bsEUILHn9dCoxBqEsmVE6sw30oNR/pstv0Ks=";
       }
@@ -260,13 +260,21 @@ in
           # the only remaining way to hold them from nix.
         };
 
-        # STT: faster-whisper over Wyoming, loopback only. base-int8 balances accuracy/size on
-        # CPU. `model` is a local, self-contained model dir (weights + tokenizer.json) rather than
-        # the "base-int8" name — see fasterWhisperBaseInt8 above for why (offline, no crash-loop).
+        # STT: faster-whisper over Wyoming, loopback only, on `small-int8`.
+        #
+        # This was `base-int8` until the transcriptions were actually measured: across ten
+        # recorded pipeline runs it got 6 right, rendering "turn on the office light" as
+        # "turn on the off-the-slide" and, on weak audio, hallucinating a flat "Cancel."
+        # — the classic smallest-tier failures. small-int8 costs 243 MB of weights against
+        # base's 76 MB and more CPU per utterance, which this host can spend: 8 idle A76
+        # cores, 28 GB of free RAM, and voice latency that is not critical here.
+        #
+        # `model` is a local, self-contained model dir (weights + tokenizer.json) rather than
+        # a bare model name — see fasterWhisperSmallInt8 above for why (offline, no crash-loop).
         services.wyoming.faster-whisper.servers.en = {
           enable = true;
           uri = "tcp://127.0.0.1:10300";
-          model = "${fasterWhisperBaseInt8}";
+          model = "${fasterWhisperSmallInt8}";
           language = "en";
           device = "cpu";
         };
