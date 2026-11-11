@@ -34,6 +34,10 @@ let
   alertPost = import (self + "/modules/shared/alert-post.nix") { inherit lib pkgs; };
   certFile = "/var/lib/acme/mail.${mailCfg.domain}/cert.pem";
 
+  # The cert Stalwart PRESENTS, not the one on disk. Implicit TLS, so no -starttls; 993 is
+  # Stalwart's imaps listener and serves the same cert as 25/465.
+  servedPort = 993;
+
   syncScript = pkgs.writeShellScript "mail-dane-sync" ''
     set -uo pipefail
     # Feed the dns app its creds from the environment (the app skips its own sops decrypt
@@ -46,6 +50,39 @@ let
       inherit (cfg) webhookUrlFile;
       outOfBand = alertPost.oobFromWatcher config;
     }}
+
+    # WAIT FOR STALWART TO ACTUALLY SERVE THE NEW CERT BEFORE READING ANYTHING.
+    #
+    # This unit does not hash the cert file itself — it asks Stalwart's management API for
+    # the authoritative records, and Stalwart derives its TLSA from the cert it has LOADED.
+    # So running while Stalwart still holds the previous cert does not merely delay the
+    # push: it publishes TLSA for the OLD cert and then reports "0 corrections", which is
+    # indistinguishable from success. That is exactly what happened on 2026-11-11 — the
+    # first successful renewal in months pushed fingerprints for the superseded cert.
+    #
+    # The path unit fires on the cert write, and security.acme restarts Stalwart with
+    # `systemctl --no-block`, so the two race by design and no After= can order them (they
+    # are separate transactions). Hence verify rather than order: poll the live listener
+    # until what it presents matches what is on disk.
+    want="$(${pkgs.openssl}/bin/openssl x509 -in ${certFile} -outform DER \
+      | ${pkgs.coreutils}/bin/sha256sum | ${pkgs.coreutils}/bin/cut -d' ' -f1)"
+    deadline=$(( $(${pkgs.coreutils}/bin/date +%s) + ${toString cfg.certReloadTimeoutSec} ))
+    while :; do
+      got="$(${pkgs.coreutils}/bin/timeout 10 ${pkgs.openssl}/bin/openssl s_client \
+        -connect 127.0.0.1:${toString servedPort} -servername mail.${mailCfg.domain} \
+        </dev/null 2>/dev/null \
+        | ${pkgs.openssl}/bin/openssl x509 -outform DER 2>/dev/null \
+        | ${pkgs.coreutils}/bin/sha256sum | ${pkgs.coreutils}/bin/cut -d' ' -f1)"
+      [ "$got" = "$want" ] && break
+      if [ "$(${pkgs.coreutils}/bin/date +%s)" -ge "$deadline" ]; then
+        # Fail rather than push. Stale-but-red beats wrong-and-green: a bad TLSA breaks
+        # inbound mail from DANE-enforcing senders the moment the zones are signed, and the
+        # failed unit state is what node-exporter publishes (see the exit rationale below).
+        post "⚠️ [dane] mail cert renewed but Stalwart is still serving the OLD cert after ${toString cfg.certReloadTimeoutSec}s — NOT pushing TLSA (they would describe the superseded cert). Check 'systemctl status stalwart' and security.acme reloadServices."
+        exit 1
+      fi
+      ${pkgs.coreutils}/bin/sleep 5
+    done
 
     out="$(${dnsProgram} push mail 2>&1)"; rc=$?
     printf '%s\n' "$out"
@@ -96,6 +133,17 @@ in
       default = config.custom.profiles.matrix.infraAlerts.webhookUrlFile;
       defaultText = lib.literalExpression "config.custom.profiles.matrix.infraAlerts.webhookUrlFile";
       description = "File holding the #infra-alerts hookshot webhook url a non-empty reconcile posts to.";
+    };
+
+    certReloadTimeoutSec = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 180;
+      description = ''
+        How long to wait for Stalwart to serve the cert that acme has just written before
+        giving up and failing the reconcile. Covers a `reloadServices` restart of Stalwart,
+        which on a loaded mail host is seconds, not minutes — the margin is for the case
+        where the restart queues behind an in-flight ingest.
+      '';
     };
   };
 
