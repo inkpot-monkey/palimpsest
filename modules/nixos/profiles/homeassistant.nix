@@ -30,6 +30,31 @@ let
   # Public-facing (tailnet-only) URL served by the edge host's Caddy.
   haUrl = "https://home.${settings.primaryDomain}";
 
+  # The HTTP settings the provisioner holds in HA's store (see the NOTE by `config`).
+  # HA sits behind the edge host's Caddy and rejects forwarded requests unless the
+  # proxy is trusted, so trust that host's tailscale addresses. Direct access on the
+  # origin host's own port still works — HA only enforces this when an
+  # X-Forwarded-For header is present.
+  haHttpConfig = {
+    server_port = haPort;
+    use_x_forwarded_for = true;
+    trusted_proxies = [
+      settings.nodes.${edge}.tailscale.ip4
+      settings.nodes.${edge}.tailscale.ip6
+    ];
+  };
+
+  # Bulbs, flattened into the shape ha-provision.py consumes. Keys are snake_case
+  # because they are passed straight into tuya_local's config flow.
+  haBulbs = lib.mapAttrsToList (slug: b: {
+    inherit slug;
+    inherit (b) title host area;
+    device_id = b.deviceId;
+    type = b.deviceType;
+    protocol_version = b.protocolVersion;
+    poll_only = b.pollOnly;
+  }) cfg.provision.bulbs;
+
   # faster-whisper 1.2.x fetches the whisper tokenizer from HuggingFace at model load
   # UNLESS `tokenizer.json` is present in the model directory — and huggingface-hub 1.10.2
   # crash-loops that fetch ("Cannot send a request, as the client has been closed"), so the
@@ -86,15 +111,96 @@ in
 
     provision = {
       enable = lib.mkEnableOption ''
-        a post-start oneshot that wires the Assist pipeline to the local Wyoming
-        STT/TTS via HA's config-flow API (ha-provision-voice.py). Idempotent and
-        fail-loud; reads the `username` + `password` from the homeassistant sops
-        secret. HA has no declarative path for config entries, so this codifies
-        the one-time UI wiring'';
+        a post-start oneshot that pushes the state Home Assistant keeps in its
+        mutable `.storage` — the HTTP settings, the Assist pipeline's Wyoming
+        STT/TTS, and the tuya_local bulbs — through HA's own supported APIs
+        (ha-provision.py). Idempotent and fail-loud; reads the `username` +
+        `password` from the homeassistant sops secret. HA has no declarative path
+        for config entries, so this codifies what would otherwise be UI clicks'';
       ownerName = lib.mkOption {
         type = lib.types.str;
         default = "Administrator";
         description = "Display name for the HA owner account created on first run.";
+      };
+
+      bulbs = lib.mkOption {
+        default = { };
+        example = lib.literalExpression ''
+          {
+            bulb_office = {
+              title = "bulb office";
+              deviceId = "bfad3cfdefffd705a3tgsq";
+              host = "192.168.1.27";
+              deviceType = "rgbcw_lightbulb_xld_cl002";
+              protocolVersion = "3.5";
+              area = "Office";
+            };
+          }
+        '';
+        description = ''
+          Tuya bulbs to adopt through the `tuya_local` integration, keyed by slug.
+          Each bulb's Tuya local key is read from the homeassistant sops secret
+          under `local_key_<slug>`, so adding a bulb here means adding that key
+          to stash as well (ADR-0037).
+
+          The bulbs keep their vendor firmware and are driven directly on the LAN,
+          so nothing here reaches Tuya's cloud. `host` must be a reserved address:
+          tuya_local is configured with an address, not a name, so a DHCP lease
+          change silently breaks control.
+        '';
+        type = lib.types.attrsOf (
+          lib.types.submodule {
+            options = {
+              title = lib.mkOption {
+                type = lib.types.str;
+                description = "Device name shown in Home Assistant.";
+              };
+              deviceId = lib.mkOption {
+                type = lib.types.str;
+                description = ''
+                  The bulb's Tuya device id — the "Virtual ID" in the Smart Life
+                  app. Doubles as the config entry's unique id, which is how the
+                  provisioner knows whether the bulb is already adopted.
+                '';
+              };
+              host = lib.mkOption {
+                type = lib.types.str;
+                description = "The bulb's LAN address (reserved in DHCP).";
+              };
+              deviceType = lib.mkOption {
+                type = lib.types.str;
+                description = ''
+                  tuya_local device config to use, e.g. `rgbcw_lightbulb_xld_cl002`.
+                  The integration logs which config it matched, and at what quality,
+                  when a device is added by hand.
+                '';
+              };
+              protocolVersion = lib.mkOption {
+                type = lib.types.str;
+                default = "auto";
+                description = ''
+                  Tuya protocol version. `auto` probes every version on each connect;
+                  pinning the version the probe found makes restarts connect straight
+                  away.
+                '';
+              };
+              pollOnly = lib.mkOption {
+                type = lib.types.bool;
+                default = false;
+                description = "Poll instead of subscribing, for devices that push badly.";
+              };
+              area = lib.mkOption {
+                type = lib.types.nullOr lib.types.str;
+                default = null;
+                description = ''
+                  Home Assistant Area to place the device in, created if absent.
+                  This is what lets Assist address it by room ("turn on the office
+                  light"), so leaving it null costs voice control.
+                '';
+              };
+            };
+          }
+        );
       };
     };
   };
@@ -141,20 +247,17 @@ in
             homeassistant = {
               external_url = haUrl;
               internal_url = haUrl;
-            };
-            http = {
-              server_port = haPort;
-              # HA sits behind the edge host's Caddy. It rejects forwarded requests unless the
-              # proxy is trusted, so trust that host's tailscale addresses. Direct access on the
-              # origin host's own port still works (HA only enforces this when an X-Forwarded-For
-              # header is present).
-              use_x_forwarded_for = true;
-              trusted_proxies = [
-                settings.nodes.${edge}.tailscale.ip4
-                settings.nodes.${edge}.tailscale.ip6
-              ];
+              # Without a country HA raises a repair and cannot pick regional defaults.
+              country = "ES";
             };
           };
+
+          # NOTE: there is deliberately no `http` block here. HA 2026.9 migrated the
+          # http integration out of configuration.yaml into its own store and now
+          # *ignores* the YAML — it raises two repairs telling you to delete it, and a
+          # change made here would silently never take effect. The same settings are
+          # declared in `haHttpConfig` below and pushed in by the provisioner, which is
+          # the only remaining way to hold them from nix.
         };
 
         # STT: faster-whisper over Wyoming, loopback only. base-int8 balances accuracy/size on
@@ -205,26 +308,39 @@ in
       }
 
       # Post-start provisioner (opt-in): codify the one-time UI wiring of the Assist
-      # pipeline to the local Wyoming STT/TTS. HA has no declarative path for config
-      # entries, so ha-provision-voice.py drives HA's supported config-flow API instead
-      # — idempotent (safe to re-run) and fail-loud (a failed unit means broken wiring).
-      # See docs/runbooks/ha-voice-provisioning.md.
+      # pipeline to the local Wyoming STT/TTS, the HTTP settings HA stopped reading
+      # from configuration.yaml in 2026.9, and the tuya_local bulbs. HA has no
+      # declarative path for any of it, so ha-provision.py drives HA's supported APIs
+      # instead — idempotent (safe to re-run, and it must be: applying an HTTP config
+      # restarts HA) and fail-loud (a failed unit means broken wiring).
+      # See docs/runbooks/ha-provisioning.md.
       (lib.mkIf cfg.provision.enable {
         # HA owner credentials (username + password) from the sops secret: onboards
         # the owner on a fresh HA and logs in thereafter. Both live in the new sops
         # file profiles/homeassistant.yaml (keys `username` + `password`), keyed to
         # admin + rk1a in secrets/.sops.yaml (mind the all-or-nothing-per-host rule).
-        sops.secrets.ha_owner_username = {
-          sopsFile = self.lib.getSecretFile "homeassistant";
-          key = "username";
-        };
-        sops.secrets.ha_owner_password = {
-          sopsFile = self.lib.getSecretFile "homeassistant";
-          key = "password";
-        };
+        sops.secrets = {
+          ha_owner_username = {
+            sopsFile = self.lib.getSecretFile "homeassistant";
+            key = "username";
+          };
+          ha_owner_password = {
+            sopsFile = self.lib.getSecretFile "homeassistant";
+            key = "password";
+          };
+        }
+        # One Tuya local key per bulb, from the same file — it is already keyed to
+        # exactly the right pair (admin + this host), and sops grants per file.
+        // lib.mapAttrs' (
+          slug: _:
+          lib.nameValuePair "ha_local_key_${slug}" {
+            sopsFile = self.lib.getSecretFile "homeassistant";
+            key = "local_key_${slug}";
+          }
+        ) cfg.provision.bulbs;
 
-        systemd.services.home-assistant-voice-provision = {
-          description = "Wire HA Assist pipeline to local Wyoming STT/TTS";
+        systemd.services.home-assistant-provision = {
+          description = "Provision HA HTTP config, Assist voice pipeline and bulbs";
           after = [
             "home-assistant.service"
             "wyoming-faster-whisper-en.service"
@@ -239,6 +355,9 @@ in
           environment = {
             HA_URL = "http://127.0.0.1:${toString haPort}";
             HA_OWNER_NAME = cfg.provision.ownerName;
+            # The settings HA stopped reading from configuration.yaml in 2026.9.
+            HA_HTTP_CONFIG = builtins.toJSON haHttpConfig;
+            HA_BULBS = builtins.toJSON haBulbs;
           };
           # Self-heal transient boot races (e.g. assist_pipeline's WS API not yet
           # registered, HA restarting mid-provision): retry a few times, spaced
@@ -257,9 +376,14 @@ in
             LoadCredential = [
               "owner_username:${config.sops.secrets.ha_owner_username.path}"
               "owner_password:${config.sops.secrets.ha_owner_password.path}"
-            ];
+            ]
+            ++ lib.mapAttrsToList (
+              slug: _: "local_key_${slug}:${config.sops.secrets."ha_local_key_${slug}".path}"
+            ) cfg.provision.bulbs;
             # HA takes ~30-60s to boot on first run; wait for its API, then provision.
-            ExecStart = pkgs.writeShellScript "ha-voice-provision" ''
+            # Bulb local keys stay in the credentials directory: the script reads
+            # each one from there itself, so no key is ever an env var.
+            ExecStart = pkgs.writeShellScript "ha-provision" ''
               set -euo pipefail
               for _ in $(seq 1 90); do
                 code=$(${pkgs.curl}/bin/curl -s -o /dev/null -w '%{http_code}' \
@@ -269,7 +393,7 @@ in
               done
               export HA_OWNER_USERNAME="$(cat "$CREDENTIALS_DIRECTORY/owner_username")"
               export HA_OWNER_PASSWORD="$(cat "$CREDENTIALS_DIRECTORY/owner_password")"
-              exec ${pkgs.python3}/bin/python3 ${../../../hosts/rk1/ha-provision-voice.py}
+              exec ${pkgs.python3}/bin/python3 ${../../../hosts/rk1/ha-provision.py}
             '';
           };
         };

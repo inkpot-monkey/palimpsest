@@ -1,20 +1,27 @@
 #!/usr/bin/env python3
-"""Codify the one-time UI wiring of Home Assistant's local voice stack on rk1a.
+"""Codify the Home Assistant state that has no declarative path, on rk1a.
 
-Home Assistant has no declarative path for config-entry integrations (Wyoming)
-or Assist pipelines — they are created by config flows and live in HA's mutable
-`.storage`. Rather than seed that private state (version-fragile), this script
-drives HA's *supported* config-flow + assist_pipeline APIs — the exact calls the
-UI buttons make underneath — so the action is documented in code, re-runnable,
-and fails loudly if anything is wrong.
+Home Assistant keeps config entries, Assist pipelines and (since 2026.9) its own
+HTTP settings in mutable `.storage`, with no way to declare them in nix. Rather
+than seed that private state (version-fragile), this script drives HA's
+*supported* APIs — the exact calls the UI buttons make underneath — so each
+action is documented in code, re-runnable, and fails loudly if anything is wrong.
 
-It is idempotent: existing Wyoming entries / an already-wired pipeline are left
-alone, so it is safe to re-run (e.g. as a post-deploy check).
+It is idempotent throughout: everything already in the desired state is left
+alone, so it is safe to re-run (e.g. as a post-deploy check). That matters most
+for the HTTP section, where applying a config restarts HA — a non-idempotent
+check there would restart Home Assistant on every boot.
 
-What it wires (matches modules/nixos/profiles/homeassistant.nix):
+What it provisions (all of it mirrors modules/nixos/profiles/homeassistant.nix):
+  - HTTP: server_port / use_x_forwarded_for / trusted_proxies. HA 2026.9 migrated
+    `http` out of configuration.yaml and now *ignores* that block, so without this
+    the module's declared trusted proxies would silently stop taking effect and
+    the edge host's reverse proxy would break on the next address change.
   - Wyoming STT  -> tcp://127.0.0.1:10300 (wyoming-faster-whisper)
   - Wyoming TTS  -> tcp://127.0.0.1:10200 (wyoming-piper, en_US-lessac-medium)
   - The preferred Assist pipeline's stt_engine / tts_engine / tts_voice.
+  - tuya_local bulbs from HA_BULBS, each placed in its Area so Assist can address
+    it by room. Local keys come from the systemd credentials directory.
 
 Auth (pick one):
   - HA_TOKEN=<long-lived access token>            (preferred; revocable)
@@ -22,8 +29,16 @@ Auth (pick one):
   - HA_OWNER_NAME + HA_OWNER_USERNAME + HA_OWNER_PASSWORD, on a *fresh* HA,
     completes onboarding first (creates the owner account).
 
-Config via env: HA_URL (default http://127.0.0.1:8123). Run on rk1a against
-loopback, or remotely against https://home.<domain> with a token.
+Config via env:
+  - HA_URL       (default http://127.0.0.1:8123)
+  - HA_HTTP_CONFIG  JSON object of declared HTTP settings; skipped when unset
+  - HA_BULBS        JSON list of tuya_local bulbs; skipped when unset. Each entry:
+                    {slug, title, device_id, host, type, protocol_version,
+                     poll_only, area}. The local key is read from
+                    $CREDENTIALS_DIRECTORY/local_key_<slug>.
+
+Run on rk1a against loopback, or remotely against https://home.<domain> with a
+token.
 
 Exit non-zero on any failure. Stdlib only (no third-party deps on the node).
 """
@@ -32,6 +47,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import ipaddress
 import json
 import os
 import socket
@@ -160,8 +176,13 @@ def get_token() -> str:
     pw = os.environ.get("HA_OWNER_PASSWORD")
     if not (user and pw):
         die("no auth: set HA_TOKEN, or HA_OWNER_USERNAME + HA_OWNER_PASSWORD")
-    steps = rest("GET", "/api/onboarding")
-    user_done = any(s["step"] == "user" and s["done"] for s in steps)
+    # HA serves /api/onboarding only while onboarding is still possible and drops it
+    # once complete — 2026.10 answers 404 on a long-onboarded instance. So a missing
+    # endpoint is not a failure, it is the answer: there is nothing to onboard, log in.
+    steps = rest("GET", "/api/onboarding", allow=(200, 404))
+    user_done = not isinstance(steps, list) or any(
+        s["step"] == "user" and s["done"] for s in steps
+    )
     if not user_done:
         name = os.environ.get("HA_OWNER_NAME", user)
         return onboard(name, user, pw)
@@ -329,6 +350,290 @@ def wait_for_ws_api(ws, attempts=45, delay=2) -> None:
 
 
 # --------------------------------------------------------------------------- #
+# HTTP configuration                                                          #
+# --------------------------------------------------------------------------- #
+# HA 2026.9 moved `http` out of configuration.yaml into its own store and now
+# ignores the YAML block (`yaml_migration_done`), so the homeassistant profile
+# declares these values here instead and this section pushes them in.
+HTTP_META = ("created_at", "error", "error_message")
+
+
+def _normalise_http(cfg: dict[str, Any]) -> dict[str, Any]:
+    """Put a config into the shape HA stores, so comparison cannot false-positive.
+
+    HA runs every trusted proxy through `str(ip_network(...))`, so a declared
+    `100.81.190.9` comes back as `100.81.190.9/32`. Compare normalised and
+    order-independent, or we would "differ" on every run — and since applying a
+    config restarts Home Assistant, that would mean a restart on every boot.
+    Store metadata (created_at / error) is dropped: it is not ours to compare.
+    """
+    out = {k: v for k, v in cfg.items() if k not in HTTP_META}
+    if "trusted_proxies" in out:
+        out["trusted_proxies"] = sorted(
+            str(ipaddress.ip_network(p)) for p in out["trusted_proxies"]
+        )
+    return out
+
+
+def _http_declared_matches(have: dict[str, Any] | None, want: dict[str, Any]) -> bool:
+    """True when every value we declare is already the stored value.
+
+    Only the declared subset is compared. Keys we do not manage (ssl_profile,
+    cors_allowed_origins, ...) belong to whoever set them, and HA fills them from
+    schema defaults regardless — claiming them here would mean reverting a
+    deliberate UI change on every boot.
+    """
+    if not have:
+        return False
+    have_n = _normalise_http(have)
+    return all(have_n.get(k) == v for k, v in _normalise_http(want).items())
+
+
+def _api_up() -> bool:
+    # OSError covers the lot while HA is down or still starting: connection
+    # refused, timeouts, and urllib's URLError/HTTPError, which subclass it.
+    try:
+        req = urllib.request.Request(BASE + "/manifest.json")
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return resp.status == 200
+    except OSError:
+        return False
+
+
+def wait_for_rest_api(attempts=90, delay=2) -> None:
+    """Block until HA answers HTTP again, after a restart we triggered."""
+    for _ in range(attempts):
+        if _api_up():
+            return
+        time.sleep(delay)
+    die(f"Home Assistant HTTP API did not come back after {attempts * delay}s")
+
+
+def _verify_http(ws: WS, want: dict[str, Any]) -> None:
+    cur = ws.cmd({"type": "http/config"})
+    if not _http_declared_matches(cur.get("stable"), want):
+        die(
+            "HTTP config did not stick: "
+            f"stable={_normalise_http(cur.get('stable') or {})} "
+            f"want={_normalise_http(want)}"
+        )
+    log("[verify] HTTP stable config confirmed")
+
+
+def ensure_http(ws: WS, token: str, want: dict[str, Any]) -> tuple[WS, str]:
+    """Idempotently make HA's stored HTTP config match the declared values.
+
+    Mirrors what Settings > System > Network does. Two HA behaviours shape the
+    order of operations: applying a config *restarts* Home Assistant, and a
+    pending config that is never promoted *auto-reverts* to stable. So the
+    sequence is configure -> wait for HA to return -> promote, all in one run;
+    deferring the promote to a later run would race the revert.
+
+    Returns the websocket and token to keep using — both are replaced when a
+    restart happens.
+    """
+    cur = ws.cmd({"type": "http/config"})
+    if _http_declared_matches(cur.get("stable"), want):
+        log("[http] stable config already matches the declared values")
+        return ws, token
+
+    pending = cur.get("pending") or {}
+    if pending and _http_declared_matches(pending, want) and not pending.get("error"):
+        ws.cmd({"type": "http/config/promote"})
+        log("[http] promoted the already-matching pending config to stable")
+        _verify_http(ws, want)
+        return ws, token
+
+    # A pending config that failed its trial is kept with the failure recorded and
+    # is never applied again. Re-pushing it blind would just fail the same way.
+    err = pending.get("error")
+    if err and err != "not_promoted":
+        die(
+            f"a pending HTTP config failed its trial ({err}: "
+            f"{pending.get('error_message')}); fix it in the UI before re-running"
+        )
+
+    log(f"[http] applying declared config {_normalise_http(want)}")
+    result = None
+    for _ in range(10):
+        res = ws.try_cmd({"type": "http/config/configure", "config": want})
+        if res.get("success"):
+            result = res["result"]
+            break
+        # HA refuses the change until it has finished starting.
+        if (res.get("error") or {}).get("code") != "not_running":
+            die(f"http/config/configure failed: {res.get('error')}")
+        time.sleep(3)
+    if result is None:
+        die("http/config/configure kept reporting Home Assistant as not running")
+
+    if not result.get("restart"):
+        _verify_http(ws, want)
+        return ws, token
+
+    log("[http] stored as pending; Home Assistant is restarting to apply it")
+    ws.close()
+    time.sleep(5)
+    wait_for_rest_api()
+    token = get_token()
+    ws = WS(BASE, token)
+    wait_for_ws_api(ws)
+    ws.cmd({"type": "http/config/promote"})
+    log("[http] promoted to stable after the restart")
+    _verify_http(ws, want)
+    return ws, token
+
+
+# --------------------------------------------------------------------------- #
+# tuya_local bulbs                                                            #
+# --------------------------------------------------------------------------- #
+def bulb_local_key(slug: str) -> str:
+    """A bulb's Tuya local key, from the per-service systemd credentials dir."""
+    creds = os.environ.get("CREDENTIALS_DIRECTORY")
+    if not creds:
+        die("CREDENTIALS_DIRECTORY is unset, so bulb local keys cannot be read")
+    path = os.path.join(creds, f"local_key_{slug}")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return fh.read().strip()
+    except OSError as e:
+        die(f"cannot read the local key for bulb {slug!r} at {path}: {e}")
+
+
+def tuya_devices(ws: WS) -> dict[str, dict[str, Any]]:
+    """Tuya device id -> that bulb's device-registry entry.
+
+    Keyed on the registry identifier, which tuya_local sets to the Tuya device id.
+    Not on the config entry's unique_id: neither the REST nor the websocket entry
+    listing exposes it. Not on the title either, which anyone can rename in the UI
+    — and a key that a rename invalidates would have us adopt the bulb twice.
+    """
+    found: dict[str, dict[str, Any]] = {}
+    for dev in ws.cmd({"type": "config/device_registry/list"}):
+        for ident in dev.get("identifiers") or []:
+            if len(ident) == 2 and ident[0] == "tuya_local":
+                found[ident[1]] = dev
+    return found
+
+
+def _select_options(step: dict[str, Any], field: str) -> list[Any]:
+    """A select field's options, out of a flow step's serialised schema."""
+    for spec in step.get("data_schema") or []:
+        if spec.get("name") == field:
+            return ((spec.get("selector") or {}).get("select") or {}).get(
+                "options"
+            ) or []
+    return []
+
+
+def _type_key_for(step: dict[str, Any], config_type: str) -> str:
+    """tuya_local's device-type option for a config type.
+
+    The select's values are compound — `config_type||manufacturer||model` — and
+    which manufacturer/model a config advertises depends on the device's product
+    ids, so the key is matched on its first field rather than reconstructed.
+    """
+    values = [
+        o["value"] if isinstance(o, dict) else o for o in _select_options(step, "type")
+    ]
+    for value in values:
+        if value.split("||", 1)[0] == config_type:
+            return value
+    die(f"tuya_local offered no device type {config_type!r}; it offered: {values}")
+
+
+def create_bulb(token, bulb: dict[str, Any]) -> bool:
+    """Drive tuya_local's manual config flow: user -> local -> type -> name.
+
+    The `local` step connects to the bulb to confirm the key and protocol, so a
+    bulb that is unplugged fails here — loudly, which is correct: on a host being
+    rebuilt from scratch a silently missing light is worse than a red unit.
+    """
+    slug = bulb["slug"]
+    flow = rest(
+        "POST",
+        "/api/config/config_entries/flow",
+        {"handler": "tuya_local", "show_advanced_options": False},
+        token=token,
+    )
+
+    def submit(payload):
+        return rest(
+            "POST",
+            f"/api/config/config_entries/flow/{flow['flow_id']}",
+            payload,
+            token=token,
+        )
+
+    submit({"setup_mode": "manual"})
+    step = submit(
+        {
+            "device_id": bulb["device_id"],
+            "host": bulb["host"],
+            "local_key": bulb_local_key(slug),
+            "protocol_version": str(bulb["protocol_version"]),
+            "poll_only": bool(bulb.get("poll_only", False)),
+        }
+    )
+    if step.get("type") == "abort":
+        # tuya_local aborts on a device id it already holds. Reaching this means HA
+        # has the config entry but no device in the registry for it, so there is
+        # nothing to adopt and nothing to place in an Area.
+        if step.get("reason") == "already_configured":
+            log(f"[bulb] {slug!r} is already configured (no device registered)")
+            return False
+        die(f"bulb {slug!r} flow aborted: {step.get('reason')}")
+    if step.get("errors"):
+        die(f"bulb {slug!r} did not answer at {bulb['host']}: {step['errors']}")
+    submit({"type": _type_key_for(step, bulb["type"])})
+    result = submit({"name": bulb["title"]})
+    if result.get("type") != "create_entry":
+        die(f"bulb {slug!r} flow did not create an entry: {result}")
+    log(f"[bulb] created {bulb['title']!r} ({bulb['type']}) at {bulb['host']}")
+    return True
+
+
+def ensure_area(ws: WS, name: str) -> str:
+    for area in ws.cmd({"type": "config/area_registry/list"}):
+        if area["name"].casefold() == name.casefold():
+            return area["area_id"]
+    log(f"[area] created {name!r}")
+    return ws.cmd({"type": "config/area_registry/create", "name": name})["area_id"]
+
+
+def ensure_bulb_area(ws: WS, dev: dict[str, Any], area_name: str) -> None:
+    """Place a bulb's device in its Area — what lets Assist address it by room."""
+    area_id = ensure_area(ws, area_name)
+    if dev.get("area_id") == area_id:
+        log(f"[area] {dev.get('name')!r} is already in {area_name!r}")
+        return
+    ws.cmd(
+        {
+            "type": "config/device_registry/update",
+            "device_id": dev["id"],
+            "area_id": area_id,
+        }
+    )
+    log(f"[area] placed {dev.get('name')!r} in {area_name!r}")
+
+
+def ensure_bulbs(token, ws: WS, bulbs: list[dict[str, Any]]) -> None:
+    known = tuya_devices(ws)
+    for bulb in bulbs:
+        dev = known.get(bulb["device_id"])
+        if dev:
+            log(f"[bulb] {bulb['title']!r} already configured")
+        else:
+            if not create_bulb(token, bulb):
+                continue
+            dev = tuya_devices(ws).get(bulb["device_id"])
+            if not dev:
+                die(f"bulb {bulb['slug']!r} registered no device after adoption")
+        if bulb.get("area"):
+            ensure_bulb_area(ws, dev, bulb["area"])
+
+
+# --------------------------------------------------------------------------- #
 # Provisioning                                                                #
 # --------------------------------------------------------------------------- #
 def wyoming_entry_ids(token) -> set[str]:
@@ -449,17 +754,35 @@ def verify(ws, pipeline_id, stt_engine, tts_engine):
     )
 
 
+def _env_json(name: str, default):
+    raw = os.environ.get(name)
+    if not raw:
+        return default
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        die(f"{name} is not valid JSON: {e}")
+
+
 def main() -> None:
     token = get_token()
     ws = WS(BASE, token)
     try:
         wait_for_ws_api(ws)
+        # HTTP first: applying it restarts HA, so everything after should run on
+        # the connection that comes back rather than be interrupted mid-way.
+        want_http = _env_json("HA_HTTP_CONFIG", None)
+        if want_http:
+            ws, token = ensure_http(ws, token, want_http)
         stt_engine, tts_engine = ensure_voice(token, ws)
         pipeline_id = wire_pipeline(ws, stt_engine, tts_engine)
         verify(ws, pipeline_id, stt_engine, tts_engine)
+        bulbs = _env_json("HA_BULBS", [])
+        if bulbs:
+            ensure_bulbs(token, ws, bulbs)
     finally:
         ws.close()
-    log("PASS: Home Assistant voice pipeline is wired for local Wyoming STT/TTS")
+    log("PASS: Home Assistant HTTP config, local voice pipeline and bulbs provisioned")
 
 
 if __name__ == "__main__":

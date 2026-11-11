@@ -154,6 +154,19 @@ in
           # username defaults to `admin`; password from the ha_owner_password sops
           # secret. See modules/nixos/profiles/homeassistant.nix + the runbook.
           custom.profiles.homeassistant.provision.enable = true;
+
+          # The Antela G120 in the office. Driven locally over the Tuya protocol
+          # rather than flashed with ESPHome, because its firmware is past Tuya's
+          # patch (ADR-0037). `protocolVersion` is the version tuya_local's probe
+          # settled on; `deviceType` is the config it matched, at 100% quality.
+          custom.profiles.homeassistant.provision.bulbs.bulb_office = {
+            title = "bulb office";
+            deviceId = "bfad3cfdefffd705a3tgsq";
+            host = "192.168.1.27";
+            deviceType = "rgbcw_lightbulb_xld_cl002";
+            protocolVersion = "3.5";
+            area = "Office";
+          };
         }
       ];
     };

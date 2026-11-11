@@ -62,16 +62,18 @@ control port, from its LAN address. Control never reaches Tuya's servers.
 
 - **The bulb runs vendor firmware we cannot inspect.** It is no longer phoning home for control,
   but it is still Tuya's code on the chip. This is the substantive cost of the decision.
-- **Each bulb is a Home Assistant config entry, created in the UI.** The integration is
-  config-flow only and declares no discovery mechanism (no `dhcp`, `zeroconf` or `ssdp` in its
-  manifest), so HA cannot find a bulb by itself: its LAN address, device id and local key are
-  entered by hand. This is the same wall ADR-0015 hit for ESPHome adoption and the voice
-  pipeline hit for Wyoming — HA has no declarative path for config entries. If the number of
-  bulbs makes the UI step tedious, the established answer in this repo is a post-start
-  provisioner driving HA's config-flow API, as `ha-provision-voice.py` already does.
-- **The local key is a credential with no machine reader.** No NixOS service consumes it — it
-  lives in HA's own `.storage` once entered. It therefore does not belong in a sops profile; the
-  operator's vault is its home.
+- **Each bulb is a Home Assistant config entry, and HA cannot find one by itself.** The
+  integration is config-flow only and declares no discovery mechanism (no `dhcp`, `zeroconf` or
+  `ssdp` in its manifest), so a bulb's LAN address, device id and local key have to be supplied.
+  This is the same wall ADR-0015 hit for ESPHome adoption and the voice pipeline hit for Wyoming
+  — HA has no declarative path for config entries — and it gets the same answer: the bulbs are
+  declared in `custom.profiles.homeassistant.provision.bulbs` and `ha-provision.py` drives
+  tuya_local's config flow, so a host rebuilt from scratch adopts them unattended.
+- **The local key is a host secret.** It was tempting to keep it in the operator's vault on the
+  grounds that nothing but HA's `.storage` ever reads it. Provisioning the config entry
+  declaratively falsifies that: the provisioner reads it on every run, so it lives in
+  `profiles/homeassistant.yaml` as `local_key_<slug>`, a file already keyed to exactly the right
+  pair — admin and the host that runs Home Assistant.
 - **The bulb depends on a stable LAN address.** `tuya_local` is configured with a host, so the
   bulb wants a DHCP reservation; a lease change silently breaks control.
 - **No firewall change.** HA dials the bulb outbound on TCP 6668 and the device pushes state back
@@ -89,5 +91,11 @@ Two of its findings survived contact with the hardware and are worth keeping:
 - **The chip is a Beken BK7231N**, as its research predicted from Antela's other devices.
 - **The firmware class is `oem_bk7231n_light_ty`**, Tuya's *single-chip* light class. The bulb has
   no separate MCU despite the Smart Life app listing an "MCU Module" version alongside the main
-  one — it reports the same image twice. So the direct-PWM and BP5758D light variants drafted in
+  one — it reports the same image twice. So the light variants drafted in
   `esphome/antela-a60.yaml.template` are the right shape if the bulb is ever serial flashed.
+
+One thing it got wrong: the hardware is not the "Filament A60" both documents assume. tuya_local
+logged it as an **ANTELA Smart Bulb G120**, product id `o4hbt2okpqdzohes`, matching the
+`rgbcw_lightbulb_xld_cl002` config at 100% quality — a colour globe, not a filament lamp. That
+makes the template's two-channel CCT variant the *wrong* guess for it; an RGBCW driver is. The
+`a60` naming survives in `esphome/` only because the stash secret keys are named after it.
