@@ -429,7 +429,7 @@
         {
           "refId": "A",
           "datasource": { "type": "prometheus", "uid": "${datasource}" },
-          "expr": "label_replace(node_load1 / count by (instance) (node_cpu_seconds_total{mode=\"idle\"}), \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
+          "expr": "label_replace(node_load1 / on (instance) group_left () count by (instance) (node_cpu_seconds_total{mode=\"idle\"}), \"host\", \"$1\", \"instance\", \"([^.:]+).*\")",
           "legendFormat": "{{host}}"
         }
       ],
