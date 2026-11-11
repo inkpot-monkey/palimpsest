@@ -17,11 +17,26 @@ let
   configLastModified = toString (self.lastModified or 0);
 in
 {
+  imports = [
+    # Declares `levelFromMessage`/`demoteToDebug`, which this profile sets below. Imported
+    # rather than assumed: a VM test imports this profile without the monitoring client,
+    # and a definition for an option nobody declared is an eval error.
+    ./log-levels.nix
+  ];
+
   options.custom.profiles.monitoring-exporters = {
     enable = lib.mkEnableOption "monitoring exporters (node exporter) configuration";
   };
 
   config = lib.mkIf cfg.enable {
+    # node-exporter moved to go's structured logger, which writes `level=ERROR` into a
+    # message journald stamps PRIORITY=6 — so a collector that cannot read its sysfs looks
+    # exactly like an informational line. Worth reading correctly even though the errors it
+    # exposed were fixed at the cause (see hosts/kelpy: four collectors that cannot work in a
+    # container); what remains is the occasional `broken pipe` when a scrape is cut short.
+    custom.profiles.monitoring-client.levelFromMessage."prometheus-node-exporter.service" =
+      self.lib.logLevelPatterns.goSlog;
+
     # Make `nixos-version` (and the metric above) report the flake rev this host
     # was built from. mkDefault so a host may still override it elsewhere.
     system.configurationRevision = lib.mkDefault configRev;

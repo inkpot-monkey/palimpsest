@@ -42,11 +42,25 @@ let
   provisionScript = ./music-assistant-provision.py;
 in
 {
+  imports = [
+    # Declares `levelFromMessage`/`demoteToDebug`, which this profile sets below. Imported
+    # rather than assumed: a VM test imports this profile without the monitoring client,
+    # and a definition for an option nobody declared is an eval error.
+    ./monitoring/log-levels.nix
+  ];
+
   options.custom.profiles.music-assistant = {
     enable = lib.mkEnableOption "Music Assistant (the library-plane brain, ADR-0031)";
   };
 
   config = lib.mkIf cfg.enable {
+    # Music Assistant is built on Home Assistant's core and logs in the same python format,
+    # with one difference that matters to the regex: it colours every line by level, so the
+    # pattern has to tolerate an ANSI prefix. Same catalogue entry as Home Assistant's, which
+    # is the reason the catalogue exists.
+    custom.profiles.monitoring-client.levelFromMessage."music-assistant.service" =
+      self.lib.logLevelPatterns.pythonLogging;
+
     # MA reads Navidrome over loopback and provisions its service account via Navidrome's admin
     # API, so Navidrome must be enabled on this host. Fail the build loudly rather than reference
     # a missing navidrome_admin_password secret / dead loopback endpoint.

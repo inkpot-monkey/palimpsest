@@ -20,6 +20,13 @@ let
   offEdge = (svc.origin or null) == config.networking.hostName;
 in
 {
+  imports = [
+    # Declares `levelFromMessage`/`demoteToDebug`, which this profile sets below. Imported
+    # rather than assumed: a VM test imports this profile without the monitoring client,
+    # and a definition for an option nobody declared is an eval error.
+    ./monitoring/log-levels.nix
+  ];
+
   options.custom.profiles.immich = {
     enable = lib.mkEnableOption "Immich photo library";
 
@@ -103,6 +110,22 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # Two units, two formats. immich's server and microservices are NestJS (ANSI-coloured,
+    # level right-padded between escape sequences), and the postgres cluster this profile
+    # brings up logs `[pid] LEVEL:` on stderr.
+    #
+    # ⚠ Promoting postgres SURFACES A REAL ISSUE rather than tidying one away: 4353 WARNING
+    # lines a day, every one `database "<x>" has a collation version mismatch`, for
+    # template1, postgres AND immich. The databases were created under a different glibc
+    # collation, so text index ordering may no longer match the collation postgres believes
+    # it is using. The fix is `REINDEX DATABASE` then `ALTER DATABASE … REFRESH COLLATION
+    # VERSION`, which is a data operation on the photo library and so not something a config
+    # change should do quietly. It stays loud on the board until someone deals with it.
+    custom.profiles.monitoring-client.levelFromMessage = {
+      "immich-server.service" = self.lib.logLevelPatterns.nestjs;
+      "postgresql.service" = self.lib.logLevelPatterns.postgres;
+    };
+
     services.immich = {
       enable = true;
       inherit (svc) port;

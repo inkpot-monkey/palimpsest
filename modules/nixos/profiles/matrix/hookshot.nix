@@ -254,6 +254,13 @@ let
   mkAdminRoomService = import ./hookshot-adminroom.nix { inherit pkgs config; };
 in
 {
+  imports = [
+    # Declares `levelFromMessage`/`demoteToDebug`, which this profile sets below. Imported
+    # rather than assumed: a VM test imports this profile without the monitoring client,
+    # and a definition for an option nobody declared is an eval error.
+    ../monitoring/log-levels.nix
+  ];
+
   options.custom.profiles.matrix.hookshot = {
     enable = lib.mkEnableOption ''
       matrix-hookshot — GitHub (personal notifications + repo events), generic
@@ -262,6 +269,12 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # hookshot puts its level first and its timestamp second. Low volume, but this is the
+    # path every other watcher's alert travels through, so an error here is the one that
+    # explains why the others went quiet.
+    custom.profiles.monitoring-client.levelFromMessage."matrix-hookshot.service" =
+      self.lib.logLevelPatterns.hookshot;
+
     # Dedicated hardened service account (not root, unlike the nixpkgs module
     # default). A static system user — not DynamicUser — so sops can chown the
     # rendered config/registration/key to it (a DynamicUser's uid is unknown at

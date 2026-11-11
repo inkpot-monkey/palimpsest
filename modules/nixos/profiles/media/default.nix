@@ -2,6 +2,7 @@
   config,
   lib,
   settings,
+  self,
   ...
 }:
 
@@ -17,6 +18,10 @@ let
 in
 {
   imports = [
+    # Declares `levelFromMessage`/`demoteToDebug`, which this profile sets below. Imported
+    # rather than assumed: a VM test imports this profile without the monitoring client,
+    # and a definition for an option nobody declared is an eval error.
+    ../monitoring/log-levels.nix
     ./qbittorrent.nix
     ./qbittorrent-port-forward.nix
     ./qbittorrent-preferences.nix
@@ -143,6 +148,13 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # gluetun's own level, which journald cannot see (the container logs to stdout). These
+    # are the highest-value lines on this host: the tunnel dies with its unit still `active`
+    # and its interface silently losing its address, so gluetun's own ERROR lines — 89 a day
+    # of port-forwarding RPC failures at the moment — are the earliest warning there is.
+    custom.profiles.monitoring-client.levelFromMessage."podman-gluetun.service" =
+      self.lib.logLevelPatterns.gluetun;
+
     # Off-edge only, and on tailscale0 ALONE — never openFirewall, which would put
     # the torrent and Soulseek UIs on the home LAN. On the edge these stay on
     # loopback and the firewall is untouched.

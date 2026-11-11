@@ -16,11 +16,24 @@ let
   offEdge = (svc.origin or null) == config.networking.hostName;
 in
 {
+  imports = [
+    # Declares `levelFromMessage`/`demoteToDebug`, which this profile sets below. Imported
+    # rather than assumed: a VM test imports this profile without the monitoring client,
+    # and a definition for an option nobody declared is an eval error.
+    ./monitoring/log-levels.nix
+  ];
+
   options.custom.profiles.litellm = {
     enable = lib.mkEnableOption "LiteLLM proxy configuration";
   };
 
   config = lib.mkIf cfg.enable {
+    # LiteLLM's proxy logger. Note this unit emits TWO formats: this one, and uvicorn's bare
+    # `INFO:     <addr> - "GET /metrics/"` access line, which is deliberately not matched —
+    # it is already `info` and it is one line per scrape.
+    custom.profiles.monitoring-client.levelFromMessage."litellm.service" =
+      self.lib.logLevelPatterns.litellm;
+
     sops.templates."litellm-env".content = ''
       DEEPINFRA_API_KEY=${config.sops.placeholder."apikey@api.deepinfra.com"}
       OPENROUTER_API_KEY=${config.sops.placeholder."apikey@api.openrouter.ai"}

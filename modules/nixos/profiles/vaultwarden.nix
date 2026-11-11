@@ -181,6 +181,13 @@ let
   alertPost = import ../../shared/alert-post.nix { inherit lib pkgs; };
 in
 {
+  imports = [
+    # Declares `levelFromMessage`/`demoteToDebug`, which this profile sets below. Imported
+    # rather than assumed: a VM test imports this profile without the monitoring client,
+    # and a definition for an option nobody declared is an eval error.
+    ./monitoring/log-levels.nix
+  ];
+
   options.custom.profiles.vaultwarden = {
     enable = lib.mkEnableOption ''
       Vaultwarden, the self-hosted vault this home reaches from Brave and from Emacs
@@ -281,6 +288,13 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # Vaultwarden's own bracketed level, which journald flattens to `info` like every other
+    # stdout logger. Low volume (~16 ERROR lines a day, mostly expired tokens), but this is
+    # the operator's password vault: its errors should be visible on the board the day they
+    # stop being routine.
+    custom.profiles.monitoring-client.levelFromMessage."vaultwarden.service" =
+      self.lib.logLevelPatterns.vaultwarden;
+
     assertions = [
       {
         # The HTTP listener is loopback-only, so Caddy can only reach it from the same

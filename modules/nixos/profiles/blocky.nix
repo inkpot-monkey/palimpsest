@@ -5,6 +5,7 @@
   pkgs,
   inputs,
   settings,
+  self,
   ...
 }:
 
@@ -41,6 +42,13 @@ let
   servicesHostsFile = "/run/blocky-services/tailscale-services.hosts";
 in
 {
+  imports = [
+    # Declares `levelFromMessage`/`demoteToDebug`, which this profile sets below. Imported
+    # rather than assumed: a VM test imports this profile without the monitoring client,
+    # and a definition for an option nobody declared is an eval error.
+    ./monitoring/log-levels.nix
+  ];
+
   options.custom.profiles.blocky = {
     enable = lib.mkEnableOption "Blocky DNS server configuration";
   };
@@ -48,6 +56,15 @@ in
   config = lib.mkIf cfg.enable (
     lib.mkMerge [
       {
+        # blocky writes its level into its own message, and everything it logs goes to
+        # stdout — so journald calls all of it `info` and 10,939 real ERROR lines over 30
+        # days were invisible to every error view on the fleet. ⚠ The pattern MUST stay
+        # anchored: the query log carries `response_code=NOERROR` on every resolved query
+        # (1.5M lines a month here), and one matching the bare word would call every one of
+        # them a failure.
+        custom.profiles.monitoring-client.levelFromMessage."blocky.service" =
+          self.lib.logLevelPatterns.blocky;
+
         networking.nameservers = [ "127.0.0.1" ];
 
         services.blocky = {
