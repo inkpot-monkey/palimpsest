@@ -313,8 +313,8 @@ The off-host process that probes the fleet's services over the network and alert
 _Avoid_: monitor, uptime robot.
 
 **Reachability probe**:
-A black-box check that a service *answers* on its endpoint (HTTP/TCP/ICMP). Catches a service that is down **or** running-but-degraded, but is blind to a service with no listening port.
-_Avoid_: ping (too narrow), healthcheck (reserve for a single named check).
+A black-box check that a service *answers* on its endpoint (HTTP/TCP/ICMP). Catches a service that is down **or** running-but-degraded, but is blind to a service with no listening port. The word **probe** is overloaded in this repo and the two senses must not be blurred: this one is a network check of a **live service of ours**, with an alert behind it; a **hold probe** is a check of **upstream state** with a reading task behind it. Qualify the word whenever both could be meant.
+_Avoid_: ping (too narrow), healthcheck (reserve for a single named check), bare "probe" where a **hold probe** could be meant.
 
 **Unit-state check**:
 The white-box counterpart, run on the host itself: it asserts each **expected-up service**'s systemd unit is actually `active`. It catches what a reachability probe cannot — a port-less service, or a unit that exits *cleanly yet dead* (Stalwart's store-misconfig abort exits `0`, so it is `inactive`, never `failed`, and an `OnFailure=`/failed-state alert would miss it).
@@ -335,6 +335,30 @@ _Avoid_: fallback channel (too vague), secondary Matrix.
 **Push relay**:
 The self-hosted, ntfy-compatible **web-push** service that realizes the **Out-of-band channel** — hosted off-site (a Cloudflare Worker today) so it survives `kelpy` being down, it accepts a publish from the **watcher** and delivers a browser push notification to the operator's installed phone PWA. Deliberately *ntfy-shaped* so the **watcher** drives it through Gatus's stock `ntfy` alerter and any ntfy client can target it. Chosen over the public ntfy.sh (paid) and a self-hosted ntfy on home hardware (wrong failure domain).
 _Avoid_: ntfy (the relay is ntfy-*compatible*, not ntfy), push server.
+
+### Flake bumps & holds
+
+> This repo moves `flake.lock` forward every two or three days. The terms below name what happens when one of those bumps cannot take a package with it. Design: [ADR-0038](docs/adr/0038-held-back-packages-are-a-registry-an-agent-rechecks.md).
+
+**Hold**:
+A package this fleet pins **back from, or aside of, the fleet's nixpkgs because something upstream has to change before it can move** — and that therefore *can eventually become false*. One entry per hold in [`docs/holds.md`](docs/holds.md), the canonical record, carrying a **hold probe**, a **release condition**, what was tried and rejected, and the agent's last finding. The pin itself carries only a `# HOLD: docs/holds.md#anchor` signpost, so the registry is the one place the reasoning is kept and the Nix comment never becomes a second source of truth. A hold is a **wait**, not a preference: the test for admitting one is that some upstream event could clear it. Dropping a hold is always a human action.
+_Avoid_: pin (the pin is the *mechanism*; the hold is the wait it implements), workaround, blocker, freeze.
+
+**Standing law**:
+A deviation from upstream that **no upstream event can ever make false** — porcupineFish's `stable_*` vendor kernel, `jmap-bridge`'s release-tag pin, music-assistant's two `disabledTests`. The deliberate counterpart to a **hold**: a standing law is a decision this fleet has made and keeps, so a daily **hold probe** on one is work that can never pay. They stay where they already live (`AGENTS.md`, the host README, the relevant ADR) and are kept *out* of the registry — a registry that mixes a to-do list with a law book is a law book nobody finishes reading.
+_Avoid_: permanent hold (the point is that it is not a hold at all), policy, exception.
+
+**Hold probe**:
+The machine-runnable half of a **hold**: a check on **upstream state** — is the package substitutable yet, has the issue closed, has a release appeared — drawn from a closed vocabulary (`nixpkgs-attr:`, `nixpkgs-substitutable:`, `github-release:`, `github-issue:`, `url-regex:`, and `cmd:` as a discouraged escape hatch), deliberately mirroring nvchecker's source types. Sharply distinct from a **reachability probe**, which asks whether one of *this fleet's live services* is answering right now: a hold probe touches nothing the fleet runs, has no alert attached, and a trip means *go and read the release condition*, never *something is wrong*. A tripped hold probe is a hard precondition for a hold being judged ready, never a verdict on its own.
+_Avoid_: probe unqualified (ambiguous against **reachability probe** — always say which), check, watcher.
+
+**Release condition**:
+The human half of a **hold**: what has to be **true before you unpin**, in a sentence. Deliberately a separate field from the **hold probe**, because the two rarely coincide — snapcast's probe is "has nixpkgs moved", while its release condition is "Music Assistant's `Dockerfile.base` names the version nixpkgs has". It is also where the condition the probe cannot express lives: for the `stable-until-fixed` entries, that the *host actually builds*, not merely evaluates.
+_Avoid_: exit criteria, done-when, unblock condition.
+
+**Cleared**:
+A **hold** whose **release condition** was met and whose pin has been dropped. Cleared holds are **archived, never deleted** — they move to the `## Cleared` section of the registry with the date and what cleared them, because the expensive knowledge in a hold is the negative result (*snapcast 0.35.0 was tried and broke Music Assistant's teardown path*), and a deleted hold means the next person re-pins blind or walks into the same wall. Distinct from **ready-to-drop**, the `status` a hold wears once its probe has tripped and nobody has retested yet.
+_Avoid_: resolved, closed (reserve for issues), removed/deleted (the archive is the whole point).
 
 ### Audio & music
 
