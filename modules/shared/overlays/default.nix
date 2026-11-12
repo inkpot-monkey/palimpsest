@@ -113,16 +113,15 @@ let
     # MODULE failing at eval, because the module read a passthru only the newer package had.
     # Module and package come from one pin by default for a reason; every entry here breaks
     # that deliberately, so each one needs the host to actually BUILD, not just evaluate.
-    #
-    # HOLD: docs/holds.md#matrix-tuwunel
-    # HOLD: docs/holds.md#stalwart
-    # HOLD: docs/holds.md#matrix-hookshot
     stable-until-fixed =
       _final: prev:
       let
         stable = inputs.nixpkgs-stable.legacyPackages.${prev.stdenv.hostPlatform.system};
       in
       {
+        # HOLD: docs/holds.md#matrix-tuwunel
+        # HOLD: docs/holds.md#stalwart
+        # HOLD: docs/holds.md#matrix-hookshot
         inherit (stable) matrix-tuwunel stalwart matrix-hookshot;
       };
 
@@ -140,7 +139,7 @@ let
     # rustPlatform, and overriding an already-built-against-unstable derivation would not.
     # pkgs/stump must therefore stay free of `zstd`/`sqlite` in `buildInputs` while this
     # pin stands: adding them changes the derivation hash and the free rebuild stops being
-    # free. flake.nix carries the full reasoning and the exit condition.
+    # free. The full reasoning and the exit condition are in the registry entry:
     # HOLD: docs/holds.md#stump
     stump-pin = _final: _prev: {
       stump = inputs.nixpkgs-frozen.legacyPackages.${_prev.stdenv.hostPlatform.system}.callPackage (
