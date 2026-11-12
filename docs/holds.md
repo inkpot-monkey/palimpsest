@@ -28,14 +28,47 @@ Closed, and deliberately mirroring nvchecker's source types so these translate m
 the deterministic watcher is ever built:
 
 | Form | Trips when |
-| -------------------------------- | --------------------------------------------------------------- |
+| --- | --- |
 | `nixpkgs-attr:<attr>` | the attribute's version in nixos-unstable differs from the pin |
+| `nixpkgs-substitutable:<attr>` | nixos-unstable's build of the attribute is in the binary cache |
 | `github-release:<owner>/<repo>` | a release newer than the recorded one exists |
-| `github-issue:<owner>/<repo>#<n>`| the issue/PR closes |
+| `github-issue:<owner>/<repo>#<n>` | the issue/PR closes |
 | `url-regex:<url> <regex>` | capture group 1 differs from the recorded value |
 | `cmd:<shell>` | **discouraged escape hatch** — exit 0 means tripped |
 
 A tripped probe is not a ready hold. It means *go and read the release condition*.
+
+### `nixpkgs-substitutable:` — the narinfo query
+
+The recurring question on this fleet is not *has upstream moved* but **has anyone built it
+yet**, because a hold here is almost always "the unstable build is broken" and the fix lands as
+a cache entry. It is a stronger signal than the tracking issue closing: an issue closes when a
+maintainer judges the work done, while a cache hit is the fleet's actual precondition for
+unpinning. So it gets a name rather than a `cmd:`.
+
+To evaluate `nixpkgs-substitutable:<attr>`:
+
+1. resolve the attribute's store path on unstable —
+   `nix eval --raw github:NixOS/nixpkgs/nixos-unstable#<attr>.outPath`;
+1. take the **first 32 characters of that path's basename** — the store hash;
+1. `GET https://cache.nixos.org/<hash>.narinfo`.
+
+`200` = built, the hold may be ready. `404` = still broken, stay pinned. Anything else is a
+probe failure, not a result, and must be reported as such rather than read as `404`.
+
+Two things a runner must not shortcut. The store path is a property of *that* evaluation of
+nixos-unstable, so it has to be re-resolved on every run — a cached hash answers yesterday's
+question. And this probe is only ever evidence about the *package*; whether the fleet can
+actually move also depends on the module it is paired with, which is what the release condition
+is for.
+
+### On the two forms with few users
+
+`url-regex:` has one user (`blocky`) and is also how `snapcast`'s release condition is written
+down, so it stays. `cmd:` has none, which is the point of keeping it in the table: it is the
+escape hatch that marks a probe nothing else can express, and every conversion out of it — three
+of them to `nixpkgs-substitutable:`, one to `url-regex:` — is a form that turned out to be worth
+naming. A hold arriving with a `cmd:` probe is a prompt to ask whether it is the fifth.
 
 ## Held
 
@@ -48,8 +81,8 @@ A tripped probe is not a ready hold. It means *go and read the release condition
   `AWS_LC_SYS_USE_SYSTEM=1 requires a system-installed AWS-LC, but none was found`. nixpkgs is
   midway through moving Rust `*-sys` crates onto system libraries via `default-crate-overrides`,
   and every dependent package has to gain that library in `buildInputs` one at a time.
-- **probe** — `cmd:test 200 = "$(curl -s -o /dev/null -w '%{http_code}' https://cache.nixos.org/$(basename "$(nix eval --raw github:NixOS/nixpkgs/nixos-unstable#matrix-tuwunel.outPath)" | cut -c1-32).narinfo)"`
-  — a 404 narinfo on the unstable path means it is still broken; a 200 means someone built it.
+- **probe** — `nixpkgs-substitutable:matrix-tuwunel` — a 404 narinfo on the unstable store path
+  means it is still broken; a 200 means someone built it.
 - **release condition** — the unstable package builds **and porcupineFish/kelpy actually build
   against it**, not merely evaluate. Every entry in this overlay deliberately breaks the
   module-and-package-from-one-pin rule, and this repo has already been bitten by module/package
@@ -78,7 +111,7 @@ A tripped probe is not a ready hold. It means *go and read the release condition
 - **why** — `zstd-sys`, reached via `trunk` → `webadmin`:
   `The system library 'libzstd' required by crate 'zstd-sys' was not found`. Same
   `*-sys` → system-library migration as matrix-tuwunel.
-- **probe** — `cmd:test 200 = "$(curl -s -o /dev/null -w '%{http_code}' https://cache.nixos.org/$(basename "$(nix eval --raw github:NixOS/nixpkgs/nixos-unstable#stalwart.outPath)" | cut -c1-32).narinfo)"`
+- **probe** — `nixpkgs-substitutable:stalwart`
 - **release condition** — the unstable package builds and kelpy builds against it. Stalwart is the
   mail server, so this one also wants a mail round-trip after the switch, not just a green build:
   it reads its certificate at startup and has previously served a superseded one.
@@ -97,7 +130,7 @@ A tripped probe is not a ready hold. It means *go and read the release condition
   Stable carries the same 7.6.0 and substitutes it.
 - **why** — `libsqlite3-sys`, reached via `matrix-sdk-crypto-nodejs`, fails at the final link:
   `ld: cannot find -lsqlite3`. Same migration again.
-- **probe** — `cmd:test 200 = "$(curl -s -o /dev/null -w '%{http_code}' https://cache.nixos.org/$(basename "$(nix eval --raw github:NixOS/nixpkgs/nixos-unstable#matrix-hookshot.outPath)" | cut -c1-32).narinfo)"`
+- **probe** — `nixpkgs-substitutable:matrix-hookshot`
 - **release condition** — the unstable package builds and kelpy builds against it. Hookshot is the
   path `#infra-alerts` arrives by, so a silent failure here is the fleet going quiet rather than
   anything visibly breaking — check a webhook actually lands.
@@ -178,7 +211,12 @@ A tripped probe is not a ready hold. It means *go and read the release condition
 - **why** — nixpkgs' `flexget` does not ship the WebUI v2 assets at all, so the web interface is
   simply absent without this. The assets are a separate repo with its own release cadence, which
   is why the fetch is pinned rather than tracking anything.
-- **probe** — `github-release:Flexget/webui` (recorded: 2.0.29, 2023-08-19).
+- **probe** — `github-release:Flexget/webui` (recorded: 2.0.29, 2023-08-19). This deliberately
+  watches a *different repo* from the one the release condition names, because the release
+  condition is unobservable: nothing in any feed changes on the day nixpkgs' `flexget` starts
+  shipping `ui/v2/dist`, and `nixpkgs-attr:flexget` would trip on every routine flexget bump
+  while saying nothing about the assets. A new `webui` release is the weaker signal and the only
+  actionable one — which is exactly why probe and release condition are separate fields.
 - **release condition** — nixpkgs' `flexget` package ships `ui/v2/dist` itself, at which point the
   whole overlay is deleted rather than bumped. A tripped probe means something weaker and more
   likely: a newer `dist.zip` to re-pin, which also needs the hardcoded `python3.13` path in the
@@ -200,9 +238,16 @@ A tripped probe is not a ready hold. It means *go and read the release condition
   would break the runtime-regenerated Tailscale service resolution this profile depends on. kelpy
   already tracks unstable; this aligns the Pi. The `hostsFile.sources`-only schema in that profile
   is the one form valid across both blockys and must stay that way while this stands.
-- **probe** — `cmd:test "$(nix eval --raw github:NixOS/nixpkgs/$(nix flake metadata --json | jq -r '.locks.nodes[.locks.nodes["nixos-raspberrypi"].inputs.nixpkgs].locked.rev')#blocky.version)" = "$(nix eval --raw github:NixOS/nixpkgs/nixos-unstable#blocky.version)"`
-  — tripped when the Pi toolchain's nixpkgs and unstable agree on a blocky version (recorded:
-  0.29.0 vs 0.35.0).
+- **probe** — `url-regex:https://api.github.com/repos/nvmd/nixos-raspberrypi/commits/develop "sha": "([0-9a-f]{40})"`
+  (recorded: `24c74e712ac864af1dcd6b89fd4de8d47d5a4d0a`, the rev `flake.nix` pins) — tripped when
+  upstream's `develop` has moved past the pin, i.e. when a toolchain bump is *available to
+  attempt*.
+  The obvious probe — compare blocky's version in the Pi toolchain's nixpkgs against unstable's —
+  was written first and is wrong twice over. It needed `nix flake metadata | jq` to find the
+  toolchain's nixpkgs rev, so it only ran from a repo checkout, and once that rev is written down
+  instead (`5e2305d5`, carrying blocky **0.29.0** against unstable's **0.35.0**) the comparison is
+  a constant: a pinned rev's blocky never changes. Nothing upstream clears this hold, because the
+  hold is on *our own* pin. The only external event worth watching is therefore the one above.
 - **release condition** — the `nixos-raspberrypi` pin's nixpkgs carries a blocky that serves
   `hostsFile` entries the way the dynamic service resolution needs. Verify on porcupineFish by
   resolving a tailnet service name through blocky directly (not `getent` — it answers from the
