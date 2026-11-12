@@ -75,6 +75,7 @@ in
           # below. Pulling it from inputs.nixpkgs keeps blocky consistent across the fleet
           # (kelpy already tracks unstable; this aligns the Pi). For the version actually
           # running, read blocky_build_info — the DNS Resolvers board surfaces it per host.
+          # HOLD: docs/holds.md#blocky
           package = inputs.nixpkgs.legacyPackages.${config.nixpkgs.hostPlatform.system}.blocky;
           settings = {
             # Bind a wildcard rather than the host's (per-reflash, drift-prone) Tailscale
