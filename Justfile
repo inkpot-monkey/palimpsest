@@ -6,14 +6,11 @@ default:
 
 # Local rebuild and switch. The `users` input is an external repo (the operator's homes),
 # so refresh its lock pin first — otherwise a local switch silently rebuilds the home that
-# was pinned at the last `nix flake update`, not the one just pushed. The refreshed pin is
-# committed on its own (lock-only, nothing else staged) so what was switched to is recorded.
+# was pinned at the last `nix flake update`, not the one just pushed. --commit-lock-file
+# records the refreshed pin as a lock-only commit naming the old and new revs, so what was
+# switched to is in the history and no unrelated dirt rides along.
 switch host="":
-  nix flake update users
-  @if ! git diff --quiet -- flake.lock; then \
-    git add flake.lock && \
-    git commit -m "chore(flake): update the users pin" -m "Refreshed by \`just switch\`."; \
-  fi
+  nix flake update users --commit-lock-file
   nh os switch . --no-nom {{ if host == "" { "" } else { "--hostname " + host } }}
 
 # SSH options forwarded (via NIX_SSHOPTS) to every ssh/nix-copy nixos-rebuild spawns.
