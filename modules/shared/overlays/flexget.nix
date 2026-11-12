@@ -1,3 +1,6 @@
+# nixpkgs' flexget ships no WebUI v2 assets, so they are fetched from a pinned
+# Flexget/webui release below.
+# HOLD: docs/holds.md#flexget-webui
 _: final: prev: {
   flexget = prev.flexget.overrideAttrs (oldAttrs: {
     nativeBuildInputs = (oldAttrs.nativeBuildInputs or [ ]) ++ [ final.unzip ];

@@ -17,6 +17,7 @@ let
     # Stream.RemoveStream teardown path MA relies on (0.30 was broken, 0.32 broke MA per
     # snapcast#1410). Hold the tested pairing until a bump is verified on the box.
     # See docs/adr/0031-porcupinefish-sound-server-audio.md.
+    # HOLD: docs/holds.md#snapcast
     snapcast = final: prev: {
       snapcast = prev.snapcast.overrideAttrs (_old: {
         version = "0.34.0";
@@ -112,6 +113,10 @@ let
     # MODULE failing at eval, because the module read a passthru only the newer package had.
     # Module and package come from one pin by default for a reason; every entry here breaks
     # that deliberately, so each one needs the host to actually BUILD, not just evaluate.
+    #
+    # HOLD: docs/holds.md#matrix-tuwunel
+    # HOLD: docs/holds.md#stalwart
+    # HOLD: docs/holds.md#matrix-hookshot
     stable-until-fixed =
       _final: prev:
       let
@@ -136,6 +141,7 @@ let
     # pkgs/stump must therefore stay free of `zstd`/`sqlite` in `buildInputs` while this
     # pin stands: adding them changes the derivation hash and the free rebuild stops being
     # free. flake.nix carries the full reasoning and the exit condition.
+    # HOLD: docs/holds.md#stump
     stump-pin = _final: _prev: {
       stump = inputs.nixpkgs-frozen.legacyPackages.${_prev.stdenv.hostPlatform.system}.callPackage (
         inputs.self + /pkgs/stump
