@@ -1,9 +1,15 @@
 # Holds
 
 Packages this fleet holds back from a flake bump **because something upstream has to change
-first**. Each entry carries a machine-runnable `probe` and a human `release condition`; a daily
-agent on rk1b runs the probes and writes its findings back here. See
+first**. Each entry carries a machine-runnable `probe` and a human `release condition`. See
 [ADR-0038](adr/0038-held-back-packages-are-a-registry-an-agent-rechecks.md).
+
+**Nothing runs these probes yet.** The daily agent that would run them and write its findings
+back into this file is a decision, not a deployment: it is specified in ADR-0038 and tracked in
+[palimpsest#226](https://github.com/inkpot-monkey/palimpsest/issues/226). Until it exists, every
+`last checked` below reads *never*, every `last finding` is empty, and the probes are commands a
+human runs by hand on the day they wonder. They are written now so the registry is already in
+the shape the agent will read, and so the wondering is cheap.
 
 **Scope — only things that can become false.** A hold is a wait, not a preference. Deviations
 from upstream that no upstream event can ever clear are *standing laws* and do not live here:
