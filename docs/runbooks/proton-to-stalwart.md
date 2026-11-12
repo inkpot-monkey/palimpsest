@@ -219,6 +219,13 @@ echo 'you@proton.me' > proton.addr
    Mind that the index is only as current as the last `mbsync`, so a few very recent
    messages may not be in it and would import as duplicates.
 
+   **This server does not search arbitrary headers, in either protocol.** IMAP
+   `SEARCH HEADER X-Pm-Forwarded-From <addr>` returns zero against messages whose header
+   was read back by `FETCH` seconds earlier, and the JMAP `header` filter does the same.
+   Standard headers work — `SEARCH HEADER Subject` finds things — so the failure looks
+   like a clean negative result rather than an unsupported query. Select server-side on
+   something it does index (a date, a mailbox) and test the custom header client-side.
+
    **Do not verify overlap with a JMAP `header` filter.** `{"header": ["Message-Id", …]}`
    returns nothing on this server even for messages known to be present — checked against
    five messages read straight out of the `Gmail` mailbox — so it reports every message as
@@ -318,6 +325,23 @@ provenance keyword, and `ledger N imported / M to import` — those two numbers 
 the completion test. **Pass the same `--skip-known` you imported with**, or the target is
 the raw export total and a finished import reports as short. Cross-check the per-folder counts against Proton's own web UI before
 deleting anything upstream.
+
+## Mail that arrived before the rule existed
+
+Forwarding is switched on at the source before the Sieve clause is written — the clause
+cannot be written until a real forward has been read — so a handful of messages always
+land in INBOX ahead of it. `retrofile.py` applies the rule retrospectively to exactly
+those: it selects on the clause's own condition (`X-Pm-Forwarded-From` carrying the
+address), adds the provenance flag and MOVEs into `Proton/Inbox`, and does not touch
+`$seen` in either direction — IMAP `MOVE` carries the flags across, so a message already
+read stays read and an unread one stays unread.
+
+Proton's own "Confirm forwarding request" notices are addressed directly to the mailbox
+and carry no forwarding header, so they correctly stay in INBOX. That is the check that
+the selector is the rule's condition and not a guess about which sender is involved.
+
+Afterwards `Proton/Inbox`'s unread count is the cutover metric: every imported message is
+`$seen`, so unread there means exactly "arrived since the cutover".
 
 ## Rollback
 

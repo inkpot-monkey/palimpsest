@@ -315,6 +315,38 @@ in
             addflag "gmail:tsdkelly";
             fileinto "Gmail";
         }
+
+        # Proton forwards with its OWN header, and this one is not a guess:
+        # Proton documents no forwarding header at all, so it was read off a
+        # real forward (2026-11-12). `X-Pm-Forwarded-From` carries the Proton
+        # address, and — the reason it is the right discriminator rather than
+        # the `X-Original-To` sitting beside it — Proton's own notices that are
+        # addressed DIRECTLY to this mailbox ("Confirm forwarding request") do
+        # not carry it, while the "Forwarding active" notice, which genuinely
+        # was forwarded, does. `X-Original-To` is a header many MTAs set for
+        # their own reasons and would eventually match something else.
+        #
+        # Files into Proton/Inbox, not the `Proton` root: the root is an empty
+        # container and the archive's own inbox mail is in Proton/Inbox, so new
+        # forwarded mail joins the place a reader already looks. The 35,865
+        # imported messages are all `$seen`, so the unread count on that mailbox
+        # means exactly "Proton mail that has arrived since the cutover" —
+        # watch it rather than the Inbox, because fileinto cancels the implicit
+        # keep and none of this lands there.
+        #
+        # Deliberately does NOT set $seen, for the reason the Gmail clause
+        # states: forwarded mail is new mail. The blanket $seen on the archive
+        # was a one-off for history, not a delivery policy.
+        #
+        # SPF/DMARC alignment survives here, which it does not for Gmail: Proton
+        # SRS-rewrites the envelope
+        # (`thomassdk=pm.me+thomas=palebluebytes.space@forward.protonmail.ch`),
+        # so the test forward verified dkim=pass, spf=pass, DMARC_POLICY_ALLOW
+        # and scored ham 0.00. No Junk Mail watch is needed for this path.
+        if header :contains "X-Pm-Forwarded-From" "thomassdk@pm.me" {
+            addflag "proton:thomassdk@pm.me";
+            fileinto "Proton/Inbox";
+        }
       '';
     };
     matrix = {
