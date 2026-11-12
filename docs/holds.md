@@ -49,6 +49,13 @@ A tripped probe is not a ready hold. It means *go and read the release condition
   module-and-package-from-one-pin rule, and this repo has already been bitten by module/package
   skew (see the paperless note in `modules/nixos/profiles/paperless.nix`). Drop the attr from the
   overlay and build the host.
+- **rejected** — two alternatives were written and thrown away, and they apply to all three
+  `stable-until-fixed` entries. **A frozen rev** (the pre-bump unstable) stops receiving security
+  fixes, and these three are a federated homeserver, a mail server and a bridge — the worst
+  possible set to abandon; it was also strictly worse on version, pinning tuwunel back to 1.9.3.
+  A release branch keeps getting backports. **An overlay adding the missing `buildInputs`** is
+  what upstream is doing and does work, but the result is in no cache, so every deploy would
+  compile three large Rust trees from source.
 - **upstream** — [NixOS/nixpkgs#570938](https://github.com/NixOS/nixpkgs/issues/570938) (Tracking:
   vendored copies of aws-lc in Rust crates), under
   [#570943](https://github.com/NixOS/nixpkgs/issues/570943). Also
@@ -69,6 +76,7 @@ A tripped probe is not a ready hold. It means *go and read the release condition
 - **release condition** — the unstable package builds and kelpy builds against it. Stalwart is the
   mail server, so this one also wants a mail round-trip after the switch, not just a green build:
   it reads its certificate at startup and has previously served a superseded one.
+- **rejected** — as matrix-tuwunel: a frozen rev rots, a `buildInputs` overlay is in no cache.
 - **upstream** — [NixOS/nixpkgs#570944](https://github.com/NixOS/nixpkgs/issues/570944) (Tracking:
   vendored copies of zstd in Rust crates). Also
   `gh search commits --repo NixOS/nixpkgs "trunk zstd"`.
@@ -87,6 +95,7 @@ A tripped probe is not a ready hold. It means *go and read the release condition
 - **release condition** — the unstable package builds and kelpy builds against it. Hookshot is the
   path `#infra-alerts` arrives by, so a silent failure here is the fleet going quiet rather than
   anything visibly breaking — check a webhook actually lands.
+- **rejected** — as matrix-tuwunel: a frozen rev rots, a `buildInputs` overlay is in no cache.
 - **upstream** — [NixOS/nixpkgs#570940](https://github.com/NixOS/nixpkgs/issues/570940) (Tracking:
   vendored copies of sqlite in Rust crates).
 - **opened** — 2026-11-10 (`8c651f1`)
@@ -117,6 +126,10 @@ A tripped probe is not a ready hold. It means *go and read the release condition
   hash and reintroduces the from-source build. Do it when nixpkgs settles, **or** when stump needs
   a version bump anyway — at which point it has to be rebuilt regardless and the pin buys nothing.
   While the pin stands, `pkgs/stump` must stay free of those `buildInputs`.
+- **rejected** — `nixpkgs-stable`, which worked for the three above: stump is not in the stable
+  branch at all. Building `pkgs/stump` against *any* other package set produces a new store path
+  and therefore a from-source Rust build on the fleet's single aarch64 builder, which is the
+  entire cost this pin avoids.
 - **upstream** — [NixOS/nixpkgs#570943](https://github.com/NixOS/nixpkgs/issues/570943),
   [#570944](https://github.com/NixOS/nixpkgs/issues/570944) (zstd),
   [#570940](https://github.com/NixOS/nixpkgs/issues/570940) (sqlite). nixpkgs' own `stump` (0.1.11)
