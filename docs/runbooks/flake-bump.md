@@ -24,24 +24,19 @@ held — the pin, its `# HOLD:` comment, and the `docs/holds.md` entry.
 
 ## 1. Update the lock
 
-Always pass the token through the **environment**:
-
 ```console
 $ NIX_CONFIG="access-tokens = github.com=$(gh auth token)" nix flake update
 ```
 
-`nix flake update` calls the GitHub API anonymously and gets `429: Too Many Requests`
-without it. **Never use `--option access-tokens github.com=$(gh auth token)`** — argv is
-world-readable through `/proc/<pid>/cmdline`, so the inline form publishes a live OAuth
-token to every user on the box, and into any log or transcript that echoes the command.
-For a standing fix, put the `access-tokens` line in a mode-600 `~/.config/nix/nix.conf`
-and pass nothing.
+Unauthenticated it gets `429: Too Many Requests`. The token goes through the
+**environment**, never `--option` — `AGENTS.md` → *Operational gotchas* has the reason and
+the standing fix.
 
 ### A blanket update is not always what you want
 
 Several inputs are pinned on purpose and a blanket `nix flake update` either skips them
-silently or moves something far larger than you intended. Read `flake.nix` — every pin
-carries its reasoning — but these are the ones that matter on a routine bump:
+silently or moves something far larger than you intended. `flake.nix` carries every pin's
+reasoning; this table carries only what it changes about *this* procedure:
 
 | Input | On a routine bump |
 | --- | --- |
@@ -62,26 +57,20 @@ $ NIX_CONFIG="access-tokens = github.com=$(gh auth token)" nix flake update nixp
 
 ### `nixos-raspberrypi` is not a routine bump
 
-It moves the Pi's kernel *and* the release its entire userspace is built from, and
-`home-manager-pi` has to move in lockstep. A bad kernel is a **silent brick** — no
-console, no network, and extlinux does not fall back. Read the `tag` in the rev's
-`pkgs/linux-rpi/linux-sources.nix` (not the version number) and confirm it is `stable_*`.
-**Never deploy a kernel change to porcupineFish remotely** — validate at the device.
-See [`hosts/porcupineFish/README.md`](../../hosts/porcupineFish/README.md).
+Don't move it as part of one. It is its own operation, gated on a `stable_*` kernel tag
+and on having the device in front of you — the rules are in `AGENTS.md` → *Operational
+gotchas* and [`hosts/porcupineFish/README.md`](../../hosts/porcupineFish/README.md), and
+they must be read before the rev changes, not after.
 
 ### `jmap-bridge` has to be bumped by hand, and proven warm
 
-The tag pin means `nix flake update jmap-bridge` does nothing. To move it, edit the tag in
-`flake.nix`:
+Edit the tag in `flake.nix` (`gh release list --repo palebluebytes/jmap-matrix-bridge`);
+`nix flake update jmap-bridge` on a tag pin is a silent no-op — see `AGENTS.md`.
 
-```console
-$ gh release list --repo palebluebytes/jmap-matrix-bridge
-```
-
-A tag proves CI built that closure **once**; it does not keep it alive, and cachix
-retention here is weeks. Before deploying, prove the cache still has it — ask the cache,
-not the local store, because a local dry-run prints nothing at all once the path is
-already here, which reads like success:
+The part that lives nowhere else is the **warmth check**. A tag proves CI built that
+closure once; it does not keep it alive, and cachix retention here is weeks. Before
+deploying, ask the cache — not the local store, because a local dry-run prints nothing at
+all once the path is already here, which reads like success:
 
 ```console
 $ h=$(basename $(nix eval --raw \
@@ -100,10 +89,9 @@ just silence.
 $ nix flake check -L
 ```
 
-CI runs 16 of the 22 non-git-annex checks against the **mock** secret set, so it cannot
-catch a secret-dependent regression — `nix flake check` locally is the only complete gate.
-If you added a file, `git add` it first: the flake source is git-tracked-files-only and an
-untracked file fails at *eval* with `error: Path '…' is not tracked by Git`.
+Locally, not in CI: CI runs against the mock secret set and cannot catch a
+secret-dependent regression (`AGENTS.md`). `git add` any new file first, or it fails at
+*eval*, not as a missing file.
 
 Build before you deploy anything:
 
@@ -127,12 +115,11 @@ $ just deploy rk1a
 $ just deploy potbelliedSeahorse
 ```
 
-`just deploy` wraps `nixos-rebuild` with SSH keepalives, routes aarch64 hosts to the rk1b
-builder, and adds `--ask-sudo-password` **only for kelpy** — kelpy is the public-facing
-VPS and keeps its sudo password; everything else has passwordless wheel sudo. Don't pass
-`--ask-sudo-password` yourself to another host: it hangs waiting on stdin.
+That order is the whole of the step: rk1b before rk1a because rk1b is the fleet's aarch64
+builder, and nothing before the host you are sitting at. `just deploy` handles the rest
+itself, including kelpy's sudo password (`AGENTS.md`).
 
-porcupineFish is deliberately absent from that list. Deploy it only when you have the
+porcupineFish is deliberately absent from the list. Deploy it only when you have the
 device in front of you, and only after reading the kernel note above.
 
 ## 4. When something will not build — record the hold now
@@ -153,14 +140,21 @@ rev: a branch keeps receiving backported security fixes, a frozen rev rots.
 
 ### b. Point the pin at the registry
 
-One line, directly above the pin:
+One line, and put it where a reader *lands* — directly above the attribute they will have
+grepped for, not at the head of a comment block several lines up:
 
 ```nix
 # HOLD: docs/holds.md#matrix-hookshot
 ```
 
-That is the whole Nix-side comment's job now. The reasoning lives in `holds.md`; the pin
-carries a signpost, not a second source of truth.
+For a **new** pin that is the whole Nix-side comment. Write the reasoning in `holds.md`
+once; the pin gets a signpost, not a second copy.
+
+The pins backfilled into the registry kept their original prose as well, and that was
+deliberate: it is the better read in place, and ADR-0038 rejected *scraping* those
+comments precisely so they could stay prose. Trimming them back to a bare pointer is a
+separate decision nobody has made. So: don't add new prose beside a new pointer, and
+don't delete the prose that is already there as a side effect of something else.
 
 ### c. Write the entry in `docs/holds.md`
 
@@ -168,10 +162,11 @@ Follow the shape already in that file. The fields that earn their keep:
 
 - **The exact failure.** The crate, the linker error, the build-script message — the
   string you would grep for in six weeks.
-- **A machine-runnable probe.** A command that exits differently once the wait is over.
-  This is what the daily agent runs; a hold without one is a hold nothing rechecks.
-  Examples that work: a narinfo query for the unstable store path (`404` = still broken,
-  `200` = fixed), or `gh search commits --repo NixOS/nixpkgs <package>`.
+- **A machine-runnable probe**, from the closed vocabulary at the head of `holds.md`.
+  Usually `nixpkgs-substitutable:<attr>` — the narinfo query for unstable's store path,
+  `404` = still broken, `200` = someone built it. Nothing runs these yet (the daily agent
+  is ADR-0038's, tracked in palimpsest#226), so today the probe is what *you* run on the
+  day you wonder; a hold without one is a hold nobody will recheck.
 - **The human release condition.** What has to be true before *you* unpin, in a sentence.
 - **What was tried and rejected.** The expensive knowledge in a hold is the negative
   result. *snapcast 0.35.0 was tried and broke Music Assistant's teardown path* is worth
@@ -218,32 +213,25 @@ $ git commit
 $ git show --stat HEAD
 ```
 
-`CHANGELOG.md` is **yours alone**. The daily holds agent writes `holds.md` and nothing
-else — one owner per file is what makes an automated writer safe next to a human editor
-(ADR-0038). Never hand it the changelog.
+`CHANGELOG.md` is **yours alone**, and stays that way when the daily holds agent is
+built: it will write `holds.md` and nothing else — one owner per file is what makes an
+automated writer safe next to a human editor (ADR-0038). Never hand it the changelog.
 
 ## Gotchas
 
-- **The rate-limit fix has a security reason.** `NIX_CONFIG=`, never `--option`. See
-  step 1.
-- **`nix flake update <input>` on a tag pin is a silent no-op.** It exits 0 and changes
-  nothing. `jmap-bridge` is the one in the tree today.
-- **A dry-run that prints nothing is not a pass.** Once the closure is in the local
-  store, `nix build --dry-run` says nothing at all. Ask the cache directly.
 - **A dirty working tree next door can fail your update.** Inputs fetched from a local
   path make Nix refuse to write the lock ("not writing lock file … unlocked input"). All
   the external repos are `git+ssh://` origins now for exactly this reason — if one ever
   points at a working copy again, this is the symptom.
 - **`just switch` bumps `users` on its own**, with `--commit-lock-file`, so a local
   switch can produce a lock-only commit you did not ask for. That is deliberate; let it.
-- **Deploy rk1b before rk1a.** rk1b is the fleet's aarch64 builder.
-- **After a kernel-pin bump, re-run `just cache-kernel porcupineFish`** — the upstream
-  cache holds only the kernel's `out` output, and a deploy needs `dev` and `modules` too.
-  Without it the next deploy after a GC recompiles the kernel from source on rk1b.
+- **After a kernel-pin bump, re-run `just cache-kernel porcupineFish`** — otherwise the
+  next deploy after a GC recompiles the kernel from source on rk1b
+  ([`hosts/porcupineFish/README.md`](../../hosts/porcupineFish/README.md)).
 
 ## Related
 
-- [`docs/holds.md`](../holds.md) — the registry, and what the daily agent reads and writes
+- [`docs/holds.md`](../holds.md) — the registry, and the closed probe vocabulary
 - [`CHANGELOG.md`](../../CHANGELOG.md) — the narrative half
 - [ADR-0038](../adr/0038-held-back-packages-are-a-registry-an-agent-rechecks.md) — why a
   markdown registry and not a Nix attrset
