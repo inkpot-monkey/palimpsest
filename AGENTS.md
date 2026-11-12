@@ -96,6 +96,14 @@ touching secrets:
   so `home-manager-pi` moves with it in lockstep. **Never deploy a kernel change to this
   host remotely** — validate at the device. See `hosts/porcupineFish/README.md`.
 
+- **A flake bump writes a `CHANGELOG.md` entry, and records any new hold.** Fleet-visible
+  change goes in `CHANGELOG.md` (dated, in the bump commit itself). Anything you had to
+  pin to get the bump through goes in `docs/holds.md` — with a probe and a release
+  condition — plus a `# HOLD: docs/holds.md#anchor` line at the pin, in the same motion as
+  the pin. Only holds that can eventually clear; standing laws (the Pi kernel, the
+  `jmap-bridge` tag) stay where they are. Procedure:
+  `docs/runbooks/flake-bump.md`. Design: ADR-0038.
+
 - **Services are monitored by default (ADR-0019).** Every `settings.services` entry
   is uptime-probed automatically. To exempt a *served* service, set
   `monitor = { enable = false; reason = "…"; }` on its entry (not delete it — that
