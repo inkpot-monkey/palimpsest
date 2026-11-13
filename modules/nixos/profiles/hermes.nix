@@ -138,6 +138,49 @@ in
           provider = "custom";
           base_url = "http://${litellmHost}:${toString litellm.port}/v1";
           default = "qwen3.8-27b";
+
+          # ⚠ WITHOUT THIS EVERY REQUEST GOES OUT AS `Authorization: Bearer no-key-required`
+          # AND LITELLM 400s. A bare `provider: custom` is assumed to be a KEYLESS LOCAL
+          # SERVER (ollama, llama.cpp), so hermes substitutes that literal placeholder; the
+          # credential is only picked up when a config block NAMES the variable holding it
+          # (`runtime_provider_custom._key_env_secret`). Having CUSTOM_API_KEY exported is
+          # not enough, which is what makes this one hard to see.
+          #
+          # The failure also lands a long way from its cause. LiteLLM rejects the
+          # placeholder in `user_api_key_auth`, where a non-master key means a database
+          # lookup — and this proxy has no database — so what reaches the user is
+          # `HTTP 400: No connected db`, which reads like a LiteLLM fault rather than a
+          # missing credential. Found by capturing the loopback request: the wire said
+          # `Bearer no-key-required` while the key sat correct in the environment.
+          key_env = "CUSTOM_API_KEY";
+        };
+
+        # ── THE MODEL PICKER, WHICH IS A SEPARATE CREDENTIAL PATH ──────────────────────
+        # `model` above settles what a session TALKS to; this settles what the dashboard
+        # OFFERS. They do not share a code path: with only the block above, the picker
+        # showed exactly one entry (`total_models: 1, source: model-config`, the configured
+        # default) because its catalogue fetch hit /v1/models UNAUTHENTICATED — 401 — and
+        # fell back to listing what was statically configured.
+        #
+        # A `providers:` entry carries its own `key_env`, which the catalogue fetch does
+        # honour. With it the picker lists all six models and reports `source: user-config`,
+        # and the live fetch now works well enough to turn up `whisper`, which is not named
+        # here at all.
+        #
+        # The list is spelled out rather than discovered so a model retired from LiteLLM's
+        # catalogue fails at a known name instead of silently changing what the picker
+        # offers. Keep it in step with the gateway's model_list (profiles/litellm.nix).
+        providers.litellm = {
+          name = "LiteLLM";
+          base_url = "http://${litellmHost}:${toString litellm.port}/v1";
+          key_env = "CUSTOM_API_KEY";
+          models = {
+            "sonnet-5.5" = { };
+            "opus-5.5" = { };
+            "haiku-5.5" = { };
+            "qwen3.8-27b" = { };
+            "nemotron-3.5-super-vl" = { };
+          };
         };
 
         # Catch up a recurring job missed while the host was down, matching `Persistent =
