@@ -86,6 +86,16 @@ touching secrets:
   git-tracked-files-only, so an untracked file fails at *eval* with
   `error: Path '…' is not tracked by Git` rather than as a missing file.
 
+- **A fresh git worktree starts with no pre-commit config.** `.pre-commit-config.yaml` is
+  a gitignored symlink into the store, written by the dev shell's `installationScript`
+  (`parts/shells.nix`), so a new worktree does not have one and `git commit` there fails
+  until it does. Enter the dev shell **from inside the worktree** (`cd` there, then
+  `nix develop .`, or let direnv do it) and the symlink appears — that is the fix, and it
+  matters most for agents, which work in worktrees by default and otherwise commit past
+  the gate. `PRE_COMMIT_ALLOW_NO_CONFIG=1` skips the hook rather than satisfying it; if
+  you use it, run `nix build .#checks.<system>.treefmt .#checks.<system>.pre-commit` by
+  hand to cover what the hook would have caught.
+
 - **Raspberry Pi kernel pin:** porcupineFish must run a `stable_*`-tagged vendor kernel
   — unstable/next ones hang in initrd, a silent brick (no console, no network, and
   extlinux does not fall back). The host `lib.mkForce`s `boot.kernelPackages` to a named
