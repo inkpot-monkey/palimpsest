@@ -2,6 +2,7 @@
   config,
   lib,
   inputs,
+  pkgs,
   settings,
   self,
   ...
@@ -250,12 +251,38 @@ in
       # The directories only mean anything once the persistent bind mount is in place —
       # creating them on the tmpfs root underneath it is precisely step 1's mistake.
       unitConfig.RequiresMountsFor = [ "/var/lib/hermes" ];
+      # ── AND THE SOPS-RENDERED .env HAS TO BE CURRENT BEFORE THEY READ IT ───────────────
+      # Second ExecStart below, and it fixes a silent one-deploy lag that cost this profile
+      # its first attempt at the vhost (2026-11-13): the dashboard came up refusing to bind
+      # — "the auth gate engages on non-loopback binds, but no auth providers are
+      # registered" — while the credentials sat correctly rendered in /run/secrets.
+      #
+      # Upstream writes $HERMES_HOME/.env from its ACTIVATION SCRIPT, and it knows about this
+      # hazard: `hermes-agent-setup` is `stringAfter [ "users" ] ++ optional (activationScripts
+      # ? setupSecrets) "setupSecrets"`. But this fleet sets `sops.useSystemdActivation`
+      # (profiles/sops.nix), so there IS no `setupSecrets` activation script — sops renders
+      # from a UNIT instead, which starts after every activation script has run. The
+      # `optional` then contributes nothing and the guard evaporates with no warning. So
+      # activation copies the PREVIOUS .env, and the new secret only lands one deploy later.
+      #
+      # Re-running the activation snippet from a unit ordered after sops closes it. It runs
+      # upstream's own text rather than a hand-copied `install` of the env file, for the same
+      # reason the tmpfiles call above does: no second copy of the rules to drift. The snippet
+      # is idempotent — it is what every `nixos-rebuild switch` already runs — and the
+      # config.yaml half of it is a merge that keeps the keys Nix does not own.
+      after = [ "sops-install-secrets.service" ];
       serviceConfig = {
         Type = "oneshot";
         # Deliberately NOT RemainAfterExit: as a one-shot that goes inactive on success, a
         # `Requires=` from the units below re-runs it on every start, so this is a guard
         # rather than a one-time bootstrap.
-        ExecStart = "${config.systemd.package}/bin/systemd-tmpfiles --create --prefix=/var/lib/hermes";
+        ExecStart = [
+          "${config.systemd.package}/bin/systemd-tmpfiles --create --prefix=/var/lib/hermes"
+          (pkgs.writeShellScript "hermes-agent-setup-rerun" ''
+            set -eu
+            ${config.system.activationScripts."hermes-agent-setup".text}
+          '')
+        ];
       };
     };
 
