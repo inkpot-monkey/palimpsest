@@ -60,10 +60,27 @@ let
         edge = "kelpy";
         port = 9000;
       };
+    };
+    private = {
       # Jellyfin. RUNS on rk1b with the rest of custom.profiles.media (the stack moves
       # as one: qBittorrent and slskd share gluetun's netns and jellyfin is gated on the
-      # same profile flag). Public vhost, so kelpy's Caddy is still the internet-facing
-      # half; the port itself is open on tailscale0 only.
+      # same profile flag), fronted by kelpy's Caddy — the same edge/origin split as
+      # Navidrome, Stump and photos. The port itself is open on tailscale0 only.
+      #
+      # TAILNET-ONLY SINCE 2026-11-13, the second half of palimpsest#193 (the move to
+      # rk1b was the first and landed earlier). It was `public` until then, which meant
+      # its vhost was the one thing on this edge deliberately exempt from the
+      # internal_only guard — a media library with accounts and watch history answering
+      # the internet, protected by nothing but Jellyfin's own login. Moving the entry
+      # here is the whole change: proxy.nix branches on which attrset a service is in,
+      # so the guard attaches, blocky repoints the name at a TAILSCALE address instead
+      # of kelpy's public IP, and the DNS generator drops its AAAA and its proxy flag.
+      #
+      # ⚠ THE DNS RECORDS DO NOT FOLLOW A DEPLOY. parts/apps/dns reads this registry but
+      # is pushed separately — `nix run .#dns -- push` — so until that runs the name
+      # still resolves to the public IP and every off-tailnet client gets the help page
+      # rather than a refusal. That is the right failure (403, not a hang), but it is
+      # not the end state.
       #
       # ⚠ TRANSCODING IS SOFTWARE-ONLY AND ~3.3x SLOWER HERE. Measured 2026-09-27:
       # 1080p->720p h264 ran 12.4x realtime on kelpy (EPYC) vs 3.8x on rk1b (RK3588).
@@ -77,8 +94,6 @@ let
         port = 8096;
         origin = "rk1b";
       };
-    };
-    private = {
       # LiteLLM — the fleet's model gateway. Moved off kelpy to rk1b for memory: it was
       # ~292M on a 4G host and holds no state, so it is the cheapest thing to relocate.
       # Caddy still fronts it at litellm.<domain>, so consumers see no change.

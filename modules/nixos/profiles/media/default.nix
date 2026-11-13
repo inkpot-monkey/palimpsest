@@ -161,7 +161,7 @@ in
     networking.firewall.interfaces."tailscale0".allowedTCPPorts = lib.mkIf offEdge [
       settings.services.private.torrent.port
       settings.services.private.slskd.port
-      settings.services.public.jellyfin.port
+      settings.services.private.jellyfin.port
     ];
 
     # Shared group for media access

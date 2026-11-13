@@ -10,7 +10,7 @@
 let
   cfg = config.custom.profiles.media;
   jcfg = cfg.jellyfin;
-  port = settings.services.public.jellyfin.port;
+  port = settings.services.private.jellyfin.port;
 in
 {
   config = lib.mkIf cfg.enable {
