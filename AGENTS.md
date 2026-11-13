@@ -48,6 +48,13 @@ touching secrets:
   file, or `sops-install-secrets` installs none (e.g. no wifi on a Pi). When
   adding/rotating a host key, re-key all files together.
 
+- **SSH is tailnet-only (ADR-0039).** `custom.profiles.ssh` leaves port 22 out of the
+  firewall; the only way in is `tailscale0`, which `custom.profiles.tailscale` trusts
+  wholesale. So `ssh <lan-ip>` times out — address hosts by name — and a host with no
+  working tailscale has no remote door (kelpy's is the vpsAdmin console). A host that
+  must answer an untrusted network sets `custom.profiles.ssh.tailnetOnly = false` and
+  says why at the call site.
+
 - **Never ship the admin SSH key to headless/agent hosts.** `~/.ssh/id_ed25519`
   is the sops admin key (`&admin`) and decrypts everything. Use a host's
   dedicated `signing_key`, not the admin key.
