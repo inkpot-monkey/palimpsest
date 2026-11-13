@@ -37,6 +37,19 @@ let
 
   stateDir = "/var/lib/opencode";
 
+  # ── WHAT THE AGENT IS TOLD ────────────────────────────────────────────────────────────
+  # One file, assembled from two: the fleet's tools rule, shared VERBATIM with hermes
+  # (profiles/hermes.nix), plus the parts only this agent needs. Concatenated rather than
+  # copied for the reason the model catalogue made concrete — two hand-kept copies of the
+  # same fact drift, and nothing fails when they do.
+  #
+  # opencode gets the longer file because it edits repositories: the commit conventions
+  # matter here and are noise for hermes, which runs scheduled jobs against the fleet.
+  instructionsFile = pkgs.concatText "opencode-instructions.md" [
+    ./agent-instructions/nix-tools.md
+    ./agent-instructions/opencode.md
+  ];
+
   # The conversational half of the shared catalogue (parts/settings.nix).
   chatModels = lib.filterAttrs (_: m: m.chat) settings.models;
 
@@ -112,6 +125,10 @@ let
       models = lib.mapAttrs (_: _: { }) chatModels;
     };
     model = "litellm/sonnet-5.5";
+
+    # Read at session start. A path rather than inline text, so the rules can be read and
+    # reviewed as prose by someone not reading Nix.
+    instructions = [ "${instructionsFile}" ];
   };
 in
 {
@@ -228,6 +245,10 @@ in
         #           runtime lives in its state dir and does not survive a rebuild.
         python3
         git
+        #   nix     the instruction file tells the agent to reach for `nix shell` for
+        #           anything it does not have, and that advice is inert unless `nix` is
+        #           here: it is not on a unit's PATH by default.
+        nix
       ];
 
       serviceConfig = {

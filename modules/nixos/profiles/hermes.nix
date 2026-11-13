@@ -37,6 +37,8 @@ let
   # address the dashboard must be listening on.
   svc = settings.services.private.agent;
 
+  hermesStateDir = "/var/lib/hermes";
+
   # The conversational half of the shared catalogue (parts/settings.nix).
   chatModels = lib.filterAttrs (_: m: m.chat) settings.models;
   # `settings.primaryDomain` and NOT `config.networking.domain`, which proxy.nix uses to
@@ -143,7 +145,29 @@ in
       extraPackages = with pkgs; [
         python3
         nodejs
+        # The instruction file below tells the agent to reach for `nix shell` for anything
+        # it does not have. That advice is only actionable if `nix` itself is on the PATH,
+        # and it is not there by default — the agent would read the rule, try it, and get
+        # "nix: command not found".
+        nix
       ];
+
+      # ── WHAT THE AGENT IS TOLD ──────────────────────────────────────────────────────
+      # Upstream's own option for workspace context, which its description names AGENTS.md
+      # as the case for. The file is the FLEET'S rule about reaching for tools, shared
+      # verbatim with opencode (profiles/opencode.nix) from one source — the model
+      # catalogue already taught this repo what two hand-kept copies of the same fact do.
+      #
+      # Deliberately only the tools rule here. opencode is handed a longer file because it
+      # edits repositories and needs the commit conventions; hermes runs scheduled jobs
+      # against the fleet and does not.
+      documents."AGENTS.md" = ./agent-instructions/nix-tools.md;
+
+      # Set explicitly because `documents` installs RELATIVE to it, and upstream warns that
+      # its default differs per module — leaving it unset would place the file in a
+      # directory nobody chose. This is the value the module already uses here; naming it
+      # makes the two agree by construction rather than by coincidence.
+      workingDirectory = "/var/lib/hermes/workspace";
 
       # Share HERMES_HOME with interactive shells, because CRON JOBS ARE NOT DECLARATIVE:
       # they live in jobs.json under the state dir and are created with the `hermes` CLI or
@@ -246,6 +270,30 @@ in
         interfaceName = "tailscale0";
       };
     };
+
+    # ── THE SAME RULE AT $HOME, BECAUSE AGENTS.md IS READ FROM THE CWD ─────────────────
+    # `documents` above puts it in the WORKING DIRECTORY, which covers everything that runs
+    # itself: cron jobs and dashboard sessions all start at `terminal.cwd`. Measured — a
+    # turn started there quotes the rule back and runs `nix shell`; the same turn started
+    # anywhere else answers "there is no AGENTS.md in my context" and reports the tool
+    # missing instead.
+    #
+    # The one path that misses it is a person: `sudo -u hermes -H hermes …` starts in this
+    # user's HOME, not the workspace. So the file goes there too — the SAME store path, so
+    # there is one source and nothing to drift, and a symlink rather than a copy so that
+    # stays true.
+    #
+    # ⚠ NOT SOUL.md, WHICH WOULD HAVE BEEN UNCONDITIONAL AND COST MORE. Hermes auto-upgrades
+    # SOUL.md only while it byte-matches a known template (`is_legacy_template_soul`), so
+    # appending one line would freeze the persona against every future upstream revision —
+    # and declaring it would rewrite it on every activation, stomping any edit made from the
+    # dashboard. A narrow gap is not worth owning that file.
+    #
+    # The existing hermes-state-dirs guard applies these rules before every unit start,
+    # which is also what gets them past the impermanence bind mount (see its comment).
+    systemd.tmpfiles.rules = [
+      "L+ ${hermesStateDir}/AGENTS.md - - - - ${./agent-instructions/nix-tools.md}"
+    ];
 
     # Tailscale peers only — NOT `networking.firewall.allowedTCPPorts`, which would also
     # publish the panel on rk1b's LAN interface. Note this is belt-and-braces on a host
