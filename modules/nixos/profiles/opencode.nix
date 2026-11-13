@@ -52,20 +52,29 @@ let
   settingsFile = (pkgs.formats.json { }).generate "opencode.json" {
     "$schema" = "https://opencode.ai/config.json";
 
-    # ── #128: PROMPT ON EVERYTHING ──────────────────────────────────────────────────────
-    # The operator's call, 2026-11-13, and the map's own stated fallback rather than its
-    # charted target ("auto-approve reads and edits inside a working tree"). Taken because
-    # the target's enforcement path has never been watched working — #120 already found a
-    # neighbouring part of it broken, where the plugin `permission.ask` decision hook is
-    # declared but never fires. Prompting on everything is noisy on a phone and that is the
-    # price: nothing runs unobserved on this host while the surface is new.
+    # ── #128: THE MAP'S CHARTED TARGET, AFTER PROMPT-ON-EVERYTHING WAS WITHDRAWN ───────
+    # Set to prompt-on-everything at first deploy and changed by the operator the same day,
+    # 2026-11-13, once a measurement showed what that setting was actually worth here.
+    #
+    # ⚠ `ask` DID NOT PROMPT FOR A SHELL COMMAND. Measured through the vhost: a session was
+    # asked to run `node --version && git --version`, it ran, and the output came back —
+    # while `GET /api/session/<id>/permission` stayed EMPTY throughout. Nothing was waiting
+    # for an answer and nothing timed out. So the previous setting was not holding anything
+    # back; it only read as though it was, which is worse than not claiming it. This is the
+    # same shape as #120, where the plugin `permission.ask` hook is declared but never fires.
+    #
+    # What is set now is the map's original charted target — auto-approve edits inside the
+    # tree, prompt on the rest — with the honest caveat that "prompt on the rest" is
+    # aspirational for `bash` until the enforcement path is seen working. Re-measure with
+    # the probe above before relying on it; if it still does not fire, the real control is
+    # the one below the agent, not this key: the `opencode` user's own privileges.
     #
     # ⚠ `bash` IS SPELLED `bash` HERE AND BECOMES ACTION `shell` INTERNALLY. Confirmed with
     # `opencode debug config`, which is the only way to see what a config actually parsed
     # to — it reports `{action: shell, resource: "*", effect: ask}`. Worth re-running after
     # any schema bump; a key this file spells wrong is silently dropped, not rejected.
     permission = {
-      edit = "ask";
+      edit = "allow";
       bash = "ask";
       webfetch = "ask";
     };
@@ -151,6 +160,17 @@ in
       uid = 975;
       home = stateDir;
       createHome = true;
+
+      # ⚠ A REAL SHELL, AND NOT THE SYSTEM-USER DEFAULT. `isSystemUser` leaves `shell`
+      # at nologin, and opencode runs every bash tool call through the user's LOGIN
+      # SHELL — so nologin does exactly what it is built to do and prints
+      #
+      #   This account is currently not available.
+      #
+      # back to the agent, for every command it tries. Nothing fails at deploy or at
+      # startup: the service is green and only the tool calls are dead, which is why
+      # this surfaces as an agent that cannot do anything rather than as an error.
+      shell = pkgs.bashInteractive;
     };
     users.groups.opencode.gid = 975;
 
@@ -176,6 +196,24 @@ in
         # binary would both escape the closure and survive a rollback.
         OPENCODE_DISABLE_AUTOUPDATE = "1";
       };
+
+      # ── WHAT THE AGENT'S SHELL CAN REACH ────────────────────────────────────────────
+      # A systemd unit gets a minimal default PATH — coreutils, findutils, grep, sed —
+      # and NOT `/run/current-system/sw/bin`, so the fleet's system packages are invisible
+      # here even when they are installed. Anything the agent is expected to run has to be
+      # named, and named HERE rather than in `environment.systemPackages`: this is a
+      # property of what this agent may use, not of what the host offers everyone.
+      #
+      #   nodejs  asked for directly, and also what opencode's own plugin/MCP machinery
+      #           shells out to.
+      #   git     opencode's `--worktree` flag and its whole session-on-a-tree model are
+      #           git operations; without it the agent can read a repo but not use it.
+      #           It IS in /run/current-system/sw/bin, which is precisely why its absence
+      #           from the unit is easy to miss.
+      path = with pkgs; [
+        nodejs
+        git
+      ];
 
       serviceConfig = {
         User = "opencode";
