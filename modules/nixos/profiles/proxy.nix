@@ -11,6 +11,11 @@ let
   cfg = config.custom.profiles.proxy;
   inherit (settings.admin) email;
 
+  # Seconds a browser is told to refuse plaintext for. Named here rather than inlined so
+  # the ramp is one edit against one number; the reasoning for the value, and the steps
+  # to raise it by, are at the `(cloudflare_tls)` snippet that uses it.
+  hstsMaxAge = 86400;
+
   # The page the tailnet guard serves to a request from outside the tailnet, as a
   # directory because `file_server` serves a root rather than a file. Kept as real
   # HTML in its own file and NOT inlined into the Caddyfile below: a Caddyfile parses
@@ -153,10 +158,55 @@ in
           }
         }
 
+        # ── TLS POLICY ────────────────────────────────────────────────────────────────
+        # Despite the name, this snippet now carries BOTH halves of a vhost's TLS story:
+        # how the certificate is obtained, and what the browser is told to do with it.
+        # They live together deliberately. Every Caddy vhost in the fleet must import
+        # this to get a certificate at all — proxy.nix's generator, matrix/default.nix
+        # and mail/default.nix's four — so a vhost that serves HTTPS cannot be built
+        # while forgetting the header. A separate `(hsts)` snippet would read better and
+        # be forgotten exactly once, on exactly the vhost nobody re-reads. This repo has
+        # already paid for that shape once: see the tailnet guard above, which was
+        # present, looked right, and did nothing.
+        #
+        # WHAT HSTS BUYS. 80 and 443 are open on all interfaces and every name resolves
+        # publicly (see the guard above), so a first request typed as `http://` or
+        # followed from an old link crosses the network in plaintext before the redirect
+        # answers. On a hostile network that request can be answered by someone else and
+        # proxied, with the victim kept on HTTP throughout — they see a working page and
+        # no padlock. This header moves the upgrade inside the browser: after one
+        # successful HTTPS response, `http://` is rewritten before a packet leaves the
+        # machine, and cert warnings for the name stop being click-through-able.
+        #
+        # ⚠ MAX-AGE IS A PROMISE HELD BY THE CLIENT, AND IT CANNOT BE WITHDRAWN. It lives
+        # in each visitor's browser for its full duration; serving `max-age=0` only
+        # reaches browsers that still complete a TLS handshake. So the value is the
+        # window during which a TLS failure becomes a hard, unbypassable outage for
+        # everyone who has visited — and this fleet lost DNS-01 renewal for a month
+        # without noticing (blocky's customDNS swallowing non-A types), which is the
+        # precise failure this would have converted into an outage. One day is the
+        # opening value for that reason, not because a day is the right answer: it covers
+        # the realistic strip window while capping the blast radius at 24h.
+        #
+        # RAMP IT HERE, deliberately and one step at a time, once renewal has gone a few
+        # cycles untouched: 86400 → 604800 (a week) → 31536000 (a year). Check
+        # `docs/holds.md`-style evidence first — that certs actually reissued, not that
+        # nothing alerted, since the renewal outage was green on every board.
+        #
+        # NO `includeSubDomains`: every name here is a leaf (music.<domain>, not
+        # a.music.<domain>), so it would claim authority over nothing that exists while
+        # pre-committing any future sub-name to working TLS before it is built. The apex
+        # is where it would mean something, and the apex is not served by Caddy at all —
+        # it resolves to a Cloudflare Worker (see the NOTE on virtualHosts below), so
+        # apex HSTS is a Cloudflare-side setting and not this file's to make.
+        #
+        # NO `preload`: that bakes the domain into browsers' shipped lists, takes months
+        # to undo, and is the one knob here with no local rollback whatsoever.
         (cloudflare_tls) {
           tls {
             dns cloudflare {env.CLOUDFLARE_API_TOKEN}
           }
+          header Strict-Transport-Security "max-age=${toString hstsMaxAge}"
         }
       '';
       environmentFile = config.sops.templates.caddy_env.path;
