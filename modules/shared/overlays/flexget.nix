@@ -1,3 +1,4 @@
+# HOLD: docs/holds.md#flexget-webui
 _: final: prev: {
   flexget = prev.flexget.overrideAttrs (oldAttrs: {
     nativeBuildInputs = (oldAttrs.nativeBuildInputs or [ ]) ++ [ final.unzip ];

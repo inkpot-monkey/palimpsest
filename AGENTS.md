@@ -86,6 +86,16 @@ touching secrets:
   git-tracked-files-only, so an untracked file fails at *eval* with
   `error: Path '…' is not tracked by Git` rather than as a missing file.
 
+- **A fresh git worktree starts with no pre-commit config.** `.pre-commit-config.yaml` is
+  a gitignored symlink into the store, written by the dev shell's `installationScript`
+  (`parts/shells.nix`), so a new worktree does not have one and `git commit` there fails
+  until it does. Enter the dev shell **from inside the worktree** (`cd` there, then
+  `nix develop .`, or let direnv do it) and the symlink appears — that is the fix, and it
+  matters most for agents, which work in worktrees by default and otherwise commit past
+  the gate. `PRE_COMMIT_ALLOW_NO_CONFIG=1` skips the hook rather than satisfying it; if
+  you use it, run `nix build .#checks.<system>.treefmt .#checks.<system>.pre-commit` by
+  hand to cover what the hook would have caught.
+
 - **Raspberry Pi kernel pin:** porcupineFish must run a `stable_*`-tagged vendor kernel
   — unstable/next ones hang in initrd, a silent brick (no console, no network, and
   extlinux does not fall back). The host `lib.mkForce`s `boot.kernelPackages` to a named
@@ -95,6 +105,14 @@ touching secrets:
   another. Bumping that rev also moves the Pi's whole userspace (it pins its own nixpkgs),
   so `home-manager-pi` moves with it in lockstep. **Never deploy a kernel change to this
   host remotely** — validate at the device. See `hosts/porcupineFish/README.md`.
+
+- **A flake bump writes a `CHANGELOG.md` entry, and records any new hold.** Fleet-visible
+  change goes in `CHANGELOG.md` (dated, in the bump commit itself). Anything you had to
+  pin to get the bump through goes in `docs/holds.md` — with a probe and a release
+  condition — plus a `# HOLD: docs/holds.md#anchor` line at the pin, in the same motion as
+  the pin. Only holds that can eventually clear; standing laws (the Pi kernel, the
+  `jmap-bridge` tag) stay where they are. Procedure:
+  `docs/runbooks/flake-bump.md`. Design: ADR-0038.
 
 - **Services are monitored by default (ADR-0019).** Every `settings.services` entry
   is uptime-probed automatically. To exempt a *served* service, set
