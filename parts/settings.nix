@@ -78,6 +78,20 @@ let
         port = 9119;
         origin = "rk1b";
       };
+      # opencode — server-side agent sessions (GLOSSARY.md), the first build on the
+      # palimpsest#118 map. RUNS on rk1b, fronted by kelpy's Caddy at chat.<domain> behind
+      # the internal_only guard. DEPLOY BOTH HOSTS plus both resolvers, as above.
+      #
+      # ⚠ SAME WARNING AS `agent`, MORE SO. A session here is arbitrary code execution on
+      # rk1b with write access to the trees it is pointed at, so the tailnet guard is not
+      # the control — opencode's own Basic-auth server password is (profiles/opencode.nix).
+      # Note the gate covers `/api/*` ONLY; every other path serves the SPA shell 200
+      # unauthenticated, so probe /api/session if you want to prove the gate is on.
+      chat = {
+        edge = "kelpy";
+        port = 4096;
+        origin = "rk1b";
+      };
       # Jellyfin. RUNS on rk1b with the rest of custom.profiles.media (the stack moves
       # as one: qBittorrent and slskd share gluetun's netns and jellyfin is gated on the
       # same profile flag), fronted by kelpy's Caddy — the same edge/origin split as

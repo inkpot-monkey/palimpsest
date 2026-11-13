@@ -165,6 +165,19 @@ in
       # The /persistent prefix is what the classifier matches (`root + dir`), and it is
       # also where the bytes actually are: impermanence bind-mounts this onto /var/lib/hermes.
       "/persistent/var/lib/hermes"
+
+      # ── The opencode session store (profiles/opencode.nix) ──────────────────────────────
+      # Same reasoning as hermes above, for the same reason: the flake cannot rebuild it.
+      # A server-side session is the whole point of running opencode here — it outlives its
+      # client — and the transcript, the permission replies and the session-to-tree mapping
+      # live in this directory and nowhere else. Losing it does not break the service; it
+      # silently empties it, and a restored host comes up serving an agent with no history.
+      #
+      # ⚠ THIS IS A HOLDING POSITION, NOT A SETTLED ONE. palimpsest#158 ("what an rk1b
+      # restart is allowed to destroy") is open, and #159 has not yet said which filesystem
+      # holds the server-side trees. Back it up while that is undecided: the reversible
+      # mistake is paying for snapshots of something that turns out to be disposable.
+      "/persistent/var/lib/opencode"
     ];
 
     # Two subtrees of /var/lib/hermes that would otherwise dominate the snapshot without
@@ -177,6 +190,11 @@ in
     exclude = [
       "/persistent/var/lib/hermes/.hermes/cron/output"
       "/persistent/var/lib/hermes/workspace"
+
+      # opencode's cache is model catalogues and downloaded provider packages — re-fetched
+      # on demand, churns, and dedups badly. The session store beside it is the part that
+      # matters, and it stays.
+      "/persistent/var/lib/opencode/cache"
     ];
 
     # Everything else this host keeps across reboots, and why it does not travel.
