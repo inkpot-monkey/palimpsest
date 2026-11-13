@@ -126,6 +126,25 @@ in
       enable = true;
       environmentFiles = [ config.sops.templates."hermes-env".path ];
 
+      # ── WHAT THE AGENT'S SHELL CAN REACH ────────────────────────────────────────────
+      # Upstream's own knob for this ("More packages on the PATH of the agent"), used in
+      # preference to `systemd.services.hermes-agent.path` because the module already
+      # defines the unit's PATH and the two would fight over one option.
+      #
+      # The unit PATH ships bash, git, coreutils, findutils, grep and sed and NOTHING
+      # ELSE — in particular no interpreter at all, so an agent asked to run a script had
+      # no way to. Note hermes is itself a Python application: its own interpreter is
+      # inside the package closure and is NOT on the agent's PATH, so `python3` here is a
+      # real addition rather than a name for something already reachable.
+      #
+      # `python3` is the bare interpreter. `python3 -m venv` works for a throwaway
+      # environment; library sets belong in a `python3.withPackages` here rather than in
+      # anything the agent pip-installs at runtime, which would not survive a restart.
+      extraPackages = with pkgs; [
+        python3
+        nodejs
+      ];
+
       # Share HERMES_HOME with interactive shells, because CRON JOBS ARE NOT DECLARATIVE:
       # they live in jobs.json under the state dir and are created with the `hermes` CLI or
       # the dashboard. Without this an operator who sshes in gets a second, empty ~/.hermes

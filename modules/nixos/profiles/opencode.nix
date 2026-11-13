@@ -214,7 +214,19 @@ in
       #           It IS in /run/current-system/sw/bin, which is precisely why its absence
       #           from the unit is easy to miss.
       path = with pkgs; [
+        #   bash    `sh` AND `bash` AS NAMES ON THE PATH, which is not the same thing as the
+        #           login shell set on the user above. That one is exec'd by absolute path
+        #           out of /etc/passwd; anything that spawns a shell BY NAME resolves it
+        #           through this PATH instead — and npm does, for every post-install
+        #           script. `/bin/sh` existing on the host does not help, so the symptom is
+        #           `npm error spawn sh ENOENT` from a box that obviously has a shell.
+        bashInteractive
         nodejs
+        #   python3 the bare interpreter, matching what hermes carries. `python3 -m venv`
+        #           works for a throwaway environment; a library set belongs in a
+        #           `python3.withPackages` here, because anything the agent pip-installs at
+        #           runtime lives in its state dir and does not survive a rebuild.
+        python3
         git
       ];
 
