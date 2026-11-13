@@ -39,3 +39,14 @@ Omit any heading that has nothing under it. A bump where nothing broke, nothing 
 and nothing was released is one **Moved** line, and that is a good entry.
 
 <!-- Entries begin below. Newest first. -->
+
+## 2026-11-13
+
+**Moved.** nixpkgs 2026-11-07 → 2026-11-11, `nixpkgs-stable` 2026-11-05 → 2026-11-08.
+home-manager, sops-nix, disko, nixos-hardware, emacs-overlay, vpsFree and the agent
+inputs (`hermes-agent`, `llm-agents`) moved with them. The private `users` input jumped a
+month, 2026-10-18 → 2026-11-12.
+
+**Note.** This entry was written from the lockfile diff after the fact, not by whoever
+ran the bump, so it records what moved and nothing about what had to change to survive
+it. Nothing was added to `docs/holds.md` in the same working tree, so no hold was opened.
