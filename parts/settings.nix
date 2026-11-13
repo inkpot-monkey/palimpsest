@@ -62,6 +62,22 @@ let
       };
     };
     private = {
+      # The Hermes agent runtime's admin panel (modules/nixos/profiles/hermes.nix). RUNS on
+      # rk1b, fronted by kelpy's Caddy at agent.<domain> behind the internal_only guard —
+      # the same edge/origin split as music, ma and library. DEPLOY BOTH HOSTS, plus every
+      # `dns.nameserverHosts` resolver (see the warning above the registry).
+      #
+      # ⚠ THE TAILNET GUARD IS NOT THE ONLY THING IN FRONT OF THIS, AND MUST NOT BE. This
+      # panel carries a PTY on rk1b as the `hermes` user, and the tailnet is not
+      # single-person (ADR-0027 puts friends on it for music and photos). So the backend
+      # runs its own username/password gate on top; `--insecure` is not an option even if
+      # one wanted it, because upstream IGNORES that flag since their June 2026 incident
+      # (web_server_boundary.should_require_auth). See the profile for the credentials.
+      agent = {
+        edge = "kelpy";
+        port = 9119;
+        origin = "rk1b";
+      };
       # Jellyfin. RUNS on rk1b with the rest of custom.profiles.media (the stack moves
       # as one: qBittorrent and slskd share gluetun's netns and jellyfin is gated on the
       # same profile flag), fronted by kelpy's Caddy — the same edge/origin split as

@@ -30,6 +30,17 @@ let
 
   litellm = settings.services.private.litellm;
 
+  # This profile's own registry entry — the vhost kelpy serves at agent.<domain> and the
+  # port the backend binds. Read from the registry rather than restated, so the two cannot
+  # drift: Caddy proxies to `${svc.origin}.${tailnet}:${svc.port}`, and that is exactly the
+  # address the dashboard must be listening on.
+  svc = settings.services.private.agent;
+  # `settings.primaryDomain` and NOT `config.networking.domain`, which proxy.nix uses to
+  # build the same name: that option is set on the EDGE and is null everywhere else, so
+  # reading it here fails the build on the very host this profile runs on ("cannot coerce
+  # null to a string", arriving via restartTriggers → toJSON settings).
+  publicUrl = "https://agent.${settings.primaryDomain}";
+
   # Where this host reaches the model gateway. DERIVED from the registry rather than
   # hardcoded to loopback: the two are co-located today (both rk1b), but if either moves
   # this follows instead of silently pointing at a port nothing answers.
@@ -53,12 +64,44 @@ in
       key = "litellm-key";
     };
 
+    # The dashboard's own login. Same file as the LiteLLM key — this host is already a
+    # recipient of profiles/ai.yaml, so the credential needs no re-key (see the derived
+    # recipient set in `just sops-recipients`).
+    sops.secrets.hermes_dashboard_password = {
+      sopsFile = self.lib.getSecretPath "profiles/ai.yaml";
+      key = "hermes-dashboard-password";
+    };
+    # Signs the stateless session cookies. WITHOUT IT the provider mints a random key per
+    # PROCESS and logs that at INFO only — so every restart, including a deploy that
+    # touches the unit, silently logs the operator out mid-session.
+    sops.secrets.hermes_dashboard_session_secret = {
+      sopsFile = self.lib.getSecretPath "profiles/ai.yaml";
+      key = "hermes-dashboard-session-secret";
+    };
+
     # NO NEW SECRET. Hermes reads `CUSTOM_API_KEY` for its `custom` (OpenAI-compatible)
     # provider, and the agent authenticates to our OWN LiteLLM with the same master key
     # every other consumer uses — LiteLLM is what holds the upstream vendor keys. So this
     # host never sees an OpenRouter or Anthropic credential.
+    #
+    # THE DASHBOARD LOGIN rides the same file. Hermes's bundled `basic` dashboard-auth
+    # plugin ships enabled but DORMANT: it raises SkipRegistration until a username and a
+    # password reach it, which is why the gate below is configured HERE and not in
+    # `settings`. The plugin reads either, and env wins — but `settings` is rendered into
+    # config.yaml FROM THE NIX STORE, so a password there would be world-readable on every
+    # host that builds this. The env file is sops-rendered at runtime, 0640 hermes:hermes.
+    #
+    # The password is hashed with scrypt in memory at each start (the plugin's
+    # `hash_password`), so what sits at rest is sops's copy and nothing else.
+    #
+    # ⚠ ROTATING IT NEEDS A MANUAL RESTART. restartTriggers below hash `settings` only, and
+    # deliberately — a trigger on the rendered env would put the LiteLLM key in a
+    # world-readable unit file. Same trap the config.yaml note documents, one file over.
     sops.templates."hermes-env".content = ''
       CUSTOM_API_KEY=${config.sops.placeholder.litellm_key}
+      HERMES_DASHBOARD_BASIC_AUTH_USERNAME=inkpotmonkey
+      HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${config.sops.placeholder.hermes_dashboard_password}
+      HERMES_DASHBOARD_BASIC_AUTH_SECRET=${config.sops.placeholder.hermes_dashboard_session_secret}
     '';
 
     # Pin the uid/gid. Otherwise auto-allocated, they get reshuffled by a reboot that
@@ -99,19 +142,54 @@ in
         # Catch up a recurring job missed while the host was down, matching `Persistent =
         # true` on every systemd timer in this fleet.
         cron.catch_up_missed = true;
+
+        # The name the operator's browser actually types, which Caddy passes through
+        # unchanged. The backend's DNS-rebinding guard rejects every Host header that is
+        # not the address it bound to UNLESS the name is declared here, so without this
+        # line the vhost answers 400 on every request while the service itself is fine.
+        dashboard.public_url = publicUrl;
       };
 
       backend = {
-        # The admin panel plus the /api/ws socket. LOOPBACK ONLY, and that is load-bearing
-        # twice over: a non-loopback bind turns on the dashboard's auth gate (which would
-        # need another secret), and it also turns on its DNS-rebinding guard, which refuses
-        # any request whose Host header differs from the address it bound to — i.e. it would
-        # reject a Caddy vhost name. Hence no `settings.services` entry and no vhost; reach
-        # it over an SSH tunnel, or use the CLI, which shares this state (above).
+        # The admin panel plus the /api/ws socket, bound to THIS HOST'S TAILSCALE ADDRESS so
+        # kelpy's Caddy can reach it (settings.services.private.agent). Until 2026-11-13 it
+        # was loopback-only and reached over an SSH tunnel.
+        #
+        # ⚠ A NON-LOOPBACK BIND MAKES THE AUTH GATE MANDATORY, and that is the point rather
+        # than a cost. The tailnet guard in front of the vhost cannot be the only control
+        # here: this panel carries a PTY on rk1b as the `hermes` user, and the tailnet is
+        # not single-person (ADR-0027). Upstream reached the same conclusion the hard way —
+        # `--insecure` still parses but has been IGNORED since their June 2026 incident
+        # (`should_require_auth` in web_server_boundary.py), so there is no way to bind off
+        # loopback without credentials even if one wanted it. They come from sops above.
         mode = "dashboard";
-        host = "127.0.0.1";
+        inherit (svc) port;
+
+        # NOT `host = "0.0.0.0"`, which litellm and immich use next door. Two reasons, and
+        # both are specific to this service rather than stylistic:
+        #
+        #   1. A wildcard bind DISABLES the Host check outright (`_is_accepted_host` returns
+        #      true for any header when bound to 0.0.0.0, "no protection possible at this
+        #      layer"). Binding the tailnet address keeps the guard meaningful, so the only
+        #      names that work are the vhost declared above and the address itself.
+        #   2. It would also answer on rk1b's LAN interface, where the firewall rule below
+        #      is the sole thing standing in the way.
+        #
+        # The address is not known at build time and tailscaled may not have brought it up
+        # when the unit starts, so `waitFor` polls the interface and binds what it finds —
+        # upstream's option for exactly this, in preference to losing the race and relying on
+        # `Restart=on-failure` to paper over it. It stops rather than falling back to a wider
+        # address, which is the behaviour to want here.
+        waitFor = "interface";
+        interfaceName = "tailscale0";
       };
     };
+
+    # Tailscale peers only — NOT `networking.firewall.allowedTCPPorts`, which would also
+    # publish the panel on rk1b's LAN interface. Note this is belt-and-braces on a host
+    # whose `trustedInterfaces` already includes tailscale0: the rule is what keeps the
+    # port closed should that ever be narrowed, and it states the intent where the bind is.
+    networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ svc.port ];
 
     # The module writes config.yaml and .env from an ACTIVATION SCRIPT, which does not
     # restart the service when they change — so a deploy would update the config on disk and
@@ -119,7 +197,17 @@ in
     # staying unknown until a manual restart). The retired openclaw profile hit exactly this
     # trap; the fix carries over. Only `settings` is hashed, deliberately: the rendered env
     # holds the LiteLLM key and a restartTrigger lands in a world-readable unit file.
+    #
+    # BOTH UNITS, because config.yaml is not only the gateway's. `dashboard.public_url`
+    # lives in the same file and is read by the BACKEND at startup, and it is the one value
+    # whose staleness is invisible from this end: the vhost would answer 400 on every
+    # request ("Invalid Host header") while the unit sat there green. The backend's bind
+    # arrives on its command line instead, so that half restarts on its own — which is
+    # exactly why this is easy to miss.
     systemd.services.hermes-agent.restartTriggers = [
+      (builtins.toJSON config.services.hermes-agent.settings)
+    ];
+    systemd.services.hermes-backend.restartTriggers = [
       (builtins.toJSON config.services.hermes-agent.settings)
     ];
 
