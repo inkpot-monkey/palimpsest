@@ -111,9 +111,13 @@ in
       tags = [ "tag:server" ];
     };
     ssh.enable = true;
-    # Deliberately NOT passwordless sudo: kelpy is the public-facing VPS, so keep
-    # the sudo password as defense-in-depth. `just deploy kelpy` supplies it via
-    # --ask-sudo-password (prompted once, up front).
+    # Passwordless wheel sudo, like the rest of the fleet. It used to be off here on the
+    # grounds that kelpy is the public-facing VPS — but the premise went away: SSH is now
+    # reachable only over `tailscale0` (ADR-0039), so the account this would protect can
+    # no longer be reached from the internet at all. Keeping the prompt bought a password
+    # typed into every deploy and nothing else, and it made kelpy the one host whose
+    # deploys could hang on stdin.
+    sudo.enable = true;
     proxy.enable = true;
     # ON, 2026-10-14 — the second host on the fleet to ship off-site, and the one holding the
     # data that exists nowhere else (#150). Deferred here since 2026-06-21; every reason the
