@@ -37,6 +37,9 @@ let
 
   stateDir = "/var/lib/opencode";
 
+  # The conversational half of the shared catalogue (parts/settings.nix).
+  chatModels = lib.filterAttrs (_: m: m.chat) settings.models;
+
   # ── THE CONFIG FILE, AND WHY THE KEY IS NOT IN IT ──────────────────────────────────────
   # Rendered into the Nix store and pointed at by OPENCODE_CONFIG, which is read-only and
   # therefore fine HERE — but would NOT be for every credential shape. #129 recorded the
@@ -98,15 +101,15 @@ let
         baseURL = "http://${litellmHost}:${toString litellm.port}/v1";
         apiKey = "{env:LITELLM_KEY}";
       };
-      # Spelled out rather than discovered, because `/v1/models` is a LIVE list: a model
-      # retired from LiteLLM's catalogue should fail loudly here at a known name, not
-      # silently change what a session is talking to.
-      models = {
-        "sonnet-5.5" = { };
-        "opus-5.5" = { };
-        "haiku-5.5" = { };
-        "qwen3.8-27b" = { };
-      };
+      # DERIVED from `settings.models`, the one catalogue the gateway and both agents
+      # share. This list and hermes' were hand-written copies and disagreed within a day:
+      # this one was missing `nemotron-3.5-super-vl`, so the picker read as an
+      # Anthropic-only provider. Nothing fails when they drift — each agent offers exactly
+      # what its own list says — so deriving both is what makes it impossible.
+      #
+      # `chat` is the filter: `whisper` is routable but transcribes audio, and a session
+      # model that cannot hold a conversation is not worth offering.
+      models = lib.mapAttrs (_: _: { }) chatModels;
     };
     model = "litellm/sonnet-5.5";
   };

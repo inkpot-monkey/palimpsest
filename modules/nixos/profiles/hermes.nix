@@ -36,6 +36,9 @@ let
   # drift: Caddy proxies to `${svc.origin}.${tailnet}:${svc.port}`, and that is exactly the
   # address the dashboard must be listening on.
   svc = settings.services.private.agent;
+
+  # The conversational half of the shared catalogue (parts/settings.nix).
+  chatModels = lib.filterAttrs (_: m: m.chat) settings.models;
   # `settings.primaryDomain` and NOT `config.networking.domain`, which proxy.nix uses to
   # build the same name: that option is set on the EDGE and is null everywhere else, so
   # reading it here fails the build on the very host this profile runs on ("cannot coerce
@@ -167,20 +170,16 @@ in
         # and the live fetch now works well enough to turn up `whisper`, which is not named
         # here at all.
         #
-        # The list is spelled out rather than discovered so a model retired from LiteLLM's
-        # catalogue fails at a known name instead of silently changing what the picker
-        # offers. Keep it in step with the gateway's model_list (profiles/litellm.nix).
+        # DERIVED from `settings.models`, the one catalogue the gateway and both agents
+        # share — this list used to be hand-written here and in opencode, and the two
+        # disagreed within a day. `chat` is the filter: `whisper` is routable but
+        # transcribes audio, so offering it as a session model would offer a session that
+        # cannot answer.
         providers.litellm = {
           name = "LiteLLM";
           base_url = "http://${litellmHost}:${toString litellm.port}/v1";
           key_env = "CUSTOM_API_KEY";
-          models = {
-            "sonnet-5.5" = { };
-            "opus-5.5" = { };
-            "haiku-5.5" = { };
-            "qwen3.8-27b" = { };
-            "nemotron-3.5-super-vl" = { };
-          };
+          models = lib.mapAttrs (_: _: { }) chatModels;
         };
 
         # Catch up a recurring job missed while the host was down, matching `Persistent =
