@@ -15,8 +15,20 @@ with the process in `.claude/skills/make-agent-job/` and the operational referen
 
 | Job | Issue | Channel | Source script |
 | --- | --- | --- | --- |
-| _none yet_ | | | |
+| `property-watch` | forge `inkpotmonkey/property#4` | per-job Matrix room (blocked on `property#2`); `local` until then | **declared** — `modules/nixos/profiles/property-watch.py` |
 
-The first entry will be the holds recheck ([ADR-0038](adr/0038-held-back-packages-are-a-registry-an-agent-rechecks.md),
+**Why that issue is not on palimpsest.** The process in `.claude/skills/make-agent-job/`
+says an agent job's reasoning goes in an issue on `inkpot-monkey/palimpsest`. This repo is
+public, and this job's reasoning is a buying brief — a budget, eleven target outcodes, and
+what its owner will compromise on. That is a negotiating position whose most interested
+reader is an estate agent on the other side of a bid. So the reasoning lives on the private
+forge and the plumbing stays here. The departure is deliberate, not an oversight.
+
+The same split runs through the job: the **source script is declared** in this public repo
+because it is a fetcher and nothing about it is sensitive, while the **criteria it reads**
+are never committed at all — they sit host-local at `/var/lib/property-watch/`, owned by the
+operator at mode `0644`, so hermes can read them and cannot rewrite them.
+
+Expected next is the holds recheck ([ADR-0038](adr/0038-held-back-packages-are-a-registry-an-agent-rechecks.md),
 palimpsest#226/#227): its probes are deterministic, it writes `docs/holds.md` and nothing else,
-and because it writes outside the agent's own state its source script is declared.
+and because it writes outside the agent's own state its source script is declared too.
