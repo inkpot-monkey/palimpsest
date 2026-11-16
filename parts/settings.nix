@@ -449,17 +449,35 @@ in
         };
       };
 
-      # An EU-pinned route for the nightly log review (OVHcloud, Gravelines-only, no
-      # prompt retention) was considered and DROPPED: ~EUR 7.46/mo against ~EUR 1.58
-      # for the same model via OpenRouter, to keep fleet-log prompts inside France.
-      # Judged not worth the split for a one-month experiment. Note what that concedes
-      # — for this month the nightly review ships hostnames, IPs and service topology
-      # to whichever fp8 provider OpenRouter picks. `zdr` and `data_collection = deny`
-      # above constrain retention but not geography. Revisit if the measurement ends
-      # in "keep renting" rather than "buy the box", because then it is permanent.
+      # ── A REJECTED ROUTE, AND A JOB THAT DOES NOT EXIST ────────────────────────────────
+      # An EU-pinned route (OVHcloud, Gravelines-only, no prompt retention) was considered
+      # and DROPPED: ~EUR 7.46/mo against ~EUR 1.58 for the same model via OpenRouter.
+      # The decision stands and is worth keeping; what it was decided FOR does not.
+      #
+      # ⚠ IT WAS WEIGHED FOR A "NIGHTLY LOG REVIEW" THAT WAS NEVER BUILT. The job belonged
+      # to the retired openclaw profile, and nothing replaced it: hermes has run with ZERO
+      # jobs since it was deployed, and no ticket for a log review exists. Until this
+      # comment was corrected (2026-11-16) it asserted in the present tense that "the
+      # nightly review ships hostnames, IPs and service topology to whichever fp8 provider
+      # OpenRouter picks" — describing a live privacy exposure from a job that has never
+      # run once. A comment that reasons carefully about a phantom reads as evidence the
+      # phantom is real.
+      #
+      # WHAT IS ACTUALLY TRUE about geography, so the next reader has the live version:
+      # the two OPEN models above are served by whichever fp8/nvfp4 provider OpenRouter
+      # picks, anywhere; the three Claude models go DIRECT to Anthropic since 2026-11-16.
+      # `zdr` and `data_collection = deny` bound retention on the OpenRouter half, never
+      # geography. Nothing scheduled sends fleet logs anywhere today, because nothing
+      # scheduled exists.
+      #
+      # So this becomes live only when some agent job starts feeding logs to an open model.
+      # If one is ever built, re-run this trade then — the price gap is the same, but the
+      # thing being protected would at last be real. See ADR-0041 and `docs/agent-jobs.md`.
 
-      # The baseline to beat, split by job so the comparison is honest: Haiku is the right
-      # tool for the nightly summarisation, Sonnet for agents, Opus only where it earns 2x.
+      # The baseline to beat, kept as three entries rather than one so a consumer can pick
+      # by weight: Haiku for summarising, Sonnet for agent work, Opus only where it earns
+      # 2x. (This used to name the nightly log review as Haiku's job. That job does not
+      # exist — see the correction above.)
       #
       # ⚠ THE KEY IS USER-SCOPED, SO EVERY REQUEST NEEDS THE WORKSPACE HEADER. It is an
       # `sk-ant-usr…` key, not `sk-ant-api…`, and Anthropic refuses it bare: "this API key is
