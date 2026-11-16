@@ -367,6 +367,11 @@ in
           # of 4 free) and rk1a has the RAM but 6.5 GB on a 77%-full eMMC.
           custom.profiles.hermes.enable = true;
 
+          # property-watch — the state tree and declared source script for the daily
+          # property search (forge inkpotmonkey/property#4). Here because the agent job
+          # that writes it runs here; the board that reads it (#5) will live here too.
+          custom.profiles.property-watch.enable = true;
+
           # opencode — server-side agent sessions (palimpsest#118), at chat.<domain>. Here
           # for the same reasons as hermes: the model gateway is on this host, so the agent
           # reaches it over loopback, and this is the node with the RAM and the NVMe for a
