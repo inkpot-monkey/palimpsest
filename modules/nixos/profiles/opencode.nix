@@ -124,7 +124,13 @@ let
       # model that cannot hold a conversation is not worth offering.
       models = lib.mapAttrs (_: _: { }) chatModels;
     };
-    model = "litellm/sonnet-5.5";
+    # ⚠ NOT `sonnet-5.5`, WHICH IS WHAT THIS WAS UNTIL 2026-11-16. The Anthropic account
+    # funding the direct route ran out of credit and every session here failed — a default
+    # model is a single point of failure for the whole service, and a closed model behind a
+    # metered account is the most likely thing to become one. `qwen3.8-27b` is the open
+    # model on the measurement-month account, the same default hermes runs, and the Claude
+    # models stay one picker click away.
+    model = "litellm/qwen3.8-27b";
 
     # Read at session start. A path rather than inline text, so the rules can be read and
     # reviewed as prose by someone not reading Nix.

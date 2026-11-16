@@ -454,30 +454,63 @@ in
       # above constrain retention but not geography. Revisit if the measurement ends
       # in "keep renting" rather than "buy the box", because then it is permanent.
 
-      # The baseline to beat. Routed direct now rather than through DeepInfra, and
-      # split by job so the comparison is honest: Haiku is the right tool for the
-      # nightly summarisation, Sonnet for agents, Opus only where it earns 2x.
+      # The baseline to beat, split by job so the comparison is honest: Haiku is the right
+      # tool for the nightly summarisation, Sonnet for agents, Opus only where it earns 2x.
+      #
+      # ⚠ THROUGH OPENROUTER SINCE 2026-11-16, NOT DIRECT ANTHROPIC. The direct route was
+      # funded by the Max plan's monthly Console API credit, and that credit ran dry: every
+      # one of these three returned `AnthropicException — "Your credit balance is too low to
+      # access the Anthropic API"`, a 400 about BALANCE rather than a 401 about auth, so the
+      # key stayed valid while the models became unusable. It took the fleet's agents with
+      # it — opencode defaulted to `sonnet-5.5` and every session at chat.<domain> failed.
+      #
+      # Moving them here puts every model on one funded account, which is the operator's
+      # stated shape: everything goes through LiteLLM, and LiteLLM holds one vendor
+      # relationship rather than two that can run out independently.
+      #
+      # WHAT THIS CONCEDES. The direct route was chosen for exactly one reason — "one less
+      # intermediary holding the traffic" — and that is now spent: OpenRouter sees these
+      # prompts, where before only Anthropic did. `zdr` and `data_collection = deny` are set
+      # below for that reason, matching the open models above; they bound RETENTION, not who
+      # sees the request in flight. It also softens #121's fidelity conclusions, which were
+      # drawn against the direct route. Top the Anthropic account up and this is a two-line
+      # revert per entry.
+      #
+      # No `quantizations` pin here, unlike the open models: a closed model has one
+      # implementation, so there is no quant to hold still.
       "haiku-5.5" = {
         chat = true;
         litellm_params = {
-          model = "anthropic/claude-haiku-5-5";
-          api_key = "os.environ/ANTHROPIC_API_KEY";
+          model = "openrouter/anthropic/claude-haiku-5.5";
+          api_key = "os.environ/OPENROUTER_API_KEY";
+          extra_body.provider = {
+            data_collection = "deny";
+            zdr = true;
+          };
         };
       };
 
       "sonnet-5.5" = {
         chat = true;
         litellm_params = {
-          model = "anthropic/claude-sonnet-5-5";
-          api_key = "os.environ/ANTHROPIC_API_KEY";
+          model = "openrouter/anthropic/claude-sonnet-5.5";
+          api_key = "os.environ/OPENROUTER_API_KEY";
+          extra_body.provider = {
+            data_collection = "deny";
+            zdr = true;
+          };
         };
       };
 
       "opus-5.5" = {
         chat = true;
         litellm_params = {
-          model = "anthropic/claude-opus-5-5";
-          api_key = "os.environ/ANTHROPIC_API_KEY";
+          model = "openrouter/anthropic/claude-opus-5.5";
+          api_key = "os.environ/OPENROUTER_API_KEY";
+          extra_body.provider = {
+            data_collection = "deny";
+            zdr = true;
+          };
         };
       };
 
