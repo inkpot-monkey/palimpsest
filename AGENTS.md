@@ -121,6 +121,22 @@ touching secrets:
   `jmap-bridge` tag) stay where they are. Procedure:
   `docs/runbooks/flake-bump.md`. Design: ADR-0038.
 
+- **A `local-keys` prefix silently deletes whatever the server provisions under it.**
+  Stalwart's `config.local-keys` says which keys are read from the local TOML instead of
+  the database — and the same patterns are applied when READING the database, so a key
+  matching one is dropped from the database side entirely. A prefix like `spam-filter.*`
+  therefore does not just claim the two or three keys the file sets; it discards every
+  key the server imported under that prefix. It cost the whole spam filter here: the 401
+  tag weights imported from `spam-filter.resource` were dropped at every startup, an
+  unknown tag scores `0.0`, and so every message scored exactly 0.00 and nothing was ever
+  filed as spam — while every rule still fired and every header was still stamped, which
+  is why it looked healthy for a year. Writing them back cannot help either: a
+  local-matching key is written to the local config FILE, which under NixOS is a read-only
+  store path. **Name exact keys, never a prefix, for anything the server also provisions.**
+  Mind the repair too: the import is gated on `version.spam-filter` being absent, and that
+  key is NOT under the prefix, so it reached the database and marks the job done — fixing
+  `local-keys` alone does not re-run the import.
+
 - **Services are monitored by default (ADR-0019).** Every `settings.services` entry
   is uptime-probed automatically. To exempt a *served* service, set
   `monitor = { enable = false; reason = "…"; }` on its entry (not delete it — that

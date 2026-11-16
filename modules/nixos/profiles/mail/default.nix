@@ -280,7 +280,47 @@ in
               "certificate.*"
               "authentication.*"
               "resolver.*" # Avoid warnings for default resolver settings
-              "spam-filter.*" # Avoid warnings for default spam settings
+              # THE THREE KEYS THIS FILE ACTUALLY SETS, AND NOT THE PREFIX, for exactly the
+              # reason the `http.url` comment below gives — this is that trap, sprung. It read
+              # `"spam-filter.*" # Avoid warnings for default spam settings`, which silenced the
+              # warning and, in the same stroke, turned off spam scoring entirely.
+              #
+              # HOW. Stalwart imports `spam-filter.resource` into the DATABASE: 401 tag weights
+              # under `spam-filter.list.scores.*`, plus every rule. `local-keys` says which keys
+              # are read from THIS file instead, and `Patterns::is_local_key` is applied when
+              # LOADING the database too — `build_config` keeps a database key only
+              # `if !patterns.is_local_key(key)`. So the prefix did not merely claim the three
+              # keys below; it discarded all 401 imported scores at every startup, and the local
+              # file has no scores to supply in their place. Writing them back is no escape
+              # either: `set()` routes a local-matching key to the local config FILE, which under
+              # NixOS is a read-only /nix/store path.
+              #
+              # WHAT IT COST, measured on kelpy 2026-11-16 before the fix. `lists.scores` was
+              # empty, and `analysis/score.rs` scores an unknown tag `None => 0.0` — so every
+              # rule still fired and every one was weighted 0.00. Sampled 886 delivered messages:
+              # `X-Spam-Status: No` on all 886, total score exactly 0.00 on every one, around
+              # twenty rules matching per message (DKIM_ALLOW, FORGED_SENDER, PROB_HAM_HIGH …)
+              # and not one of them contributing. Nothing could ever cross the spam threshold, so
+              # `Junk Mail` stayed empty, and because the classifier trains off that folder it
+              # never had a corpus: 56 consecutive `train-completed total = 0` runs in 30 days.
+              # The filter looked alive in every header it stamped and was inert.
+              #
+              # THE WARNING IT WAS SILENCING IS THE HARMLESS ONE. A non-local key present in the
+              # local file is merely warned about ("Database key defined in local configuration")
+              # while the database value wins — so the cure was worse than the complaint by the
+              # whole spam filter. Naming the three exact keys quiets it honestly: they are the
+              # only `spam-filter.*` keys this file sets, so nothing else is claimed and the
+              # database keeps the rules and the scores.
+              #
+              # EXACT KEYS, NO TRAILING `*`, which is `MatchType::Equal` — `spam-filter.classifier.model`
+              # claims that key alone and leaves the rest of `spam-filter.classifier.*` in the
+              # database where the web admin can reach it. Add a key here only when this file
+              # starts setting it, and never a prefix: the next `spam-filter.*` reintroduces this
+              # bug in full and it fails silently, with every header still present and every score
+              # zero.
+              "spam-filter.enable"
+              "spam-filter.resource"
+              "spam-filter.classifier.model"
               "webadmin.*"
               # Exact key, not `http.*`, and it has to be here at all or the setting above is
               # inert. `config.local-keys` decides which keys are read from THIS file; everything
