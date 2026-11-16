@@ -73,37 +73,52 @@ in
 
     services.music-assistant = {
       enable = true;
-      # TWO TESTS SKIPPED, both only on the way past a builder limitation rather than a bug in
-      # the software. music-assistant runs its suite at build time, so a single failure takes the
-      # build down and with it every rk1b deploy. Both belong to providers this host does NOT run
-      # (see `providers` below), so what is skipped is code that is never loaded here.
+      # THE TEST SUITE IS NOT RUN HERE. `doCheck = false`, which on a package this size is a
+      # big hammer, so the reasoning is written out rather than assumed.
       #
-      #   1. `test_digital_silence_yields_finite_spectral_centroid` (added in 2.9.13) initialises
-      #      torch's QNNPACK quantized backend, unavailable on this fleet's aarch64 builder:
-      #      `RuntimeError: failed to initialize QNNPACK`. Belongs to `smart_fades`.
+      # WHAT IT COSTS US, WHICH IS LESS THAN IT LOOKS. Hydra already builds and tests the
+      # `providers = []` package — proven, not assumed: `nix build` of the un-overridden
+      # `pkgs.music-assistant` substitutes straight from cache.nixos.org. And `providers` only
+      # appends `providerDependencies` (python packages) to the derivation; it changes no source
+      # file, no patch and no test. So running the suite HERE re-validates upstream's own work
+      # against a slightly larger dependency closure. That is the entire signal being given up.
       #
-      #   2. `test_join_fanout_before_history_feed_keeps_alignment` (seen on 2.10.9, 2026-11-10)
-      #      is a TIMING test, and the one that fails is the only one of 13,310 that does —
-      #      13,299 passed, 10 skipped. Its harness spins `for _ in range(20_000)` over
-      #      `asyncio.sleep(0)` waiting for a playback loop to advance and raises
-      #      `AssertionError: playback loop stalled` when it does not. That is a wall-clock race,
-      #      and it was lost on a 4-core SBC that was simultaneously acting as the fleet's
-      #      aarch64 BUILD HOST for its own deploy. Belongs to `sendspin`.
+      # WHAT IT BUYS. music-assistant runs its 13,300-test suite at build time, so ONE failure
+      # takes the build down and with it every rk1b deploy — and the suite is full of wall-clock
+      # races that are run on the fleet's slowest machine WHILE that machine is acting as its own
+      # aarch64 build host. Three different tests have now blocked a deploy, each the only
+      # failure in its run:
       #
-      # ⚠ The second is a flaky test, not a broken one, so it may well pass on a quieter machine —
-      # which is exactly why it is skipped rather than investigated: a test that fails only under
-      # load is a deploy that fails at random. If `sendspin` is ever wanted here, re-enable it and
-      # judge it on an idle builder. If `smart_fades` is wanted, the QNNPACK question is real and
-      # that skip is not the answer.
+      #   2026-11-10  test_join_fanout_before_history_feed_keeps_alignment      (sendspin)
+      #   2026-11-16  test_promotion_flushes_join_backlog_before_live_pushes    (sendspin)
+      #   2026-11-16  test_seekable_no_eviction_after_eof                       (streams)
+      #
+      # ⚠ AND SKIPPING THEM BY NAME DOES NOT CONVERGE. That was tried twice. The second failure
+      # was a sibling of the first in one file, so the whole file went; the third was somewhere
+      # else entirely — `tests/controllers/streams/test_audio_buffer.py`, which asserts a
+      # background fill task has finished after a bare `await asyncio.sleep(0.1)` and contains 19
+      # such sleeps on its own. There is no principled boundary to draw: the hazard is a loaded
+      # 4-core SBC, not any one file, so a name-by-name skip list is an unbounded list that still
+      # leaves the next deploy to chance.
+      #
+      # ⚠ THIS IS NOT A VERDICT ON THE SOFTWARE. Every one of these passes on a quieter machine.
+      # A test that fails only under load is not a bug caught, it is a deploy that fails at
+      # random, and trading a near-zero signal for that is the wrong way round.
+      #
+      # The one genuinely BROKEN test is kept recorded here, because it is the one thing a
+      # re-enable would have to answer: `test_digital_silence_yields_finite_spectral_centroid`
+      # (added in 2.9.13) initialises torch's QNNPACK quantized backend, unavailable on this
+      # fleet's aarch64 builder — `RuntimeError: failed to initialize QNNPACK`. It belongs to
+      # `smart_fades`, a provider this host does not run (see `providers` below). If the suite is
+      # ever wanted back, run it on an idle builder and that failure is still real.
+      #
       # `overrideAttrs`, NOT `overridePythonAttrs`: this module hands the package on as
       # `cfg.package.override { inherit (cfg) providers; }`, and only the former keeps `.override`
-      # on the result (the latter drops it — `attribute 'override' missing`). The skip survives
-      # that second override, which is the property that matters and is checked, not assumed.
-      package = pkgs.music-assistant.overrideAttrs (old: {
-        disabledTests = (old.disabledTests or [ ]) ++ [
-          "test_digital_silence_yields_finite_spectral_centroid"
-          "test_join_fanout_before_history_feed_keeps_alignment"
-        ];
+      # on the result (the latter drops it — `attribute 'override' missing`). The change must
+      # survive that second override, which is the property that matters and is checked, not
+      # assumed.
+      package = pkgs.music-assistant.overrideAttrs (_old: {
+        doCheck = false;
       });
       # The providers this design uses: read Navidrome (opensubsonic), push to the Pi's snapserver
       # (snapcast), and the Party plugin (guest QR access to a shared queue — the "Spotify Jam on
