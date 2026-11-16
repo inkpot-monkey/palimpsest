@@ -101,6 +101,17 @@
         log_levels = import ./log-levels {
           inherit pkgs self;
         };
+        # Every datasource rk1b provisions must resolve to a plugin the configured Grafana
+        # actually ships. The 2026-11-10 bump to grafana 13.3.0 shipped NO prometheus plugin
+        # (nixpkgs dropped `plugins:build-bundled` after 13.2 externalised the core
+        # datasources), and nothing went red for it: the package built, the module evaluated,
+        # the unit stayed `active`, VictoriaMetrics kept answering the identical query on
+        # :8428 — while every metric panel on every dashboard read "No data" for six days.
+        # A datasource is a contract between a provisioned name and a plugin on disk, and
+        # this is the only thing that checks the two halves meet. See docs/holds.md#grafana.
+        grafana_datasource_plugins = import ./grafana-datasource-plugins {
+          inherit pkgs self;
+        };
         # The tailnet guard's route order (palimpsest#218's deferred follow-up). `internal_only`
         # is the whole of the access control on every private service, and a bare `abort` loses
         # Caddy's directive order to the vhost's own matcher-less handle — which is how vault,
