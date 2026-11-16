@@ -223,6 +223,14 @@ _Avoid_: remote tree (true from the laptop, false from the phone), checkout (a s
 The branch a **server-side session**'s commits land on, named for the session itself. It is what makes a session's work identifiable after the fact and lets concurrent sessions share a repository without contending. A session branch always starts from an **explicitly named ref**, never from whatever its tree happened to be on, so a stale tree cannot silently become the basis of new work.
 _Avoid_: agent branch (names the actor, not the unit of work), feature branch (a session branch is neither scoped to a feature nor meant to be long-lived).
 
+**Agent job**:
+Scheduled work owned by the **hermes** gateway on `rk1b`, which may invoke a model. Distinct from everything in **Monitoring & alerting**: a **watcher** probes a live service and alerts, a **unit-state check** asserts a unit is `active`, and both are deterministic systemd-tier work with an alert behind them — an agent job exists precisely where a *judgement* is wanted about something that already changed. Each run is an isolated session with its own run record, so a job's history is readable after the fact (`hermes cron runs`, `hermes cron incidents`). Jobs live in `jobs.json` under the state directory and are created with the CLI or the dashboard, not from the flake: the schedule is state, not configuration, which is why a job's reasoning belongs in its issue rather than only in the row.
+_Avoid_: workflow (names a shape, not an owner, and collides with CI), cron job (the mechanism, not the unit — and it invites the assumption that a systemd timer would do), watcher and check (both are taken, and both mean deterministic-with-an-alert), task.
+
+**Source script**:
+The deterministic half of an **agent job**: a cheap script that runs each tick *before* the agent and decides whether the agent runs at all. Unchanged output suppresses the model entirely, so a quiet day costs approximately zero tokens; changed output is injected into the prompt as the thing to judge. It is what keeps [ADR-0038](docs/adr/0038-held-back-packages-are-a-registry-an-agent-rechecks.md)'s boundary real — *the model never detects; it only judges and writes* — and the reason that boundary survives contact with a scheduler. A source script may be left mutable so the agent can improve it, or declared in the flake when its job writes outside the agent's own state.
+_Avoid_: probe (taken twice over — see **reachability probe** and **hold probe** — and a source script has no alert behind it), pre-run hook, monitor (the flag is spelled `--monitor-script`, but the word alone reads as the **monitoring stack**).
+
 ### Local LLMs
 
 **RK1 node** (or just **node**):

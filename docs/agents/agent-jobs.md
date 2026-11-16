@@ -1,0 +1,91 @@
+# Agent jobs: hermes on rk1b
+
+Scheduled work the hermes gateway owns, which may invoke a model. The vocabulary is in
+`GLOSSARY.md` (**Agent job**, **Source script**); the decisions behind this file are
+[ADR-0041](../adr/0041-an-agent-job-is-state-and-the-fleet-declares-its-boundaries.md).
+
+The CLI is the authority on flags — `hermes cron create --help`, run as the service user:
+
+```sh
+sudo -u hermes -H env HERMES_HOME=/var/lib/hermes/.hermes hermes cron <subcommand>
+```
+
+## Pick the mode from what the model is for
+
+Three modes, and the choice is the whole design of a job:
+
+| Mode | The model | Reach for it when |
+| --- | --- | --- |
+| `--no-agent --script X` | never runs | the answer is deterministic. Empty stdout is silent — the classic watchdog |
+| `--monitor-script X` | runs only on change | detection is deterministic and the **judgement** is not |
+| prompt only | runs every tick | the value is judgement every time, which is rare |
+
+`--monitor-script` is the default shape. It hashes the script's exact bytes: unchanged output
+suppresses the model entirely, changed output arrives in the prompt as `MONITOR CHANGE DETECTED`. A quiet day costs approximately zero tokens. Script output must be stable — a
+timestamp in it defeats the hash and the model runs every tick.
+
+This is ADR-0038's boundary made real: **the model judges what moved and never detects.**
+
+Split a job rather than widening one. Bookkeeping that needs no model (fetching, diffing,
+recording) belongs in a `--no-agent` job or the watcher tier; the agent job runs over what
+changed.
+
+## Channels
+
+Two kinds, and they travel different paths on purpose:
+
+- **Per-job channel** — a Matrix room the job delivers into, through hermes's own `matrix`
+  platform, so the job can be *answered* rather than only read. `--deliver room:<id>`.
+- **General hermes alerts** — the Infra Alerts room, reached by hookshot webhook like every
+  other fleet alert, so a hermes failure does not depend on hermes's bot being healthy.
+  `--failure-deliver` points here.
+
+Routine output stays out of Infra Alerts: that room is kept scannable and muteable, and a daily
+"nothing moved" erodes it.
+
+## Where things live
+
+| | |
+| --- | --- |
+| Jobs | `jobs.json` under `$HERMES_HOME` — state, created by hand, backed up |
+| Source scripts | `$HERMES_HOME/scripts/` |
+| Operator skills | a store path, via `skills.external_dirs` |
+| Agent's own skills | `$HERMES_HOME/skills/` — the learning loop, left alone |
+| Per-job durable state | `hermes cron notepad` |
+| The index of what exists | `docs/agent-jobs.md` |
+
+A source script is **mutable by default**, so the agent can improve it. Declare it through
+`hermesHomeFiles` only when its job writes outside the agent's own state or acts on the fleet —
+declaring freezes it, because activation overwrites.
+
+## Handover checklist
+
+A job is ready to hand to hermes when every line is evidenced:
+
+1. An issue exists on `inkpot-monkey/palimpsest` carrying the job's reasoning.
+1. Its per-job Matrix room exists, and `--failure-deliver` points at Infra Alerts.
+1. A source script exists, and its declared-or-mutable status is a stated choice, not a default.
+1. An entry is in `docs/agent-jobs.md` naming the job, its issue, its channel and that status.
+1. The overdue-job check knows about it, so its silence is noticed.
+1. `hermes cron create …` has been run **by a human**, and `cron.preflight` passed — it verifies
+   the provider key resolves, attached skills are ready and delivery is configured, failing to
+   `last_status=blocked_config` with one alert and no model call.
+
+## Gotchas
+
+- **`AGENTS.md` is read from the cwd.** A job started anywhere other than its `--workdir` sees
+  no project context. `--workdir` injects it and sets the cwd for terminal and file tools.
+- **`cron.allow_agent_scheduling` is `false`.** A cron run cannot create or edit jobs. Improving
+  a job's prompt happens in an interactive session, with a human present.
+- **The unit PATH is not the login PATH.** It excludes `/run/current-system/sw/bin`, so a tool
+  installed fleet-wide is invisible to the agent. What the agent may run is named in the
+  profile's `extraPackages`.
+- **Declaring into `$HERMES_HOME/skills/` collides with the agent writing there**, and
+  activation wins. Operator skills go in `skills.external_dirs`.
+- **`schedule` is positional**, not `--schedule=` — the flag spelling errors with
+  "unrecognized arguments".
+- **A source script is found only under `$HERMES_HOME/scripts/`.** `--script` takes a path
+  there; a script elsewhere is not found. `.py` runs under Python, `.sh`/`.bash` under bash.
+- **A cron run pins the hermes tree on `PYTHONPATH`, not your workspace packages.** A wrapper
+  importing a package from the workspace needs `sys.path.insert(0, …)` at the top. *(Reported by
+  the agent-authored `scheduled-data-collection` skill; confirm on the first job that needs it.)*

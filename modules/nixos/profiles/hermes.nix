@@ -201,6 +201,18 @@ in
           key_env = "CUSTOM_API_KEY";
         };
 
+        # ── OPERATOR SKILLS, BESIDE THE AGENT'S OWN RATHER THAN ON TOP OF THEM ─────────
+        # `external_dirs` is the READ side of upstream's skills seam; `create_dir` (and the
+        # default `$HERMES_HOME/skills/`) is the WRITE side, where hermes creates skills from
+        # experience and improves them during use. That learning loop is the product, so the
+        # fleet declares beside it and never into it — a skill declared into `skills/` would
+        # be overwritten on every activation, taking the agent's own work with it.
+        #
+        # A store path makes the read-only half true by construction rather than by promise.
+        # Empty today; the directory exists so an operator-authored skill has an obvious home
+        # that is reviewed in a diff. See ADR-0041.
+        skills.external_dirs = [ "${./agent-skills}" ];
+
         # ── THE MODEL PICKER, WHICH IS A SEPARATE CREDENTIAL PATH ──────────────────────
         # `model` above settles what a session TALKS to; this settles what the dashboard
         # OFFERS. They do not share a code path: with only the block above, the picker
