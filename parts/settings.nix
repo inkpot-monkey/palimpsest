@@ -23,6 +23,10 @@ let
   inherit (inputs.nixpkgs) lib;
   primaryDomain = "palebluebytes.space";
 
+  # The Anthropic org's Default workspace, required as a header by the user-scoped API key
+  # (see the model catalogue below). Bound once so three entries cannot disagree.
+  anthropicWorkspace = "wrkspc_01Pysv1dkPYrFz1Snpth6oBz";
+
   # The service registry. Each entry: `edge` (host where DNS points + Caddy runs),
   # `port`, optional `origin` (host actually running it when off-edge), optional
   # `proxy = false` (bypass Caddy). Optional `monitor` controls the ADR-0019 uptime
@@ -457,60 +461,46 @@ in
       # The baseline to beat, split by job so the comparison is honest: Haiku is the right
       # tool for the nightly summarisation, Sonnet for agents, Opus only where it earns 2x.
       #
-      # ⚠ THROUGH OPENROUTER SINCE 2026-11-16, NOT DIRECT ANTHROPIC. The direct route was
-      # funded by the Max plan's monthly Console API credit, and that credit ran dry: every
-      # one of these three returned `AnthropicException — "Your credit balance is too low to
-      # access the Anthropic API"`, a 400 about BALANCE rather than a 401 about auth, so the
-      # key stayed valid while the models became unusable. It took the fleet's agents with
-      # it — opencode defaulted to `sonnet-5.5` and every session at chat.<domain> failed.
+      # ⚠ THE KEY IS USER-SCOPED, SO EVERY REQUEST NEEDS THE WORKSPACE HEADER. It is an
+      # `sk-ant-usr…` key, not `sk-ant-api…`, and Anthropic refuses it bare: "this API key is
+      # not scoped to a workspace, so this request must include the anthropic-workspace-id
+      # header". LiteLLM's anthropic route does not add that on its own, so it is passed
+      # here. The id names the org's Default workspace and is an identifier, not a
+      # credential — useless without the key, which stays in sops.
       #
-      # Moving them here puts every model on one funded account, which is the operator's
-      # stated shape: everything goes through LiteLLM, and LiteLLM holds one vendor
-      # relationship rather than two that can run out independently.
+      # THE OUTAGE THIS CAME OUT OF, because the error text misleads. On 2026-11-16 all
+      # three returned "Your credit balance is too low to access the Anthropic API", which
+      # reads as overspend. It was not: the Oct 15 $100 Max credit had **expired**, and the
+      # replacement key being user-scoped hid the fact that a fresh $100 granted Nov 8 was
+      # already sitting there. Both halves had to be found before this route came back.
       #
-      # WHAT THIS CONCEDES. The direct route was chosen for exactly one reason — "one less
-      # intermediary holding the traffic" — and that is now spent: OpenRouter sees these
-      # prompts, where before only Anthropic did. `zdr` and `data_collection = deny` are set
-      # below for that reason, matching the open models above; they bound RETENTION, not who
-      # sees the request in flight. It also softens #121's fidelity conclusions, which were
-      # drawn against the direct route. Top the Anthropic account up and this is a two-line
-      # revert per entry.
-      #
-      # No `quantizations` pin here, unlike the open models: a closed model has one
-      # implementation, so there is no quant to hold still.
+      # ⚠ THE CURRENT CREDIT EXPIRES 2026-12-11. The same lapse takes these three models
+      # down again on that date, and with them anything defaulting to one. OpenRouter serves
+      # all three (`openrouter/anthropic/claude-*`) and is the two-line escape per entry.
       "haiku-5.5" = {
         chat = true;
         litellm_params = {
-          model = "openrouter/anthropic/claude-haiku-5.5";
-          api_key = "os.environ/OPENROUTER_API_KEY";
-          extra_body.provider = {
-            data_collection = "deny";
-            zdr = true;
-          };
+          model = "anthropic/claude-haiku-5-5";
+          api_key = "os.environ/ANTHROPIC_API_KEY";
+          extra_headers."anthropic-workspace-id" = anthropicWorkspace;
         };
       };
 
       "sonnet-5.5" = {
         chat = true;
         litellm_params = {
-          model = "openrouter/anthropic/claude-sonnet-5.5";
-          api_key = "os.environ/OPENROUTER_API_KEY";
-          extra_body.provider = {
-            data_collection = "deny";
-            zdr = true;
-          };
+          model = "anthropic/claude-sonnet-5-5";
+          api_key = "os.environ/ANTHROPIC_API_KEY";
+          extra_headers."anthropic-workspace-id" = anthropicWorkspace;
         };
       };
 
       "opus-5.5" = {
         chat = true;
         litellm_params = {
-          model = "openrouter/anthropic/claude-opus-5.5";
-          api_key = "os.environ/OPENROUTER_API_KEY";
-          extra_body.provider = {
-            data_collection = "deny";
-            zdr = true;
-          };
+          model = "anthropic/claude-opus-5-5";
+          api_key = "os.environ/ANTHROPIC_API_KEY";
+          extra_headers."anthropic-workspace-id" = anthropicWorkspace;
         };
       };
 
