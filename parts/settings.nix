@@ -62,6 +62,36 @@ let
       };
     };
     private = {
+      # The Hermes agent runtime's admin panel (modules/nixos/profiles/hermes.nix). RUNS on
+      # rk1b, fronted by kelpy's Caddy at agent.<domain> behind the internal_only guard —
+      # the same edge/origin split as music, ma and library. DEPLOY BOTH HOSTS, plus every
+      # `dns.nameserverHosts` resolver (see the warning above the registry).
+      #
+      # ⚠ THE TAILNET GUARD IS NOT THE ONLY THING IN FRONT OF THIS, AND MUST NOT BE. This
+      # panel carries a PTY on rk1b as the `hermes` user, and the tailnet is not
+      # single-person (ADR-0027 puts friends on it for music and photos). So the backend
+      # runs its own username/password gate on top; `--insecure` is not an option even if
+      # one wanted it, because upstream IGNORES that flag since their June 2026 incident
+      # (web_server_boundary.should_require_auth). See the profile for the credentials.
+      agent = {
+        edge = "kelpy";
+        port = 9119;
+        origin = "rk1b";
+      };
+      # opencode — server-side agent sessions (GLOSSARY.md), the first build on the
+      # palimpsest#118 map. RUNS on rk1b, fronted by kelpy's Caddy at chat.<domain> behind
+      # the internal_only guard. DEPLOY BOTH HOSTS plus both resolvers, as above.
+      #
+      # ⚠ SAME WARNING AS `agent`, MORE SO. A session here is arbitrary code execution on
+      # rk1b with write access to the trees it is pointed at, so the tailnet guard is not
+      # the control — opencode's own Basic-auth server password is (profiles/opencode.nix).
+      # Note the gate covers `/api/*` ONLY; every other path serves the SPA shell 200
+      # unauthenticated, so probe /api/session if you want to prove the gate is on.
+      chat = {
+        edge = "kelpy";
+        port = 4096;
+        origin = "rk1b";
+      };
       # Jellyfin. RUNS on rk1b with the rest of custom.profiles.media (the stack moves
       # as one: qBittorrent and slskd share gluetun's netns and jellyfin is gated on the
       # same profile flag), fronted by kelpy's Caddy — the same edge/origin split as
@@ -297,6 +327,205 @@ let
 in
 {
   flake.settings = {
+    # MEASUREMENT MONTH (started 2026-11-10). Exactly TWO open models, one per hardware
+    # tier under consideration, so a month of real traffic answers three questions that
+    # benchmarks cannot: what would owning this have cost, would the output have been
+    # good enough, and does the bigger box buy anything.
+    #
+    #   qwen3.8-27b             → the ~32 GB GPU  (20.88 GB at Q5_K_XL)
+    #   nemotron-3.5-super-vl   → the 128 GB box  (86.91 GB at Q4_K_XL)
+    #
+    # Deliberately absent: DeepSeek-V4, GLM-5.3, Kimi K3, MiniMax, Qwen3-Coder-480B.
+    # They are better models, and renting one would invalidate the experiment, because
+    # no home box can run them. OpenRouter is the ONLY external provider here besides
+    # Anthropic, by choice — it reaches both tiers under one account, takes no markup on
+    # inference, and alone lets the quantization be pinned per request. Lyceum was
+    # evaluated and rejected: 10x the input price on the one model both carry ($0.40 vs
+    # $0.039 per M) and it lacks the model it was considered for.
+    #
+    # Two validity caveats to remember when reading the results. No provider serves
+    # GGUF, so each entry pins the served tier nearest the quant we would run — fp8 for
+    # the 27B, nvfp4 for Nemotron — making quality here an UPPER bound, tighter for
+    # Nemotron than for the 27B. And this cannot measure prefill latency at all: a
+    # provider's datacentre GPU is not our card, and prefill is the main hardware risk.
+
+    # ── THE MODEL CATALOGUE ───────────────────────────────────────────────────────────────
+    # Every model the fleet can reach, in ONE place, because three consumers need the same
+    # list and keeping three copies did not work: LiteLLM routes these names
+    # (profiles/litellm.nix), and both agents must be told which names exist before they
+    # will offer them — hermes in its `providers:` block, opencode in its `provider.litellm`
+    # block. Neither agent discovers the list reliably (hermes' picker fetch and opencode's
+    # catalogue probe are separate credential paths from the chat call), so each one carried
+    # a hand-written copy.
+    #
+    # ⚠ THEY DRIFTED THE FIRST DAY. opencode's copy was written without
+    # `nemotron-3.5-super-vl`, so its picker offered the three Claude models and one other
+    # and read as an Anthropic-only provider, while hermes' copy had all five. Nothing
+    # fails when these disagree: each agent happily offers exactly what its own list says.
+    # Deriving all three from here is what makes that class of bug impossible rather than
+    # merely unlikely.
+    #
+    # `chat` is what the agents filter on. A model that is not a conversational endpoint —
+    # `whisper` transcribes audio — belongs in LiteLLM's routing table but must never be
+    # offered as a session model, because picking it would produce a session that cannot
+    # answer. `litellm_params` and `model_info` are passed through to LiteLLM verbatim.
+    models = {
+      # Qwen3.8-27B (dense, 27B, Apache 2.0). UD-Q5_K_XL = 20.88 GB, the quality knee;
+      # the most-downloaded model on the Hub and the one practitioners actually name.
+      # The `provider` block is what makes the rent a fair proxy for the self-host:
+      # fp8 only, no silent fallback to a cheaper quant, zero data retention, and
+      # require_parameters so an endpoint that cannot do tool calls is skipped rather
+      # than quietly dropping them.
+      "qwen3.8-27b" = {
+        chat = true;
+        litellm_params = {
+          model = "openrouter/qwen/qwen3.8-27b";
+          api_key = "os.environ/OPENROUTER_API_KEY";
+          extra_body.provider = {
+            # The quant pin is the experiment's validity constraint and is NOT
+            # negotiable. Fallbacks are ALLOWED but only within that pinned pool, so a
+            # busy provider is routed around rather than failing the call. That
+            # distinction matters more than it looks: with fallbacks off, a measured
+            # upstream 429 fired the agent's Sonnet fallback — which would have recorded
+            # "the open model failed the task" when the truth was "a provider was
+            # rate-limited", quietly poisoning the one number this month exists to
+            # produce. (That agent-side fallback belonged to the retired openclaw
+            # profile; Hermes has no primary/fallback for the main turn, so if the
+            # behaviour is wanted back it belongs in `litellm_settings.fallbacks`
+            # here — where the spend metric would record it directly.) Ten fp8 endpoints serve this model (Chutes, Near AI, Wafer,
+            # PrimeIntellect, Mancer, Tenstorrent, Reka, AkashML, Parasail, CoreWeave),
+            # so the pool is deep. `require_parameters` also earns its place: CoreWeave
+            # and SiliconFlow advertise some models without tool support and are
+            # excluded automatically rather than silently dropping tool calls.
+            quantizations = [ "fp8" ];
+            allow_fallbacks = true;
+            require_parameters = true;
+            data_collection = "deny";
+            zdr = true;
+          };
+        };
+      };
+
+      # THE 128 GB TIER. Nemotron 3.5 Super VL, 120B total / 12B active, OpenMDW-1.1.
+      # UD-Q4_K_XL = 86.91 GB, which is the point: it does NOT fit 32 GB, so it is the
+      # only thing here that actually distinguishes the two boxes. nvfp4 is pinned
+      # rather than fp8 because 4-bit is the tier closest to the ~4.2 bits/weight we
+      # would run locally — BETTER validity than the 27B above, not worse.
+      #
+      # Read this one as a FLOOR for the tier, not a ceiling. The model a 128 GB owner
+      # would really run is Qwen3.8-Flash-Next (24 of 95 Strix-Halo HN comments; next
+      # best is 7), and on NVIDIA's OWN published numbers Nemotron loses to it badly:
+      # SWE-bench Pro 51.78 vs 60.37, Terminal-Bench 2.1 60.67 vs 85.80. Flash-Next is
+      # effectively unrentable — not served per-token by DeepInfra, Together, Novita,
+      # Nebius, SiliconFlow, Parasail, Chutes, DashScope, Hyperbolic, Baseten or
+      # OpenRouter; Fireworks lists it dedicated-GPU-only; and Lyceum, reported as the
+      # one per-token source, does NOT carry it — its catalogue has 12 models and the
+      # "$0.20/$0.50" attributed to Flash-Next is GLM-5.3-Flash's price, verified on
+      # Lyceum's own pricing page. Beware the near-miss generally: `qwen3.8-flash` is
+      # Alibaba's separate MANAGED SKU, not this architecture, and several providers
+      # resell it while quoting Flash-Next's spec sheet.
+      #
+      # So the honest reading of a month of data: if Nemotron measures no better than
+      # the 27B above, that is evidence the 128 GB tier buys nothing — note its
+      # SWE-bench Pro 51.78 roughly equals Muse-Glimmer-30B's 51.2 at 15.88 GB. If it
+      # measures clearly better, the tier is worth a second look with a real engine,
+      # because Flash-Next would beat this.
+      "nemotron-3.5-super-vl" = {
+        chat = true;
+        litellm_params = {
+          model = "openrouter/nvidia/nemotron-3.5-super-vl";
+          api_key = "os.environ/OPENROUTER_API_KEY";
+          extra_body.provider = {
+            quantizations = [ "nvfp4" ];
+            allow_fallbacks = true;
+            require_parameters = true;
+            data_collection = "deny";
+            zdr = true;
+          };
+        };
+      };
+
+      # An EU-pinned route for the nightly log review (OVHcloud, Gravelines-only, no
+      # prompt retention) was considered and DROPPED: ~EUR 7.46/mo against ~EUR 1.58
+      # for the same model via OpenRouter, to keep fleet-log prompts inside France.
+      # Judged not worth the split for a one-month experiment. Note what that concedes
+      # — for this month the nightly review ships hostnames, IPs and service topology
+      # to whichever fp8 provider OpenRouter picks. `zdr` and `data_collection = deny`
+      # above constrain retention but not geography. Revisit if the measurement ends
+      # in "keep renting" rather than "buy the box", because then it is permanent.
+
+      # The baseline to beat, split by job so the comparison is honest: Haiku is the right
+      # tool for the nightly summarisation, Sonnet for agents, Opus only where it earns 2x.
+      #
+      # ⚠ THROUGH OPENROUTER SINCE 2026-11-16, NOT DIRECT ANTHROPIC. The direct route was
+      # funded by the Max plan's monthly Console API credit, and that credit ran dry: every
+      # one of these three returned `AnthropicException — "Your credit balance is too low to
+      # access the Anthropic API"`, a 400 about BALANCE rather than a 401 about auth, so the
+      # key stayed valid while the models became unusable. It took the fleet's agents with
+      # it — opencode defaulted to `sonnet-5.5` and every session at chat.<domain> failed.
+      #
+      # Moving them here puts every model on one funded account, which is the operator's
+      # stated shape: everything goes through LiteLLM, and LiteLLM holds one vendor
+      # relationship rather than two that can run out independently.
+      #
+      # WHAT THIS CONCEDES. The direct route was chosen for exactly one reason — "one less
+      # intermediary holding the traffic" — and that is now spent: OpenRouter sees these
+      # prompts, where before only Anthropic did. `zdr` and `data_collection = deny` are set
+      # below for that reason, matching the open models above; they bound RETENTION, not who
+      # sees the request in flight. It also softens #121's fidelity conclusions, which were
+      # drawn against the direct route. Top the Anthropic account up and this is a two-line
+      # revert per entry.
+      #
+      # No `quantizations` pin here, unlike the open models: a closed model has one
+      # implementation, so there is no quant to hold still.
+      "haiku-5.5" = {
+        chat = true;
+        litellm_params = {
+          model = "openrouter/anthropic/claude-haiku-5.5";
+          api_key = "os.environ/OPENROUTER_API_KEY";
+          extra_body.provider = {
+            data_collection = "deny";
+            zdr = true;
+          };
+        };
+      };
+
+      "sonnet-5.5" = {
+        chat = true;
+        litellm_params = {
+          model = "openrouter/anthropic/claude-sonnet-5.5";
+          api_key = "os.environ/OPENROUTER_API_KEY";
+          extra_body.provider = {
+            data_collection = "deny";
+            zdr = true;
+          };
+        };
+      };
+
+      "opus-5.5" = {
+        chat = true;
+        litellm_params = {
+          model = "openrouter/anthropic/claude-opus-5.5";
+          api_key = "os.environ/OPENROUTER_API_KEY";
+          extra_body.provider = {
+            data_collection = "deny";
+            zdr = true;
+          };
+        };
+      };
+
+      whisper = {
+        chat = false;
+        litellm_params = {
+          model = "deepinfra/openai/whisper-large-v3";
+          api_key = "os.environ/DEEPINFRA_API_KEY";
+        };
+        model_info = {
+          mode = "audio_transcription";
+        };
+      };
+    };
+
     admin.email = "admin@${primaryDomain}";
     inherit primaryDomain;
     mailDomain = primaryDomain;

@@ -134,6 +134,15 @@ in
           ".DS_STORE/*"
           "desktop.ini"
         ];
+        # Documents arrive through the consumption directory and the REST API; no mail
+        # account or rule is configured. Left at paperless's default the mail fetcher
+        # still runs every ten minutes against nothing — measured on kelpy 2026-11-16,
+        # 10,617 successful no-op fetches, each logging "No new documents were added"
+        # and writing a row to the task table. That is ~144 tasks a day of pure noise,
+        # and it produced the only entry paperless has ever flagged for attention here:
+        # a duplicate dispatch whose orphan copy expired unclaimed, with nothing wrong
+        # underneath it. Drop this line if a mail account is ever added.
+        PAPERLESS_EMAIL_TASK_CRON = "disable";
         # PAPERLESS_OCR_LANGUAGE is deliberately NOT set here. Setting it in
         # `settings` makes the NixOS module rebuild tesseract limited to those
         # languages — an uncached closure that re-derives on every deploy. We

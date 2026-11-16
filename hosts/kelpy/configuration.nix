@@ -279,45 +279,64 @@ in
     # Auto-reconcile the mail domains' DANE/TLSA records when acme renews the mail cert,
     # so the published TLSA never drifts from the served cert (mail-scoped dns push).
     mail-dane-autoupdate.enable = true;
-    # Tag mail that reaches this mailbox by Gmail forwarding, so the origin of
-    # every message stays answerable after the Gmail cutover
-    # (docs/runbooks/gmail-to-stalwart.md).
+    # Tag mail that reaches this mailbox by Gmail or Proton forwarding, so the
+    # origin of every message stays answerable after the cutovers
+    # (docs/runbooks/gmail-to-stalwart.md, docs/runbooks/proton-to-stalwart.md).
+    #
+    # TAGS ONLY, NO FILING, AND THAT IS THE WHOLE OF WHAT CHANGED HERE. Both
+    # clauses used to `fileinto` a per-source mailbox, which cancels Sieve's
+    # implicit keep — so for a year nothing forwarded ever reached INBOX and
+    # "the Inbox" named the small minority of mail addressed to thomas@
+    # directly. Measured on the subscriber's notmuch database before this
+    # change: 875 messages in the Inbox against 21,621 in Gmail and 14,454 in
+    # Proton/Inbox. The operator's instruction is that the inbox mean
+    # everything, and an INBOX that excludes 36k of 58k messages cannot.
+    #
+    # WHAT THIS BUYS THAT A CLIENT-SIDE RULE COULD NOT: INBOX now means the same
+    # thing everywhere — webmail, the phone, the JMAP bridge and notmuch — and
+    # it is SELF-CORRECTING, because filing a message away on any client moves
+    # it out of the folder and every client agrees it has left. The rejected
+    # alternative was to leave the filing alone and have the subscriber's
+    # notmuch hook tag `+inbox` on the two forwarded folders; that would have
+    # been a tag only the hook sets and nothing clears, which is exactly how
+    # `unprocessed` grew to 22,232 of 22,298 messages (users#61).
+    #
+    # THE ARCHIVES DO NOT MOVE. `Gmail` and `Proton/*` still hold the one-off
+    # imports and are still the place history lives; they simply stop receiving
+    # new mail. Nothing is reprocessed and no existing message changes mailbox.
+    #
+    # THE UNREAD-COUNT ADVICE BOTH CLAUSES USED TO GIVE IS NOW WRONG and has
+    # been removed rather than left to rot: "watch that mailbox, not the Inbox"
+    # was correct only while fileinto was here. Watch the Inbox.
     mail-sieve = {
       enable = true;
       user = "thomas";
       script = ''
-        require ["imap4flags", "fileinto"];
+        require ["imap4flags"];
 
         # Gmail sets X-Forwarded-For on everything it forwards from the old
-        # account. File those into the same mailbox the one-off archive import
-        # filled, and tag them with the same keyword, so everything that ever
-        # arrived via the old Gmail address lives in one place. The tagged
-        # proportion is the cutover's real progress metric: it falls as
-        # correspondents are updated, and reaching zero is when Gmail can be
-        # retired.
+        # account. The keyword is the cutover's real progress metric: the tagged
+        # proportion falls as correspondents are updated, and reaching zero is
+        # when Gmail can be retired.
         #
-        # fileinto, not just the keyword, because the keyword alone is not
-        # portable across clients: an IMAP keyword is invisible in any client
-        # without a local tag definition for it (Thunderbird ignores unknown
-        # keywords outright), whereas a mailbox renders everywhere with no
-        # client-side config. The keyword is kept as metadata for searching.
-        #
-        # fileinto CANCELS Sieve's implicit keep, so these messages land only in
-        # the Gmail mailbox and never in the Inbox. That is the intent — watch
-        # that mailbox's unread count, not the Inbox, for forwarded mail.
+        # THE KEYWORD DOES NOT REACH EVERY CLIENT, and that was the original
+        # argument for filing as well as flagging: an IMAP keyword is invisible
+        # in any client without a local tag definition for it, and mbsync has no
+        # representation for one at all, so it never reaches the subscriber's
+        # maildir. That cost is now paid on the client instead — the home's
+        # notmuch indexes X-Forwarded-For as a query prefix and derives its
+        # `gmail/tsdkelly` tag from the header directly (users, mail.nix). The
+        # header is a better source than the mailbox anyway: it travels with the
+        # message, so filing one away cannot strip its origin.
         #
         # jmap-bridge is unaffected: live sync polls Email/changes, which is
         # account-wide and not scoped to a mailbox, so these still reach Matrix.
-        # Verified — the post-reset backfill processed 39 messages already in
-        # this mailbox, and a live forward minted its room two seconds after
-        # delivery.
         #
         # Deliberately does NOT set $seen. Forwarded mail is new mail and must
         # arrive unread; the archive's blanket $seen was a one-off for history,
         # not a delivery policy.
         if header :contains "X-Forwarded-For" "tsdkelly@gmail.com" {
             addflag "gmail:tsdkelly";
-            fileinto "Gmail";
         }
 
         # Proton forwards with its OWN header, and this one is not a guess:
@@ -330,13 +349,11 @@ in
         # was forwarded, does. `X-Original-To` is a header many MTAs set for
         # their own reasons and would eventually match something else.
         #
-        # Files into Proton/Inbox, not the `Proton` root: the root is an empty
-        # container and the archive's own inbox mail is in Proton/Inbox, so new
-        # forwarded mail joins the place a reader already looks. The 35,865
-        # imported messages are all `$seen`, so the unread count on that mailbox
-        # means exactly "Proton mail that has arrived since the cutover" —
-        # watch it rather than the Inbox, because fileinto cancels the implicit
-        # keep and none of this lands there.
+        # NO LONGER FILES INTO Proton/Inbox, for the reason the header above
+        # gives. The 35,894 imported messages stay exactly where they are; this
+        # clause now only flags, and the forward lands in INBOX like everything
+        # else. The subscriber's `proton/thomassdk` tag comes from this same
+        # header, indexed client-side, rather than from the mailbox.
         #
         # Deliberately does NOT set $seen, for the reason the Gmail clause
         # states: forwarded mail is new mail. The blanket $seen on the archive
@@ -349,7 +366,6 @@ in
         # and scored ham 0.00. No Junk Mail watch is needed for this path.
         if header :contains "X-Pm-Forwarded-From" "thomassdk@pm.me" {
             addflag "proton:thomassdk@pm.me";
-            fileinto "Proton/Inbox";
         }
       '';
     };

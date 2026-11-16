@@ -141,6 +141,10 @@ Default vocabulary (needs-triage, needs-info, ready-for-agent, ready-for-human, 
 
 Single-context: one `GLOSSARY.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
+### Agent jobs
+
+Scheduled work hermes owns on rk1b. Its schedule is state, not flake — the fleet declares the boundary it runs inside ([ADR-0041](docs/adr/0041-an-agent-job-is-state-and-the-fleet-declares-its-boundaries.md)). `docs/agent-jobs.md` indexes what exists; `docs/agents/agent-jobs.md` is the operational reference; `.claude/skills/make-agent-job/` authors one.
+
 ### Searching the user's past commands & their output (recall)
 
 The user's Emacs persistently logs **every async shell command they run and its
