@@ -269,7 +269,6 @@ echo 'you@proton.me' > proton.addr
    ```nix
    if header :contains "<the header you observed>" "you@proton.me" {
        addflag "proton:you@proton.me";
-       fileinto "Proton";
    }
    ```
 
@@ -278,18 +277,34 @@ echo 'you@proton.me' > proton.addr
    `if envelope :detail "to" "proton"`. Sub-addressing is **not** configured explicitly in
    the mail profile, so prove it with one test message before relying on it.
 
-   `fileinto` cancels Sieve's implicit `keep`, so these land only in `Proton` — watch that
-   mailbox's unread count, not the Inbox. Do **not** add `$seen`. The module validates the
-   script against the live server before activating, so a wrong `require` fails the unit
-   rather than delivery, and `restartTriggers` re-converges it on rebuild.
+   **Flag, do not `fileinto`** — this step used to do both, and the filing was removed on
+   2026-11-16. `fileinto` cancels Sieve's implicit `keep`, so a filed forward never reaches
+   INBOX: measured once both cutovers were live, the Inbox held 875 messages against 36,075
+   that had been filed past it, and "the inbox" had quietly come to mean only the mail
+   addressed to the principal directly. Flagging alone leaves the `keep`, so forwarded mail
+   lands in INBOX like everything else and INBOX means the same thing in every client.
+   Watch the Inbox.
+
+   The archives are a separate matter and do not move: `Gmail` and `Proton/*` still hold the
+   one-off imports, they simply stop receiving new mail.
+
+   Do **not** add `$seen`. The module validates the script against the live server before
+   activating, so a wrong `require` fails the unit rather than delivery, and
+   `restartTriggers` re-converges it on rebuild.
 
 1. **Teach this home's client** — in `palebluebytes/users`,
    `users/inkpotmonkey/modules/mail.nix`:
 
-   - a folder-derived rule in the `postNew` hook, mirroring the Gmail one and minding the
-     quoting trap for any folder whose name has a space:
-     `notmuch tag +proton -- tag:new and folder:palebluebytes/Proton` (and per-folder
-     rules if the children are worth tagging);
+   - a **header-derived** rule in the `postNew` hook, mirroring the Gmail one. With the
+     filing gone the folder no longer carries the source, so the client indexes the same
+     header the Sieve matched on as a query prefix —
+     `extraConfig.index."header.XPMFORWARDEDFROM" = "X-Pm-Forwarded-From";` — and tags from
+     that: `notmuch tag +proton/you -- tag:new and XPMFORWARDEDFROM:you@proton.me`. Two
+     traps, both of which fail silently rather than erroring: a user-defined prefix **must
+     not start with `a`–`z`** and is queried in the **exact case** it was defined, and an
+     undefined prefix returns 0 rather than complaining. A folder-derived rule stays beside
+     it for the imported archive, which carries no such header — keep both, or a database
+     rebuilt from the maildir comes back wrong for one of them;
    - the Proton address appended to `extraConfig.user.other_email`
      (`"${forwardedAddress};you@proton.me"`), **not** to `aliases`: home-manager's msmtp
      module emits an account per alias with `from <alias>`, which would assert this home
