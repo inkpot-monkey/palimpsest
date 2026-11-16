@@ -260,6 +260,38 @@ naming. A hold arriving with a `cmd:` probe is a prompt to ask whether it is the
 - **status** — held
 - **last finding** — _(none yet)_
 
+### grafana
+
+- **what & where** — pinned to `nixpkgs-stable`'s 13.0.12 by the `grafana-pin` overlay in
+  `modules/shared/overlays/default.nix`. Only rk1b pulls it into a closure
+  (`modules/nixos/profiles/monitoring/server.nix`).
+- **why** — nixpkgs' grafana 13.3.0 **does not ship the Prometheus datasource plugin at all**,
+  so every metric panel on every dashboard renders "No data". Grafana 13.2 externalised its core
+  datasource plugins, and the 13.3.0 update dropped `yarn run plugins:build-bundled` from
+  `postBuild` while `postInstall` still copies only `public conf` — so nothing builds or
+  installs them. Measured on the two store paths:
+  `grafana-13.1.6/share/grafana/public/app/plugins/datasource/` holds 20 entries including
+  `prometheus`; `grafana-13.3.0/…` holds 7, without it. The server's own evidence is
+  `plugin prometheus not found` at startup and `plugin.notRegistered` from
+  `/api/datasources/uid/<uid>/health`. VictoriaMetrics is fine — the identical query answered
+  straight off `:8428` returns data — and the VictoriaLogs datasource keeps working, which is
+  why the log panels alone kept rendering. Landed on rk1b at generation 141, 2026-11-10.
+- **probe** — `nixpkgs-attr:grafana` (recorded: 13.3.0). A bare version move is not the question;
+  read the release condition.
+- **release condition** — a nixpkgs grafana whose
+  `share/grafana/public/app/plugins/datasource/` contains `prometheus`, i.e. the package.nix
+  regains a step that builds the externalised core plugins. Checkable without deploying:
+  `ls $(nix eval --raw github:NixOS/nixpkgs/nixos-unstable#grafana)/share/grafana/public/app/plugins/datasource | grep -c prometheus`.
+  A green build proves nothing here — 13.3.0 builds fine and is simply missing the plugin.
+- **upstream** — none filed as of 2026-11-16; nixos-unstable HEAD still carries the broken
+  13.3.0. The nixpkgs-side diff to look for is the return of `plugins:build-bundled` (or an
+  equivalent) to `pkgs/by-name/gr/grafana/package.nix`:
+  `gh search commits --repo NixOS/nixpkgs grafana plugins-bundled`.
+- **opened** — 2026-11-16
+- **last checked** — 2026-11-16
+- **status** — held
+- **last finding** — nixos-unstable HEAD is 13.3.0 with no `plugins:build-bundled`; still broken.
+
 ## Cleared
 
 Cleared holds are archived here, never deleted — the expensive knowledge in a hold is the

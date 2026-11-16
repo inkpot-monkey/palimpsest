@@ -147,6 +147,49 @@ let
       ) { };
     };
 
+    # grafana, taken from the stable release because unstable's build LOST the Prometheus
+    # datasource plugin — every metric panel on every dashboard renders "No data".
+    #
+    # ⚠ UNLIKE `stable-until-fixed` ABOVE, this one IS a downgrade and the unstable package
+    # DOES build. It is a separate overlay for exactly that reason: the invariant documented
+    # on that overlay ("fails to build", "not a downgrade") stays true.
+    #
+    # WHAT BROKE. Grafana 13.2 externalised its core datasource plugins, and nixpkgs' 13.3.0
+    # update dropped `yarn run plugins:build-bundled` from `postBuild` while `postInstall`
+    # still copies only `public conf`. So nothing builds or installs them. Measured on the
+    # two store paths:
+    #
+    #   grafana-13.1.6  public/app/plugins/datasource/  20 entries, prometheus among them
+    #   grafana-13.3.0  public/app/plugins/datasource/   7 entries, no prometheus
+    #
+    # The server says so itself — `plugin prometheus not found`, `Core plugin expected to be
+    # loaded as external, but it is missing pluginID=canvas`, and, per query, `Could not find
+    # plugin definition for data source datasource_type=prometheus`. The datasource health
+    # endpoint returns `plugin.notRegistered`. VictoriaMetrics is untouched by this: the same
+    # query answered straight off :8428 returns data, so only the Grafana leg is dark. The
+    # VictoriaLogs datasource keeps working, which is why the log panels alone kept rendering.
+    #
+    # Landed on rk1b at generation 141, 2026-11-10, with the 13.1.6 -> 13.3.0 bump.
+    #
+    # WHY STABLE AND NOT THE FROZEN REV. Same reasoning as `stable-until-fixed`: a release
+    # branch keeps getting backports and Grafana is a long-lived web service with its own
+    # auth, so abandoning its security updates to hold a frozen rev is the worse trade. Costs
+    # one minor (13.3.0 -> 13.0.12) and nothing in build time — the stable aarch64 path is
+    # substitutable (narinfo 200).
+    #
+    # ⚠ MODULE/PACKAGE SKEW. The grafana MODULE still comes from unstable while the package
+    # comes from stable, which is the skew `docs/holds.md` warns about. This pin must
+    # therefore be validated by BUILDING rk1b, not by evaluating it.
+    # HOLD: docs/holds.md#grafana
+    grafana-pin =
+      _final: prev:
+      let
+        stable = inputs.nixpkgs-stable.legacyPackages.${prev.stdenv.hostPlatform.system};
+      in
+      {
+        inherit (stable) grafana;
+      };
+
     # antigravity = final: prev: {
     #   antigravity = prev.antigravity.overrideAttrs (_: {
     #     version = "1.19.5";
@@ -173,6 +216,7 @@ in
     modifications.snapcast
     modifications.stable-until-fixed
     modifications.stump-pin
+    modifications.grafana-pin
     # modifications.antigravity
     flexget
   ];
