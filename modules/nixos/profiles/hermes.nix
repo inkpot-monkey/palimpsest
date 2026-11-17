@@ -38,6 +38,13 @@ let
   svc = settings.services.private.agent;
 
   hermesStateDir = "/var/lib/hermes";
+  # Upstream's HERMES_HOME, which is a `let` binding in its module rather than an option —
+  # so it is DERIVED from the one option that does exist rather than restated, and follows
+  # if `stateDir` ever moves.
+  hermesHome = "${config.services.hermes-agent.stateDir}/.hermes";
+  # Upstream's HERMES_HOME, which is a `let` binding in its module rather than an option —
+  # so it is DERIVED from the one option that does exist rather than restated, and follows
+  # if `stateDir` ever moves.
 
   # ── THE MATRIX END OF THE AGENT ───────────────────────────────────────────────────
   # The homeserver's `server_name` is the Matrix DOMAIN (the half after the colon in an
@@ -320,6 +327,42 @@ in
         # true` on every systemd timer in this fleet.
         cron.catch_up_missed = true;
 
+        # ── NO ON-DEMAND TOOL DOWNLOADS, BECAUSE THIS HOST CANNOT RUN THEM ─────────────
+        # Hermes ships its own package manager (`pm`), and on a lazy install it fetches
+        # GENERIC-LINUX PREBUILT BINARIES into `$HERMES_HOME/tools` and puts that
+        # directory at the FRONT of PATH for everything the gateway spawns
+        # (`pm.install.activate`, "the ONE sanctioned global PATH write"). On NixOS those
+        # binaries cannot execute at all, so the effect is not a slow path but a dead one:
+        #
+        #   Could not start dynamically linked executable: …/python3
+        #   NixOS cannot run dynamically linked executables intended for generic linux
+        #
+        # THAT ALREADY HAPPENED HERE. Between 2026-11-16 19:22 and 2026-11-17 a browser
+        # tool call and some pm operation pulled a chromium and a CPython into that store.
+        # The chromium failed visibly (`browser_exec … Chromium exited with code 127`), but
+        # the interpreter failed SILENTLY and expensively: its `bin/` went to the front of
+        # PATH, so `python3` for the agent stopped being the one `extraPackages` declares
+        # above and became a binary that exits 127 — while the gateway sat there green.
+        # The only warning was one startup line reading "install out of sync (ffmpeg: not
+        # installed or outdated; node: …)", which looks like a packaging nag and is in fact
+        # pm reporting that a nix-managed install has half-adopted its tool store: before
+        # the first lazy install there was no facts.json, and `pm.drift` vouches for
+        # nothing it has not installed, so the whole thing was quiet until then.
+        #
+        # Upstream's own sanctioned setting (`security.allow_lazy_installs`, the user-facing
+        # face of the flag their Docker image sets), in preference to the
+        # `HERMES_DISABLE_LAZY_INSTALLS` env var it overrides, which their docs mark
+        # internal. Already-installed dependencies stay usable when it is false, which is
+        # why the state has to be cleared as well — see hermes-state-dirs below.
+        #
+        # WHAT THIS GIVES UP: the agent can no longer acquire a tool the fleet has not
+        # declared. That is the trade this repo makes everywhere else, and here it costs
+        # nothing real — every tool pm wanted is either already on the unit PATH from
+        # `extraPackages` (python3, node, nix) or supplied by upstream's own wrapper
+        # (node, npm, ripgrep, ffmpeg, git), and the two it actually downloaded were both
+        # unrunnable. A tool the agent genuinely needs is one line in `extraPackages`.
+        security.allow_lazy_installs = false;
+
         # The name the operator's browser actually types, which Caddy passes through
         # unchanged. The backend's DNS-rebinding guard rejects every Host header that is
         # not the address it bound to UNLESS the name is declared here, so without this
@@ -405,6 +448,13 @@ in
     # request ("Invalid Host header") while the unit sat there green. The backend's bind
     # arrives on its command line instead, so that half restarts on its own — which is
     # exactly why this is easy to miss.
+    systemd.services.hermes-agent.restartTriggers = [
+      (builtins.toJSON config.services.hermes-agent.settings)
+    ];
+    systemd.services.hermes-backend.restartTriggers = [
+      (builtins.toJSON config.services.hermes-agent.settings)
+    ];
+
     # ── THE BROWSER BUNDLE, FOR THE LIBRARY PATH AS WELL AS THE CLI ───────────────────
     # pkgs/scrapling wraps its two console scripts with this, which covers `scrapling
     # extract …`. It does NOT cover the other shape an agent reaches for — a script that
@@ -416,7 +466,7 @@ in
     # shell command and a PTY session both inherit the unit's environment. The value is
     # read from the package rather than restated, so the two halves cannot disagree.
     #
-    # ⚠ BOTH UNITS, for the same reason the restartTriggers below are on both: the agent
+    # ⚠ BOTH UNITS, for the same reason the restartTriggers above are on both: the agent
     # runs cron jobs and the backend runs the dashboard's PTY, and either can be the one
     # that scrapes.
     #
@@ -427,13 +477,6 @@ in
       "${pkgs.playwright-driver.browsers}";
     systemd.services.hermes-backend.environment.PLAYWRIGHT_BROWSERS_PATH =
       "${pkgs.playwright-driver.browsers}";
-
-    systemd.services.hermes-agent.restartTriggers = [
-      (builtins.toJSON config.services.hermes-agent.settings)
-    ];
-    systemd.services.hermes-backend.restartTriggers = [
-      (builtins.toJSON config.services.hermes-agent.settings)
-    ];
 
     # ── THE STATE DIRECTORIES HAVE TO EXIST BEFORE THE UNITS CHDIR INTO THEM ───────────────
     # Both units set `WorkingDirectory=/var/lib/hermes/workspace`, and systemd applies that
@@ -504,6 +547,40 @@ in
           (pkgs.writeShellScript "hermes-agent-setup-rerun" ''
             set -eu
             ${config.system.activationScripts."hermes-agent-setup".text}
+          '')
+          # ── AND PM'S TOOL STORE HAS TO BE GONE BEFORE THEY READ IT ────────────────────
+          # Third ExecStart, and the braces to `security.allow_lazy_installs = false`
+          # above. That setting stops the NEXT download; it deliberately does not touch
+          # what is already there ("Already installed dependencies remain usable when this
+          # setting is false"), and what is already there is the whole problem: pm puts
+          # this directory at the FRONT of PATH for everything the gateway spawns, so a
+          # generic-linux CPython sitting in it shadows the interpreter `extraPackages`
+          # declares — with a binary that exits 127 on NixOS. Clearing the store is what
+          # hands `python3` back.
+          #
+          # ⚠ REMOVING facts.json ALONE WOULD NOT DO. It would stop the PATH write (pm
+          # reads the store through its facts) and silence the drift warning, and leave
+          # several hundred megabytes of binaries this host can never execute sitting in
+          # persistent state — a trap for the next reader rather than a fix.
+          #
+          # A GUARD AND NOT A ONE-OFF REPAIR, for the same reason everything else in this
+          # unit is: it runs before every start, so the half-adopted state cannot come
+          # back through a path this profile does not control — a dashboard operator
+          # flipping the setting, or an upstream default changing. With lazy installs off
+          # it is a no-op from the second run onwards.
+          #
+          # ⚠ THE EXIT CONDITION. This is right only while pm's artefacts are prebuilt
+          # generic-linux binaries. If pm ever publishes something this host can run, a
+          # directory being deleted under it stops being a repair and starts being a
+          # fight: drop this step and keep the setting.
+          (pkgs.writeShellScript "hermes-drop-pm-tool-store" ''
+            set -eu
+            store=${lib.escapeShellArg "${hermesHome}/tools"}
+            if [ -e "$store" ]; then
+              echo "removing pm tool store at $store: its artefacts are generic-linux" \
+                   "binaries this host cannot execute, and pm front-loads them onto PATH"
+              rm -rf -- "$store"
+            fi
           '')
         ];
       };
