@@ -394,7 +394,12 @@ let
   # An entry with BOTH `port` and `paths`, or neither, used to be accepted differently by
   # each consumer instead of failing — ports counted here, routed by prefix in Caddy,
   # probed twice, or contributing nothing anywhere. Refused at the source.
-  shapeErrors = self.lib.serviceRoutes.shapeViolations (services.public // services.private);
+  # Each half folded SEPARATELY, like the endpoint list above. `public // private` would
+  # let a malformed public entry hide behind a same-named private one and never be checked
+  # — which is the shape of bug this guard exists for, so it must not have one.
+  shapeErrors =
+    (self.lib.serviceRoutes.shapeViolations services.public)
+    ++ (self.lib.serviceRoutes.shapeViolations services.private);
 
   checkPorts =
     if shapeErrors != [ ] then

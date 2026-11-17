@@ -47,9 +47,12 @@ let
   # TCP probe. Shared with the slice-04 guard (single source of truth in settings).
   inherit (settings) caddyEdges;
 
-  # The host that LISTENS on a service (origin when off-edge, else edge) vs the
-  # EDGE host (where Caddy + DNS live) — mirrors settings.nix's listenerHost.
-  listenerHost = svc: svc.origin or svc.edge;
+  # The host that LISTENS on a service (origin when off-edge, else edge) vs the EDGE host
+  # (where Caddy + DNS live). From the shared accessor rather than "mirroring" it: a copy
+  # that merely mirrors is a copy that can stop mirroring, which is the drift property#10
+  # item 3 is about — and this file is where that mattered most, since the watcher and the
+  # guard over it must agree about the same registry.
+  inherit (self.lib.serviceRoutes) listenerHost;
   edgeHost = svc: svc.edge;
   tsIp = host: settings.nodes.${host}.tailscale.ip4;
 

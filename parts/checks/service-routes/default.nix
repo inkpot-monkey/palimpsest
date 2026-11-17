@@ -68,16 +68,6 @@ let
       ];
     }
     {
-      name = "a single-port entry has one route, at the vhost root";
-      actual = r.routesOf singlePort;
-      expected = [
-        {
-          prefix = "";
-          port = 4533;
-        }
-      ];
-    }
-    {
       name = "a path-routed entry has one route per prefix, in a stable order";
       actual = r.routesOf pathRouted;
       expected = [
@@ -132,13 +122,11 @@ let
       };
       expected = [ ];
     }
-    # Non-vacuous: the real registry must itself be well-formed. If this is the only
-    # case that passes, the fixtures above have stopped testing anything.
-    {
-      name = "the live registry is well-formed";
-      actual = r.shapeViolations (self.settings.services.public // self.settings.services.private);
-      expected = [ ];
-    }
+    # NO live-registry case here, deliberately. Reading `self.settings.services` forces
+    # settings.nix's own `shapeViolations` throw, which fires FIRST — so such a case could
+    # never report a failure, only crash with a different message and look like this check
+    # was broken. The live registry is guarded at eval time by settings.nix, which is
+    # stronger than a check anyone can forget to run; what is left for here is the logic.
   ];
 
   failures = lib.filter (c: c.actual != c.expected) cases;

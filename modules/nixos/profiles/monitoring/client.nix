@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  self,
   settings,
   ...
 }:
@@ -8,9 +9,10 @@
 let
   cfg = config.custom.profiles.monitoring-client;
   # The host actually RUNNING the monitoring server — the origin when it lives
-  # off-edge (server on rk1b, Caddy/DNS edge on kelpy), else the edge it shares
-  # with Caddy. Mirrors settings.nix's `listenerHost` (svc.origin or svc.edge).
-  receiver = settings.services.private.monitoring.origin or settings.services.private.monitoring.edge;
+  # off-edge (server on rk1b, Caddy/DNS edge on kelpy), else the edge it shares with Caddy.
+  # Via the shared accessor, not an inlined `origin or edge` that "mirrors" it — see
+  # property#10 item 3; a mirror is a thing that can stop mirroring.
+  receiver = self.lib.serviceRoutes.listenerHost settings.services.private.monitoring;
 in
 {
   imports = [

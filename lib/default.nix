@@ -49,23 +49,23 @@ let
       # between a board and a service cannot hide from the guard that exists to catch it.
       portsOf = svc: if isPathRouted svc then lib.attrValues svc.paths else [ svc.port ];
 
-      # Prefix → port, as an ordered list. A single-port entry has exactly one route at
-      # the vhost root (`prefix = ""`), which is what lets a consumer treat both shapes
-      # the same way instead of branching. Sorted by prefix so generated output is stable.
+      # Prefix → port for a PATH-ROUTED entry, ordered by prefix.
+      #
+      # Deliberately NOT defined for a single-port entry. It used to answer those with one
+      # route at the vhost root, on the theory that a consumer could then treat both shapes
+      # alike — and neither consumer does: proxy.nix and watcher.nix both test
+      # `isPathRouted` first, because their single-port paths differ in more than the
+      # route (the about-page handling, and whether a probe is emitted at all). An
+      # abstraction nothing used, kept alive by its own fixture, is the kind that is wrong
+      # by the time something needs it.
+      #
+      # `attrNames` is already sorted, so the order is stable without sorting it again.
       routesOf =
         svc:
-        if isPathRouted svc then
-          map (prefix: {
-            inherit prefix;
-            port = svc.paths.${prefix};
-          }) (lib.sort (a: b: a < b) (lib.attrNames svc.paths))
-        else
-          [
-            {
-              prefix = "";
-              inherit (svc) port;
-            }
-          ];
+        map (prefix: {
+          inherit prefix;
+          port = svc.paths.${prefix};
+        }) (lib.attrNames svc.paths);
 
       # The shape invariant, as named violations rather than a bare throw: the caller
       # decides whether to fail the build or report, and the message says which entry.
