@@ -88,7 +88,7 @@ def listing(db: sqlite3.Connection, lid: str, **over) -> None:
     row = {
         "id": lid,
         "source": "onthemarket",
-        "outcode": "SE15",
+        "outcode": "ZZ1",
         "first_seen": "2026-11-01",
         "last_seen": "2026-11-17",
         "absences": 0,
@@ -98,7 +98,7 @@ def listing(db: sqlite3.Connection, lid: str, **over) -> None:
         "bedrooms": 2,
         "bathrooms": 1,
         "title": "Two bedroom maisonette",
-        "address": "Bellenden Road, SE15",
+        "address": "Example Road, ZZ1",
         "kind": "maisonette",
         "tenure": "share_of_freehold",
         "lease_years": None,
@@ -613,7 +613,7 @@ class TestVerdicts(unittest.TestCase):
         db = self.job.connect(self.path)
         db.execute(
             "INSERT INTO listings(id,source,outcode,first_seen,last_seen,price,kind)"
-            " VALUES ('otm:1','onthemarket','SE15','2026-11-01','2026-11-18',460000,'flat')"
+            " VALUES ('otm:1','onthemarket','ZZ1','2026-11-01','2026-11-18',460000,'flat')"
         )
         db.executemany(
             "INSERT INTO verdicts(id,judged_on,verdict,price_at_judgement,model,trigger)"

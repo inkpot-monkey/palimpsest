@@ -18,6 +18,12 @@ Three seams, and only three:
      than the rest put together.
 
 Nothing here reaches the network.
+
+FIXTURES ARE SYNTHETIC ON PURPOSE. `ZZ1` is not a real outcode and 999000 is not the real
+ceiling: this repo is public, and the operator's actual postcodes and budget are a
+negotiating position whose most interested reader is an agent on the other side of a bid
+(the brief lives host-local, see property-watch.nix). A fixture mirroring production is
+also just a worse fixture -- it can pass for the wrong reason.
 """
 
 from __future__ import annotations
@@ -164,7 +170,7 @@ def listing(pid: str, **over) -> dict:
     r = {
         "id": f"otm:{pid}",
         "source": "onthemarket",
-        "outcode": "SE15",
+        "outcode": "ZZ1",
         "price": 400000,
         "price_qualifier": None,
         "bedrooms": 2,
@@ -312,7 +318,7 @@ class ApplyVerdicts(unittest.TestCase):
         self.db = pw.connect(os.path.join(self.tmp.name, "t.db"))
         self.db.execute(
             """INSERT INTO listings(id,source,outcode,first_seen,last_seen,price,kind)
-               VALUES ('otm:1','onthemarket','SE15','2026-11-01','2026-11-17',500000,'flat')"""
+               VALUES ('otm:1','onthemarket','ZZ1','2026-11-01','2026-11-17',500000,'flat')"""
         )
         self.db.commit()
         self.addCleanup(self.tmp.cleanup)
@@ -482,7 +488,7 @@ class OpeningAnOlderDatabase(unittest.TestCase):
         old.executescript(self.PRE_7)
         old.execute(
             "INSERT INTO listings(id,source,outcode,first_seen,last_seen,price,score)"
-            " VALUES ('otm:1','onthemarket','SE15','2026-11-01','2026-11-17',500000,7)"
+            " VALUES ('otm:1','onthemarket','ZZ1','2026-11-01','2026-11-17',500000,7)"
         )
         old.commit()
         old.close()
@@ -529,8 +535,8 @@ class ApplyVerdictsCli(unittest.TestCase):
             json.dump(
                 {
                     "source": "onthemarket",
-                    "outcodes": ["SE15"],
-                    "max_price": 550000,
+                    "outcodes": ["ZZ1"],
+                    "max_price": 999000,
                     "min_bedrooms": 2,
                 },
                 f,
@@ -538,7 +544,7 @@ class ApplyVerdictsCli(unittest.TestCase):
         db = pw.connect(os.path.join(self.state, "data", "property-watch.db"))
         db.execute(
             "INSERT INTO listings(id,source,outcode,first_seen,last_seen,price)"
-            " VALUES ('otm:1','onthemarket','SE15','2026-11-01','2026-11-17',500000)"
+            " VALUES ('otm:1','onthemarket','ZZ1','2026-11-01','2026-11-17',500000)"
         )
         db.commit()
         db.close()
