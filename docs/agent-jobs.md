@@ -15,7 +15,7 @@ with the process in `.claude/skills/make-agent-job/` and the operational referen
 
 | Job | Issue | Channel | Source script |
 | --- | --- | --- | --- |
-| `property-watch` | forge `inkpotmonkey/property#4` | per-job Matrix room (blocked on `property#2`); `local` until then | **declared** — `modules/nixos/profiles/property-watch.py` |
+| `property-watch` | forge `inkpotmonkey/property#4` | Matrix room **Property Watch** (`hermesRooms.rooms.property-watch`); failures to Infra Alerts | **declared** — `modules/nixos/profiles/property-watch.py` |
 
 **Why that issue is not on palimpsest.** The process in `.claude/skills/make-agent-job/`
 says an agent job's reasoning goes in an issue on `inkpot-monkey/palimpsest`. This repo is
