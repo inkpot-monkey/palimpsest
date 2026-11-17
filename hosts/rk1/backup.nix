@@ -178,6 +178,14 @@ in
       # holds the server-side trees. Back it up while that is undecided: the reversible
       # mistake is paying for snapshots of something that turns out to be disposable.
       "/persistent/var/lib/opencode"
+
+      # ── The property search's corpus (profiles/property-watch.nix) ────────────────────
+      # The one thing here that is genuinely IRREPLACEABLE. Listings can be re-fetched;
+      # the observation history cannot — you cannot go back and ask what a flat was priced
+      # at last Tuesday. Six months in, that table IS the asset: it is what tells you a
+      # place in SE23 has sat at £525k since March, which is the whole basis for an offer.
+      # forge inkpotmonkey/property#4.
+      "/persistent/var/lib/property-watch"
     ];
 
     # Two subtrees of /var/lib/hermes that would otherwise dominate the snapshot without

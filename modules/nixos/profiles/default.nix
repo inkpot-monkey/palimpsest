@@ -48,6 +48,7 @@
     supernote = ./supernote.nix;
     stump = ./stump.nix;
     book-filer = ./book-filer.nix;
+    property-watch = ./property-watch.nix;
     backup = ./backup.nix;
     blocky = ./blocky.nix;
     forge = ./forge.nix;
