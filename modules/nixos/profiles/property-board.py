@@ -272,6 +272,11 @@ PAGE = """<!doctype html>
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
         crossorigin=""></script>
 <script>
+// The path this board is served under, substituted in by `page()`. Empty when
+// the board owns a whole name; "/property" when it is one of several behind the
+// shared `boards` vhost (property#8). Caddy forwards the prefix rather than
+// stripping it, so every URL this page builds must carry it.
+const BASE = "__BASE__";
 const money = n => n == null ? "\\u2014" : "\\u00a3" + n.toLocaleString("en-GB");
 const esc = s => (s == null ? "" : String(s)).replace(/[&<>"]/g,
   c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
@@ -304,10 +309,10 @@ function matches(r) {
 
 async function toggleFav(r, btn) {
   if (r.favourite) {
-    await fetch("/api/favourites/" + encodeURIComponent(r.id), {method: "DELETE"});
+    await fetch(BASE + "/api/favourites/" + encodeURIComponent(r.id), {method: "DELETE"});
     r.favourite = false;
   } else {
-    const res = await fetch("/api/favourites", {
+    const res = await fetch(BASE + "/api/favourites", {
       method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({id: r.id, note: null})});
     if (!res.ok) { alert("Could not save that favourite."); return; }
@@ -354,7 +359,7 @@ function render() {
     tr.firstChild.appendChild(btn);
     tr.onclick = ev => { if (ev.target.tagName !== "A" && ev.target.tagName !== "BUTTON") focusOn(r); };
     tbody.appendChild(tr);
-    fetch("/api/listings/" + encodeURIComponent(r.id) + "/history")
+    fetch(BASE + "/api/listings/" + encodeURIComponent(r.id) + "/history")
       .then(x => x.json())
       .then(h => { const c = document.getElementById("hist-" + r.id);
                    if (c) c.innerHTML = sparkline(h); })
@@ -406,7 +411,7 @@ for (const id of ["status", "favonly", "q"]) {
   document.getElementById(id).addEventListener("input", render);
 }
 
-fetch("/api/listings").then(r => r.json()).then(rows => { all = rows; render(); });
+fetch(BASE + "/api/listings").then(r => r.json()).then(rows => { all = rows; render(); });
 </script>
 </body>
 </html>
@@ -421,7 +426,31 @@ _HISTORY = re.compile(r"^/api/listings/([^/]+)/history$")
 _FAVOURITE = re.compile(r"^/api/favourites/([^/]+)$")
 
 
-def make_handler(db_path: str):
+def normalise_base(base: str) -> str:
+    """The canonical form of a serving prefix: "" or "/segment", no trailing /.
+
+    Normalised once, here, rather than defended against at each of the four
+    places that join it to a path -- "property", "/property" and "/property/"
+    all mean the same thing to whoever writes the unit, and only one of them
+    concatenates correctly.
+    """
+    base = base.strip().strip("/")
+    return "/" + base if base else ""
+
+
+def page(base: str = "") -> str:
+    """The page, with its URLs pointed at wherever this board is served.
+
+    The prefix reaches the browser as a JS constant rather than being baked
+    into each URL, so there is one substitution to get right instead of four.
+    """
+    return PAGE.replace("__BASE__", normalise_base(base))
+
+
+def make_handler(db_path: str, base: str = ""):
+    # Normalised once per handler class, not per request.
+    base = normalise_base(base)
+
     class Handler(BaseHTTPRequestHandler):
         server_version = "property-board/1"
         protocol_version = "HTTP/1.1"
@@ -455,18 +484,41 @@ def make_handler(db_path: str):
             # client-address noise -- every client is a tailnet peer.
             sys.stderr.write("%s\n" % (fmt % args))
 
+        def _route(self):
+            """The request path with this board's serving prefix removed.
+
+            `None` means the request fell outside the board's URL space, which
+            is a 404 and not a redirect: when Caddy routes `/property*` here,
+            anything this process sees without that prefix arrived by mistake,
+            and answering it would create a second URL the page could be
+            emitted into -- one that does not work through the shared vhost.
+
+            Note `/property` (no trailing slash) maps to `/`, because that is
+            what a human types and Caddy forwards it verbatim.
+            """
+            if not base:
+                return self.path
+            if self.path == base:
+                return "/"
+            if self.path.startswith(base + "/"):
+                return self.path[len(base) :]
+            return None
+
         def do_GET(self):
-            if self.path in ("/", "/index.html"):
-                return self._send(200, PAGE, "text/html; charset=utf-8")
-            if self.path == "/healthz":
+            route = self._route()
+            if route is None:
+                return self._fail(404, "no such path")
+            if route in ("/", "/index.html"):
+                return self._send(200, page(base), "text/html; charset=utf-8")
+            if route == "/healthz":
                 return self._json(200, {"ok": True})
-            if self.path == "/api/listings":
+            if route == "/api/listings":
                 db = self._db()
                 try:
                     return self._json(200, listings(db))
                 finally:
                     db.close()
-            m = _HISTORY.match(self.path)
+            m = _HISTORY.match(route)
             if m:
                 db = self._db()
                 try:
@@ -485,7 +537,7 @@ def make_handler(db_path: str):
                 return None
 
         def do_POST(self):
-            if self.path != "/api/favourites":
+            if self._route() != "/api/favourites":
                 return self._fail(404, "no such path")
             payload = self._body()
             if not isinstance(payload, dict) or not payload.get("id"):
@@ -503,7 +555,8 @@ def make_handler(db_path: str):
                 db.close()
 
         def do_DELETE(self):
-            m = _FAVOURITE.match(self.path)
+            route = self._route()
+            m = _FAVOURITE.match(route) if route else None
             if not m:
                 return self._fail(404, "no such path")
             db = self._db()
@@ -516,9 +569,11 @@ def make_handler(db_path: str):
     return Handler
 
 
-def make_server(host: str, port: int, db_path: str) -> ThreadingHTTPServer:
+def make_server(
+    host: str, port: int, db_path: str, base: str = ""
+) -> ThreadingHTTPServer:
     ThreadingHTTPServer.allow_reuse_address = True
-    return ThreadingHTTPServer((host, port), make_handler(db_path))
+    return ThreadingHTTPServer((host, port), make_handler(db_path, base))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -526,14 +581,23 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--db", required=True, help="the shared property-watch database")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=9120)
+    # The path prefix this board is served under on the shared `boards` vhost
+    # (property#8). Caddy forwards the prefix rather than stripping it, so this
+    # process routes on it and the page emits its links under it -- one URL
+    # space end to end, the one the browser is looking at. Empty by default, so
+    # running it by hand on a laptop still answers at `/`.
+    ap.add_argument("--base-path", default="", help="e.g. /property")
     args = ap.parse_args(argv)
 
     # Fail at start rather than on the first request, so a misconfigured path
     # shows up as a unit that will not come up instead of a page that 500s.
     connect(args.db).close()
 
-    srv = make_server(args.host, args.port, args.db)
-    sys.stderr.write(f"property-board listening on {args.host}:{args.port}\n")
+    srv = make_server(args.host, args.port, args.db, args.base_path)
+    base = normalise_base(args.base_path)
+    sys.stderr.write(
+        f"property-board listening on {args.host}:{args.port}{base or '/'}\n"
+    )
     sys.stderr.flush()
     try:
         srv.serve_forever()
