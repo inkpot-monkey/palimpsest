@@ -205,7 +205,24 @@ in
       # environment; library sets belong in a `python3.withPackages` here rather than in
       # anything the agent pip-installs at runtime, which would not survive a restart.
       extraPackages = with pkgs; [
-        python3
+        # ── THE INTERPRETER, CARRYING THE ONE LIBRARY SET THE FLEET DECLARES FOR IT ────
+        # `withPackages` rather than a bare `python3` beside a separate `scrapling`,
+        # because the agent needs BOTH halves of that package and they arrive together
+        # here: the env's `bin/` carries scrapling's own console scripts (`scrapling`,
+        # `scrapling-mcp`), and the same env's interpreter has it on `sys.path`, so
+        # `import scrapling` works from a script the agent writes itself. Listing the
+        # library beside a bare `python3` would give the scripts only, and
+        # `python3 -c 'import scrapling'` would still fail — which is the shape an agent
+        # reaches for first.
+        #
+        # ⚠ AND IT MUST REPLACE THE BARE `python3`, NOT JOIN IT. Both provide
+        # `bin/python3`, so listing both collides when the PATH entry is built.
+        #
+        # WHY SCRAPLING. The agent's reach was previously curl plus whatever it could
+        # parse by hand; this gives it one fetch-and-extract call that returns markdown a
+        # model can read (`scrapling extract get <url> out.md`) rather than raw HTML it
+        # has to spend tokens on. See pkgs/scrapling.
+        (python3.withPackages (_: [ scrapling ]))
         nodejs
         # The instruction file below tells the agent to reach for `nix shell` for anything
         # it does not have. That advice is only actionable if `nix` itself is on the PATH,
@@ -388,6 +405,29 @@ in
     # request ("Invalid Host header") while the unit sat there green. The backend's bind
     # arrives on its command line instead, so that half restarts on its own — which is
     # exactly why this is easy to miss.
+    # ── THE BROWSER BUNDLE, FOR THE LIBRARY PATH AS WELL AS THE CLI ───────────────────
+    # pkgs/scrapling wraps its two console scripts with this, which covers `scrapling
+    # extract …`. It does NOT cover the other shape an agent reaches for — a script that
+    # does `import scrapling` under the plain interpreter — and there patchright's node
+    # driver would try to DOWNLOAD a chromium into $HOME at first use: a prebuilt binary
+    # that cannot run on NixOS, into a directory that does not survive impermanence.
+    #
+    # Setting it on the units closes that gap for everything the agent spawns, since a
+    # shell command and a PTY session both inherit the unit's environment. The value is
+    # read from the package rather than restated, so the two halves cannot disagree.
+    #
+    # ⚠ BOTH UNITS, for the same reason the restartTriggers below are on both: the agent
+    # runs cron jobs and the backend runs the dashboard's PTY, and either can be the one
+    # that scrapes.
+    #
+    # Verified on this host rather than assumed: with only this variable exported, a bare
+    # interpreter driving `StealthyFetcher.fetch` against a local server returned 200
+    # through a real chromium. See pkgs/scrapling for the other half of that measurement.
+    systemd.services.hermes-agent.environment.PLAYWRIGHT_BROWSERS_PATH =
+      "${pkgs.playwright-driver.browsers}";
+    systemd.services.hermes-backend.environment.PLAYWRIGHT_BROWSERS_PATH =
+      "${pkgs.playwright-driver.browsers}";
+
     systemd.services.hermes-agent.restartTriggers = [
       (builtins.toJSON config.services.hermes-agent.settings)
     ];
