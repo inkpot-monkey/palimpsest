@@ -47,7 +47,7 @@ Routine output stays out of Infra Alerts: that room is kept scannable and muteab
 
 | | |
 | --- | --- |
-| Jobs | `jobs.json` under `$HERMES_HOME` — state, created by hand, backed up |
+| Jobs | `$HERMES_HOME/cron/jobs.json` — state, created by hand, backed up |
 | Source scripts | `$HERMES_HOME/scripts/` |
 | Operator skills | a store path, via `skills.external_dirs` |
 | Agent's own skills | `$HERMES_HOME/skills/` — the learning loop, left alone |
@@ -66,10 +66,35 @@ A job is ready to hand to hermes when every line is evidenced:
 1. Its per-job Matrix room exists, and `--failure-deliver` points at Infra Alerts.
 1. A source script exists, and its declared-or-mutable status is a stated choice, not a default.
 1. An entry is in `docs/agent-jobs.md` naming the job, its issue, its channel and that status.
-1. The overdue-job check knows about it, so its silence is noticed.
+1. The overdue-job check covers it — which needs nothing done, see below, but confirm the
+   job is `enabled` and not paused, because the check skips both.
 1. `hermes cron create …` has been run **by a human**, and `cron.preflight` passed — it verifies
    the provider key resolves, attached skills are ready and delivery is configured, failing to
    `last_status=blocked_config` with one alert and no model call.
+
+## The overdue-job check
+
+`modules/nixos/profiles/monitoring/hermes-overdue.nix`, enabled on rk1b. A quarter-hourly
+systemd check in the ordinary watcher tier, alongside the DMARC and secret-expiry ones.
+
+It needs no registration: it reads whatever `cron/jobs.json` holds, so a new job is covered
+from the moment it is created. What it reads is **only hermes's schedule bookkeeping** — each
+enabled, unpaused job's `next_run_at`, and the ticker's own `ticker_last_success` — never
+output. That is the point. A `--monitor-script` job says nothing on a quiet day, so a check
+that watched output would page every quiet morning and be muted within a week.
+
+| It alerts when | It stays silent for |
+| --- | --- |
+| a job's `next_run_at` is more than an hour in the past | a job that ran and printed nothing |
+| the cron ticker has not completed a pass in 15 minutes | a disabled or paused job |
+| | lateness inside the grace window, and having no jobs at all |
+
+One message per episode and a ✅ when it recovers, to Infra Alerts **by hookshot webhook, not
+through hermes** — a hermes failure must not depend on hermes being healthy to be reported.
+A job that fires and *fails* is not its business: hermes already delivers that through the
+job's own `--failure-deliver`.
+
+Both files live under `$HERMES_HOME/cron/`, not at the top of `$HERMES_HOME`.
 
 ## Gotchas
 
