@@ -109,7 +109,7 @@ in
     # hand, a bounded number of requests at a time — it prints nothing on stdout, so it cannot
     # be mistaken for something moving:
     #
-    #   sudo -u hermes /var/lib/hermes/scripts/property-watch.sh --backfill 40 --verbose
+    #   sudo -u hermes /var/lib/hermes/.hermes/scripts/property-watch.sh --backfill 40 --verbose
     #
     # At CRAWL_DELAY that is roughly a minute per 40. Run it a few times, not once with 300.
     services.hermes-agent.hermesHomeFiles = {
