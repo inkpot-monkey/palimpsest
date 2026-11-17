@@ -216,6 +216,13 @@
         hookshot_infra_alerts = import ./hookshot/infra-alerts.nix {
           inherit pkgs self;
         };
+        # The hermes bot account + its per-job rooms (matrix/hermes-rooms.nix), which is
+        # what gives an agent job a Matrix channel at all. The failure shape it guards is
+        # a green unit delivering nowhere: an account that cannot log in, an invite the bot
+        # never accepted, or a marker naming a room a `matrix-reset` deleted.
+        matrix_hermes_rooms = import ./hermes-rooms {
+          inherit pkgs self;
+        };
         # The pre-built binding path (bindContractPackage, ADR-0016) is proven generically by the
         # contract's OWN conformance (`contract_conformance` below); the fleet-side external-bind
         # rig (`prebuilt_bind_external` + its gui-eval sibling) was retired with ADR-0026, which

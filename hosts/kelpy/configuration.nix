@@ -394,6 +394,21 @@ in
       # its id. The previously pinned id was wiped by a July matrix-reset and had
       # been dead for weeks, which is precisely the failure mode that removed it.
       infraAlerts.enable = true;
+      # The agent's own account and one room per agent job (property#2, ADR-0041).
+      # The homeserver is here; hermes is on rk1b and logs into this account with the
+      # same sops password — so this host MUST be deployed first, or the gateway comes
+      # up with a credential for an account that does not exist yet.
+      hermesRooms = {
+        enable = true;
+        rooms.property-watch = {
+          name = "Property Watch";
+          topic = "The daily SE London property search (palimpsest property#1). Mention the bot to ask about a listing.";
+        };
+        # Where the job's --failure-deliver lands. The id belongs to the infra-alerts
+        # oneshot, which writes it here; the bot has to be IN that room to post, and
+        # being in it is the whole reason this list exists.
+        joinRoomIdFiles = [ config.custom.profiles.matrix.infraAlerts.roomIdFile ];
+      };
     };
     paperless.enable = true;
     blocky.enable = true;
@@ -543,6 +558,9 @@ in
       "/persistent/var/lib/matrix-hookshot-notifications-room"
       "/persistent/var/lib/matrix-hookshot-github-token"
       "/persistent/var/lib/matrix-infra-alerts"
+      # The per-job room ids every agent job delivers into. Losing these means the
+      # jobs keep pointing at rooms nobody re-created.
+      "/persistent/var/lib/matrix-hermes-rooms"
 
       # ── Small, load-bearing on the way back ─────────────────────────────────────────────
       # The uid/gid map. Tiny, and without it a rebuilt host can assign different numbers to
