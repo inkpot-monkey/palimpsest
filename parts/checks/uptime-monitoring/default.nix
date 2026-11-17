@@ -7,7 +7,10 @@
 #   1. a service opts out of monitoring (monitor.enable = false) without a reason, and
 #   2. a MONITORED service can't be given a buildable probe — its Caddy edge (HTTPS)
 #      or its listener (TCP) points at a host that isn't a registered node, so its
-#      MagicDNS probe name (`<host>.<tailnet>`) would resolve to nothing.
+#      MagicDNS probe name (`<host>.<tailnet>`) would resolve to nothing, and
+#   3. a path-routed vhost (`paths`, property#8) sits off a Caddy edge, where the
+#      per-prefix probes cannot be built — leaving one probe on the name that is green
+#      with every board behind it dead.
 { pkgs, self, ... }:
 let
   inherit (pkgs) lib;
@@ -43,6 +46,14 @@ let
         ++ (lib.optional (
           monitored svc && !(isNode (probeHost svc))
         ) "${name}: monitored but ${probeHost svc} is not a registered node (no buildable probe)")
+        # A path-routed vhost (property#8) is probed per prefix over HTTPS through
+        # Caddy — there is no raw-TCP shape for "one of several backends behind one
+        # name", and the entry carries no single `port` to fall back to. Off a Caddy
+        # edge the watcher would silently emit only the bare name's probe, which is
+        # the all-boards-dead-but-green failure the per-path probes exist to prevent.
+        ++ (lib.optional (
+          svc ? paths && !(lib.elem svc.edge caddyEdges)
+        ) "${name}: has `paths` but ${svc.edge} is not a Caddy edge (no per-path probe is buildable)")
       ) services
     );
 
@@ -70,6 +81,23 @@ let
     caddyEdges = [ "kelpy" ];
     nodes = { };
   };
+  badPaths = violations {
+    services.boards = {
+      edge = "rk1b";
+      paths."/property" = 9120;
+    };
+    caddyEdges = [ "kelpy" ];
+    nodes.rk1b = { };
+  };
+  goodPaths = violations {
+    services.boards = {
+      edge = "kelpy";
+      origin = "rk1b";
+      paths."/property" = 9120;
+    };
+    caddyEdges = [ "kelpy" ];
+    nodes.kelpy = { };
+  };
   goodOptOut = violations {
     services.foo = {
       edge = "kelpy";
@@ -83,7 +111,12 @@ let
     nodes.kelpy = { };
   };
 
-  selfTestOk = (lib.length badOptOut == 1) && (lib.length badProbe == 1) && (goodOptOut == [ ]);
+  selfTestOk =
+    (lib.length badOptOut == 1)
+    && (lib.length badProbe == 1)
+    && (lib.length badPaths == 1)
+    && (goodPaths == [ ])
+    && (goodOptOut == [ ]);
 in
 assert lib.assertMsg selfTestOk
   "uptime-monitoring guard self-test failed (the invariant checker is broken)";
