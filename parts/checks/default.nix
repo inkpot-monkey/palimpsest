@@ -181,6 +181,13 @@
         property_board = import ./property-board {
           inherit pkgs;
         };
+        # The property-watch detector (property#4, #6): the detail-page parser, the
+        # newly-seen-only fetch budget that is this job's promise to OnTheMarket, and the
+        # byte-stability of stdout that is the only thing stopping the model being woken
+        # every morning. None of the three is visible in the job's output when it breaks.
+        property_watch = import ./property-watch {
+          inherit pkgs;
+        };
         # Per-bridge management-DM auto-provisioning (dm-provision.nix): room
         # creation + invite + m.direct + welcome (unencrypted) / encryption
         # (encrypted) + idempotency, against a minimal tuwunel.
@@ -248,6 +255,14 @@
         # only on fresh faults, while always-on hosts keep the strict staleness check.
         git_annex_alert = import ./git-annex-alert {
           inherit pkgs self inputs;
+        };
+        # The hermes overdue-job check (property#3). Pins the distinction the whole watcher
+        # exists for: an agent job that ran and printed nothing is the monitor-script
+        # economy working and must stay SILENT, while a job whose `next_run_at` has slid
+        # into the past is a dead schedule and must page — the two are byte-identical to
+        # anyone reading their messages.
+        hermes_overdue = import ./hermes-overdue {
+          inherit pkgs self;
         };
         # Fleet disk-space alerting: pins the two properties that make it usable rather
         # than noise — the floor is per host (the same 15 GiB is healthy on a Pi and

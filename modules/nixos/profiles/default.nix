@@ -73,6 +73,7 @@
     monitoring-unit-state = ./monitoring/unit-state.nix;
     monitoring-secret-expiry = ./monitoring/secret-expiry.nix;
     monitoring-git-annex-alert = ./monitoring/git-annex-alert.nix;
+    monitoring-hermes-overdue = ./monitoring/hermes-overdue.nix;
     monitoring-disk-space = ./monitoring/disk-space.nix;
     monitoring-cgroup-memory = ./monitoring/cgroup-memory.nix;
     media = ./media;

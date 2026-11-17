@@ -102,6 +102,21 @@ in
     # instead of going stale the first time hermes is upgraded. The BARE interpreter is
     # deliberately sufficient: property-watch.py imports nothing outside the standard
     # library, which is what keeps it runnable in an environment with almost no packages.
+    #
+    # ⚠ THE CORPUS RECORDED BEFORE property#6 HAS NO PROSE. Detail pages are fetched for newly
+    # seen listings only, so the ~275 listings already in the database when descriptions started
+    # being collected have none and will never acquire any on their own. Drain that backlog by
+    # hand, a bounded number of requests at a time — it prints nothing on stdout, so it cannot
+    # be mistaken for something moving:
+    #
+    # ⚠ `hermesHomeFiles` installs mode 0640 — NOT executable — so the wrapper cannot be run
+    # directly however correct the path is ("command not found", which reads like a missing
+    # file). hermes itself dispatches it through bash, so the JOB is unaffected; an operator
+    # running it by hand has to say bash explicitly:
+    #
+    #   sudo -u hermes -H bash /var/lib/hermes/.hermes/scripts/property-watch.sh --backfill 40 --verbose
+    #
+    # At CRAWL_DELAY that is roughly a minute per 40. Run it a few times, not once with 300.
     services.hermes-agent.hermesHomeFiles = {
       "scripts/property-watch.py" = ./property-watch.py;
       "scripts/property-watch.sh" = pkgs.writeShellScript "property-watch-wrapper" ''
