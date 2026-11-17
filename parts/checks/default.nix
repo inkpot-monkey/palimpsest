@@ -173,6 +173,13 @@
         book_filer = import ./book-filer {
           inherit pkgs self;
         };
+        # The property-watch detector (property#4, #6): the detail-page parser, the
+        # newly-seen-only fetch budget that is this job's promise to OnTheMarket, and the
+        # byte-stability of stdout that is the only thing stopping the model being woken
+        # every morning. None of the three is visible in the job's output when it breaks.
+        property_watch = import ./property-watch {
+          inherit pkgs;
+        };
         # Per-bridge management-DM auto-provisioning (dm-provision.nix): room
         # creation + invite + m.direct + welcome (unencrypted) / encryption
         # (encrypted) + idempotency, against a minimal tuwunel.

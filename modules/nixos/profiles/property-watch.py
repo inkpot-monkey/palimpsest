@@ -20,6 +20,7 @@ written in AGENTS.md beside the database rather than in this file.
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import os
 import re
@@ -42,6 +43,18 @@ CRAWL_DELAY = 1.2
 # A listing has to be absent this many consecutive runs before we call it gone.
 # One bad fetch must never be able to fabricate a withdrawal.
 ABSENCES_BEFORE_WITHDRAWN = 3
+
+# Detail pages are fetched for NEWLY SEEN listings only, one request each. A
+# normal day's delta is a handful against a corpus of ~275, so this adds single
+# digits to the ~60 requests the sweep already makes -- which is the whole
+# reason the prose can be had at all without breaking the bargain in #1.
+#
+# The budget is not a tuning knob, it is a blast radius. If the portal ever
+# changes its ids, or a sweep comes back from a different shard, every listing
+# reads as new at once; without a cap that is 275 extra requests in one morning
+# from a crawler that promised to be small. Over budget, the listings are still
+# recorded in full -- they simply have no prose until a `--backfill` run.
+DETAIL_BUDGET = 25
 
 # If an outcode returns less than this fraction of what it returned last run,
 # treat the whole sweep as suspect and record nothing. Protects against the
@@ -94,6 +107,83 @@ class OnTheMarket:
             d = self._get({**params, "page": str(page)})
             out.extend(self._normalise(p, outcode) for p in d.get("properties", []))
         return [r for r in out if r], total
+
+    # ── THE DETAIL PAGE ──────────────────────────────────────────────────
+    # /async/search/properties/ carries a listing's summary `features` array
+    # and nothing else: ['Two Bedroom', 'Allocated Parking']. The prose lives
+    # on the listing's own page, and so does every service charge -- which is
+    # why the first real run of this job said "garden unstated" on nearly every
+    # line and found one service charge in 275 listings (property#6).
+    #
+    # Two things come back, and the difference between them matters:
+    #
+    #   * `description` -- the agent's prose, as text. The model reads it. The
+    #     script does NOT: pulling a figure out of "£2,000 per annum service
+    #     charge and ground rent of £250" is judgement, and a regex that is
+    #     wrong one time in ten is worse than no number at all, because a
+    #     number in a database is believed.
+    #   * `key_info` -- the portal's OWN structured fields, copied across
+    #     untouched. "£697 per annum" is stored as that string and not as 697,
+    #     for the same reason: the parsing that is safe here is the parsing
+    #     OnTheMarket already did.
+    _NEXT_DATA = re.compile(
+        r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.DOTALL
+    )
+    _BREAK = re.compile(r"<\s*/?\s*(?:br|p|div|li|h[1-6])\b[^>]*>", re.IGNORECASE)
+    _TAG = re.compile(r"<[^>]+>")
+    _BLANKS = re.compile(r"\n{3,}")
+
+    @classmethod
+    def _text(cls, markup: str) -> str:
+        """Markup to readable text, losing nothing but the markup.
+
+        The prose arrives as `<br/><b>SUMMARY</b><br/>…` with HTML entities in
+        it. Verbatim means nothing is summarised, reordered or dropped -- not
+        that `<br/>` is handed to a reader that will never render it.
+        """
+        t = cls._BREAK.sub("\n", markup)
+        t = cls._TAG.sub("", t)
+        t = html.unescape(t).replace("\r\n", "\n").replace("\r", "\n")
+        t = "\n".join(line.rstrip() for line in t.split("\n"))
+        return cls._BLANKS.sub("\n\n", t).strip()
+
+    @classmethod
+    def parse_detail(cls, page: str) -> dict:
+        """Prose and key facts from a detail page's bytes.
+
+        Never raises. A redesign, a holding page or a 404 body yields a listing
+        with no description, which is a listing the model can still see.
+        """
+        empty = {"description": None, "key_info": {}}
+        m = cls._NEXT_DATA.search(page)
+        if not m:
+            return empty
+        try:
+            blob = json.loads(m.group(1))
+            prop = blob["props"]["pageProps"]["initialReduxState"]["property"]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            return empty
+
+        desc = prop.get("description")
+        key_info = {
+            k["title"]: k["value"]
+            for k in (prop.get("keyInfo") or [])
+            if isinstance(k, dict)
+            and isinstance(k.get("title"), str)
+            and isinstance(k.get("value"), str)
+        }
+        return {
+            "description": cls._text(desc) or None if isinstance(desc, str) else None,
+            "key_info": key_info,
+        }
+
+    def detail(self, url: str) -> dict:
+        """One detail page, at crawl-delay pace. Not parallelised, on purpose."""
+        time.sleep(CRAWL_DELAY)
+        req = urllib.request.Request(url, headers={"User-Agent": UA})
+        with urllib.request.urlopen(req, timeout=45) as r:
+            charset = r.headers.get_content_charset() or "utf-8"
+            return self.parse_detail(r.read().decode(charset, "replace"))
 
     # Tenure arrives as a feature string: "Tenure: Share of freehold",
     # "Tenure: Leasehold (118 years remaining)". Absent on roughly 5%.
@@ -245,6 +335,8 @@ CREATE TABLE IF NOT EXISTS listings (
   auction_agent INTEGER DEFAULT 0,
   agent TEXT, lat REAL, lon REAL, url TEXT,
   features TEXT,
+  description TEXT,                          -- the listing's prose, as text
+  key_info TEXT,                             -- the portal's own facts, verbatim
   raw TEXT,                                  -- verbatim source record
   score INTEGER, verdict TEXT,               -- written by the model, not here
   relist_of TEXT
@@ -271,6 +363,17 @@ def connect(path: str) -> sqlite3.Connection:
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA journal_mode=WAL")
     db.executescript(SCHEMA)
+
+    # `CREATE TABLE IF NOT EXISTS` does nothing to a table that already exists,
+    # so a column added to SCHEMA never reaches the database that is already out
+    # there holding the corpus. Add it here or the first run after a deploy dies
+    # on "no such column" -- which, because the sweep comes first, happens after
+    # a full ~60-request crawl.
+    have = {r["name"] for r in db.execute("PRAGMA table_info(listings)")}
+    for col, decl in (("description", "TEXT"), ("key_info", "TEXT")):
+        if col not in have:
+            db.execute(f"ALTER TABLE listings ADD COLUMN {col} {decl}")
+    db.commit()
     return db
 
 
@@ -279,10 +382,13 @@ def connect(path: str) -> sqlite3.Connection:
 # --------------------------------------------------------------------------
 
 
-def sweep(db: sqlite3.Connection, cfg: dict, today: str, log) -> dict[str, dict]:
-    src = SOURCES[cfg.get("source", "onthemarket")](
+def make_source(cfg: dict):
+    return SOURCES[cfg.get("source", "onthemarket")](
         cfg["max_price"], cfg["min_bedrooms"]
     )
+
+
+def sweep(db: sqlite3.Connection, cfg: dict, today: str, log, src) -> dict[str, dict]:
     seen: dict[str, dict] = {}
     for i, oc in enumerate(cfg["outcodes"]):
         if i:
@@ -318,9 +424,27 @@ class FetchFailed(RuntimeError):
     pass
 
 
+def fetch_details(src, urls: list[str], log=lambda _m: None) -> dict[str, dict]:
+    """Detail pages for `urls`, in the order given, one at a time.
+
+    A failure is an absent entry and nothing more. The alternative -- letting it
+    propagate -- would drop the listing from the sweep entirely, and three runs
+    later the job would report a withdrawal that never happened. A listing with
+    no prose is a listing the model can still see.
+    """
+    out: dict[str, dict] = {}
+    for url in urls:
+        try:
+            out[url] = src.detail(url)
+        except Exception as e:  # noqa: BLE001 -- see docstring; nothing is worth the sweep
+            log(f"detail fetch failed, listing kept without prose: {url}: {e}")
+    return out
+
+
 def record(
-    db: sqlite3.Connection, seen: dict[str, dict], today: str
+    db: sqlite3.Connection, seen: dict[str, dict], today: str, src=None, log=None
 ) -> dict[str, list]:
+    log = log or (lambda _m: None)
     delta: dict[str, list] = {
         "new": [],
         "reduced": [],
@@ -331,7 +455,17 @@ def record(
 
     known = {r["id"]: r for r in db.execute("SELECT * FROM listings")}
 
+    # NEW LISTINGS ONLY, and sorted so the budget falls the same way on a
+    # replay -- the digest's bytes depend on which prose was fetched.
+    new_ids = sorted(pid for pid in seen if pid not in known)
+    details = (
+        fetch_details(src, [seen[pid]["url"] for pid in new_ids[:DETAIL_BUDGET]], log)
+        if src is not None
+        else {}
+    )
+
     for pid, r in seen.items():
+        detail = details.get(r["url"]) or {}
         old = known.get(pid)
         if old is None:
             relist_of = find_relist(db, r)
@@ -339,8 +473,9 @@ def record(
                 """INSERT INTO listings
                    (id,source,outcode,first_seen,last_seen,absences,status,
                     first_price,price,bedrooms,bathrooms,title,address,kind,
-                    tenure,lease_years,auction_agent,agent,lat,lon,url,features,raw,relist_of)
-                   VALUES (?,?,?,?,?,0,'live',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    tenure,lease_years,auction_agent,agent,lat,lon,url,features,
+                    description,key_info,raw,relist_of)
+                   VALUES (?,?,?,?,?,0,'live',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     pid,
                     r["source"],
@@ -362,11 +497,19 @@ def record(
                     r["lon"],
                     r["url"],
                     json.dumps(r["features"], sort_keys=True),
+                    detail.get("description"),
+                    json.dumps(detail.get("key_info") or {}, sort_keys=True),
                     json.dumps(r["raw"], sort_keys=True),
                     relist_of,
                 ),
             )
-            entry = dict(r, first_seen=today, relist_of=relist_of)
+            entry = dict(
+                r,
+                first_seen=today,
+                relist_of=relist_of,
+                description=detail.get("description"),
+                key_info=detail.get("key_info") or {},
+            )
             if relist_of:
                 entry["previous"] = known.get(relist_of)
                 delta["relisted"].append(entry)
@@ -465,6 +608,25 @@ def describe(r: dict) -> str:
     return "  ".join(bits)
 
 
+def prose(r: dict) -> str:
+    """The listing's own words, indented under its line, or nothing.
+
+    This is the point of property#6. The digest IS the prompt -- the model gets
+    these bytes and nothing else unless it goes looking -- so prose that landed
+    only in the database is prose the model does not read, which is exactly
+    what the first real run demonstrated. It appears for NEW and RELISTED
+    listings alone, which are the ones that have just been fetched; everything
+    else is a line about a price, and does not need a page of description under
+    it.
+    """
+    out = []
+    for title, value in sorted((r.get("key_info") or {}).items()):
+        out.append(f"      {title}: {value}")
+    for line in (r.get("description") or "").split("\n"):
+        out.append(f"      {line}".rstrip())
+    return ("\n" + "\n".join(out)) if out else ""
+
+
 def digest(delta: dict[str, list], favourites: set[str]) -> str:
     out: list[str] = []
 
@@ -484,7 +646,8 @@ def digest(delta: dict[str, list], favourites: set[str]) -> str:
         "new",
         "NEW",
         lambda r: (
-            f"{r['id']}  {describe(r)}  {r.get('title') or ''}\n      {r.get('url')}"
+            f"{r['id']}  {describe(r)}  {r.get('title') or ''}\n"
+            f"      {r.get('url')}" + prose(r)
         ),
     )
     section(
@@ -499,6 +662,7 @@ def digest(delta: dict[str, list], favourites: set[str]) -> str:
                 else ""
             )
             + f"\n      {r.get('url')}"
+            + prose(r)
         ),
     )
     section(
@@ -551,6 +715,35 @@ def export(db: sqlite3.Connection, path: str) -> None:
     os.replace(tmp, path)
 
 
+def backfill(db: sqlite3.Connection, src, limit: int, log) -> int:
+    """Fetch prose for listings recorded BEFORE this feature existed.
+
+    Deliberately not part of the daily run. The corpus was ~275 when the prose
+    started being collected, and quietly draining that backlog would mean
+    hundreds of extra requests spread over days that the crawl bargain in #1
+    never accounted for. This is an operator running a bounded number of
+    requests on purpose, with `--backfill N` naming the number.
+    """
+    rows = db.execute(
+        "SELECT id,url FROM listings WHERE description IS NULL AND status!='withdrawn'"
+        " ORDER BY id LIMIT ?",
+        (limit,),
+    ).fetchall()
+    by_url = {r["url"]: r["id"] for r in rows}
+    details = fetch_details(src, [r["url"] for r in rows], log)
+    for url, d in details.items():
+        db.execute(
+            "UPDATE listings SET description=?,key_info=? WHERE id=?",
+            (
+                d.get("description"),
+                json.dumps(d.get("key_info") or {}, sort_keys=True),
+                by_url[url],
+            ),
+        )
+    db.commit()
+    return len(details)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--state", default="/var/lib/property-watch")
@@ -558,6 +751,14 @@ def main() -> int:
         "--bootstrap",
         action="store_true",
         help="record the corpus and report counts only; emit no delta",
+    )
+    ap.add_argument(
+        "--backfill",
+        type=int,
+        metavar="N",
+        help="fetch prose for up to N stored listings that have none, then stop. "
+        "For the corpus recorded before descriptions were collected; not part "
+        "of the daily run, and prints nothing on stdout.",
     )
     ap.add_argument("--verbose", action="store_true", help="progress to stderr")
     args = ap.parse_args()
@@ -572,9 +773,17 @@ def main() -> int:
     # the job PRODUCES goes in data/ (which it can). See property-watch.nix.
     db = connect(os.path.join(args.state, "data", "property-watch.db"))
     today = date.today().isoformat()
+    src = make_source(cfg)
+
+    if args.backfill is not None:
+        n = backfill(db, src, args.backfill, log)
+        export(db, os.path.join(args.state, "data", "listings.json"))
+        # stderr, never stdout: a backfill must not look like something moving.
+        print(f"backfilled {n} listings", file=sys.stderr)
+        return 0
 
     try:
-        seen = sweep(db, cfg, today, log)
+        seen = sweep(db, cfg, today, log, src)
     except FetchFailed as e:
         # Unknown state, not an empty market. Say so on stderr -- which hermes
         # surfaces as a failure -- and leave stdout untouched so the hash is
@@ -583,7 +792,10 @@ def main() -> int:
         return 2
 
     first_run = db.execute("SELECT COUNT(*) c FROM listings").fetchone()["c"] == 0
-    delta = record(db, seen, today)
+    # On a bootstrap the WHOLE corpus is new, and none of it is reported, so
+    # fetching prose nobody will read would be hundreds of requests spent on
+    # silence. `--backfill` fills it afterwards, at a pace the operator chooses.
+    delta = record(db, seen, today, None if (first_run or args.bootstrap) else src, log)
     export(db, os.path.join(args.state, "data", "listings.json"))
 
     if first_run or args.bootstrap:
