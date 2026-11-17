@@ -43,6 +43,33 @@ let
   # if `stateDir` ever moves.
   hermesHome = "${config.services.hermes-agent.stateDir}/.hermes";
 
+  # ── THE BROWSER THE AGENT'S OWN browser_exec TOOL DRIVES ──────────────────────────
+  # NOT a second chromium. This is the one already in the closure for scrapling
+  # (PLAYWRIGHT_BROWSERS_PATH, set on both units below), reached through its binary
+  # instead of its bundle — so pointing hermes at it costs nothing, and the two agents'
+  # browsers cannot drift to different revisions.
+  #
+  # `entries` is the bundle's own name→path map, filtered rather than indexed: the key
+  # carries the revision (`chromium-1248`), which moves with every playwright bump, and
+  # `chromium_headless_shell-1248` is a different browser that the `-` in the prefix
+  # excludes. The leaf directory is arch-dependent too (`chrome-linux-arm64` here,
+  # `chrome-linux` on x86_64), so the glob and the `-x` test below resolve it AT BUILD
+  # TIME and fail the build if the layout moves — in preference to a hardcoded path that
+  # would deploy green and leave browser_exec dead, which is the exact failure this is
+  # fixing.
+  playwrightChromium =
+    let
+      inherit (pkgs.playwright-driver.browsers) entries;
+      names = lib.filter (n: lib.hasPrefix "chromium-" n) (lib.attrNames entries);
+    in
+    assert lib.assertMsg (names != [ ]) "playwright-driver.browsers has no chromium entry";
+    pkgs.runCommand "hermes-chromium" { } ''
+      mkdir -p $out/bin
+      chrome=$(echo ${entries.${lib.head names}}/chrome-linux*/chrome)
+      [ -x "$chrome" ] || { echo "no chrome binary under ${entries.${lib.head names}}" >&2; exit 1; }
+      ln -s "$chrome" $out/bin/chromium
+    '';
+
   # ── WHAT THE AGENT READS, IN TWO HALVES ───────────────────────────────────────────
   # The SHARED half (`nix-tools.md`) is the fleet's rule about reaching for tools, used
   # verbatim by opencode too (profiles/opencode.nix) from this one source — the model
@@ -379,6 +406,29 @@ in
         # (node, npm, ripgrep, ffmpeg, git), and the two it actually downloaded were both
         # unrunnable. A tool the agent genuinely needs is one line in `extraPackages`.
         security.allow_lazy_installs = false;
+
+        # ── …WHICH LEAVES browser_exec WITHOUT A BROWSER UNLESS ONE IS NAMED ──────────
+        # The agent's browser tool resolves its binary in this order: this setting, then a
+        # one-shot `pm.ensure("chromium")`. That download is the SAME generic-linux trap —
+        # it already happened here on 2026-11-17 and the tool answered `Chromium exited
+        # with code 127` — and with lazy installs off above it cannot even be attempted,
+        # so without this line the tool is simply dead.
+        #
+        # Naming a binary also SUPPRESSES the auto-install path by itself
+        # (`_explicit_executable_configured`: "an operator-pinned browser binary, even a
+        # missing one, is their choice — never download over it"), so this is belt as well
+        # as braces.
+        #
+        # ⚠ THE PATH MUST BE THE BINARY, NOT A WRAPPER SCRIPT. Chromium finds its resource
+        # files by resolving /proc/self/exe, which a symlink preserves and a shell wrapper
+        # does not. See `playwrightChromium` at the top of this profile for how the binary
+        # is located.
+        #
+        # Measured as the hermes user before declaring it: the bundle's chrome reports
+        # `Google Chrome for Testing 156.0.8078.4` and renders a page headless, sandbox
+        # included — this host needs no `--no-sandbox`, and the tool's own bypass only
+        # triggers for root, Docker or an AppArmor-restricted userns.
+        browser.executable_path = "${playwrightChromium}/bin/chromium";
 
         # The name the operator's browser actually types, which Caddy passes through
         # unchanged. The backend's DNS-rebinding guard rejects every Host header that is
