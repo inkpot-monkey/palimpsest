@@ -324,7 +324,7 @@ in
                 ''
               )}
               ${
-                if svc ? paths then
+                if self.lib.serviceRoutes.isPathRouted svc then
                   # ── ONE NAME, SEVERAL BACKENDS (property#8) ────────────────────────
                   # A path-routed vhost: one `handle <prefix>*` per entry in `paths`,
                   # each to its own process, plus a generated index on the catch-all.
@@ -346,11 +346,11 @@ in
                   # ordering the `about` pages rely on, asserted rather than assumed by
                   # parts/checks/caddy-internal-guard.
                   lib.concatStringsSep "\n" (
-                    lib.mapAttrsToList (prefix: port: ''
-                      handle ${prefix}* {
-                        reverse_proxy ${upstream}:${toString port}
+                    map (route: ''
+                      handle ${route.prefix}* {
+                        reverse_proxy ${upstream}:${toString route.port}
                       }
-                    '') svc.paths
+                    '') (self.lib.serviceRoutes.routesOf svc)
                   )
                   + ''
 

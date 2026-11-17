@@ -22,6 +22,68 @@ let
     # escaping trap that is the main reason they live in one place.
     logLevelPatterns = import ../modules/shared/log-level-patterns.nix;
 
+    # ── READING THE SERVICE REGISTRY, ONCE ───────────────────────────────────────────
+    # An entry in `settings.services.*` declares EITHER a single `port`, or -- when it is
+    # a path-routed vhost (`paths`, property#8) -- an attrset of prefix → port. Four places
+    # used to decide that difference for themselves: proxy.nix's vhost generator,
+    # settings.nix's port-collision guard, monitoring/watcher.nix's probe builder, and the
+    # uptime check's own fixtures. Nothing made them agree.
+    #
+    # The real hazard was never "a third shape costs a fourth edit". It is that a
+    # MALFORMED entry behaved DIFFERENTLY in each consumer rather than failing: one
+    # carrying both `port` and `paths` had its ports counted by the collision guard,
+    # routed by prefix in Caddy, and probed twice; one carrying neither contributed
+    # nothing, anywhere, silently. Either is a vhost serving the wrong thing with every
+    # check green. `shapeViolations` is the one place that can refuse them, and
+    # parts/checks/service-routes holds it to that.
+    #
+    # NOT named `services`: `lib.services` already exists upstream.
+    serviceRoutes = rec {
+      isPathRouted = svc: svc ? paths;
+
+      # Which host actually LISTENS: the origin when the service runs off its edge (Home
+      # Assistant on rk1a, the boards on rk1b), otherwise the edge it sits beside.
+      listenerHost = svc: svc.origin or svc.edge;
+
+      # Every real listener this entry opens. Both shapes answer, so a port collision
+      # between a board and a service cannot hide from the guard that exists to catch it.
+      portsOf = svc: if isPathRouted svc then lib.attrValues svc.paths else [ svc.port ];
+
+      # Prefix → port, as an ordered list. A single-port entry has exactly one route at
+      # the vhost root (`prefix = ""`), which is what lets a consumer treat both shapes
+      # the same way instead of branching. Sorted by prefix so generated output is stable.
+      routesOf =
+        svc:
+        if isPathRouted svc then
+          map (prefix: {
+            inherit prefix;
+            port = svc.paths.${prefix};
+          }) (lib.sort (a: b: a < b) (lib.attrNames svc.paths))
+        else
+          [
+            {
+              prefix = "";
+              inherit (svc) port;
+            }
+          ];
+
+      # The shape invariant, as named violations rather than a bare throw: the caller
+      # decides whether to fail the build or report, and the message says which entry.
+      shapeViolations =
+        svcs:
+        lib.filter (v: v != null) (
+          lib.mapAttrsToList (
+            name: svc:
+            if (svc ? port) && (svc ? paths) then
+              "${name}: declares both `port` and `paths`; an entry is one shape or the other"
+            else if !(svc ? port) && !(svc ? paths) then
+              "${name}: declares neither `port` nor `paths`, so it has no listener"
+            else
+              null
+          ) svcs
+        );
+    };
+
     mkPkgs =
       system:
       import inputs.nixpkgs {

@@ -14,6 +14,14 @@
         # affine = import ./affine {
         #   inherit pkgs inputs self;
         # };
+        # property#10 item 3: ONE reading of the service registry. An entry declares either
+        # a `port` or a `paths` attrset, and that difference used to be decided
+        # independently in four places. The malformed cases are the point — an entry with
+        # both, or neither, used to be accepted DIFFERENTLY by each consumer instead of
+        # failing, which is a vhost serving the wrong thing with every check green.
+        service_routes = import ./service-routes {
+          inherit pkgs self;
+        };
         # ADR-0019 slice 04: monitor-by-default guard over settings.services — opt-outs
         # need a reason, and every monitored service must resolve to a buildable probe.
         uptime_monitoring = import ./uptime-monitoring {

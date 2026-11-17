@@ -378,23 +378,28 @@ let
   # Collision check keys on the host that actually LISTENS on the port — the
   # origin when the service runs off-edge (e.g. Home Assistant on rk1a),
   # otherwise the edge it is co-located with.
-  listenerHost = svc: svc.origin or svc.edge;
-  # An entry declares either one `port` or, when it is a path-routed vhost (`boards`,
-  # property#8), a `paths` attrset whose VALUES are ports. Both shapes are real listeners
-  # on `listenerHost`, so both are counted here — a board colliding with a service would
-  # otherwise be invisible to this guard, which is the one thing it exists to catch.
-  servicePorts = svc: if svc ? paths then lib.attrValues svc.paths else [ svc.port ];
+  # Both from the shared accessor (self.lib.serviceRoutes), which is the ONE place that
+  # knows an entry declares either a `port` or a `paths` attrset. Four files used to decide
+  # that for themselves; property#10 item 3 and parts/checks/service-routes.
+  inherit (self.lib.serviceRoutes) listenerHost portsOf;
   endpointsOf =
     svcs:
     lib.flatten (
-      lib.mapAttrsToList (_: svc: map (p: "${listenerHost svc}:${toString p}") (servicePorts svc)) svcs
+      lib.mapAttrsToList (_: svc: map (p: "${listenerHost svc}:${toString p}") (portsOf svc)) svcs
     );
   allServiceEndpoints = (endpointsOf services.public) ++ (endpointsOf services.private);
 
   uniqueEndpoints = lib.unique allServiceEndpoints;
 
+  # An entry with BOTH `port` and `paths`, or neither, used to be accepted differently by
+  # each consumer instead of failing — ports counted here, routed by prefix in Caddy,
+  # probed twice, or contributing nothing anywhere. Refused at the source.
+  shapeErrors = self.lib.serviceRoutes.shapeViolations (services.public // services.private);
+
   checkPorts =
-    if builtins.length uniqueEndpoints != builtins.length allServiceEndpoints then
+    if shapeErrors != [ ] then
+      builtins.throw "Malformed service registry entries in settings.nix:\n  ${builtins.concatStringsSep "\n  " shapeErrors}"
+    else if builtins.length uniqueEndpoints != builtins.length allServiceEndpoints then
       builtins.throw "Duplicate ports found on the same listener host in settings.nix! Endpoints: ${builtins.toJSON allServiceEndpoints}"
     else
       services;

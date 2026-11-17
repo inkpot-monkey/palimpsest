@@ -57,7 +57,7 @@ let
   # Every registry entry that declares the path-routed shape, with the facts the three
   # generators each need. `public // private` because the shape is not private-only by
   # construction, even though today's only user is.
-  routed = lib.filterAttrs (_: svc: svc ? paths) (
+  routed = lib.filterAttrs (_: self.lib.serviceRoutes.isPathRouted) (
     settings.services.public // settings.services.private
   );
 

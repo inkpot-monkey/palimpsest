@@ -28,7 +28,10 @@ let
     }:
     let
       monitored = svc: svc.monitor.enable or true;
-      listenerHost = svc: svc.origin or svc.edge;
+      # From the shared accessor, not a fourth private copy — this check reimplementing
+      # the registry's shape is exactly the drift property#10 item 3 is about, and a
+      # guard that disagrees with what it guards is worse than no guard.
+      inherit (self.lib.serviceRoutes) listenerHost;
       # The watcher probes by MagicDNS name (`<host>.<tailnet>`), so a buildable probe
       # just needs the target to be a registered node — the name is then real and
       # resolvable. (It no longer needs a pinned tailscale IP.)
@@ -52,7 +55,7 @@ let
         # edge the watcher would silently emit only the bare name's probe, which is
         # the all-boards-dead-but-green failure the per-path probes exist to prevent.
         ++ (lib.optional (
-          svc ? paths && !(lib.elem svc.edge caddyEdges)
+          self.lib.serviceRoutes.isPathRouted svc && !(lib.elem svc.edge caddyEdges)
         ) "${name}: has `paths` but ${svc.edge} is not a Caddy edge (no per-path probe is buildable)")
       ) services
     );

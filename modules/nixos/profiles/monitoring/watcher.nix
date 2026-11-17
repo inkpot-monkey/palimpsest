@@ -108,19 +108,22 @@ let
   # Hence `[STATUS] == 200` rather than the `< 500` used for a whole service: a
   # 404 means the board is no longer answering under its prefix, and that must
   # fail. Named `<vhost>-<prefix>` so the alert says which board, not which host.
+  # Routes come from the shared accessor (self.lib.serviceRoutes), not from reading
+  # `svc.paths` directly: a single-port entry answers with one route at the vhost root,
+  # which `isPathRouted` filters out below. property#10 item 3.
   mkPathEndpoints =
     name: svc:
-    lib.mapAttrsToList (prefix: _: {
-      name = "${name}-${lib.removePrefix "/" prefix}";
+    map (route: {
+      name = "${name}-${lib.removePrefix "/" route.prefix}";
       group = edgeHost svc;
-      url = "https://${name}.${domain}${prefix}/healthz";
+      url = "https://${name}.${domain}${route.prefix}/healthz";
       interval = "30s";
       conditions = [
         "[CONNECTED] == true"
         "[STATUS] == 200"
       ];
       alerts = alertsFor name;
-    }) (svc.paths or { });
+    }) (if self.lib.serviceRoutes.isPathRouted svc then self.lib.serviceRoutes.routesOf svc else [ ]);
 
   allServices = lib.filterAttrs (_: monitored) (
     settings.services.public // settings.services.private
