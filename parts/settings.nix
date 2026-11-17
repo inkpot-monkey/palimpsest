@@ -29,9 +29,12 @@ let
 
   # The service registry. Each entry: `edge` (host where DNS points + Caddy runs),
   # `port`, optional `origin` (host actually running it when off-edge), optional
-  # `proxy = false` (bypass Caddy). Optional `monitor` controls the ADR-0019 uptime
-  # watcher (monitor-by-default): `monitor.enable` (default true) and, when you set
-  # it false, a required `monitor.reason`. Opting out here exempts a SERVED service
+  # `proxy = false` (bypass Caddy). An entry may instead carry `paths` — an attrset of
+  # URL prefix → port — in place of `port`, which makes the name a path-routed vhost
+  # over several backends with a generated index at `/` (see `boards`, property#8).
+  # Optional `monitor` controls the ADR-0019 uptime watcher (monitor-by-default):
+  # `monitor.enable` (default true) and, when you set it false, a required
+  # `monitor.reason`. Opting out here exempts a SERVED service
   # from probing/alerting; it does not stop Caddy fronting it (to fully retire a
   # service, remove its entry). The slice-04 flake-check guard enforces both the
   # reason-when-disabled rule and that every monitored service has a buildable probe.
@@ -96,29 +99,62 @@ let
         port = 4096;
         origin = "rk1b";
       };
-      # The property board (forge inkpotmonkey/property#5) — the reading surface over the
-      # corpus the property-watch agent job writes: every live listing on a map, its price
-      # history, and the model's score and one-line verdict kept alongside. RUNS on rk1b
-      # beside the database it reads, fronted by kelpy's Caddy at property.<domain> behind
-      # the internal_only guard. DEPLOY BOTH HOSTS plus both resolvers, as above.
+      # ── THE SHARED BOARDS VHOST (forge inkpotmonkey/property#8) ─────────────────────
+      # A *board* is a page an agent job produces so a human can look at what it found.
+      # They are all the same kind of thing and there will be more of them, so they share
+      # ONE name, path-routed, instead of spending a name each — `boards.<domain>/property`
+      # rather than `property.<domain>`. Adding the next one is a line here plus a port:
+      # no DNS record, no DNS push, no blocky entry, no new nameserver deploy.
       #
-      # 9120, one past hermes's 9119, because the two are the same shape of thing on the
-      # same host and reading them adjacent in `ss -lntp` is worth something. Checked free
-      # against rk1b's live listeners, not only against this registry — the collision guard
-      # below compares entries to each other and cannot see a non-registry listener.
+      # `paths` IS THE ONLY ENTRY SHAPE IN THIS REGISTRY WITH NO `port`, and that is the
+      # point — one name, several backends. Each prefix is reverse-proxied to its own
+      # process on `origin`: a board that crashes must not take the others down, and they
+      # are written by different jobs at different times. proxy.nix emits one `handle
+      # <prefix>*` per entry and serves a generated index at `/`; the collision guard below
+      # counts every one of these ports, because they are real listeners.
       #
-      # ⚠ UNLIKE `agent` AND `chat` ABOVE, THE TAILNET GUARD IS THE ONLY THING IN FRONT OF
-      # THIS, AND THAT IS A DECISION, NOT AN OVERSIGHT. Those two carry a PTY and arbitrary
-      # code execution, so a second gate is mandatory; this one is a read-only view of a
-      # public property portal plus a favourites star. The tailnet is not single-person
-      # (ADR-0027), so what a housemate or a friend could see here is which flats are being
+      # ⚠ A BOARD MUST TOLERATE BEING SERVED UNDER A PREFIX, and Caddy does NOT strip it:
+      # the prefix is forwarded and the app is told what it is (`--base-path`), so there is
+      # one URL space end to end — what the browser asks for is what the process sees.
+      # Stripping with `handle_path` would still leave the app needing to know the prefix in
+      # order to emit correct links, so it buys nothing and adds a second coordinate system.
+      # This is a convention for OUR boards, not a rule for every service: a third-party app
+      # that cannot do it keeps its own name.
+      #
+      # ⚠ STILL DEPLOY BOTH HOSTS **the first time** (the edge for the vhost, rk1b for the
+      # board) plus both resolvers for the name itself. It is only the SECOND and later
+      # boards that cost one deploy of the origin.
+      #
+      # ⚠ THE TAILNET GUARD IS THE ONLY THING IN FRONT OF THESE, AND THAT IS A DECISION,
+      # NOT AN OVERSIGHT — unlike `agent` and `chat` above, which carry a PTY and arbitrary
+      # code execution and so must have a second gate. A board is a read-only view plus, at
+      # most, a star to click. The tailnet is not single-person (ADR-0027), so what a
+      # housemate or a friend could see on the property board is which flats are being
       # looked at and the budget they fall under. Judged acceptable against the cost of a
       # credential to rotate and a login to get past on a phone. If that judgement ever
-      # changes, hermes.nix:73-111 is the sops-template basic-auth pattern to copy.
-      property = {
+      # changes, hermes.nix:73-111 is the sops-template basic-auth pattern to copy — and it
+      # would then apply to every board at once, which is an argument for this shape rather
+      # than against it.
+      #
+      # ⚠ EACH BOARD GETS ITS OWN UPTIME PROBE (watcher.nix), and it must. A probe on
+      # `boards` alone proves Caddy, the cert and the index page Caddy itself serves — it
+      # would be green with every board dead, which is precisely the silent failure
+      # property#3 exists to prevent.
+      boards = {
         edge = "kelpy";
-        port = 9120;
         origin = "rk1b";
+        paths = {
+          # The property board (property#5): every live listing on a map, its price
+          # history, and the model's score and one-line verdict kept alongside. RUNS on
+          # rk1b beside the database it reads (profiles/property-board.nix).
+          #
+          # 9120, one past hermes's 9119, because the two are the same shape of thing on
+          # the same host and reading them adjacent in `ss -lntp` is worth something.
+          # Checked free against rk1b's live listeners, not only against this registry —
+          # the collision guard below compares entries to each other and cannot see a
+          # non-registry listener.
+          "/property" = 9120;
+        };
       };
       # Jellyfin. RUNS on rk1b with the rest of custom.profiles.media (the stack moves
       # as one: qBittorrent and slskd share gluetun's netns and jellyfin is gated on the
@@ -341,9 +377,17 @@ let
   # origin when the service runs off-edge (e.g. Home Assistant on rk1a),
   # otherwise the edge it is co-located with.
   listenerHost = svc: svc.origin or svc.edge;
-  allServiceEndpoints =
-    (lib.mapAttrsToList (_: svc: "${listenerHost svc}:${toString svc.port}") services.public)
-    ++ (lib.mapAttrsToList (_: svc: "${listenerHost svc}:${toString svc.port}") services.private);
+  # An entry declares either one `port` or, when it is a path-routed vhost (`boards`,
+  # property#8), a `paths` attrset whose VALUES are ports. Both shapes are real listeners
+  # on `listenerHost`, so both are counted here — a board colliding with a service would
+  # otherwise be invisible to this guard, which is the one thing it exists to catch.
+  servicePorts = svc: if svc ? paths then lib.attrValues svc.paths else [ svc.port ];
+  endpointsOf =
+    svcs:
+    lib.flatten (
+      lib.mapAttrsToList (_: svc: map (p: "${listenerHost svc}:${toString p}") (servicePorts svc)) svcs
+    );
+  allServiceEndpoints = (endpointsOf services.public) ++ (endpointsOf services.private);
 
   uniqueEndpoints = lib.unique allServiceEndpoints;
 

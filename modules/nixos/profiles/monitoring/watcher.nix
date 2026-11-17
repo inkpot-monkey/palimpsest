@@ -93,10 +93,41 @@ let
         alerts = alertsFor name;
       };
 
+  # ── PER-PATH PROBES FOR A PATH-ROUTED VHOST (property#8) ────────────────────
+  # A name carrying `paths` fronts several independent backends, and the probe on
+  # the NAME proves Caddy, the certificate and the index page Caddy itself serves
+  # — it stays green with every backend behind it dead. That silent failure is
+  # exactly what ADR-0019 exists to prevent, so each prefix gets its own probe.
+  #
+  # `/healthz` and not the prefix root: a request to the root of a dead prefix can
+  # still be answered 200 by the vhost's catch-all index (proxy.nix serves it on
+  # the catch-all deliberately, so a mistyped prefix lands on the list of boards).
+  # A probe that cannot tell "this board is alive" from "this board is gone" is
+  # the probe this comment is here to stop someone writing.
+  #
+  # Hence `[STATUS] == 200` rather than the `< 500` used for a whole service: a
+  # 404 means the board is no longer answering under its prefix, and that must
+  # fail. Named `<vhost>-<prefix>` so the alert says which board, not which host.
+  mkPathEndpoints =
+    name: svc:
+    lib.mapAttrsToList (prefix: _: {
+      name = "${name}-${lib.removePrefix "/" prefix}";
+      group = edgeHost svc;
+      url = "https://${name}.${domain}${prefix}/healthz";
+      interval = "30s";
+      conditions = [
+        "[CONNECTED] == true"
+        "[STATUS] == 200"
+      ];
+      alerts = alertsFor name;
+    }) (svc.paths or { });
+
   allServices = lib.filterAttrs (_: monitored) (
     settings.services.public // settings.services.private
   );
-  endpoints = lib.mapAttrsToList mkEndpoint allServices;
+  endpoints =
+    (lib.mapAttrsToList mkEndpoint allServices)
+    ++ (lib.flatten (lib.mapAttrsToList mkPathEndpoints allServices));
 
   # Caddy-fronted service names must resolve to their EDGE's tailscale IP on this
   # watcher host, so probes (and the hookshot webhook delivery) take the tailnet

@@ -487,5 +487,106 @@ class TestHttp(unittest.TestCase):
             self.assertIn(e.exception.code, (404, 405))
 
 
+class TestHttpUnderAPathPrefix(unittest.TestCase):
+    """The board served at `boards.<domain>/property` rather than its own name.
+
+    property#8 moved every board behind one shared, path-routed vhost. Caddy
+    does NOT strip the prefix -- the app is told what the prefix is and owns
+    the whole URL space, so what the browser asks for is exactly what this
+    process sees. The alternative (`handle_path`, which strips) would leave the
+    app emitting links into a URL space it cannot see; it would still need to
+    be told the prefix in order to emit them, so stripping buys nothing and
+    adds a second coordinate system to debug.
+    """
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.path = os.path.join(self.dir.name, "db")
+        seeded(self.path).close()
+        db = board.connect(self.path)
+        listing(db, "a1", title="Two bed with a garden")
+        db.execute(
+            "INSERT INTO observations (id, seen_on, price, status)"
+            " VALUES ('a1', '2026-11-01', 500000, 'live')"
+        )
+        db.commit()
+        db.close()
+
+        self.server = board.make_server("127.0.0.1", 0, self.path, "/property")
+        self.base = f"http://127.0.0.1:{self.server.server_address[1]}"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(self.server.shutdown)
+
+    def get(self, path):
+        with urllib.request.urlopen(self.base + path) as r:
+            return r.status, r.read()
+
+    def send(self, method, path, body=None):
+        req = urllib.request.Request(
+            self.base + path,
+            method=method,
+            data=json.dumps(body).encode() if body is not None else None,
+            headers={"Content-Type": "application/json"} if body is not None else {},
+        )
+        with urllib.request.urlopen(req) as r:
+            return r.status, r.read()
+
+    def test_the_page_is_served_under_the_prefix(self):
+        # Both spellings, because a human types the one without the slash and
+        # Caddy forwards it verbatim.
+        self.assertEqual(200, self.get("/property/")[0])
+        self.assertEqual(200, self.get("/property")[0])
+
+    def test_the_api_is_served_under_the_prefix(self):
+        status, body = self.get("/property/api/listings")
+        self.assertEqual(200, status)
+        self.assertEqual("Two bed with a garden", json.loads(body)[0]["title"])
+
+    def test_history_is_served_under_the_prefix(self):
+        status, body = self.get("/property/api/listings/a1/history")
+        self.assertEqual(200, status)
+        self.assertEqual(500000, json.loads(body)[0]["price"])
+
+    def test_the_probe_endpoint_is_served_under_the_prefix(self):
+        # property#8 gives each board its own uptime probe, and the probe is a
+        # GET at this path. A probe on the vhost root proves Caddy and the
+        # cert; only this one proves the board behind the prefix is alive.
+        status, body = self.get("/property/healthz")
+        self.assertEqual(200, status)
+        self.assertTrue(json.loads(body)["ok"])
+
+    def test_the_page_emits_its_links_under_the_prefix(self):
+        # This is what "a board tolerates being served under a prefix" means,
+        # and it is the whole cost property#8 accepted. A page that fetches
+        # `/api/listings` from `boards.<domain>/property` is asking the VHOST
+        # ROOT for an API that is not there, and renders empty with no error.
+        _, body = self.get("/property/")
+        self.assertIn(b'"/property"', body)
+        self.assertNotIn(b'fetch("/api/', body)
+
+    def test_the_unprefixed_paths_are_gone(self):
+        # Not merely an extra alias. The prefix IS the app's URL space once it
+        # has one: if both answered, a link could be emitted into either and
+        # only one of the two works through Caddy.
+        for path in ("/", "/api/listings", "/healthz"):
+            with self.assertRaises(urllib.error.HTTPError, msg=path) as e:
+                self.get(path)
+            self.assertEqual(404, e.exception.code)
+
+    def test_favouriting_round_trips_under_the_prefix(self):
+        # The board's only write, through the prefix, both ways.
+        self.assertEqual(
+            200, self.send("POST", "/property/api/favourites", {"id": "a1"})[0]
+        )
+        rows = json.loads(self.get("/property/api/listings")[1])
+        self.assertTrue(rows[0]["favourite"])
+
+        self.assertEqual(200, self.send("DELETE", "/property/api/favourites/a1")[0])
+        rows = json.loads(self.get("/property/api/listings")[1])
+        self.assertFalse(rows[0]["favourite"])
+
+
 if __name__ == "__main__":
     unittest.main()

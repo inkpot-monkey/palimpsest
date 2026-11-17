@@ -123,6 +123,16 @@
         caddy_internal_guard = import ./caddy-internal-guard {
           inherit pkgs self;
         };
+        # The shared, path-routed `boards` vhost (forge inkpotmonkey/property#8). Three
+        # generators have to agree about one `paths` attrset: proxy.nix's routes, proxy.nix's
+        # generated index, and watcher.nix's probes. This pins that every prefix is routed to
+        # its own backend, that the index lists EXACTLY the boards the registry declares (a
+        # hand-kept list would drift, which is why it is generated), and that each board has
+        # its own probe at a path only the backend can answer — the probe on the vhost NAME is
+        # answered by Caddy's own index page and would be green with every board dead.
+        boards_vhost = import ./boards-vhost {
+          inherit pkgs self;
+        };
         # The untagged-snapshot predicate behind the daily probe on the elected restic
         # maintainer (palimpsest#150). Every forget unit is scoped `--host X --tag <job>`, so a
         # snapshot with no tag is outside every retention policy permanently — three sat in the
