@@ -568,7 +568,9 @@ def main() -> int:
         cfg = json.load(f)
     cfg["outcodes"] = [o.upper() for o in cfg["outcodes"]]
 
-    db = connect(os.path.join(args.state, "property-watch.db"))
+    # The brief is read from the state root (which the agent cannot write); everything
+    # the job PRODUCES goes in data/ (which it can). See property-watch.nix.
+    db = connect(os.path.join(args.state, "data", "property-watch.db"))
     today = date.today().isoformat()
 
     try:
@@ -582,7 +584,7 @@ def main() -> int:
 
     first_run = db.execute("SELECT COUNT(*) c FROM listings").fetchone()["c"] == 0
     delta = record(db, seen, today)
-    export(db, os.path.join(args.state, "listings.json"))
+    export(db, os.path.join(args.state, "data", "listings.json"))
 
     if first_run or args.bootstrap:
         n = len(seen)

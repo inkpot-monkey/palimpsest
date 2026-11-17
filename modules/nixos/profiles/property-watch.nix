@@ -40,16 +40,23 @@ in
     # hermes writes the database; the board (property#5) will join this group to read it.
     users.users.hermes.extraGroups = [ "property-watch" ];
 
-    # 2770: setgid, so anything any member creates inherits the group rather than the
-    # creator's primary one. Without it the board's first write lands owned by the board
-    # alone and the job silently stops being able to read favourites.
+    # TWO directories, and the split is the whole point.
     #
-    # Owned by the human, not by hermes: config.json and AGENTS.md are the buying brief,
-    # and the agent must be able to READ them and unable to REWRITE them. If hermes could
-    # edit the criteria, the job could drift what it shows you and the only evidence would
-    # be listings that quietly stopped appearing. Ownership enforces that, not policy.
+    # The top level holds the buying brief -- config.json and AGENTS.md -- and is 2750:
+    # the group may read and traverse, and may NOT write. A single 2770 tree was the
+    # obvious shape and is wrong: group-write on a DIRECTORY lets a member unlink and
+    # replace a file inside it whatever that file's own mode says, so hermes could have
+    # rewritten the criteria by deleting them. The agent must be able to READ the brief
+    # and unable to REWRITE it -- if it could, the job would drift what it shows you and
+    # the only evidence would be listings that quietly stopped appearing.
+    #
+    # `data/` is where the job actually writes, and is 2770 hermes-owned. setgid so that
+    # anything any member creates inherits `property-watch` rather than the creator's own
+    # primary group -- without it the board's first write to `favourites` lands owned by
+    # the board alone and the job silently stops being able to read it.
     systemd.tmpfiles.rules = [
-      "d ${cfg.stateDir} 2770 inkpotmonkey property-watch - -"
+      "d ${cfg.stateDir} 2750 inkpotmonkey property-watch - -"
+      "d ${cfg.stateDir}/data 2770 hermes property-watch - -"
     ];
 
     # For opening the database by hand over ssh. Deliberately NOT added to hermes's
