@@ -128,12 +128,80 @@ let
       alerts = alertsFor name;
     }) (if self.lib.serviceRoutes.isPathRouted svc then self.lib.serviceRoutes.routesOf svc else [ ]);
 
+  # ── TLS LISTENER PROBES (mail) ──────────────────────────────────────────────
+  # The registry can only describe a service as one HTTP port behind Caddy, so the
+  # `mail` entry is `edge = kelpy; port = 8082` and its derived probe is
+  # `https://mail.<domain>` — Caddy in front of Stalwart's MANAGEMENT port. That probe
+  # is worth having (it is what caught the MemoryHigh throttle, when the unit still
+  # read `active` while mail hung), but it is not the mail service: it proves nothing
+  # about 25, 465 or 993, and the certificate it reads is CADDY's, not the one Stalwart
+  # presents on the wire.
+  #
+  # Both gaps had already cost something. Measured 2026-11-11: ninety minutes after a
+  # successful renewal Stalwart was still serving the PREVIOUS certificate on 993, byte
+  # for byte, because it reads the cert once at startup — and nothing in the monitoring
+  # could see it, because nothing looked at 993. The `reloadServices` hook in
+  # profiles/mail/default.nix fixes the cause; these probes are what would have noticed.
+  #
+  # `tls://` makes Gatus complete a real handshake and populate `[CERTIFICATE_EXPIRATION]`,
+  # so one endpoint covers the listener being alive AND the certificate on it being current.
+  # A plain `tcp://` probe would accept a listener serving a long-expired cert.
+  #
+  # WHY PORT 25 IS THE EXCEPTION, and why it is not a gap. Gatus's `starttls://` is the
+  # obvious fit there and it does not work against Stalwart: `client.CanPerformStartTLS`
+  # drives Go's `net/smtp`, which never calls `Hello()` and so greets with the hardcoded
+  # `EHLO localhost`, and Stalwart answers `550 5.5.0 Invalid EHLO domain.` — measured live,
+  # not predicted. Gatus exposes no knob for the EHLO name. The alternative was to relax
+  # Stalwart's EHLO validation, which is a real anti-spam control (689 `smtp.invalid-ehlo`
+  # rejections in a week) and must not be weakened to suit a monitoring tool.
+  #
+  # So 25 gets a TCP liveness probe, and NO certificate coverage is lost by it: Stalwart is
+  # one process serving one certificate on every listener — verified on the wire, 25, 465
+  # and 993 all presenting SHA-256 05:59:CD:76…:DD:FD. The 465 and 993 probes therefore
+  # assert the same certificate object that 25 presents.
+  #
+  # SCOPE, stated so nobody reads more into a green tick than it carries: these resolve
+  # through the `networking.hosts` pin below, so they take the TAILNET path to the mail
+  # host. They prove the listener and its certificate; they do NOT prove the port is
+  # open from the public internet. Inbound deliverability from outside is attested
+  # instead by the DMARC/TLSRPT report pipelines (profiles/monitoring/{dmarc,tlsrpt}.nix),
+  # which only produce data when real senders reach us.
+  mkListenerProbe =
+    name: probe:
+    if probe.tls then
+      {
+        inherit name;
+        inherit (probe) group;
+        url = "tls://${probe.host}:${toString probe.port}";
+        # 60s, not the 30s the service probes use: this completes a TLS handshake rather
+        # than a connect, and a certificate cannot go stale between two half-minutes.
+        interval = "60s";
+        conditions = [
+          "[CONNECTED] == true"
+          # Alert with ten days left — comfortably more than the 30-day mark at which
+          # acme renews, so a firing alert means renewal itself has stopped working
+          # rather than merely not having run yet.
+          "[CERTIFICATE_EXPIRATION] > ${toString (probe.minCertDays * 24)}h"
+        ];
+        alerts = alertsFor name;
+      }
+    else
+      {
+        inherit name;
+        inherit (probe) group;
+        url = "tcp://${probe.host}:${toString probe.port}";
+        interval = "60s";
+        conditions = [ "[CONNECTED] == true" ];
+        alerts = alertsFor name;
+      };
+
   allServices = lib.filterAttrs (_: monitored) (
     settings.services.public // settings.services.private
   );
   endpoints =
     (lib.mapAttrsToList mkEndpoint allServices)
-    ++ (lib.flatten (lib.mapAttrsToList mkPathEndpoints allServices));
+    ++ (lib.flatten (lib.mapAttrsToList mkPathEndpoints allServices))
+    ++ (lib.mapAttrsToList mkListenerProbe cfg.listenerProbes);
 
   # Caddy-fronted service names must resolve to their EDGE's tailscale IP on this
   # watcher host, so probes (and the hookshot webhook delivery) take the tailnet
@@ -171,6 +239,51 @@ in
       registered services and alerts to #infra-alerts via the hookshot webhook
       (ADR-0019). Enable on an always-on host that is NOT the one it watches.
     '';
+
+    listenerProbes = lib.mkOption {
+      type = lib.types.attrsOf (
+        lib.types.submodule {
+          options = {
+            host = lib.mkOption {
+              type = lib.types.str;
+              description = "Hostname to connect to. Used for SNI, so it must match the certificate.";
+            };
+            port = lib.mkOption {
+              type = lib.types.port;
+              description = "TLS port to handshake against.";
+            };
+            group = lib.mkOption {
+              type = lib.types.str;
+              description = "Gatus group (the host that owns the listener), for the status page and the alert text.";
+            };
+            tls = lib.mkOption {
+              type = lib.types.bool;
+              default = true;
+              description = ''
+                Whether to handshake TLS and assert on certificate expiry. Set false for
+                a plain TCP liveness probe on a port whose certificate another probe
+                already covers.
+              '';
+            };
+            minCertDays = lib.mkOption {
+              type = lib.types.ints.positive;
+              default = 10;
+              description = "Alert when the presented certificate has fewer than this many days left.";
+            };
+          };
+        }
+      );
+      default = { };
+      description = ''
+        Raw TLS listeners to probe in addition to the registry-derived endpoints —
+        ports the service registry cannot describe, because it models a service as a
+        single HTTP port behind Caddy. Each entry completes a real handshake, so one
+        probe covers both liveness and certificate freshness on that port.
+
+        These take the tailnet path to the listener (see the `networking.hosts` pin),
+        so they attest the listener and its certificate, not public reachability.
+      '';
+    };
 
     outOfBand = {
       enable = lib.mkEnableOption ''

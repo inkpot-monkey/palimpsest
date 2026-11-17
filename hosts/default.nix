@@ -237,7 +237,7 @@ in
         # host whose data lives on the /var/cache NVMe subtree.
         ./rk1/backup.nix
         (bindUsers { inkpotmonkey = operator; })
-        ({ config, ... }: {
+        ({ config, settings, ... }: {
           networking.hostName = "rk1b";
           # rk1b is the media + monitoring node (ADR-0027). The local llama.cpp LLM stack is
           # retired fleet-wide — the cloud `qwen3-coder` (DeepInfra) via kelpy's LiteLLM is
@@ -496,6 +496,37 @@ in
           # Out-of-band web-push alerter (ADR-0020): fires the phone when the Matrix
           # delivery path itself is down. topic + publish_token from monitoring.yaml.
           custom.profiles.monitoring-watcher.outOfBand.enable = true;
+
+          # The mail ports themselves. The registry-derived `mail` probe only reaches
+          # Stalwart's management port through Caddy, so until these existed nothing
+          # watched 25/465/993 or the certificate Stalwart actually presents on them —
+          # which is how a renewed cert sat unloaded on 993 for ninety minutes on
+          # 2026-11-11 with every dashboard green. See the mkTlsProbe comment in
+          # profiles/monitoring/watcher.nix.
+          custom.profiles.monitoring-watcher.listenerProbes =
+            let
+              mailHost = "mail.${settings.mail.domain}";
+            in
+            {
+              # TCP-only: Gatus's starttls client greets `EHLO localhost`, which Stalwart
+              # rightly rejects. Same certificate as 465/993, so nothing is uncovered.
+              mail-smtp = {
+                host = mailHost;
+                port = 25;
+                group = "kelpy";
+                tls = false;
+              };
+              mail-submission = {
+                host = mailHost;
+                port = 465;
+                group = "kelpy";
+              };
+              mail-imap = {
+                host = mailHost;
+                port = 993;
+                group = "kelpy";
+              };
+            };
 
           # White-box unit-state alerts for the services that moved here from kelpy.
           # webhookUrlFile comes from the watcher's sops template (rk1b doesn't run
