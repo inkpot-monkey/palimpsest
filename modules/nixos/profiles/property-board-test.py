@@ -65,8 +65,12 @@ CREATE TABLE IF NOT EXISTS listings (
   agent TEXT, lat REAL, lon REAL, url TEXT,
   features TEXT,
   raw TEXT,
-  score INTEGER, verdict TEXT,
   relist_of TEXT
+);
+CREATE TABLE IF NOT EXISTS verdicts (
+  id TEXT NOT NULL, judged_on TEXT NOT NULL, verdict TEXT NOT NULL,
+  price_at_judgement INTEGER, model TEXT, reasoning_effort TEXT, trigger TEXT,
+  PRIMARY KEY (id, judged_on)
 );
 CREATE TABLE IF NOT EXISTS observations (
   id TEXT NOT NULL, seen_on TEXT NOT NULL,
@@ -105,8 +109,6 @@ def listing(db: sqlite3.Connection, lid: str, **over) -> None:
         "url": "https://www.onthemarket.com/details/" + lid,
         "features": None,
         "raw": "{}",
-        "score": 8,
-        "verdict": "Garden, share of freehold, under budget.",
         "relist_of": None,
     }
     row.update(over)
@@ -150,7 +152,9 @@ class TestConnect(unittest.TestCase):
             r[0]
             for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")
         }
-        self.assertEqual({"listings", "observations", "sweeps", "favourites"}, names)
+        self.assertEqual(
+            {"listings", "observations", "sweeps", "favourites", "verdicts"}, names
+        )
 
     def test_wal_and_a_busy_timeout(self):
         # Two processes write this file -- the job at 07:30, the board whenever
@@ -252,8 +256,8 @@ class TestReadModel(unittest.TestCase):
         self.assertEqual("live", row["status"])
         self.assertEqual("share_of_freehold", row["tenure"])
         self.assertEqual(2, row["bedrooms"])
-        self.assertEqual(8, row["score"])
-        self.assertEqual("Garden, share of freehold, under budget.", row["verdict"])
+        self.assertIsNone(row["verdict"], "unjudged until the job says otherwise")
+        self.assertIsNone(row["price_at_judgement"])
         self.assertEqual(51.4661, row["lat"])
 
     def test_days_on_market_is_measured_from_first_seen_to_last_seen(self):
@@ -438,7 +442,7 @@ class TestHttp(unittest.TestCase):
         rows = json.loads(body)
         self.assertEqual(1, len(rows))
         self.assertEqual("Two bed with a garden", rows[0]["title"])
-        self.assertEqual(8, rows[0]["score"])
+        self.assertIn("verdict", rows[0])
 
     def test_history_api(self):
         status, body = self.get("/api/listings/a1/history")
@@ -586,6 +590,123 @@ class TestHttpUnderAPathPrefix(unittest.TestCase):
         self.assertEqual(200, self.send("DELETE", "/property/api/favourites/a1")[0])
         rows = json.loads(self.get("/property/api/listings")[1])
         self.assertFalse(rows[0]["favourite"])
+
+
+class TestVerdicts(unittest.TestCase):
+    """property#7: judgement is dated rows, not a column.
+
+    The board shows the LATEST verdict per listing. It must never write one --
+    the job owns that table, the same way the board owns `favourites`. One
+    writer per table is the contract the shared file rests on, and it is only
+    meaningful if asserted from both sides.
+    """
+
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location(
+            "property_watch", Path(__file__).with_name("property-watch.py")
+        )
+        self.job = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.job)
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.path = os.path.join(self.dir.name, "property-watch.db")
+        db = self.job.connect(self.path)
+        db.execute(
+            "INSERT INTO listings(id,source,outcode,first_seen,last_seen,price,kind)"
+            " VALUES ('otm:1','onthemarket','SE15','2026-11-01','2026-11-18',460000,'flat')"
+        )
+        db.executemany(
+            "INSERT INTO verdicts(id,judged_on,verdict,price_at_judgement,model,trigger)"
+            " VALUES (?,?,?,?,?,?)",
+            [
+                (
+                    "otm:1",
+                    "2026-11-17",
+                    "at 500k, borderline",
+                    500000,
+                    "haiku-5.5",
+                    "new",
+                ),
+                (
+                    "otm:1",
+                    "2026-11-18",
+                    "at 460k, worth a look",
+                    460000,
+                    "haiku-5.5",
+                    "reduced",
+                ),
+            ],
+        )
+        db.commit()
+        db.close()
+
+    def test_the_board_shows_the_latest_verdict_not_the_first(self):
+        db = board.connect(self.path)
+        self.addCleanup(db.close)
+        rows = board.listings(db)
+        row = next(r for r in rows if r["id"] == "otm:1")
+        self.assertEqual(row["verdict"], "at 460k, worth a look")
+        self.assertEqual(row["price_at_judgement"], 460000)
+        self.assertEqual(row["model"], "haiku-5.5")
+
+    def test_an_unjudged_listing_is_simply_blank(self):
+        """Not an error state. The delta is the trigger, so most listings on
+        most days are correctly unjudged."""
+        db = self.job.connect(self.path)
+        db.execute(
+            "INSERT INTO listings(id,source,outcode,first_seen,last_seen,price)"
+            " VALUES ('otm:2','onthemarket','SE6','2026-11-01','2026-11-18',400000)"
+        )
+        db.commit()
+        db.close()
+        db2 = board.connect(self.path)
+        self.addCleanup(db2.close)
+        row = next(r for r in board.listings(db2) if r["id"] == "otm:2")
+        self.assertIsNone(row["verdict"])
+
+    def test_the_board_never_writes_verdicts(self):
+        """The mirror of TestTheJobAgrees: the job owns this table."""
+        src = Path(__file__).with_name("property-board.py").read_text()
+        offending = [
+            ln
+            for ln in src.splitlines()
+            if "verdicts" in ln
+            and any(w in ln.upper() for w in ("INSERT", "UPDATE", "DELETE", "REPLACE"))
+        ]
+        self.assertEqual(offending, [], "the board must only read `verdicts`")
+
+    def test_the_board_survives_a_database_the_job_has_not_migrated(self):
+        """The board must not require a table only the job creates.
+
+        Both halves deploy together, but `verdicts` appears when the JOB next
+        opens the database -- which may be hours later, at 07:30. In between,
+        a board that insisted on the table would 500 on every page load, and
+        the cause would look like nothing to do with a schema change.
+        """
+        bare = os.path.join(self.dir.name, "bare.db")
+        raw = sqlite3.connect(bare)
+        raw.executescript(
+            "CREATE TABLE listings (id TEXT PRIMARY KEY, outcode TEXT,"
+            " status TEXT, first_seen TEXT, last_seen TEXT, first_price INTEGER,"
+            " price INTEGER, bedrooms INTEGER, bathrooms INTEGER, title TEXT,"
+            " address TEXT, kind TEXT, tenure TEXT, lease_years INTEGER,"
+            " agent TEXT, lat REAL, lon REAL, url TEXT);"
+            " INSERT INTO listings(id,outcode,status,first_seen,last_seen,price)"
+            " VALUES ('otm:9','SE8','live','2026-11-01','2026-11-18',420000);"
+        )
+        raw.commit()
+        raw.close()
+        db = board.connect(bare)
+        self.addCleanup(db.close)
+        rows = board.listings(db)
+        self.assertEqual(len(rows), 1)
+        self.assertIsNone(rows[0]["verdict"])
+
+    def test_score_is_gone(self):
+        """A column that exists and is always NULL reads as 'not judged'."""
+        src = Path(__file__).with_name("property-board.py").read_text()
+        hits = [ln.strip() for ln in src.splitlines() if "score" in ln.lower()]
+        self.assertEqual(hits, [], "score was dropped in property#7")
 
 
 if __name__ == "__main__":

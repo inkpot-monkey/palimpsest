@@ -20,6 +20,7 @@ written in AGENTS.md beside the database rather than in this file.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import html
 import json
 import os
@@ -339,13 +340,31 @@ CREATE TABLE IF NOT EXISTS listings (
   description TEXT,                          -- the listing's prose, as text
   key_info TEXT,                             -- the portal's own facts, verbatim
   raw TEXT,                                  -- verbatim source record
-  score INTEGER, verdict TEXT,               -- written by the model, not here
   relist_of TEXT
 );
 CREATE TABLE IF NOT EXISTS observations (
   id TEXT NOT NULL, seen_on TEXT NOT NULL,
   price INTEGER, status TEXT,
   PRIMARY KEY (id, seen_on)
+);
+CREATE TABLE IF NOT EXISTS verdicts (
+  -- What the model thought, when, and about WHAT PRICE. A verdict belongs to a
+  -- moment, not to a listing: a place that drops £40k gets judged again, and the
+  -- old verdict was not wrong -- it was right about a different price. A column
+  -- on `listings` would overwrite exactly the thing worth keeping.
+  --
+  -- No `score`. A model's mark out of ten is not a measurement: the same flat,
+  -- judged on two days in two different deltas, scores differently for reasons
+  -- that have nothing to do with the property. Stored, it invites a comparison
+  -- that was never valid. It stays in the daily message, where it ranks within
+  -- one day and is then disposable.
+  id TEXT NOT NULL,
+  judged_on TEXT NOT NULL,
+  verdict TEXT NOT NULL,
+  price_at_judgement INTEGER,
+  model TEXT, reasoning_effort TEXT,
+  trigger TEXT,              -- stamped by the script; the model is never asked
+  PRIMARY KEY (id, judged_on)
 );
 CREATE TABLE IF NOT EXISTS favourites (   -- the board writes this, we only read
   id TEXT PRIMARY KEY, added_on TEXT NOT NULL, note TEXT
@@ -405,6 +424,15 @@ def connect(path: str) -> sqlite3.Connection:
     for col, decl in (("description", "TEXT"), ("key_info", "TEXT")):
         if col not in have:
             db.execute(f"ALTER TABLE listings ADD COLUMN {col} {decl}")
+
+    # `score` was specified before anything wrote it, and property#7 decided
+    # nothing ever should. Drop it rather than leave it: a column that exists and
+    # is always NULL reads as "the model did not judge this one", which is a
+    # different and wrong statement. (DROP COLUMN needs sqlite >= 3.35; rk1b is
+    # on 3.54. Guarded anyway so an older host degrades to leaving it in place
+    # rather than failing to open the database at all.)
+    if "score" in have and sqlite3.sqlite_version_info >= (3, 35):
+        db.execute("ALTER TABLE listings DROP COLUMN score")
     db.commit()
 
     for suffix in ("", "-wal", "-shm"):
@@ -620,6 +648,105 @@ def find_relist(db: sqlite3.Connection, r: dict) -> str | None:
 
 
 # --------------------------------------------------------------------------
+# Verdicts (property#7)
+#
+# The model writes JSON and invokes `--apply-verdicts`; this is the only door
+# into the corpus it has. It never learns the schema, never opens sqlite, and
+# cannot insert a listing, delete one, or touch a column it has no business in.
+# The blast radius of a bad run is "a verdict is wrong", not "the corpus is
+# corrupt" -- which is the whole reason the model is not simply handed the
+# database.
+# --------------------------------------------------------------------------
+
+
+def stored_triggers(db: sqlite3.Connection, today: str) -> dict[str, str]:
+    """Why each listing was in today's delta, as a FACT the script already knows.
+
+    Derived from what was recorded rather than asked of the model: it would have
+    to be told in order to answer, and could then get it wrong. A listing first
+    seen today is new; one whose price differs from yesterday's observation
+    moved, and which way.
+    """
+    out: dict[str, str] = {}
+    for r in db.execute(
+        """SELECT l.id, l.first_seen, l.relist_of, l.price AS now,
+                  (SELECT o.price FROM observations o
+                    WHERE o.id = l.id AND o.seen_on < ?
+                    ORDER BY o.seen_on DESC LIMIT 1) AS before
+           FROM listings l WHERE l.last_seen = ?""",
+        (today, today),
+    ):
+        if r["first_seen"] == today:
+            out[r["id"]] = "relisted" if r["relist_of"] else "new"
+        elif (
+            r["before"] is not None and r["now"] is not None and r["now"] != r["before"]
+        ):
+            out[r["id"]] = "reduced" if r["now"] < r["before"] else "increased"
+    return out
+
+
+def apply_verdicts(
+    db: sqlite3.Connection,
+    payload,
+    today: str,
+    model: str | None = None,
+    reasoning_effort: str | None = None,
+    triggers: dict[str, str] | None = None,
+) -> tuple[int, list[str]]:
+    """Apply what the model judged. Returns (applied, [rejection reasons]).
+
+    Validation is the enforcement: nothing constrains what the model emits, so
+    anything this does not check reaches the corpus. Bad rows are rejected
+    individually and the good ones still land -- one malformed entry must not
+    cost a whole night's judgement.
+    """
+    rejected: list[str] = []
+    applied = 0
+    triggers = triggers or {}
+
+    if not isinstance(payload, list):
+        return 0, [f"expected a list of verdicts, got {type(payload).__name__}"]
+
+    known = {r["id"]: r["price"] for r in db.execute("SELECT id, price FROM listings")}
+
+    for i, item in enumerate(payload):
+        if not isinstance(item, dict):
+            rejected.append(f"[{i}] not an object")
+            continue
+        pid = item.get("id")
+        verdict = item.get("verdict")
+        if not isinstance(pid, str) or not pid:
+            rejected.append(f"[{i}] missing or non-string id")
+            continue
+        if not isinstance(verdict, str) or not verdict.strip():
+            rejected.append(f"[{i}] {pid}: missing or empty verdict")
+            continue
+        if pid not in known:
+            # The model inventing an id, or judging something it was not shown,
+            # is the failure that would quietly corrupt the record. Refuse it.
+            rejected.append(f"[{i}] {pid}: unknown listing")
+            continue
+        db.execute(
+            """INSERT OR REPLACE INTO verdicts
+               (id, judged_on, verdict, price_at_judgement, model, reasoning_effort, trigger)
+               VALUES (?,?,?,?,?,?,?)""",
+            (
+                pid,
+                today,
+                verdict.strip(),
+                known[pid],
+                model,
+                reasoning_effort,
+                triggers.get(pid),
+            ),
+        )
+        applied += 1
+
+    db.commit()
+    return applied, rejected
+
+
+# --------------------------------------------------------------------------
 # The digest -- stable bytes, silent when nothing moved
 # --------------------------------------------------------------------------
 
@@ -779,7 +906,7 @@ def backfill(db: sqlite3.Connection, src, limit: int, log) -> int:
     return len(details)
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--state", default="/var/lib/property-watch")
     ap.add_argument(
@@ -795,8 +922,25 @@ def main() -> int:
         "For the corpus recorded before descriptions were collected; not part "
         "of the daily run, and prints nothing on stdout.",
     )
+    ap.add_argument(
+        "--apply-verdicts",
+        metavar="FILE",
+        help="apply the model's judgements from FILE (a JSON list of "
+        "{id, verdict}), then stop. This is the ONLY door the model has into "
+        "the corpus: it writes the file and calls this, and the script does "
+        "every write. Prints nothing on stdout -- see the note there.",
+    )
+    ap.add_argument(
+        "--judge-backlog",
+        type=int,
+        metavar="N",
+        help="list up to N stored listings that have never been judged, as "
+        "JSON on STDERR, for an operator-driven one-off catch-up. Unlike "
+        "--backfill this exists to spend MODEL tokens, so it is never "
+        "automatic and never part of the daily run.",
+    )
     ap.add_argument("--verbose", action="store_true", help="progress to stderr")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
 
     log = (lambda m: print(m, file=sys.stderr)) if args.verbose else (lambda m: None)
 
@@ -809,6 +953,56 @@ def main() -> int:
     db = connect(os.path.join(args.state, "data", "property-watch.db"))
     today = date.today().isoformat()
     src = make_source(cfg)
+
+    if args.apply_verdicts:
+        # NOTHING GOES TO STDOUT HERE. `--monitor-script` hashes stdout exactly,
+        # so a byte written on this path would change the hash on every run that
+        # judged anything -- waking the model every morning, forever, while the
+        # job carried on looking perfectly healthy. Rejections go to stderr,
+        # which hermes surfaces as run output.
+        try:
+            with open(args.apply_verdicts) as f:
+                payload = json.load(f)
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"could not read verdicts: {e}", file=sys.stderr)
+            return 2
+        applied, rejected = apply_verdicts(
+            db,
+            payload,
+            today,
+            model=os.environ.get("PROPERTY_WATCH_MODEL"),
+            reasoning_effort=os.environ.get("PROPERTY_WATCH_REASONING_EFFORT"),
+            triggers=stored_triggers(db, today),
+        )
+        for r in rejected:
+            print(f"rejected verdict {r}", file=sys.stderr)
+        print(f"applied {applied} verdicts, rejected {len(rejected)}", file=sys.stderr)
+        # Consumed on purpose: a file left behind would be re-applied on the
+        # next run and silently re-date a verdict to a day nobody judged it.
+        with contextlib.suppress(OSError):
+            os.unlink(args.apply_verdicts)
+        return 0
+
+    if args.judge_backlog is not None:
+        rows = db.execute(
+            """SELECT l.id, l.outcode, l.price, l.bedrooms, l.kind, l.tenure,
+                      l.title, l.url, l.description, l.key_info
+               FROM listings l
+               LEFT JOIN verdicts v ON v.id = l.id
+               WHERE v.id IS NULL AND l.status != 'withdrawn'
+               ORDER BY l.id LIMIT ?""",
+            (args.judge_backlog,),
+        ).fetchall()
+        print(
+            # Keep `.keys()`: iterating a sqlite3.Row yields VALUES, not column
+            # names, so SIM118's "simplification" silently keys the dict by data.
+            json.dumps(
+                [{k: r[k] for k in r.keys()} for r in rows],  # noqa: SIM118
+                indent=1,
+            ),
+            file=sys.stderr,
+        )
+        return 0
 
     if args.backfill is not None:
         n = backfill(db, src, args.backfill, log)

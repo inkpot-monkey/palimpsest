@@ -98,7 +98,7 @@ _COLUMNS = [
     "id", "outcode", "status", "first_seen", "last_seen",
     "first_price", "price", "bedrooms", "bathrooms",
     "title", "address", "kind", "tenure", "lease_years",
-    "agent", "lat", "lon", "url", "score", "verdict",
+    "agent", "lat", "lon", "url",
 ]  # fmt: skip
 
 
@@ -111,12 +111,48 @@ def _row(r: sqlite3.Row) -> dict:
     return d
 
 
+def _has_verdicts(db: sqlite3.Connection) -> bool:
+    """Whether the job has created its verdicts table yet (property#7).
+
+    Both halves deploy together, but that table appears when the JOB next opens
+    the database -- which may not be until 07:30 the next morning. A board that
+    simply joined it would 500 on every page load until then, and the cause
+    would look like nothing to do with a schema change. Checked rather than
+    created: the job owns this table, and a board that created it would be
+    defining a shape the job then has to agree with.
+    """
+    return (
+        db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='verdicts'"
+        ).fetchone()
+        is not None
+    )
+
+
 def listings(db: sqlite3.Connection) -> list[dict]:
     cols = ", ".join("l." + c for c in _COLUMNS)
+    if not _has_verdicts(db):
+        rows = db.execute(
+            f"""SELECT {cols}, f.id AS fav_id, f.note AS note,
+                       NULL AS verdict, NULL AS price_at_judgement,
+                       NULL AS model, NULL AS judged_on, NULL AS trigger,
+                       CAST(julianday(l.last_seen) - julianday(l.first_seen)
+                            AS INTEGER) AS days_on_market
+                  FROM listings l LEFT JOIN favourites f ON f.id = l.id
+                 ORDER BY l.first_seen DESC"""
+        ).fetchall()
+        return [_row(r) for r in rows]
     rows = db.execute(
         f"""
         SELECT {cols},
                f.id AS fav_id, f.note AS note,
+               -- The LATEST verdict, with the price it was judged at. A verdict
+               -- belongs to a moment (property#7), so there may be several per
+               -- listing and only the most recent is the current opinion -- but
+               -- the older ones are the record of how the agent's view moved,
+               -- which is why they are rows and not an overwritten column.
+               v.verdict AS verdict, v.price_at_judgement AS price_at_judgement,
+               v.model AS model, v.judged_on AS judged_on, v.trigger AS trigger,
                -- Days on market runs first_seen -> last_seen, NOT first_seen ->
                -- today: a withdrawn listing's clock stopped when it withdrew,
                -- and counting to today would show it ageing forever.
@@ -124,7 +160,13 @@ def listings(db: sqlite3.Connection) -> list[dict]:
                  AS days_on_market
           FROM listings l
           LEFT JOIN favourites f ON f.id = l.id
-         ORDER BY l.score IS NULL, l.score DESC, l.first_seen DESC
+          LEFT JOIN verdicts v
+                 ON v.id = l.id
+                AND v.judged_on = (SELECT MAX(judged_on) FROM verdicts
+                                    WHERE id = l.id)
+         -- Ordered on FACTS. Ranking by the model's mark would make a number
+         -- that was never comparable across days decide what you see first.
+         ORDER BY l.first_seen DESC
         """
     ).fetchall()
     return [_row(r) for r in rows]
@@ -261,7 +303,7 @@ PAGE = """<!doctype html>
   <div class="scroll"><table>
     <thead><tr>
       <th></th><th>Address</th><th class="num">Price</th><th class="num">Beds</th>
-      <th>Tenure</th><th class="num">Days</th><th class="num">Score</th>
+      <th>Tenure</th><th class="num">Days</th>
       <th>Verdict</th><th>History</th>
     </tr></thead>
     <tbody id="rows"></tbody>
@@ -348,8 +390,11 @@ function render() {
       '<td class="num">' + (r.bedrooms == null ? "\\u2014" : r.bedrooms) + '</td>' +
       '<td>' + esc((r.tenure || "unknown").replace(/_/g, " ")) + '</td>' +
       '<td class="num">' + (r.days_on_market == null ? "\\u2014" : r.days_on_market) + '</td>' +
-      '<td class="num">' + (r.score == null ? "\\u2014" : r.score) + '</td>' +
-      '<td class="verdict">' + esc(r.verdict || "") + '</td>' +
+      '<td class="verdict">' + (r.verdict == null ? "" :
+        esc(r.verdict) + '<div class="sub">judged ' + esc(r.judged_on) +
+        ' at ' + money(r.price_at_judgement) +
+        (r.trigger ? ' \\u00b7 ' + esc(r.trigger) : "") +
+        (r.model ? ' \\u00b7 ' + esc(r.model) : "") + '</div>') + '</td>' +
       '<td class="num" id="hist-' + esc(r.id) + '"></td>';
     const btn = document.createElement("button");
     btn.className = "star" + (r.favourite ? " on" : "");
@@ -396,7 +441,9 @@ function drawMap(rows) {
     m.bindPopup('<strong>' + esc(r.address || r.title || r.id) + '</strong><br>' +
       money(r.price) + ' \\u00b7 ' + (r.bedrooms == null ? "?" : r.bedrooms) + ' bed \\u00b7 ' +
       esc((r.tenure || "unknown").replace(/_/g, " ")) + '<br>' +
-      (r.score == null ? "" : '<em>' + r.score + '/10 \\u2014 ' + esc(r.verdict || "") + '</em><br>') +
+      (r.verdict == null ? "" : '<em>' + esc(r.verdict) + '</em><br>' +
+        '<span style="color:#6b6560">judged ' + esc(r.judged_on) + ' at ' +
+        money(r.price_at_judgement) + '</span><br>') +
       '<span style="color:#6b6560">Street-level only, not the exact building.</span>' +
       (r.url ? '<br><a href="' + esc(r.url) + '" target="_blank" rel="noreferrer">listing</a>' : ""));
     m.on("click", () => focusOn(r));

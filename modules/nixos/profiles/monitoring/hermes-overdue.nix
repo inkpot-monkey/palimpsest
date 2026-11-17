@@ -131,6 +131,15 @@ let
       exit 0
     fi
 
+    # A job counts as having run today if its last_run_at falls on today's date. Read from
+    # the same jobs.json the rest of this check uses rather than the execution ledger: one
+    # source, and the ledger's `completed` includes runs that did no judging at all.
+    ran_today() {
+      lr="$(jq -r --arg i "$1" '.jobs[]? | select(.id == $i) | .last_run_at // ""' "$jobs" 2>/dev/null || true)"
+      [ -n "$lr" ] || return 1
+      [ "$(date -d "$lr" +%F 2>/dev/null || true)" = "$(date +%F)" ]
+    }
+
     # ── The ticker ─────────────────────────────────────────────────────────────────────
     # Checked first and reported separately: a wedged ticker makes EVERY job overdue, and
     # one message naming the cause beats N naming the symptom. The per-job loop still runs
@@ -179,6 +188,30 @@ let
         clear_ "job-$id" "✅ [${host}] hermes — agent job '$name' ($id) is running to schedule again (last run $last, next $next)."
       fi
     done < <(jq -r '.[] | [.id, .name, (.next_run_at // ""), (.last_run_at // ""), (.schedule_display // .schedule.expr // ""), (.timezone // "")] | @tsv' <<<"$active")
+
+    # ── What a successful run was supposed to leave behind ─────────────────────────────
+    # The run that SUCCEEDS and produces nothing is invisible everywhere else: hermes
+    # reports it completed, `--failure-deliver` has nothing to say, and the daily message
+    # still arrives looking exactly as it always does. Only the thing it should have
+    # written is missing, and nobody looks there until they want it.
+    #
+    # Only asked of jobs that actually ran today. A job that has not run yet, or whose
+    # delta was empty and correctly judged nothing, must stay silent -- the whole point of
+    # this job shape is that quiet days are normal.
+    ${lib.concatStringsSep "\n" (
+      lib.mapAttrsToList (name: p: ''
+        if ran_today "${p.jobId}" && [ -r "${p.db}" ]; then
+          produced="$(${pkgs.sqlite}/bin/sqlite3 -readonly "${p.db}" "${p.sql}" 2>/dev/null || echo "")"
+          if [ -z "$produced" ]; then
+            echo "hermes-overdue: ${name}: could not read ${p.db} — skipping" >&2
+          elif [ "$produced" -eq 0 ]; then
+            fire "produced-${name}" "🚨 [''${host}] hermes — agent job ${p.jobId} ran today and ${p.message}. The run SUCCEEDED, so nothing else reports this."
+          else
+            clear_ "produced-${name}" "✅ [''${host}] hermes — agent job ${p.jobId} is producing again ($produced row(s) today)."
+          fi
+        fi
+      '') cfg.producedChecks
+    )}
 
     # Drop state for jobs that no longer exist, so a deleted job cannot leave a file that
     # suppresses the alert if an id is ever reused.
@@ -239,6 +272,58 @@ in
         How long since the cron ticker's last completed pass before the scheduler itself is
         reported stalled. Measured at ~30s between passes on rk1b, so fifteen minutes is
         thirty missed passes — well clear of a slow tick, well inside a daily job's slot.
+      '';
+    };
+
+    producedChecks = lib.mkOption {
+      type = lib.types.attrsOf (
+        lib.types.submodule {
+          options = {
+            jobId = lib.mkOption {
+              type = lib.types.str;
+              description = "The hermes job whose run should have produced something.";
+            };
+            db = lib.mkOption {
+              type = lib.types.str;
+              description = "SQLite database to ask.";
+            };
+            sql = lib.mkOption {
+              type = lib.types.str;
+              description = ''
+                A query returning a single number: how many rows this job produced TODAY.
+                Zero, on a day the job ran, is the alert.
+              '';
+            };
+            message = lib.mkOption {
+              type = lib.types.str;
+              description = "What to say when it produced nothing. Names the consequence.";
+            };
+          };
+        }
+      );
+      default = { };
+      description = ''
+        Assertions of the form "a job that ran today left something behind".
+
+        DELIBERATELY GENERIC. The silent failure this catches is specific to a job
+        (property#7: the model still delivers its daily message while its judgement
+        quietly stops reaching the corpus, so everything looks healthy and the record
+        goes stale) — but teaching this watcher that job's schema would mean the next
+        agent job adds its own clause to a file that is otherwise about hermes alone.
+        The job declares its own assertion; this only runs it.
+
+        Not a substitute for the job's own failure delivery: this is for the run that
+        SUCCEEDS and produces nothing, which `--failure-deliver` by definition never sees.
+      '';
+      example = lib.literalExpression ''
+        {
+          property-verdicts = {
+            jobId = "705f90d79b87";
+            db = "/var/lib/property-watch/data/property-watch.db";
+            sql = "SELECT COUNT(*) FROM verdicts WHERE judged_on = date('now')";
+            message = "judged nothing today; the board's verdicts are going stale";
+          };
+        }
       '';
     };
 

@@ -22,9 +22,12 @@ Nothing here reaches the network.
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import json
 import os
+import sqlite3
 import sys
 import tempfile
 import unittest
@@ -291,6 +294,243 @@ class StableBytes(unittest.TestCase):
         text = pw.digest(d, set())
         self.assertIn("prose for https://www.onthemarket.com/details/1/", text)
         self.assertIn("Service charge: £800 per annum", text)
+
+
+# ---------------------------------------------------------------------------
+# Seam 4: applying verdicts (property#7)
+#
+# The model writes JSON and calls the script; the script owns every write. So
+# this seam is the enforcement: what the model says versus what is allowed to
+# reach the corpus. Nothing here can test whether the model emits GOOD JSON --
+# only what happens to the JSON it does emit.
+# ---------------------------------------------------------------------------
+
+
+class ApplyVerdicts(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db = pw.connect(os.path.join(self.tmp.name, "t.db"))
+        self.db.execute(
+            """INSERT INTO listings(id,source,outcode,first_seen,last_seen,price,kind)
+               VALUES ('otm:1','onthemarket','SE15','2026-11-01','2026-11-17',500000,'flat')"""
+        )
+        self.db.commit()
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_a_verdict_is_stored_with_the_price_it_judged(self):
+        """A verdict without its price is an opinion about an unknown number.
+        Denormalised deliberately: joining back through `observations` goes
+        ambiguous the moment a listing is withdrawn and re-listed."""
+        applied, rejected = pw.apply_verdicts(
+            self.db,
+            [{"id": "otm:1", "verdict": "garden backs onto the railway"}],
+            "2026-11-17",
+            model="haiku-5.5",
+            reasoning_effort="low",
+        )
+        self.assertEqual((applied, rejected), (1, []))
+        row = self.db.execute("SELECT * FROM verdicts").fetchone()
+        self.assertEqual(row["verdict"], "garden backs onto the railway")
+        self.assertEqual(row["price_at_judgement"], 500000)
+        self.assertEqual(row["model"], "haiku-5.5")
+        self.assertEqual(row["reasoning_effort"], "low")
+
+    def test_a_bad_row_is_rejected_without_costing_the_good_ones(self):
+        """One malformed entry must not throw away a night's judgement, and a
+        rejection must say which row and why -- a count alone is not actionable."""
+        applied, rejected = pw.apply_verdicts(
+            self.db,
+            [
+                {"id": "otm:1", "verdict": "fine"},
+                {"id": "otm:nope", "verdict": "invented listing"},
+                {"id": "otm:1"},
+                {"verdict": "no id at all"},
+                "not an object",
+            ],
+            "2026-11-17",
+        )
+        self.assertEqual(applied, 1)
+        self.assertEqual(len(rejected), 4)
+        self.assertTrue(any("unknown listing" in r for r in rejected))
+        self.assertEqual(
+            self.db.execute("SELECT COUNT(*) c FROM verdicts").fetchone()["c"], 1
+        )
+
+    def test_a_payload_that_is_not_a_list_is_refused_whole(self):
+        applied, rejected = pw.apply_verdicts(self.db, {"id": "otm:1"}, "2026-11-17")
+        self.assertEqual(applied, 0)
+        self.assertEqual(len(rejected), 1)
+
+    def test_judging_twice_in_a_day_replaces_rather_than_duplicates(self):
+        """A catch-up run, or an operator triggering the job by hand, must not
+        leave two verdicts for one day with no way to say which is current."""
+        pw.apply_verdicts(self.db, [{"id": "otm:1", "verdict": "first"}], "2026-11-17")
+        pw.apply_verdicts(self.db, [{"id": "otm:1", "verdict": "second"}], "2026-11-17")
+        rows = self.db.execute("SELECT verdict FROM verdicts").fetchall()
+        self.assertEqual([r["verdict"] for r in rows], ["second"])
+
+    def test_two_days_are_two_verdicts(self):
+        """The point of the table: what the agent thought before and after a
+        price moved is the record, and one row per listing would destroy it."""
+        pw.apply_verdicts(
+            self.db, [{"id": "otm:1", "verdict": "at 500k"}], "2026-11-17"
+        )
+        self.db.execute("UPDATE listings SET price=460000 WHERE id='otm:1'")
+        pw.apply_verdicts(
+            self.db, [{"id": "otm:1", "verdict": "at 460k"}], "2026-11-18"
+        )
+        rows = self.db.execute(
+            "SELECT judged_on, price_at_judgement FROM verdicts ORDER BY judged_on"
+        ).fetchall()
+        self.assertEqual(
+            [(r["judged_on"], r["price_at_judgement"]) for r in rows],
+            [("2026-11-17", 500000), ("2026-11-18", 460000)],
+        )
+
+    def test_the_trigger_is_stamped_by_us_not_supplied_by_the_model(self):
+        """The script knows why a listing was in the delta as a fact. Asking the
+        model would mean telling it, and it could then get it wrong."""
+        applied, _ = pw.apply_verdicts(
+            self.db,
+            [{"id": "otm:1", "verdict": "cheaper now", "trigger": "LIES"}],
+            "2026-11-17",
+            triggers={"otm:1": "reduced"},
+        )
+        self.assertEqual(applied, 1)
+        row = self.db.execute("SELECT trigger FROM verdicts").fetchone()
+        self.assertEqual(row["trigger"], "reduced")
+
+
+# ---------------------------------------------------------------------------
+# Seam 5: opening a database that predates this change
+#
+# The live corpus on rk1b exists and has hundreds of rows in it. property#6
+# already learned what happens when a schema change assumes a fresh file:
+# `CREATE TABLE IF NOT EXISTS` does nothing to a table that is already there, so
+# the first run after a deploy dies on "no such column" -- AFTER a full sweep,
+# because the sweep comes first. This seam is that lesson, kept.
+# ---------------------------------------------------------------------------
+
+
+class OpeningAnOlderDatabase(unittest.TestCase):
+    PRE_7 = """
+    CREATE TABLE listings (
+      id TEXT PRIMARY KEY, source TEXT NOT NULL, outcode TEXT NOT NULL,
+      first_seen TEXT NOT NULL, last_seen TEXT NOT NULL,
+      absences INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'live',
+      first_price INTEGER, price INTEGER, bedrooms INTEGER, bathrooms INTEGER,
+      title TEXT, address TEXT, kind TEXT, tenure TEXT, lease_years INTEGER,
+      auction_agent INTEGER DEFAULT 0, agent TEXT, lat REAL, lon REAL, url TEXT,
+      features TEXT, description TEXT, key_info TEXT, raw TEXT,
+      score INTEGER, verdict TEXT,
+      relist_of TEXT
+    );
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.path = os.path.join(self.tmp.name, "old.db")
+        old = sqlite3.connect(self.path)
+        old.executescript(self.PRE_7)
+        old.execute(
+            "INSERT INTO listings(id,source,outcode,first_seen,last_seen,price,score)"
+            " VALUES ('otm:1','onthemarket','SE15','2026-11-01','2026-11-17',500000,7)"
+        )
+        old.commit()
+        old.close()
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_the_verdicts_table_is_created_on_an_existing_corpus(self):
+        db = pw.connect(self.path)
+        db.execute("SELECT * FROM verdicts")  # raises if the migration did not run
+
+    def test_the_dead_score_column_is_removed_and_the_corpus_survives(self):
+        """A column that exists and is always NULL reads as 'the model did not
+        judge this one', which is a different and wrong statement."""
+        db = pw.connect(self.path)
+        cols = {r["name"] for r in db.execute("PRAGMA table_info(listings)")}
+        self.assertNotIn("score", cols)
+        row = db.execute("SELECT id, price FROM listings").fetchone()
+        self.assertEqual((row["id"], row["price"]), ("otm:1", 500000))
+
+    def test_opening_twice_is_harmless(self):
+        pw.connect(self.path).close()
+        db = pw.connect(self.path)
+        self.assertNotIn(
+            "score", {r["name"] for r in db.execute("PRAGMA table_info(listings)")}
+        )
+
+
+# ---------------------------------------------------------------------------
+# Seam 6: the --apply-verdicts CLI contract
+#
+# THE MONITOR HASH IS THE JOB'S WHOLE ECONOMY. `--monitor-script` hashes stdout
+# exactly: if applying verdicts ever writes a single byte there, the hash changes
+# every run, the model is woken every morning forever, and NOTHING LOOKS BROKEN
+# -- the job still works, it just quietly costs a model call a day. That is the
+# kind of regression a test has to catch because a human never will.
+# ---------------------------------------------------------------------------
+
+
+class ApplyVerdictsCli(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.state = self.tmp.name
+        os.makedirs(os.path.join(self.state, "data"), exist_ok=True)
+        with open(os.path.join(self.state, "config.json"), "w") as f:
+            json.dump(
+                {
+                    "source": "onthemarket",
+                    "outcodes": ["SE15"],
+                    "max_price": 550000,
+                    "min_bedrooms": 2,
+                },
+                f,
+            )
+        db = pw.connect(os.path.join(self.state, "data", "property-watch.db"))
+        db.execute(
+            "INSERT INTO listings(id,source,outcode,first_seen,last_seen,price)"
+            " VALUES ('otm:1','onthemarket','SE15','2026-11-01','2026-11-17',500000)"
+        )
+        db.commit()
+        db.close()
+        self.addCleanup(self.tmp.cleanup)
+
+    def _run(self, payload):
+        inbox = os.path.join(self.state, "data", "verdicts-inbox")
+        os.makedirs(inbox, exist_ok=True)
+        f = os.path.join(inbox, "v.json")
+        with open(f, "w") as fh:
+            fh.write(payload if isinstance(payload, str) else json.dumps(payload))
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = pw.main(["--state", self.state, "--apply-verdicts", f])
+        return rc, out.getvalue(), err.getvalue(), f
+
+    def test_applying_verdicts_prints_nothing_on_stdout(self):
+        rc, out, _err, _ = self._run([{"id": "otm:1", "verdict": "fine"}])
+        self.assertEqual(rc, 0)
+        self.assertEqual(out, "", "stdout must stay empty or the monitor hash moves")
+
+    def test_rejections_go_to_stderr_and_name_the_row(self):
+        """Silently dropping bad rows would hide a model that has quietly
+        stopped producing usable judgement."""
+        _rc, out, err, _ = self._run([{"id": "otm:ghost", "verdict": "invented"}])
+        self.assertEqual(out, "")
+        self.assertIn("otm:ghost", err)
+        self.assertIn("unknown listing", err)
+
+    def test_malformed_json_is_an_error_not_a_crash_and_stdout_stays_clean(self):
+        rc, out, err, _ = self._run("{not json at all")
+        self.assertNotEqual(rc, 0)
+        self.assertEqual(out, "")
+        self.assertTrue(err.strip())
+
+    def test_the_inbox_file_is_consumed(self):
+        """Steady state is an empty inbox: a leftover file would be re-applied
+        on the next run and silently re-date a verdict."""
+        _rc, _out, _err, f = self._run([{"id": "otm:1", "verdict": "fine"}])
+        self.assertFalse(os.path.exists(f))
 
 
 if __name__ == "__main__":

@@ -12,6 +12,19 @@ in
   options.custom.profiles.property-watch = {
     enable = lib.mkEnableOption "the property-watch agent job's state tree and source script";
 
+    jobId = {
+      enable = lib.mkEnableOption ''
+        the check that this job's judgement is still reaching the database. Needs the
+        hermes job id, which is imperative state (`hermes cron list`) and not knowable
+        from the flake -- so it is passed in rather than derived
+      '';
+      jobId = lib.mkOption {
+        type = lib.types.str;
+        default = "";
+        description = "The hermes cron job id, from `hermes cron list`.";
+      };
+    };
+
     stateDir = lib.mkOption {
       type = lib.types.path;
       default = "/var/lib/property-watch";
@@ -76,6 +89,25 @@ in
     # at the systemd layer too, so the split is enforced twice over — once by ownership,
     # once by the sandbox — and neither depends on the other being right.
     systemd.services.hermes-agent.serviceConfig.ReadWritePaths = [ "${cfg.stateDir}/data" ];
+
+    # ── THE SILENT FAILURE THIS JOB HAS ──────────────────────────────────────────────
+    # property#7. The model's judgement reaches the corpus by the model writing a file and
+    # calling `--apply-verdicts`. If that stops working -- a prompt edit, a model that stops
+    # following it, a permissions change -- the DAILY MESSAGE STILL ARRIVES AND STILL LOOKS
+    # RIGHT. hermes reports the run completed, `--failure-deliver` has nothing to say, and
+    # the only symptom is a board whose verdicts quietly stop moving, which nobody notices
+    # until they go looking for one.
+    #
+    # Declared HERE, not in the watcher: the assertion is about this job's schema, and a
+    # fleet-generic watcher that knew about `verdicts` would collect a clause per job.
+    custom.profiles.monitoring-hermes-overdue.producedChecks = lib.mkIf cfg.jobId.enable {
+      property-verdicts = {
+        inherit (cfg.jobId) jobId;
+        db = "${cfg.stateDir}/data/property-watch.db";
+        sql = "SELECT COUNT(*) FROM verdicts WHERE judged_on = date('now')";
+        message = "left no verdicts; its judgement is no longer reaching the corpus";
+      };
+    };
 
     # For opening the database by hand over ssh. Deliberately NOT added to hermes's
     # `extraPackages`: the agent has no business shelling out to a database it should be

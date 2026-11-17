@@ -370,7 +370,16 @@ in
           # property-watch — the state tree and declared source script for the daily
           # property search (forge inkpotmonkey/property#4). Here because the agent job
           # that writes it runs here; the board that reads it (#5) lives here too.
-          custom.profiles.property-watch.enable = true;
+          custom.profiles.property-watch = {
+            enable = true;
+            # The job id is imperative state -- `hermes cron list` is the authority and the
+            # flake cannot derive it. Named here so the producedChecks assertion (property#7)
+            # can ask whether THIS job judged anything today.
+            jobId = {
+              enable = true;
+              jobId = "705f90d79b87";
+            };
+          };
 
           # ...and the board itself (property#5), at property.<domain>. On this host and
           # not the edge because the database is here and is the contract between the two

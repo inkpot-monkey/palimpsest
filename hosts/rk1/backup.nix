@@ -190,9 +190,16 @@ in
 
     # Two subtrees of /var/lib/hermes that would otherwise dominate the snapshot without
     # adding anything a restore wants:
-    #   cron/output   one markdown file per run, and NOTHING auto-prunes it (unlike the
-    #                 2 MB/2000-line cap OpenClaw put on its run log). It grows forever and
-    #                 churns nightly, which also defeats restic's dedup.
+    #   cron/output   one markdown file per run. It churns nightly, which defeats restic's
+    #                 dedup, and the durable part of what a run produced is written to the
+    #                 job's own store anyway (for property-watch, the `verdicts` rows).
+    #                 What is lost is the prose report -- "what the agent said in March" --
+    #                 which is a daily artefact rather than a record.
+    #                 NOTE: an earlier version of this comment claimed NOTHING auto-prunes
+    #                 it. That was wrong: hermes caps it at `cron.output_retention` files
+    #                 per job (default 50, `cron/jobs.py:_prune_job_output`). The cap and
+    #                 this exclusion are independent, so a response survives 50 runs locally
+    #                 and no restore at all.
     #   workspace     the agent's working tree — clones and scratch, re-acquirable from the
     #                 forge, and the one directory here that a long agent run will inflate.
     exclude = [
