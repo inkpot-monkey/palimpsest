@@ -40,6 +40,12 @@ in
     # hermes writes the database; the board (property#5) will join this group to read it.
     users.users.hermes.extraGroups = [ "property-watch" ];
 
+    # And the operator, who otherwise cannot read the data directory hermes owns -- which
+    # also made putting sqlite3 on the system PATH below pointless, since the one database
+    # it exists to open sits in there. Found by checking after the first real run, not by
+    # reading the module back.
+    users.users.inkpotmonkey.extraGroups = [ "property-watch" ];
+
     # TWO directories, and the split is the whole point.
     #
     # The top level holds the buying brief -- config.json and AGENTS.md -- and is 2750:
