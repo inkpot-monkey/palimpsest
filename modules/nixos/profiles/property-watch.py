@@ -659,6 +659,29 @@ def find_relist(db: sqlite3.Connection, r: dict) -> str | None:
 # --------------------------------------------------------------------------
 
 
+def judging_model(hermes_home: str, job_id: str) -> tuple[str | None, str | None]:
+    """Which model is about to judge, read from hermes's own bookkeeping.
+
+    `jobs.json` is the authority and the only thing that cannot drift: the model
+    is imperative state (`hermes cron edit --model ...`), so a value duplicated
+    into the flake or an env var goes stale the first time anyone changes it --
+    and a verdict attributed to the wrong model is worse than one attributed to
+    none, because it would be believed.
+
+    Returns (None, None) when it cannot be read. Attribution is nice to have;
+    failing a night's judgement over it would not be.
+    """
+    try:
+        with open(os.path.join(hermes_home, "cron", "jobs.json")) as f:
+            jobs = json.load(f).get("jobs") or []
+    except (OSError, ValueError):
+        return (None, None)
+    for j in jobs:
+        if j.get("id") == job_id:
+            return (j.get("model"), j.get("reasoning_effort"))
+    return (None, None)
+
+
 def stored_triggers(db: sqlite3.Connection, today: str) -> dict[str, str]:
     """Why each listing was in today's delta, as a FACT the script already knows.
 
@@ -966,12 +989,17 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, json.JSONDecodeError) as e:
             print(f"could not read verdicts: {e}", file=sys.stderr)
             return 2
+        # HERMES_HOME and the job id come from the unit; see property-watch.nix.
+        model, effort = judging_model(
+            os.environ.get("HERMES_HOME", ""),
+            os.environ.get("PROPERTY_WATCH_JOB_ID", ""),
+        )
         applied, rejected = apply_verdicts(
             db,
             payload,
             today,
-            model=os.environ.get("PROPERTY_WATCH_MODEL"),
-            reasoning_effort=os.environ.get("PROPERTY_WATCH_REASONING_EFFORT"),
+            model=model,
+            reasoning_effort=effort,
             triggers=stored_triggers(db, today),
         )
         for r in rejected:

@@ -152,6 +152,12 @@ in
     services.hermes-agent.hermesHomeFiles = {
       "scripts/property-watch.py" = ./property-watch.py;
       "scripts/property-watch.sh" = pkgs.writeShellScript "property-watch-wrapper" ''
+        # The job id reaches the script so it can ask hermes which model is
+        # judging (property#7). jobs.json is the authority -- the model is
+        # imperative state, and a copy in the flake would go stale the first
+        # time anyone ran `hermes cron edit --model`, attributing verdicts to a
+        # model that did not write them.
+        export PROPERTY_WATCH_JOB_ID="${cfg.jobId.jobId}"
         exec ${pkgs.python3}/bin/python3 "$(dirname "$0")/property-watch.py" "$@"
       '';
     };

@@ -335,6 +335,32 @@ class ApplyVerdicts(unittest.TestCase):
         self.assertEqual(row["model"], "haiku-5.5")
         self.assertEqual(row["reasoning_effort"], "low")
 
+    def test_the_judging_model_is_read_from_hermes_not_guessed(self):
+        """Which model said it is the whole basis for 'did the rankings get
+        worse when we switched'. Read from hermes's own jobs.json, so it cannot
+        drift from what actually ran -- a value duplicated in the flake would
+        go stale the first time someone used `hermes cron edit`."""
+        home = os.path.join(self.tmp.name, "hermes")
+        os.makedirs(os.path.join(home, "cron"))
+        with open(os.path.join(home, "cron", "jobs.json"), "w") as f:
+            json.dump(
+                {
+                    "jobs": [
+                        {
+                            "id": "abc123",
+                            "model": "qwen3.8-27b",
+                            "reasoning_effort": "medium",
+                        }
+                    ]
+                },
+                f,
+            )
+        self.assertEqual(pw.judging_model(home, "abc123"), ("qwen3.8-27b", "medium"))
+
+    def test_an_unknown_job_yields_no_attribution_rather_than_a_wrong_one(self):
+        """A wrong attribution is worse than none: it would be believed."""
+        self.assertEqual(pw.judging_model(self.tmp.name, "nope"), (None, None))
+
     def test_a_bad_row_is_rejected_without_costing_the_good_ones(self):
         """One malformed entry must not throw away a night's judgement, and a
         rejection must say which row and why -- a count alone is not actionable."""
