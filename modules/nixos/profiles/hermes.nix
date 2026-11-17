@@ -42,6 +42,26 @@ let
   # so it is DERIVED from the one option that does exist rather than restated, and follows
   # if `stateDir` ever moves.
   hermesHome = "${config.services.hermes-agent.stateDir}/.hermes";
+
+  # ── WHAT THE AGENT READS, IN TWO HALVES ───────────────────────────────────────────
+  # The SHARED half (`nix-tools.md`) is the fleet's rule about reaching for tools, used
+  # verbatim by opencode too (profiles/opencode.nix) from this one source — the model
+  # catalogue already taught this repo what two hand-kept copies of one fact do.
+  #
+  # The HERMES half carries what is true of THIS agent only, and that is why it is a
+  # separate file rather than three more lines in the shared one: scrapling is on hermes's
+  # PATH and not on opencode's, and pm's tool store is cleared on this unit and nowhere
+  # else. Appending either to `nix-tools.md` would state them to opencode as well, where
+  # both are false — the exact drift the single shared source exists to prevent, arriving
+  # from the other direction.
+  #
+  # Same `concatText` shape opencode uses for its own second half, and bound once here
+  # because TWO call sites need the identical path: `documents` (the workspace copy) and
+  # the tmpfiles symlink at $HOME (the copy a `sudo -u hermes` shell starts next to).
+  agentInstructions = pkgs.concatText "hermes-instructions.md" [
+    ./agent-instructions/nix-tools.md
+    ./agent-instructions/hermes.md
+  ];
   # Upstream's HERMES_HOME, which is a `let` binding in its module rather than an option —
   # so it is DERIVED from the one option that does exist rather than restated, and follows
   # if `stateDir` ever moves.
@@ -240,14 +260,11 @@ in
 
       # ── WHAT THE AGENT IS TOLD ──────────────────────────────────────────────────────
       # Upstream's own option for workspace context, which its description names AGENTS.md
-      # as the case for. The file is the FLEET'S rule about reaching for tools, shared
-      # verbatim with opencode (profiles/opencode.nix) from one source — the model
-      # catalogue already taught this repo what two hand-kept copies of the same fact do.
+      # as the case for. The file itself is assembled at the top of this profile.
       #
-      # Deliberately only the tools rule here. opencode is handed a longer file because it
-      # edits repositories and needs the commit conventions; hermes runs scheduled jobs
-      # against the fleet and does not.
-      documents."AGENTS.md" = ./agent-instructions/nix-tools.md;
+      # NO COMMIT CONVENTIONS, unlike the file opencode is handed: that agent edits
+      # repositories and needs them, and hermes runs scheduled jobs against the fleet.
+      documents."AGENTS.md" = agentInstructions;
 
       # Set explicitly because `documents` installs RELATIVE to it, and upstream warns that
       # its default differs per module — leaving it unset would place the file in a
@@ -426,7 +443,7 @@ in
     # The existing hermes-state-dirs guard applies these rules before every unit start,
     # which is also what gets them past the impermanence bind mount (see its comment).
     systemd.tmpfiles.rules = [
-      "L+ ${hermesStateDir}/AGENTS.md - - - - ${./agent-instructions/nix-tools.md}"
+      "L+ ${hermesStateDir}/AGENTS.md - - - - ${agentInstructions}"
     ];
 
     # Tailscale peers only — NOT `networking.firewall.allowedTCPPorts`, which would also
