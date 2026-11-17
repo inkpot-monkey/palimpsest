@@ -516,6 +516,22 @@ in
             enable = true;
             webhookUrlFile = config.custom.profiles.monitoring-watcher.webhookUrlFile;
           };
+
+          # hermes overdue-job watcher (ADR-0041, forge property#3). Here because this is
+          # where the gateway runs — the check reads its cron bookkeeping off the local
+          # disk, so it needs no credential and no network to decide anything.
+          #
+          # ⚠ The agent jobs on this host are `--monitor-script` jobs, which say NOTHING on
+          # a quiet day by design. That makes a dead scheduler and a quiet market
+          # byte-identical to the person reading their messages, and this watcher is the
+          # only thing that tells them apart. It is deliberately not an agent job and the
+          # alert goes by the hookshot webhook, not through hermes: a hermes failure must
+          # not have to depend on hermes being healthy to be reported. Same webhook story
+          # as the checks above.
+          custom.profiles.monitoring-hermes-overdue = {
+            enable = true;
+            webhookUrlFile = config.custom.profiles.monitoring-watcher.webhookUrlFile;
+          };
         })
       ];
     };
