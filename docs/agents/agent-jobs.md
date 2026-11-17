@@ -84,6 +84,23 @@ A job is ready to hand to hermes when every line is evidenced:
   activation wins. Operator skills go in `skills.external_dirs`.
 - **`schedule` is positional**, not `--schedule=` — the flag spelling errors with
   "unrecognized arguments".
+- **A `.py` source script does not run on NixOS.** hermes dispatches it to a "dependency
+  environment" interpreter inside its own package (`.../site-packages/venv/bin/python`),
+  which does not exist here — the run fails with `dependency environment interpreter is missing` before the script is reached. Ship a `.sh` wrapper that `exec`s
+  `${pkgs.python3}/bin/python3` on the `.py`; carrying the interpreter from the flake
+  beats `--interpreter` with a store path, which goes stale on the next hermes upgrade.
+- **The service is sandboxed; `sudo -u hermes` is not.** hermes-agent runs
+  `ProtectSystem=strict` with `ReadWritePaths=/var/lib/hermes`, so a job writing anywhere
+  else fails however the file modes read — and the failure does NOT reproduce when you
+  test the script by hand as the hermes user. Grant the specific directory via
+  `systemd.services.hermes-agent.serviceConfig.ReadWritePaths`.
+- **Adding hermes to a group needs a unit restart.** Supplementary groups are fixed at
+  process start, and `nixos-rebuild switch` does not restart a unit whose own definition
+  is unchanged. The deploy goes green and the service still cannot reach the tree.
+- **The first monitor run wakes the model anyway.** With no previous output to diff
+  against, hermes reports `Monitor Baseline (first run)` and invokes the model — even when
+  the script printed nothing. A bootstrap done by hand outside the monitor does not
+  prevent this; it just means the model's first run sees an empty delta.
 - **A source script is found only under `$HERMES_HOME/scripts/`.** `--script` takes a path
   there; a script elsewhere is not found. `.py` runs under Python, `.sh`/`.bash` under bash.
 - **A cron run pins the hermes tree on `PYTHONPATH`, not your workspace packages.** A wrapper
