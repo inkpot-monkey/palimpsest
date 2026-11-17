@@ -173,6 +173,14 @@
         book_filer = import ./book-filer {
           inherit pkgs self;
         };
+        # The property board (property#5) and its half of the two-writer contract with the
+        # property-watch job: the board creates `favourites` and no other table, writes
+        # nothing else, and both sides leave the shared database group-writable so the two
+        # users can actually meet in it. Plus the derived numbers the page shows and the
+        # street-level-not-an-address warning the ticket asks for by name.
+        property_board = import ./property-board {
+          inherit pkgs;
+        };
         # The property-watch detector (property#4, #6): the detail-page parser, the
         # newly-seen-only fetch budget that is this job's promise to OnTheMarket, and the
         # byte-stability of stdout that is the only thing stopping the model being woken

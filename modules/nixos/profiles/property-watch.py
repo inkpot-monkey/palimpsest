@@ -25,6 +25,7 @@ import json
 import os
 import re
 import sqlite3
+import stat
 import sys
 import time
 import urllib.error
@@ -358,7 +359,38 @@ CREATE INDEX IF NOT EXISTS listings_status ON listings(status);
 """
 
 
+def _share(path: str) -> None:
+    """Make `path` writable by the `property-watch` group, if it exists yet.
+
+    THE SECOND PROCESS IS THE REASON. This database is a two-writer contract:
+    the job owns `listings`, `observations` and `sweeps`, and the board
+    (property#5, profiles/property-board.py) owns `favourites`. They run as
+    different users and meet through the group whose GID is pinned at 973.
+
+    sqlite creates its files under the process umask, and hermes-agent's is
+    022 -- so the database and its `-wal`/`-shm` siblings land 0644 and the
+    board cannot write its own table however the setgid directory is set up.
+    The live database was created that way before this existed, so repairing an
+    existing file matters as much as creating a new one correctly: a one-off
+    chmod would be undone by the next sweep, this is not.
+    """
+    try:
+        mode = stat.S_IMODE(os.stat(path).st_mode)
+    except FileNotFoundError:
+        return
+    if not mode & stat.S_IWGRP:
+        try:
+            os.chmod(path, mode | stat.S_IWGRP | stat.S_IRGRP)
+        except PermissionError:
+            # The other process owns it and will fix it on its own next open.
+            # Carrying on is right: the job's own writes are unaffected.
+            pass
+
+
 def connect(path: str) -> sqlite3.Connection:
+    # New files inherit this, so `-wal` and `-shm` come out group-writable
+    # rather than needing to be chased afterwards. A writer needs all three.
+    os.umask(0o002)
     db = sqlite3.connect(path, timeout=30)
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA journal_mode=WAL")
@@ -374,6 +406,9 @@ def connect(path: str) -> sqlite3.Connection:
         if col not in have:
             db.execute(f"ALTER TABLE listings ADD COLUMN {col} {decl}")
     db.commit()
+
+    for suffix in ("", "-wal", "-shm"):
+        _share(path + suffix)
     return db
 
 

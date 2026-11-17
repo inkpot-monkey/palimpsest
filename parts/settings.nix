@@ -96,6 +96,30 @@ let
         port = 4096;
         origin = "rk1b";
       };
+      # The property board (forge inkpotmonkey/property#5) — the reading surface over the
+      # corpus the property-watch agent job writes: every live listing on a map, its price
+      # history, and the model's score and one-line verdict kept alongside. RUNS on rk1b
+      # beside the database it reads, fronted by kelpy's Caddy at property.<domain> behind
+      # the internal_only guard. DEPLOY BOTH HOSTS plus both resolvers, as above.
+      #
+      # 9120, one past hermes's 9119, because the two are the same shape of thing on the
+      # same host and reading them adjacent in `ss -lntp` is worth something. Checked free
+      # against rk1b's live listeners, not only against this registry — the collision guard
+      # below compares entries to each other and cannot see a non-registry listener.
+      #
+      # ⚠ UNLIKE `agent` AND `chat` ABOVE, THE TAILNET GUARD IS THE ONLY THING IN FRONT OF
+      # THIS, AND THAT IS A DECISION, NOT AN OVERSIGHT. Those two carry a PTY and arbitrary
+      # code execution, so a second gate is mandatory; this one is a read-only view of a
+      # public property portal plus a favourites star. The tailnet is not single-person
+      # (ADR-0027), so what a housemate or a friend could see here is which flats are being
+      # looked at and the budget they fall under. Judged acceptable against the cost of a
+      # credential to rotate and a login to get past on a phone. If that judgement ever
+      # changes, hermes.nix:73-111 is the sops-template basic-auth pattern to copy.
+      property = {
+        edge = "kelpy";
+        port = 9120;
+        origin = "rk1b";
+      };
       # Jellyfin. RUNS on rk1b with the rest of custom.profiles.media (the stack moves
       # as one: qBittorrent and slskd share gluetun's netns and jellyfin is gated on the
       # same profile flag), fronted by kelpy's Caddy — the same edge/origin split as
