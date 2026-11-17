@@ -478,6 +478,40 @@ in
     systemd.services.hermes-backend.environment.PLAYWRIGHT_BROWSERS_PATH =
       "${pkgs.playwright-driver.browsers}";
 
+    # ── A DEPLOY'S OWN SIGTERM WAS BEING FILED AS AN EXTERNAL KILL ────────────────────
+    # Every `just deploy rk1b` that restarted the gateway left this in the journal:
+    #
+    #   hermes-agent.service: Main process exited, code=exited, status=1/FAILURE
+    #   hermes-agent.service: Failed with result 'exit-code'.
+    #
+    # The gateway classifies a bare SIGTERM with no marker as an unexpected kill, exits
+    # non-zero, and — the part that is not merely cosmetic — SUPPRESSES the
+    # `gateway_state=stopped` persist, because `_signal_initiated_shutdown` is set on that
+    # branch. So its own record said it was killed, not stopped, on every deploy. Its
+    # forensics line even prints `under_systemd=yes parent_name=systemd` while taking the
+    # external-kill branch anyway.
+    #
+    # Upstream wrote the fix and the NixOS module is the one installer that does not use
+    # it: `gateway/systemd_stop_mark.py` exists SOLELY to be an `ExecStop=`, its docstring
+    # describes this exact journal line, and `hermes gateway install` puts it in the unit it
+    # generates (hermes_cli/gateway.py). The module here writes its own unit and omits it.
+    #
+    # ⚠ `hermes gateway stop` IS NOT THE THING TO CALL HERE. It writes the marker and then
+    # signals and waits, so as an ExecStop it would race systemd's own KillSignal and bring
+    # the restart budget into a path that just needs a file written. The marker module takes
+    # a PID and does nothing else.
+    #
+    # The interpreter is the package's own sealed venv (`passthru.hermesVenv`, the same
+    # python its wrapper exports as HERMES_PYTHON) — the `bin/hermes` console script cannot
+    # stand in, because `--run-module` is implemented in the launcher PM generates and not
+    # in `hermes_cli.main`. `$MAINPID` is systemd's, expanded for ExecStop; HERMES_HOME
+    # comes from the unit's own Environment, which is what puts the marker in the right
+    # profile home. Leading `-` so a failed marker can never block a stop — upstream's own
+    # unit spells it `ExecStop=-` for the same reason.
+    systemd.services.hermes-agent.serviceConfig.ExecStop =
+      "-${config.services.hermes-agent.package.hermesVenv}/bin/python3 "
+      + "-m gateway.systemd_stop_mark $MAINPID";
+
     # ── THE STATE DIRECTORIES HAVE TO EXIST BEFORE THE UNITS CHDIR INTO THEM ───────────────
     # Both units set `WorkingDirectory=/var/lib/hermes/workspace`, and systemd applies that
     # to ExecStartPre as well — so if the directory is missing the unit does not start
