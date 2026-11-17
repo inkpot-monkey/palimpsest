@@ -109,7 +109,12 @@ in
     # hand, a bounded number of requests at a time — it prints nothing on stdout, so it cannot
     # be mistaken for something moving:
     #
-    #   sudo -u hermes /var/lib/hermes/.hermes/scripts/property-watch.sh --backfill 40 --verbose
+    # ⚠ `hermesHomeFiles` installs mode 0640 — NOT executable — so the wrapper cannot be run
+    # directly however correct the path is ("command not found", which reads like a missing
+    # file). hermes itself dispatches it through bash, so the JOB is unaffected; an operator
+    # running it by hand has to say bash explicitly:
+    #
+    #   sudo -u hermes -H bash /var/lib/hermes/.hermes/scripts/property-watch.sh --backfill 40 --verbose
     #
     # At CRAWL_DELAY that is roughly a minute per 40. Run it a few times, not once with 300.
     services.hermes-agent.hermesHomeFiles = {
