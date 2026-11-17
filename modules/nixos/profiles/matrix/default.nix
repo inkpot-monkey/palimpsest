@@ -356,6 +356,7 @@ in
     ./hookshot-notifications-room.nix
     ./hookshot-github-token.nix
     ./infra-alerts.nix
+    ./hermes-rooms.nix
   ];
 
   options.custom.profiles.matrix = {
@@ -478,6 +479,14 @@ in
       sopsFile = matrixSecrets;
     };
     sops.secrets.matrix_admin_password = {
+      sopsFile = matrixSecrets;
+    };
+    # The hermes bot's password, declared beside the other two rather than inside
+    # hermes-rooms.nix so every account credential this homeserver mints is in one
+    # place. rk1b reads the SAME key out of the SAME file (profiles/hermes.nix) — it
+    # is already a recipient of profiles/matrix.yaml — which is what lets the account
+    # be created here and logged into there with nothing carried between the hosts.
+    sops.secrets.hermes_bot_password = lib.mkIf cfg.hermesRooms.enable {
       sopsFile = matrixSecrets;
     };
 
