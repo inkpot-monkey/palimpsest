@@ -163,6 +163,21 @@ in
           # mail outage, which is the whole point of adding it.
           MemoryMax = "1.5G";
           MemoryHigh = "1G";
+
+          # Measured, like the fence above. On 2026-11-12 21:06:05 a stop request hung
+          # past the 90s `DefaultTimeoutStopSec` and systemd finished the job with
+          # `code=killed, status=9/KILL`, `Failed with result 'timeout'` — a SIGKILL
+          # delivered mid-write to the RocksDB store. It happened during a bulk IMAP
+          # migration (12,616 appends on the 11th, 22,816 on the 12th), which is exactly
+          # when a clean shutdown has the most to flush and the least time to do it in.
+          #
+          # This store is the one piece of state here with no second copy on another host:
+          # a torn write loses mail, and unlike the OOM case a `Restart=on-failure` does
+          # not undo it. 90s is a web-service default, not a figure anyone derived for a
+          # mail store, so give the flush room to finish — 300s is long enough to cover a
+          # shutdown under the heaviest write load observed and still short enough that a
+          # genuinely wedged process does not stall a deploy indefinitely.
+          TimeoutStopSec = "300s";
         };
         services.caddy.virtualHosts =
           let
