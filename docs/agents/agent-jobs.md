@@ -54,6 +54,24 @@ Routine output stays out of Infra Alerts: that room is kept scannable and muteab
 | Per-job durable state | `hermes cron notepad` |
 | The index of what exists | `docs/agent-jobs.md` |
 
+### Boards
+
+A **board** is a page a job produces so a human can look at what it found — a job speaks into
+a room and has nowhere to receive a click. Boards share one vhost, path-routed:
+`boards.<domain>/property`, `boards.<domain>/<next>`. The registry entry `boards` in
+`parts/settings.nix` carries a `paths` attrset of prefix → port, and that is the whole
+declaration — the Caddy routes, the index at the vhost root and the per-board uptime probe are
+all generated from it (`parts/checks/boards-vhost` holds the three to each other).
+
+Adding one is **a line here and a port**: one process per board on `origin`, one deploy of that
+host. No DNS record, no DNS push, no blocky entry, no nameserver deploy — those are what a name
+costs, and a board no longer spends one.
+
+The price is that **a board must tolerate being served under a path prefix**. Caddy forwards the
+prefix rather than stripping it, so the process is told its own base path (`--base-path` in
+`property-board.py`), routes on it, and emits every link under it. A third-party app that cannot
+do that keeps its own name; this is a convention for our own boards, not a fleet-wide rule.
+
 A source script is **mutable by default**, so the agent can improve it. Declare it through
 `hermesHomeFiles` only when its job writes outside the agent's own state or acts on the fleet —
 declaring freezes it, because activation overwrites.
