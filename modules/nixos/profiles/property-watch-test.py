@@ -335,6 +335,28 @@ class ApplyVerdicts(unittest.TestCase):
         self.assertEqual(row["model"], "haiku-5.5")
         self.assertEqual(row["reasoning_effort"], "low")
 
+    def test_only_listings_actually_reported_are_owed_a_verdict(self):
+        """What the model owes is what it was SHOWN, and nothing else recorded
+        that. Without it the bootstrap -- which deliberately reports nothing --
+        looks like a night the model ignored the entire corpus."""
+        src = FakeSource()
+        d = pw.record(self.db, {"otm:1": listing("1")}, "2026-11-17", src)
+        pw.mark_reported(self.db, d, "2026-11-17")
+        row = self.db.execute(
+            "SELECT reported_on FROM listings WHERE id='otm:1'"
+        ).fetchone()
+        self.assertEqual(row["reported_on"], "2026-11-17")
+
+    def test_a_bootstrap_reports_nothing_so_owes_nothing(self):
+        """A bootstrap records the corpus and prints no delta, so `mark_reported`
+        is never called and nothing is owed."""
+        fresh = pw.connect(os.path.join(self.tmp.name, "b.db"))
+        pw.record(fresh, {"otm:9": listing("9")}, "2026-11-17", None)
+        row = fresh.execute(
+            "SELECT reported_on FROM listings WHERE id='otm:9'"
+        ).fetchone()
+        self.assertIsNone(row["reported_on"])
+
     def test_the_judging_model_is_read_from_hermes_not_guessed(self):
         """Which model said it is the whole basis for 'did the rankings get
         worse when we switched'. Read from hermes's own jobs.json, so it cannot

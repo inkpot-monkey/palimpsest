@@ -195,19 +195,22 @@ let
     # still arrives looking exactly as it always does. Only the thing it should have
     # written is missing, and nobody looks there until they want it.
     #
-    # Only asked of jobs that actually ran today. A job that has not run yet, or whose
-    # delta was empty and correctly judged nothing, must stay silent -- the whole point of
-    # this job shape is that quiet days are normal.
+    # Only asked of jobs that actually ran today, and the query itself is a DEFICIT: how
+    # much the job owed and did not deliver. That inversion is what keeps a quiet day
+    # silent -- `ran_today` is true whenever the ticker fired the job, INCLUDING a
+    # --monitor-script run whose delta was empty and which therefore correctly judged
+    # nothing. Counting rows written would alert every such morning, which is the exact
+    # false positive this watcher exists to avoid.
     ${lib.concatStringsSep "\n" (
       lib.mapAttrsToList (name: p: ''
         if ran_today "${p.jobId}" && [ -r "${p.db}" ]; then
-          produced="$(${pkgs.sqlite}/bin/sqlite3 -readonly "${p.db}" "${p.sql}" 2>/dev/null || echo "")"
-          if [ -z "$produced" ]; then
+          missing="$(${pkgs.sqlite}/bin/sqlite3 -readonly "${p.db}" "${p.sql}" 2>/dev/null || echo "")"
+          if [ -z "$missing" ]; then
             echo "hermes-overdue: ${name}: could not read ${p.db} — skipping" >&2
-          elif [ "$produced" -eq 0 ]; then
-            fire "produced-${name}" "🚨 [''${host}] hermes — agent job ${p.jobId} ran today and ${p.message}. The run SUCCEEDED, so nothing else reports this."
+          elif [ "$missing" -gt 0 ]; then
+            fire "produced-${name}" "🚨 [${host}] hermes — agent job ${p.jobId} ${p.message} ($missing outstanding). The run SUCCEEDED, so nothing else reports this."
           else
-            clear_ "produced-${name}" "✅ [''${host}] hermes — agent job ${p.jobId} is producing again ($produced row(s) today)."
+            clear_ "produced-${name}" "✅ [${host}] hermes — agent job ${p.jobId} is producing again; nothing outstanding."
           fi
         fi
       '') cfg.producedChecks
@@ -290,13 +293,18 @@ in
             sql = lib.mkOption {
               type = lib.types.str;
               description = ''
-                A query returning a single number: how many rows this job produced TODAY.
-                Zero, on a day the job ran, is the alert.
+                A query returning a single number: how many things the job SHOULD have
+                produced today and did not. Zero is healthy; any other number alerts.
+
+                Phrased as a DEFICIT on purpose. "How many rows did it write" cannot tell
+                a broken job from a quiet one -- and for a `--monitor-script` job, whose
+                delta is empty most days, "wrote nothing" is the NORMAL case. Only the job
+                knows what it owed, so only the job can ask.
               '';
             };
             message = lib.mkOption {
               type = lib.types.str;
-              description = "What to say when it produced nothing. Names the consequence.";
+              description = "What to say when things are outstanding. Names the consequence.";
             };
           };
         }
@@ -320,8 +328,8 @@ in
           property-verdicts = {
             jobId = "705f90d79b87";
             db = "/var/lib/property-watch/data/property-watch.db";
-            sql = "SELECT COUNT(*) FROM verdicts WHERE judged_on = date('now')";
-            message = "judged nothing today; the board's verdicts are going stale";
+            sql = "SELECT COUNT(*) FROM listings l WHERE ... AND NOT EXISTS (SELECT 1 FROM verdicts v WHERE v.id = l.id AND v.judged_on = date('now'))";
+            message = "left part of today's delta unjudged";
           };
         }
       '';

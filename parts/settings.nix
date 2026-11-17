@@ -145,7 +145,9 @@ let
         origin = "rk1b";
         paths = {
           # The property board (property#5): every live listing on a map, its price
-          # history, and the model's score and one-line verdict kept alongside. RUNS on
+          # history, and the latest verdict the model left on it with the price it was
+          # judged at (property#7 -- there is no score; a model's mark out of ten is not
+          # comparable across days, so it is never stored). RUNS on
           # rk1b beside the database it reads (profiles/property-board.nix).
           #
           # 9120, one past hermes's 9119, because the two are the same shape of thing on

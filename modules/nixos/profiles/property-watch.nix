@@ -12,7 +12,7 @@ in
   options.custom.profiles.property-watch = {
     enable = lib.mkEnableOption "the property-watch agent job's state tree and source script";
 
-    jobId = {
+    judgementCheck = {
       enable = lib.mkEnableOption ''
         the check that this job's judgement is still reaching the database. Needs the
         hermes job id, which is imperative state (`hermes cron list`) and not knowable
@@ -100,14 +100,51 @@ in
     #
     # Declared HERE, not in the watcher: the assertion is about this job's schema, and a
     # fleet-generic watcher that knew about `verdicts` would collect a clause per job.
-    custom.profiles.monitoring-hermes-overdue.producedChecks = lib.mkIf cfg.jobId.enable {
+    custom.profiles.monitoring-hermes-overdue.producedChecks = lib.mkIf cfg.judgementCheck.enable {
       property-verdicts = {
-        inherit (cfg.jobId) jobId;
+        inherit (cfg.judgementCheck) jobId;
         db = "${cfg.stateDir}/data/property-watch.db";
-        sql = "SELECT COUNT(*) FROM verdicts WHERE judged_on = date('now')";
-        message = "left no verdicts; its judgement is no longer reaching the corpus";
+        # A DEFICIT, not a count of rows written, and measured against what the
+        # model was SHOWN rather than what exists. Both alternatives cry wolf:
+        # counting verdicts alerts every quiet morning (a --monitor-script job
+        # writes nothing most days, by design), and keying on `first_seen = today`
+        # alerts after a bootstrap, which first-sees the whole market and
+        # deliberately reports none of it. `reported_on` is the obligation.
+        sql = ''
+          SELECT COUNT(*) FROM listings l
+           WHERE l.reported_on = date('now')
+             AND NOT EXISTS (SELECT 1 FROM verdicts v
+                              WHERE v.id = l.id AND v.judged_on = date('now'))
+        '';
+        message = "left part of today's delta unjudged; its judgement is no longer reaching the corpus";
       };
     };
+
+    # ── THE HALF OF THE LOOP THAT IS NOT DECLARATIVE ─────────────────────────────────
+    # `--apply-verdicts` is the door; the JOB PROMPT is the key, and it lives in jobs.json
+    # on the host because hermes cron jobs are imperative state. Recorded here because a
+    # flake that ships only the door is a flake nobody can reconstruct this job from.
+    #
+    # The prompt currently set on job ${cfg.judgementCheck.jobId}, verbatim after the
+    # criteria line:
+    #
+    #   Then persist your judgement, so it survives this message: write a JSON list of
+    #   {"id": "<the listing id from the digest>", "verdict": "<your one line>"} to
+    #   data/verdicts-inbox/verdicts.json, and run:
+    #
+    #     bash /var/lib/hermes/.hermes/scripts/property-watch.sh \
+    #       --apply-verdicts data/verdicts-inbox/verdicts.json
+    #
+    #   Only listings that appeared in this run's digest. Do not include a score in the
+    #   JSON - the score belongs in this message and nowhere else. The script validates
+    #   and will reject anything it does not recognise.
+    #
+    # Deliberately NOT in AGENTS.md beside the buying criteria: that file is the brief --
+    # budget, postcodes, what counts as outdoor space -- and mixing file formats into it
+    # means seeing plumbing every time you change what you are looking for.
+    #
+    # Change it with `hermes cron edit <id> --prompt ...`, and change it HERE in the same
+    # breath, or the next person reads a lie.
 
     # For opening the database by hand over ssh. Deliberately NOT added to hermes's
     # `extraPackages`: the agent has no business shelling out to a database it should be
@@ -157,7 +194,7 @@ in
         # imperative state, and a copy in the flake would go stale the first
         # time anyone ran `hermes cron edit --model`, attributing verdicts to a
         # model that did not write them.
-        export PROPERTY_WATCH_JOB_ID="${cfg.jobId.jobId}"
+        export PROPERTY_WATCH_JOB_ID="${cfg.judgementCheck.jobId}"
         exec ${pkgs.python3}/bin/python3 "$(dirname "$0")/property-watch.py" "$@"
       '';
     };

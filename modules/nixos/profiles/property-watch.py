@@ -337,6 +337,10 @@ CREATE TABLE IF NOT EXISTS listings (
   auction_agent INTEGER DEFAULT 0,
   agent TEXT, lat REAL, lon REAL, url TEXT,
   features TEXT,
+  reported_on TEXT,                          -- the last day this was PUT IN FRONT of the
+                                             -- model. What it was shown is what it owes a
+                                             -- verdict on; a bootstrap shows nothing and
+                                             -- therefore owes nothing.
   description TEXT,                          -- the listing's prose, as text
   key_info TEXT,                             -- the portal's own facts, verbatim
   raw TEXT,                                  -- verbatim source record
@@ -421,7 +425,11 @@ def connect(path: str) -> sqlite3.Connection:
     # on "no such column" -- which, because the sweep comes first, happens after
     # a full ~60-request crawl.
     have = {r["name"] for r in db.execute("PRAGMA table_info(listings)")}
-    for col, decl in (("description", "TEXT"), ("key_info", "TEXT")):
+    for col, decl in (
+        ("description", "TEXT"),
+        ("key_info", "TEXT"),
+        ("reported_on", "TEXT"),
+    ):
         if col not in have:
             db.execute(f"ALTER TABLE listings ADD COLUMN {col} {decl}")
 
@@ -657,6 +665,27 @@ def find_relist(db: sqlite3.Connection, r: dict) -> str | None:
 # corrupt" -- which is the whole reason the model is not simply handed the
 # database.
 # --------------------------------------------------------------------------
+
+
+def mark_reported(db: sqlite3.Connection, delta: dict[str, list], today: str) -> None:
+    """Record that these listings were PUT IN FRONT of the model today.
+
+    The watcher asks whether the job judged what it was shown (property#7), and
+    nothing else in the corpus answers that. `first_seen = today` cannot: a
+    bootstrap first-sees the whole market and deliberately reports none of it,
+    so it would read as a night the model ignored 278 listings.
+
+    Called from the one place the digest is actually emitted -- not inside
+    `record()`, which also runs on a bootstrap whose delta is built and thrown
+    away.
+    """
+    ids = sorted({r.get("id") for rows in delta.values() for r in rows if r.get("id")})
+    if not ids:
+        return
+    db.executemany(
+        "UPDATE listings SET reported_on=? WHERE id=?", [(today, i) for i in ids]
+    )
+    db.commit()
 
 
 def judging_model(hermes_home: str, job_id: str) -> tuple[str | None, str | None]:
@@ -1068,6 +1097,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     favourites = {r["id"] for r in db.execute("SELECT id FROM favourites")}
+    # Stamped here, beside the write to stdout, because being REPORTED is what
+    # creates the obligation to judge -- not being recorded.
+    mark_reported(db, delta, today)
     sys.stdout.write(digest(delta, favourites))
     return 0
 
