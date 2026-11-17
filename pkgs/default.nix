@@ -30,4 +30,12 @@
   # Its header carries the removal condition; nothing else should consume it.
   typescript-es5 = pkgs.callPackage ./typescript-es5 { };
   ocr-shot = pkgs.callPackage ./ocr { };
+  # scrapling (+ the patchright it cannot be imported without): the scraping library and
+  # MCP server hermes reaches through `python3.withPackages` in profiles/hermes.nix.
+  # `patchright` is listed separately rather than hidden inside ./scrapling because it is
+  # the half with the awkward provenance (a PyPI wheel, because nixpkgs' own derivation is
+  # `broken = true` by upstream's own admission) and a reader chasing that deserves to
+  # find it from here. ./scrapling takes it from this same overlay.
+  patchright = pkgs.callPackage ./patchright { };
+  scrapling = pkgs.callPackage ./scrapling { };
 }
