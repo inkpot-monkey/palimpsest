@@ -369,8 +369,20 @@ in
 
           # property-watch — the state tree and declared source script for the daily
           # property search (forge inkpotmonkey/property#4). Here because the agent job
-          # that writes it runs here; the board that reads it (#5) will live here too.
+          # that writes it runs here; the board that reads it (#5) lives here too.
           custom.profiles.property-watch.enable = true;
+
+          # ...and the board itself (property#5), at property.<domain>. On this host and
+          # not the edge because the database is here and is the contract between the two
+          # halves: the job writes `listings`/`observations`/`sweeps`, the board writes
+          # `favourites`, and they meet through the `property-watch` group over a local
+          # file. Serving it from kelpy would mean exporting that file over the network,
+          # which is a second protocol for nothing.
+          #
+          # ⚠ ADDING ITS REGISTRY ENTRY IS A FLEET-WIDE DEPLOY: kelpy for the vhost, this
+          # host for the service, and BOTH `dns.nameserverHosts` for blocky's generated
+          # hosts file, plus `nix run .#dns -- push`.
+          custom.profiles.property-board.enable = true;
 
           # opencode — server-side agent sessions (palimpsest#118), at chat.<domain>. Here
           # for the same reasons as hermes: the model gateway is on this host, so the agent
