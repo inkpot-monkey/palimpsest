@@ -35,13 +35,42 @@ changed.
 Two kinds, and they travel different paths on purpose:
 
 - **Per-job channel** — a Matrix room the job delivers into, through hermes's own `matrix`
-  platform, so the job can be *answered* rather than only read. `--deliver room:<id>`.
-- **General hermes alerts** — the Infra Alerts room, reached by hookshot webhook like every
-  other fleet alert, so a hermes failure does not depend on hermes's bot being healthy.
-  `--failure-deliver` points here.
+  platform, so the job can be *answered* rather than only read.
+  `--deliver matrix:<room id>`.
+- **General hermes alerts** — the Infra Alerts room, so a failure lands where every other fleet
+  alert does. `--failure-deliver matrix:<infra-alerts room id>`.
 
 Routine output stays out of Infra Alerts: that room is kept scannable and muteable, and a daily
 "nothing moved" erodes it.
+
+### The delivery grammar, which is easy to get wrong
+
+`--deliver` takes `platform:chat_id`, split on the **first** colon — so
+`matrix:!abc:matrix.palebluebytes.space` reads as platform `matrix`, room
+`!abc:matrix.palebluebytes.space`. Three traps:
+
+- **`--deliver room:<id>` is NOT a Matrix room.** `room:` is a hermes-internal *Bot Mode Group
+  Chat*, appended to the gateway's own room store in `state.db`
+  (`cron/scheduler_delivery_room.py`). It delivers nowhere a person can see.
+- **A room ALIAS does not work.** The adapter hands the chat id straight to
+  `send_message_event(RoomID(chat_id))` — `PUT /rooms/{id}/send/…` — and resolves no alias
+  anywhere in the plugin. It must be the `!…` id.
+- **Bare `--deliver matrix`** means `MATRIX_HOME_ROOM`, which this fleet deliberately leaves
+  unset (`modules/nixos/profiles/hermes.nix`): every job names its room, so nothing can fall
+  back into a room it was not pointed at.
+
+**Where the room ids are.** Rooms are declared on kelpy
+(`custom.profiles.matrix.hermesRooms.rooms.<job>`) and created by
+`matrix-hermes-rooms.service`, which persists each id:
+
+```sh
+ssh kelpy cat /var/lib/matrix-hermes-rooms/<job>.room-id   # the per-job room
+ssh kelpy cat /var/lib/matrix-infra-alerts/room-id         # Infra Alerts
+```
+
+Ids are minted by the homeserver and die with a `matrix-reset`, so they are not in the repo and
+are not sops values — pointing a job at one is a `hermes cron update`, like every other thing
+about a job.
 
 ## Where things live
 
