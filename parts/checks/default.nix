@@ -241,6 +241,14 @@
         git_annex_alert = import ./git-annex-alert {
           inherit pkgs self inputs;
         };
+        # The hermes overdue-job check (property#3). Pins the distinction the whole watcher
+        # exists for: an agent job that ran and printed nothing is the monitor-script
+        # economy working and must stay SILENT, while a job whose `next_run_at` has slid
+        # into the past is a dead schedule and must page — the two are byte-identical to
+        # anyone reading their messages.
+        hermes_overdue = import ./hermes-overdue {
+          inherit pkgs self;
+        };
         # Fleet disk-space alerting: pins the two properties that make it usable rather
         # than noise — the floor is per host (the same 15 GiB is healthy on a Pi and
         # critical on the builder), and the PromQL deduplicates by device and drops tmpfs,
