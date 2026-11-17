@@ -46,15 +46,20 @@ Routine output stays out of Infra Alerts: that room is kept scannable and muteab
 ### The delivery grammar, which is easy to get wrong
 
 `--deliver` takes `platform:chat_id`, split on the **first** colon — so
-`matrix:!abc:matrix.palebluebytes.space` reads as platform `matrix`, room
-`!abc:matrix.palebluebytes.space`. Three traps:
+`matrix:!OLqXbk…` reads as platform `matrix`, room `!OLqXbk…`. Four traps:
+
+- **Pass the room id exactly as the marker file holds it.** From room version 12 an id is a
+  hash with **no `:server` suffix**, and adding one by hand (because that is what older room
+  ids look like) gets a send rejected with `cannot create a non-create event in a room with no forward extremities` — which reads like a broken room rather than a mistyped target.
 
 - **`--deliver room:<id>` is NOT a Matrix room.** `room:` is a hermes-internal *Bot Mode Group
   Chat*, appended to the gateway's own room store in `state.db`
   (`cron/scheduler_delivery_room.py`). It delivers nowhere a person can see.
+
 - **A room ALIAS does not work.** The adapter hands the chat id straight to
   `send_message_event(RoomID(chat_id))` — `PUT /rooms/{id}/send/…` — and resolves no alias
   anywhere in the plugin. It must be the `!…` id.
+
 - **Bare `--deliver matrix`** means `MATRIX_HOME_ROOM`, which this fleet deliberately leaves
   unset (`modules/nixos/profiles/hermes.nix`): every job names its room, so nothing can fall
   back into a room it was not pointed at.
@@ -69,8 +74,15 @@ ssh kelpy cat /var/lib/matrix-infra-alerts/room-id         # Infra Alerts
 ```
 
 Ids are minted by the homeserver and die with a `matrix-reset`, so they are not in the repo and
-are not sops values — pointing a job at one is a `hermes cron update`, like every other thing
-about a job.
+are not sops values — pointing a job at one is a `hermes cron edit`, like every other thing
+about a job:
+
+```sh
+hermes cron edit <job> --deliver "matrix:<per-job id>" --failure-deliver "matrix:<infra-alerts id>"
+```
+
+The room itself IS declared, on kelpy: add `custom.profiles.matrix.hermesRooms.rooms.<job>`
+with a name and topic, deploy kelpy, then read the id it wrote.
 
 ## Where things live
 
@@ -123,6 +135,11 @@ A job is ready to hand to hermes when every line is evidenced:
   else fails however the file modes read — and the failure does NOT reproduce when you
   test the script by hand as the hermes user. Grant the specific directory via
   `systemd.services.hermes-agent.serviceConfig.ReadWritePaths`.
+- **A changed env secret needs a unit restart too, for the same reason.** `restartTriggers`
+  hash `settings` only (a trigger on the rendered env would put the LiteLLM key in a
+  world-readable unit file), so a deploy that only edits `sops.templates."hermes-env"` leaves
+  the gateway running the old `.env` — and `.env` itself is only rewritten when
+  `hermes-state-dirs` re-runs, which is on a unit start. `systemctl restart hermes-agent`.
 - **Adding hermes to a group needs a unit restart.** Supplementary groups are fixed at
   process start, and `nixos-rebuild switch` does not restart a unit whose own definition
   is unchanged. The deploy goes green and the service still cannot reach the tree.
