@@ -49,6 +49,10 @@
     stump = ./stump.nix;
     book-filer = ./book-filer.nix;
     property-watch = ./property-watch.nix;
+    # The reading surface over that corpus (property#5) — separate profile and
+    # separate host decision: the job can run without the board, but not the
+    # other way round (the board asserts on it).
+    property-board = ./property-board.nix;
     backup = ./backup.nix;
     blocky = ./blocky.nix;
     forge = ./forge.nix;
@@ -69,6 +73,7 @@
     monitoring-unit-state = ./monitoring/unit-state.nix;
     monitoring-secret-expiry = ./monitoring/secret-expiry.nix;
     monitoring-git-annex-alert = ./monitoring/git-annex-alert.nix;
+    monitoring-hermes-overdue = ./monitoring/hermes-overdue.nix;
     monitoring-disk-space = ./monitoring/disk-space.nix;
     monitoring-cgroup-memory = ./monitoring/cgroup-memory.nix;
     media = ./media;
