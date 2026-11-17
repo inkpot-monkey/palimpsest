@@ -39,6 +39,24 @@ let
 
   hermesStateDir = "/var/lib/hermes";
 
+  # ── THE MATRIX END OF THE AGENT ───────────────────────────────────────────────────
+  # The homeserver's `server_name` is the Matrix DOMAIN (the half after the colon in an
+  # MXID) and it is NOT `settings.primaryDomain` — kelpy's matrix profile names the
+  # homeserver `matrix.<primaryDomain>`, so every MXID on this fleet reads
+  # `@someone:matrix.palebluebytes.space`. Getting that wrong produces a login that
+  # fails with M_FORBIDDEN and looks like a bad password.
+  matrixServerName = "matrix.${settings.primaryDomain}";
+  # The public Caddy vhost, which is the only address rk1b can reach: tuwunel binds
+  # 127.0.0.1 on kelpy and its registry entry is `proxy = false`.
+  matrixHomeserver = "https://${matrixServerName}";
+  # Kept in step with `custom.profiles.matrix.hermesRooms.botLocalpart` on kelpy; that
+  # option lives on the other host, so this is the one fact the two ends restate.
+  matrixUserId = "@hermes:${matrixServerName}";
+  # Who may talk to the bot. Matches `custom.profiles.matrix.adminLocalpart`, also on
+  # kelpy. Without an allowlist the gateway answers nobody, and `MATRIX_ALLOW_ALL_USERS`
+  # is a development knob on a tailnet that is not single-person (ADR-0027).
+  matrixAdminLocalpart = "inkpotmonkey";
+
   # The conversational half of the shared catalogue (parts/settings.nix).
   chatModels = lib.filterAttrs (_: m: m.chat) settings.models;
   # `settings.primaryDomain` and NOT `config.networking.domain`, which proxy.nix uses to
@@ -103,12 +121,56 @@ in
     # ⚠ ROTATING IT NEEDS A MANUAL RESTART. restartTriggers below hash `settings` only, and
     # deliberately — a trigger on the rendered env would put the LiteLLM key in a
     # world-readable unit file. Same trap the config.yaml note documents, one file over.
+    # ── THE MATRIX PLATFORM, WHICH IS WHAT GIVES A JOB A CHANNEL ──────────────────────
+    # Same account kelpy's `matrix.hermesRooms` registers, same key in the same sops
+    # file — rk1b is already a recipient of profiles/matrix.yaml, so nothing is re-keyed
+    # and no access token has to travel between the hosts. ⚠ kelpy FIRST: the account has
+    # to exist before the gateway logs in.
+    #
+    # ENV IS THE ONLY PATH. There is no `hermes platforms` CLI and no module option; the
+    # plugin reads its configuration from the environment (gateway_env.py), and only ten
+    # non-credential knobs can alternatively come from config.yaml. Homeserver, user id,
+    # password and device id are NOT among them, so they must be here.
+    sops.secrets.hermes_bot_password = {
+      sopsFile = self.lib.getSecretFile "matrix";
+    };
+
     sops.templates."hermes-env".content = ''
       CUSTOM_API_KEY=${config.sops.placeholder.litellm_key}
       HERMES_DASHBOARD_BASIC_AUTH_USERNAME=inkpotmonkey
       HERMES_DASHBOARD_BASIC_AUTH_PASSWORD=${config.sops.placeholder.hermes_dashboard_password}
       HERMES_DASHBOARD_BASIC_AUTH_SECRET=${config.sops.placeholder.hermes_dashboard_session_secret}
+      MATRIX_HOMESERVER=${matrixHomeserver}
+      MATRIX_USER_ID=${matrixUserId}
+      MATRIX_PASSWORD=${config.sops.placeholder.hermes_bot_password}
+      MATRIX_DEVICE_ID=rk1b-hermes
+      MATRIX_ALLOWED_USERS=@${matrixAdminLocalpart}:${matrixServerName}
+      MATRIX_E2EE_MODE=off
     '';
+
+    # ⚠ NO `MATRIX_HOME_ROOM`, AND THAT IS THE DESIGN. It is the plugin's
+    # `cron_deliver_env_var`: the room a bare `--deliver matrix` (and an `origin`
+    # fallback, since matrix is first in `_HOME_TARGET_PRIORITY`) posts into. Leaving it
+    # unset forces every job to NAME its room — `--deliver matrix:!room:server` — which
+    # is what keeps routine output out of #infra-alerts by construction rather than by
+    # remembering.
+    #
+    # It also avoids pinning a room id at build time, which is the one thing this could
+    # not do safely: a room id is minted by the homeserver and dies with a
+    # `matrix-reset`, and an ALIAS cannot stand in for it — the adapter hands the string
+    # straight to `send_message_event(RoomID(chat_id))`, i.e. `PUT /rooms/{id}/send/…`,
+    # and resolves no alias anywhere (there is no `/directory/room/` call in the plugin
+    # at all). A sops-pinned id is the same build-time constant a reset silently
+    # invalidated for #infra-alerts. So the id lives in kelpy's marker
+    # (`/var/lib/matrix-hermes-rooms/<job>.room-id`) and reaches the job through
+    # `hermes cron update`, which is where jobs live anyway.
+    #
+    # E2EE is OFF rather than optional: the per-job rooms are created unencrypted, so
+    # the only thing an olm session would add here is a device to verify and a crypto
+    # store to lose.
+    #
+    # ⚠ ROTATING THE PASSWORD NEEDS A MANUAL RESTART, for the same reason the dashboard
+    # credentials do — see restartTriggers below.
 
     # Pin the uid/gid. Otherwise auto-allocated, they get reshuffled by a reboot that
     # re-derives the system-user map, which orphans /var/lib/hermes (its sqlite ends up
