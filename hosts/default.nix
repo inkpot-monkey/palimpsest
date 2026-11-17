@@ -397,9 +397,26 @@ in
           # opencode — server-side agent sessions (palimpsest#118), at chat.<domain>. Here
           # for the same reasons as hermes: the model gateway is on this host, so the agent
           # reaches it over loopback, and this is the node with the RAM and the NVMe for a
-          # session store that grows. The map's #159 (which filesystem holds the
-          # server-side trees) is still open — today they live under /var/lib/opencode.
+          # session store that grows.
+          #
+          # ⚠ IT RUNS AS `inkpotmonkey`, NOT A SERVICE USER, which is why this line now
+          # implies more than a daemon: a session has the operator's account, tools and git
+          # identity. #159 (which filesystem holds the server-side trees) is ANSWERED —
+          # /persistent/home/inkpotmonkey/code, bind-mounted to the laptop's path. The unit
+          # sets NoNewPrivileges because this account carries `operator` above.
           custom.profiles.opencode.enable = true;
+
+          # `tea`, the private forge's client (palimpsest#213) — enabled here so a
+          # server-side session can file an issue or create a repo on forge.<domain>, which
+          # is half of what the agent is for.
+          #
+          # ⚠ THIS NEEDED A SOPS RE-KEY, unlike almost every other profile toggle. The
+          # forgejo file was encrypted to admin/kelpy/sawtoothShark only, and sops grants
+          # per FILE with sops-install-secrets all-or-nothing per host — so enabling this
+          # without adding rk1b to the creation_rule would have left this host installing
+          # NONE of its secrets, taking litellm and opencode's own password down with it.
+          # The rule and the per-host `forgejo/token_rk1b` landed in the stash first.
+          custom.profiles.forge-client.enable = true;
 
           # Music Assistant — the library-plane brain (ADR-0031). Reads Navidrome (over loopback,
           # co-located here) and pushes audio to porcupineFish's snapserver in external-server mode,

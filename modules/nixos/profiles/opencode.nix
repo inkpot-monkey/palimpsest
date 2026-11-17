@@ -15,13 +15,15 @@
 # same session afterwards. The working tree is server-side too, which is the half that
 # makes it more than a chat window.
 #
-# This is the first build on palimpsest#118's map, which is otherwise plan-only. Two of
-# its open tickets were settled by the operator to get here, and they are recorded at the
-# config below rather than in a comment that would drift from it: the provider (#129) and
-# the permission policy (#128). The rest of the map is still open — in particular #159
-# (which filesystem holds the server-side trees) and #158 (what an rk1b restart is allowed
-# to destroy), so the state layout below is deliberately the smallest thing that works and
-# should be revisited when those land.
+# This is the second build on palimpsest#118's map. Tickets settled here rather than in a
+# comment that would drift from the config: the provider (#129), the permission policy
+# (#128), and now #159 — which filesystem holds the server-side trees — answered by the
+# persistence block at the bottom: /persistent/home/inkpotmonkey/code, bind-mounted to the
+# path the laptop uses for the same repository, because GLOSSARY.md requires one directory
+# string to name a tree from every client.
+#
+# #158 (what an rk1b restart is allowed to destroy) is STILL OPEN, so the backup
+# classification in hosts/rk1/backup.nix still errs toward keeping things.
 let
   cfg = config.custom.profiles.opencode;
 
@@ -35,7 +37,31 @@ let
     else
       "${litellmOrigin}.${settings.tailnet}";
 
-  stateDir = "/var/lib/opencode";
+  # ── WHO THIS RUNS AS, AND WHY IT IS NO LONGER A SYSTEM USER ───────────────────────────
+  # Until 2026-11-17 this was a pinned system user (`opencode`, uid 975, home
+  # /var/lib/opencode). It now runs as the OPERATOR'S OWN ACCOUNT, which rk1b already binds
+  # (hosts/default.nix, `bindUsers { inkpotmonkey = operator; }`), because the point of the
+  # move is parity: a server-side session should be able to do what the operator can do at
+  # the laptop, against the same tree paths, with the same git identity and the same tools.
+  # A confined service user could never have that without re-creating every grant by hand.
+  #
+  # ⚠ THE ACCOUNT CARRIES `operator`, WHICH IS sudo + containers. That is why
+  # `NoNewPrivileges` is set on the unit below: the human keeps sudo over SSH, the SERVICE
+  # cannot escalate. Read that setting as load-bearing rather than hardening — it is the
+  # only gate left, because `permission.bash = "ask"` is MEASURED NOT TO FIRE (see the
+  # permission block above).
+  inherit (cfg) user;
+  home = config.users.users.${user}.home;
+
+  # The session store, config and cache now sit at the XDG defaults under that home rather
+  # than in one pinned /var/lib directory. The old arrangement existed to keep everything
+  # survivable inside a single persisted path; the persistence block at the bottom names the
+  # three that must survive instead, and `cache` is deliberately not among them.
+  dataDir = "${home}/.local/share/opencode";
+  stateDir = "${home}/.local/state/opencode";
+  configDir = "${home}/.config/opencode";
+  # (no `cacheDir` binding: the cache is never referenced here precisely because it is
+  # neither pinned nor persisted — see the persistence block at the bottom.)
 
   # ── WHAT THE AGENT IS TOLD ────────────────────────────────────────────────────────────
   # One file, assembled from two: the fleet's tools rule, shared VERBATIM with hermes
@@ -79,16 +105,33 @@ let
     # back; it only read as though it was, which is worse than not claiming it. This is the
     # same shape as #120, where the plugin `permission.ask` hook is declared but never fires.
     #
-    # What is set now is the map's original charted target — auto-approve edits inside the
-    # tree, prompt on the rest — with the honest caveat that "prompt on the rest" is
-    # aspirational for `bash` until the enforcement path is seen working. Re-measure with
-    # the probe above before relying on it; if it still does not fire, the real control is
-    # the one below the agent, not this key: the `opencode` user's own privileges.
+    # ⚠ RE-MEASURED 2026-11-17 WITH A BETTER INSTRUMENT, AND IT STILL DOES NOT FIRE. The
+    # first measurement polled REST, which cannot see tool calls at all: `parts` is not a
+    # concept in the HTTP API, and a message read back over `/api/session/<id>/message` is
+    # an envelope only. The real channel is the SSE stream the Emacs client consumes —
+    # `/api/event?types=…`. Subscribed to `permission.asked`, `session.tool.called` and
+    # `session.tool.success` and prompted a session to run `node --version`:
     #
-    # ⚠ `bash` IS SPELLED `bash` HERE AND BECOMES ACTION `shell` INTERNALLY. Confirmed with
-    # `opencode debug config`, which is the only way to see what a config actually parsed
-    # to — it reports `{action: shell, resource: "*", effect: ask}`. Worth re-running after
-    # any schema bump; a key this file spells wrong is silently dropped, not rejected.
+    #   session.tool.input.started → session.tool.called → session.tool.success
+    #       "name":"shell"   "command":"node --version"
+    #   permission events in the whole log: 0
+    #
+    # So the command ran, the tool was `shell` BY NAME rather than by inference, and nothing
+    # was ever asked. Reproduced on both `qwen3.8-27b` and `nemotron-3.5-super-vl`, so it is
+    # the server, not a model that declines to call tools.
+    #
+    # ⚠ THEREFORE: DO NOT WRITE ANYWHERE THAT THIS AGENT ASKS BEFORE RUNNING COMMANDS. It
+    # does not. The policy below is kept, not deleted, because it is the one we want if
+    # upstream ever implements enforcement — but the real control is the one BELOW the
+    # agent: the account's own privileges, now the operator's, hence `NoNewPrivileges` on
+    # the unit and a GitHub PAT scoped to two repositories.
+    #
+    # ⚠ `bash` IS SPELLED `bash` HERE AND BECOMES ACTION `shell` INTERNALLY — which the
+    # event stream above confirms independently (`"name":"shell"`). The previous note said
+    # `opencode debug config` was the only way to see what a config parsed to; on 2.2.6
+    # that command answers `ClientError: UnexpectedStatus: 500`, both as the service user
+    # and with the unit's full environment sourced, so it is no longer a check anyone can
+    # run. A key this file spells wrong is still silently dropped rather than rejected.
     permission = {
       edit = "allow";
       bash = "ask";
@@ -140,6 +183,24 @@ in
 {
   options.custom.profiles.opencode = {
     enable = lib.mkEnableOption "opencode server-side agent sessions";
+
+    user = lib.mkOption {
+      type = lib.types.str;
+      default = "inkpotmonkey";
+      description = ''
+        The UNIX account the server runs as, and therefore the account whose home holds the
+        session store and whose git identity signs a session's commits.
+
+        Must be an account the host actually binds — the home path is read off
+        `users.users.<user>.home`, so a name no host binds is an evaluation error here
+        rather than a service that starts and cannot write anything.
+
+        ⚠ NOT a confined service user, deliberately, and this is the one option in the file
+        whose default encodes a security judgement rather than a convenience. See the
+        `user` binding in the `let` above for why, and note that the account's own
+        privileges are the real control once `permission.bash` is understood not to fire.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -172,33 +233,40 @@ in
       key = "opencode-server-password";
     };
 
+    # ── THE AGENT'S OWN GITHUB CREDENTIAL, AND WHY IT IS NOT THE OPERATOR'S ──────────────
+    # A fine-grained PAT scoped to the two repositories rk1b holds trees for, with contents,
+    # issues and pull-requests write. It is NOT `machine/api.github.com` out of the vault:
+    # that one is the human's, reached through `rbw`, and `rbw` cannot be unlocked
+    # unattended — users#51 made the whole GitHub token path gui-only for exactly that
+    # reason, and the `gh` wrapper there declines when stderr is not a tty, which is every
+    # agent tool call. A headless host therefore needs its own credential in host sops;
+    # see also profiles/nixConfig.nix's `github_token`, which exists for the same reason.
+    #
+    # ⚠ `GH_TOKEN` CARRIES `gh` AND GIT-OVER-HTTPS TOGETHER, so this one variable is the
+    # whole credential path and no deploy key or credential helper is needed. It also makes
+    # the never-`gh auth login` rule structural rather than remembered: gh refuses
+    # `auth login` outright while the variable is set.
+    sops.secrets.rk1b_agent_pat = {
+      sopsFile = self.lib.getSecretFile "github";
+      key = "rk1b_agent_pat";
+    };
+
     sops.templates."opencode-env".content = ''
       OPENCODE_SERVER_PASSWORD=${config.sops.placeholder.opencode_server_password}
       LITELLM_KEY=${config.sops.placeholder.litellm_key}
+      GH_TOKEN=${config.sops.placeholder.rk1b_agent_pat}
     '';
 
-    # Pin the uid/gid for the same reason hermes does: an auto-allocated pair gets
-    # reshuffled by a reboot that re-derives the system-user map, which orphans the state
-    # directory. 975 is the next free number below hermes' 976 on every host in the fleet.
-    users.users.opencode = {
-      isSystemUser = true;
-      group = "opencode";
-      uid = 975;
-      home = stateDir;
-      createHome = true;
-
-      # ⚠ A REAL SHELL, AND NOT THE SYSTEM-USER DEFAULT. `isSystemUser` leaves `shell`
-      # at nologin, and opencode runs every bash tool call through the user's LOGIN
-      # SHELL — so nologin does exactly what it is built to do and prints
-      #
-      #   This account is currently not available.
-      #
-      # back to the agent, for every command it tries. Nothing fails at deploy or at
-      # startup: the service is green and only the tool calls are dead, which is why
-      # this surfaces as an agent that cannot do anything rather than as an error.
-      shell = pkgs.bashInteractive;
-    };
-    users.groups.opencode.gid = 975;
+    # NO `users.users` BLOCK ANY MORE, and its absence is the change. This profile used to
+    # declare a pinned system user; the account is now the operator's, bound by the host
+    # (hosts/default.nix). Two things that block carried are therefore someone else's
+    # problem now, and both are already handled:
+    #   the login shell  opencode runs every bash tool call through the user's LOGIN SHELL,
+    #                    which is why the old system user needed `shell = bashInteractive`
+    #                    instead of the `isSystemUser` nologin default. A real account has a
+    #                    real shell, so the trap is gone rather than moved.
+    #   the uid pin      no longer ours to pin: a contract-bound account's uid is the
+    #                    host's decision, and it is already stable across reboots.
 
     systemd.services.opencode = {
       description = "opencode server-side agent sessions";
@@ -210,13 +278,22 @@ in
       wants = [ "network-online.target" ];
 
       environment = {
-        HOME = stateDir;
-        # opencode reads its state, config and cache from the XDG dirs; pinning them keeps
-        # everything that must survive a restart inside the one persisted directory.
-        XDG_DATA_HOME = "${stateDir}/share";
-        XDG_CONFIG_HOME = "${stateDir}/config";
-        XDG_CACHE_HOME = "${stateDir}/cache";
-        XDG_STATE_HOME = "${stateDir}/state";
+        HOME = home;
+        # STILL PINNED, BUT NOW AT THE XDG DEFAULTS UNDER THE OPERATOR'S HOME. The previous
+        # values forced everything into one /var/lib directory so a single persistence entry
+        # covered it; the reason that mattered was that a system user's home was itself a
+        # state directory. A real account's home is a real home, and parity with the laptop
+        # — the point of the move — means a session finds its state where a session at the
+        # laptop would. The three that must survive a reboot are named in the persistence
+        # block at the bottom; cache is deliberately not one of them.
+        #
+        # They are set EXPLICITLY rather than left to opencode's own defaults because a
+        # systemd unit inherits no XDG variables at all, and opencode would otherwise fall
+        # back to paths relative to an unset HOME.
+        XDG_DATA_HOME = "${home}/.local/share";
+        XDG_CONFIG_HOME = "${home}/.config";
+        XDG_CACHE_HOME = "${home}/.cache";
+        XDG_STATE_HOME = "${home}/.local/state";
         OPENCODE_CONFIG = settingsFile;
         # The agent must not update itself underneath a pinned package: a self-written
         # binary would both escape the closure and survive a rollback.
@@ -255,13 +332,44 @@ in
         #           anything it does not have, and that advice is inert unless `nix` is
         #           here: it is not on a unit's PATH by default.
         nix
+        #   gh      the agent files issues and opens PRs on GitHub, and `gh auth
+        #           git-credential` is also what serves GH_TOKEN to git-over-https. This is
+        #           `pkgs.gh`, the UNWRAPPED binary, deliberately: the operator's home
+        #           carries a `gh` wrapper that reads the token out of the vault
+        #           (users/inkpotmonkey/modules/github.nix), and a service has no home-manager
+        #           home to provide it. With GH_TOKEN already set the wrapper would exec
+        #           straight through to this same binary anyway.
+        gh
+        #   openssh `git` shells out to `ssh-keygen -Y sign` for every signed commit, and
+        #           ssh-keygen is NOT on a unit's default PATH. Without it signing fails per
+        #           commit while the service stays green.
+        openssh
+        #   tea     the private forge's client (profiles/forge-client.nix). ⚠ That profile
+        #           installs it via `environment.systemPackages`, i.e. into
+        #           /run/current-system/sw/bin — which this unit cannot see, per the note at
+        #           the top of this list. Enabling forge-client alone would therefore give a
+        #           valid token and `tea: command not found`.
+        tea
       ];
 
       serviceConfig = {
-        User = "opencode";
-        Group = "opencode";
-        StateDirectory = "opencode";
-        WorkingDirectory = stateDir;
+        User = user;
+        # The operator's primary group. NOT a private group of our own any more: the files a
+        # session writes are the operator's files, and a group nothing else is in would make
+        # every tree it touches unreadable to the human over SSH.
+        Group = "users";
+        WorkingDirectory = home;
+
+        # ⚠ THE ONLY GATE LEFT, AND NOT MERELY HARDENING. The account carries `operator`
+        # (sudo + containers), and `permission.bash = "ask"` is measured not to fire — a
+        # shell tool call runs with nothing asked. This keeps sudo for the human over SSH
+        # while denying the SERVICE any route to escalate. Re-read the permission block
+        # above before weakening it.
+        NoNewPrivileges = true;
+
+        # NO `StateDirectory` ANY MORE: that managed /var/lib/opencode for the system user
+        # this profile no longer declares. State lives under the operator's home (see
+        # `environment` above) and survives via the persistence block at the bottom.
         EnvironmentFile = config.sops.templates."opencode-env".path;
         # ⚠ `--hostname 0.0.0.0` AND NOT THE TAILSCALE ADDRESS, unlike hermes next door.
         # There the wildcard would have DISABLED a real defence (its Host-header check
@@ -284,8 +392,58 @@ in
     # on rk1b's LAN interface behind nothing but the password.
     networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ svc.port ];
 
+    # ── WHAT SURVIVES A REBOOT (palimpsest#159, answered) ─────────────────────────────────
+    # rk1b's root is a 2G tmpfs and `/home` is NOT in profiles/impermanence.nix's keep-list,
+    # so without this block the operator's home — trees, session store and all — is gone at
+    # every boot. hosts/rk1/git-annex.nix hit exactly this and added its own entry for the
+    # same reason.
+    #
+    # ⚠ THE TREES ARE THE ANSWER TO #159, AND THE BIND-MOUNT IS WHY IT WORKS. GLOSSARY.md
+    # requires a server-side tree to carry THE SAME PATH as the laptop's tree for the same
+    # repository, so one directory string names it from every client. impermanence
+    # bind-mounts, so `/persistent/home/inkpotmonkey/code` appears at
+    # `/home/inkpotmonkey/code` and that invariant holds literally rather than by
+    # convention — while the bytes sit on the NVMe-backed /persistent instead of the tmpfs.
+    #
+    # `cache` is deliberately absent: model catalogues and downloaded provider packages,
+    # re-fetched on demand. hosts/rk1/backup.nix already excluded the old cache path for
+    # the same reason, and every directory named here must be classified in that file.
+    #
+    # NOT listed, and each for a reason worth not re-deriving:
+    #   ~/.config/tea   forge-client renders it as a sops template plus a tmpfiles `L+`
+    #                   symlink into /run/secrets, explicitly so it survives a tmpfs home by
+    #                   being RECREATED rather than kept. Persisting it would pin a stale
+    #                   symlink over a self-healing one.
+    #   ~/.ssh          the signing key is a sops secret, not a file in the home (ADR-0003's
+    #                   dedicated non-admin `signing_key`). What is left is `known_hosts`,
+    #                   which is re-acquired on first connect.
     environment.persistence."/persistent" = lib.mkIf config.custom.profiles.impermanence.enable {
-      directories = [ stateDir ];
+      directories = [
+        {
+          directory = "${home}/code";
+          inherit user;
+          group = "users";
+          mode = "0755";
+        }
+        {
+          directory = dataDir;
+          inherit user;
+          group = "users";
+          mode = "0700";
+        }
+        {
+          directory = stateDir;
+          inherit user;
+          group = "users";
+          mode = "0700";
+        }
+        {
+          directory = configDir;
+          inherit user;
+          group = "users";
+          mode = "0700";
+        }
+      ];
     };
   };
 }
