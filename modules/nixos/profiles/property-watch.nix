@@ -65,6 +65,18 @@ in
       "d ${cfg.stateDir}/data 2770 hermes property-watch - -"
     ];
 
+    # ── AND THE SANDBOX HAS TO AGREE ─────────────────────────────────────────────────
+    # hermes-agent runs ProtectSystem=strict with ReadWritePaths=/var/lib/hermes, so the
+    # whole of this tree is READ-ONLY to the service however the file modes read. Without
+    # this the job fails at `PRAGMA journal_mode=WAL` with "unable to open database file",
+    # which looks like a permissions bug and is not one — and does NOT reproduce under
+    # `sudo -u hermes`, because that has no sandbox. Only the service does.
+    #
+    # Note what is granted: data/ alone. The brief at the root stays read-only to hermes
+    # at the systemd layer too, so the split is enforced twice over — once by ownership,
+    # once by the sandbox — and neither depends on the other being right.
+    systemd.services.hermes-agent.serviceConfig.ReadWritePaths = [ "${cfg.stateDir}/data" ];
+
     # For opening the database by hand over ssh. Deliberately NOT added to hermes's
     # `extraPackages`: the agent has no business shelling out to a database it should be
     # reading through its source script's output, and that PATH is narrow on purpose.
@@ -79,6 +91,22 @@ in
     # ⚠ hermes resolves `--script` only inside $HERMES_HOME/scripts/, and a store SYMLINK
     # fails its escape guard — so `hermesHomeFiles` COPIES the file there. Editing it on the
     # host is therefore pointless: the next activation puts this version back.
-    services.hermes-agent.hermesHomeFiles."scripts/property-watch.py" = ./property-watch.py;
+    # ⚠ THE JOB POINTS AT THE .sh, NOT THE .py. Handed a `.py`, hermes runs it through a
+    # "dependency environment" interpreter inside its own package
+    # (.../site-packages/venv/bin/python) which does not exist on NixOS — the run fails
+    # with "dependency environment interpreter is missing" before the script is reached.
+    # `.sh` is dispatched to bash instead, which works.
+    #
+    # The wrapper carries ${pkgs.python3} from the flake rather than the job carrying a
+    # /nix/store path in `--interpreter`, so the interpreter is renewed by every rebuild
+    # instead of going stale the first time hermes is upgraded. The BARE interpreter is
+    # deliberately sufficient: property-watch.py imports nothing outside the standard
+    # library, which is what keeps it runnable in an environment with almost no packages.
+    services.hermes-agent.hermesHomeFiles = {
+      "scripts/property-watch.py" = ./property-watch.py;
+      "scripts/property-watch.sh" = pkgs.writeShellScript "property-watch-wrapper" ''
+        exec ${pkgs.python3}/bin/python3 "$(dirname "$0")/property-watch.py" "$@"
+      '';
+    };
   };
 }
