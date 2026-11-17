@@ -44,6 +44,55 @@ let
         ]
         (builtins.readFile file)
     );
+
+  # The index for a path-routed vhost (`paths` in parts/settings.nix — today only
+  # `boards`, property#8). GENERATED FROM THE REGISTRY, never hand-written: a hand-kept
+  # list is a second source of truth and would drift the first time a board is added or
+  # retired, which is exactly the kind of quiet wrongness this vhost exists to avoid.
+  #
+  # Served by Caddy itself rather than by one of the backends, for the same reason the
+  # `about` pages are: it answers when every board behind it is down, which is when
+  # someone most wants to know what was supposed to be here. That is also why it must
+  # NOT be the only thing probed — see the per-path probes in monitoring/watcher.nix.
+  #
+  # The link text is the prefix with its slash removed rather than a `label` key on the
+  # registry entry: a name nobody has to remember to keep accurate cannot go stale.
+  indexRoot =
+    name: paths:
+    pkgs.writeTextDir "index.html" ''
+      <!doctype html>
+      <html lang="en">
+      <head>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1">
+      <title>${name}</title>
+      <style>
+        :root { color-scheme: light dark; }
+        body { font: 16px/1.5 system-ui, sans-serif; margin: 0;
+               display: grid; place-content: center; min-height: 100vh; padding: 2rem; }
+        main { max-width: 32rem; }
+        h1 { font-size: 1.3rem; margin: 0 0 .25rem; }
+        p { color: #6b6560; margin: 0 0 1.5rem; }
+        ul { list-style: none; padding: 0; margin: 0; }
+        li { border-top: 1px solid #8884; }
+        a { display: block; padding: .8rem .2rem; text-decoration: none;
+            color: inherit; font-weight: 600; }
+        a:hover { background: #8881; }
+      </style>
+      </head>
+      <body>
+      <main>
+      <h1>${name}</h1>
+      <p>Pages the fleet's agent jobs produce, so a human can look at what they found.</p>
+      <ul>
+      ${lib.concatMapStringsSep "\n" (p: ''<li><a href="${p}/">${lib.removePrefix "/" p}</a></li>'') (
+        lib.attrNames paths
+      )}
+      </ul>
+      </main>
+      </body>
+      </html>
+    '';
 in
 {
   options.custom.profiles.proxy = {
@@ -274,8 +323,54 @@ in
                   }
                 ''
               )}
-              handle {
-                reverse_proxy ${upstream}:${toString svc.port}
+              ${
+                if svc ? paths then
+                  # ── ONE NAME, SEVERAL BACKENDS (property#8) ────────────────────────
+                  # A path-routed vhost: one `handle <prefix>*` per entry in `paths`,
+                  # each to its own process, plus a generated index on the catch-all.
+                  #
+                  # `handle` and NOT `handle_path`: the prefix is FORWARDED, not
+                  # stripped. The app is told its own base path and owns the whole URL
+                  # space, so what the browser asks for is what the process sees.
+                  # Stripping would leave each board emitting links into a URL space it
+                  # cannot observe — and it would still have to be told the prefix in
+                  # order to emit them, so it buys nothing and adds a second coordinate
+                  # system to debug. See `--base-path` in property-board.py.
+                  #
+                  # `<prefix>*` with no slash before the star deliberately matches both
+                  # `/property` and `/property/…`: a human types the bare prefix, and a
+                  # 404 there would read as a dead board.
+                  #
+                  # Each of these is a MATCHED handle, so it sorts ahead of the
+                  # catch-all index below and behind the tailnet guard above — the same
+                  # ordering the `about` pages rely on, asserted rather than assumed by
+                  # parts/checks/caddy-internal-guard.
+                  lib.concatStringsSep "\n" (
+                    lib.mapAttrsToList (prefix: port: ''
+                      handle ${prefix}* {
+                        reverse_proxy ${upstream}:${toString port}
+                      }
+                    '') svc.paths
+                  )
+                  + ''
+
+                    # The index, generated from the registry and served by Caddy itself
+                    # so it answers even with every board down. Catch-all rather than an
+                    # exact `/` match on purpose: a mistyped or retired board prefix then
+                    # lands on the list of the ones that exist instead of a bare 404.
+                    handle {
+                      root * ${indexRoot name svc.paths}
+                      rewrite * /index.html
+                      header Cache-Control "no-store"
+                      file_server
+                    }
+                  ''
+                else
+                  ''
+                    handle {
+                      reverse_proxy ${upstream}:${toString svc.port}
+                    }
+                  ''
               }
             '';
           }

@@ -9,12 +9,20 @@
 let
   cfg = config.custom.profiles.property-board;
 
-  # This profile's own registry entry — the vhost kelpy serves at
-  # property.<domain> and the port the backend binds. Read from the registry
-  # rather than restated, so the two cannot drift: Caddy proxies to
-  # `${svc.origin}.${tailnet}:${svc.port}`, and that is exactly the address
-  # this process must be listening on.
-  svc = settings.services.private.property;
+  # This profile's own registry entry — the SHARED boards vhost kelpy serves
+  # (property#8), of which this board is one path. Read from the registry rather
+  # than restated, so the three facts that have to agree cannot drift: Caddy
+  # proxies `boards.<domain><basePath>*` to `${svc.origin}.${tailnet}:${port}`,
+  # that is exactly the address this process listens on, and `basePath` is
+  # exactly the prefix it must route on and emit its links under.
+  svc = settings.services.private.boards;
+
+  # The prefix this board is served at, and the port behind it. Taken as the
+  # single `paths` entry whose port this profile owns rather than by writing
+  # "/property" twice — one of the two spellings would eventually be the stale
+  # one, and the symptom would be a vhost that 502s with a healthy unit.
+  basePath = "/property";
+  port = svc.paths.${basePath};
 
   # Bare interpreter, deliberately: the board imports nothing outside the
   # standard library, which is what lets it run on a host with almost no
@@ -47,8 +55,14 @@ let
       exit 1
     fi
 
+    # ── AND IT IS TOLD WHERE IT IS SERVED ───────────────────────────────────
+    # Caddy FORWARDS the `/property` prefix rather than stripping it, so this
+    # process routes on it and the page emits its links under it. One URL space
+    # end to end: what the browser asks for is what arrives here. Without this
+    # the board would answer at `/` and the vhost would 404 every request.
     exec ${pkgs.python3}/bin/python3 ${./property-board.py} \
-      --db ${cfg.databasePath} --host "$addr" --port ${toString svc.port}
+      --db ${cfg.databasePath} --host "$addr" --port ${toString port} \
+      --base-path ${basePath}
   '';
 in
 {
@@ -160,6 +174,6 @@ in
     # given the bind above resolves to the tailscale address anyway: the rule is
     # what keeps the port closed should that bind ever be loosened, and it
     # states the intent where the port is.
-    networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ svc.port ];
+    networking.firewall.interfaces."tailscale0".allowedTCPPorts = [ port ];
   };
 }
