@@ -123,6 +123,16 @@
         caddy_internal_guard = import ./caddy-internal-guard {
           inherit pkgs self;
         };
+        # The shared, path-routed `boards` vhost (forge inkpotmonkey/property#8). Three
+        # generators have to agree about one `paths` attrset: proxy.nix's routes, proxy.nix's
+        # generated index, and watcher.nix's probes. This pins that every prefix is routed to
+        # its own backend, that the index lists EXACTLY the boards the registry declares (a
+        # hand-kept list would drift, which is why it is generated), and that each board has
+        # its own probe at a path only the backend can answer — the probe on the vhost NAME is
+        # answered by Caddy's own index page and would be green with every board dead.
+        boards_vhost = import ./boards-vhost {
+          inherit pkgs self;
+        };
         # The untagged-snapshot predicate behind the daily probe on the elected restic
         # maintainer (palimpsest#150). Every forget unit is scoped `--host X --tag <job>`, so a
         # snapshot with no tag is outside every retention policy permanently — three sat in the
@@ -173,6 +183,21 @@
         book_filer = import ./book-filer {
           inherit pkgs self;
         };
+        # The property board (property#5) and its half of the two-writer contract with the
+        # property-watch job: the board creates `favourites` and no other table, writes
+        # nothing else, and both sides leave the shared database group-writable so the two
+        # users can actually meet in it. Plus the derived numbers the page shows and the
+        # street-level-not-an-address warning the ticket asks for by name.
+        property_board = import ./property-board {
+          inherit pkgs;
+        };
+        # The property-watch detector (property#4, #6): the detail-page parser, the
+        # newly-seen-only fetch budget that is this job's promise to OnTheMarket, and the
+        # byte-stability of stdout that is the only thing stopping the model being woken
+        # every morning. None of the three is visible in the job's output when it breaks.
+        property_watch = import ./property-watch {
+          inherit pkgs;
+        };
         # Per-bridge management-DM auto-provisioning (dm-provision.nix): room
         # creation + invite + m.direct + welcome (unencrypted) / encryption
         # (encrypted) + idempotency, against a minimal tuwunel.
@@ -199,6 +224,13 @@
         # 404. Asserts a dead pin and a stale marker are both refused, and that the
         # connection resolves the way hookshot resolves it (account data, not just state).
         hookshot_infra_alerts = import ./hookshot/infra-alerts.nix {
+          inherit pkgs self;
+        };
+        # The hermes bot account + its per-job rooms (matrix/hermes-rooms.nix), which is
+        # what gives an agent job a Matrix channel at all. The failure shape it guards is
+        # a green unit delivering nowhere: an account that cannot log in, an invite the bot
+        # never accepted, or a marker naming a room a `matrix-reset` deleted.
+        matrix_hermes_rooms = import ./hermes-rooms {
           inherit pkgs self;
         };
         # The pre-built binding path (bindContractPackage, ADR-0016) is proven generically by the
@@ -240,6 +272,14 @@
         # only on fresh faults, while always-on hosts keep the strict staleness check.
         git_annex_alert = import ./git-annex-alert {
           inherit pkgs self inputs;
+        };
+        # The hermes overdue-job check (property#3). Pins the distinction the whole watcher
+        # exists for: an agent job that ran and printed nothing is the monitor-script
+        # economy working and must stay SILENT, while a job whose `next_run_at` has slid
+        # into the past is a dead schedule and must page — the two are byte-identical to
+        # anyone reading their messages.
+        hermes_overdue = import ./hermes-overdue {
+          inherit pkgs self;
         };
         # Fleet disk-space alerting: pins the two properties that make it usable rather
         # than noise — the floor is per host (the same 15 GiB is healthy on a Pi and

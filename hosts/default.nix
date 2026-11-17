@@ -369,8 +369,30 @@ in
 
           # property-watch — the state tree and declared source script for the daily
           # property search (forge inkpotmonkey/property#4). Here because the agent job
-          # that writes it runs here; the board that reads it (#5) will live here too.
-          custom.profiles.property-watch.enable = true;
+          # that writes it runs here; the board that reads it (#5) lives here too.
+          custom.profiles.property-watch = {
+            enable = true;
+            # The job id is imperative state -- `hermes cron list` is the authority and the
+            # flake cannot derive it. Named here so the producedChecks assertion (property#7)
+            # can ask whether THIS job judged anything today.
+            judgementCheck = {
+              enable = true;
+              jobId = "705f90d79b87";
+            };
+          };
+
+          # ...and the board itself (property#5), served at boards.<domain>/property. On
+          # this host and not the edge because the database is here and is the contract
+          # between the two halves: the job writes `listings`/`observations`/`sweeps`/
+          # `verdicts`, the board writes `favourites`, and they meet through the
+          # `property-watch` group over a local file. Serving it from kelpy would mean
+          # exporting that file over the network, a second protocol for nothing.
+          #
+          # It no longer owns a name. Boards share one path-routed vhost (property#8), so
+          # adding the next one is a line in `services.private.boards.paths` plus a port
+          # and a deploy of this host -- no DNS record, no DNS push, no blocky entry, and
+          # no nameserver deploy.
+          custom.profiles.property-board.enable = true;
 
           # opencode — server-side agent sessions (palimpsest#118), at chat.<domain>. Here
           # for the same reasons as hermes: the model gateway is on this host, so the agent
@@ -513,6 +535,22 @@ in
           # music library, so a silent stop here means nothing beets files ever reaches
           # kelpy for slskd to seed. Same webhook story as the checks above.
           custom.profiles.monitoring-git-annex-alert = {
+            enable = true;
+            webhookUrlFile = config.custom.profiles.monitoring-watcher.webhookUrlFile;
+          };
+
+          # hermes overdue-job watcher (ADR-0041, forge property#3). Here because this is
+          # where the gateway runs — the check reads its cron bookkeeping off the local
+          # disk, so it needs no credential and no network to decide anything.
+          #
+          # ⚠ The agent jobs on this host are `--monitor-script` jobs, which say NOTHING on
+          # a quiet day by design. That makes a dead scheduler and a quiet market
+          # byte-identical to the person reading their messages, and this watcher is the
+          # only thing that tells them apart. It is deliberately not an agent job and the
+          # alert goes by the hookshot webhook, not through hermes: a hermes failure must
+          # not have to depend on hermes being healthy to be reported. Same webhook story
+          # as the checks above.
+          custom.profiles.monitoring-hermes-overdue = {
             enable = true;
             webhookUrlFile = config.custom.profiles.monitoring-watcher.webhookUrlFile;
           };

@@ -35,24 +35,83 @@ changed.
 Two kinds, and they travel different paths on purpose:
 
 - **Per-job channel** — a Matrix room the job delivers into, through hermes's own `matrix`
-  platform, so the job can be *answered* rather than only read. `--deliver room:<id>`.
-- **General hermes alerts** — the Infra Alerts room, reached by hookshot webhook like every
-  other fleet alert, so a hermes failure does not depend on hermes's bot being healthy.
-  `--failure-deliver` points here.
+  platform, so the job can be *answered* rather than only read.
+  `--deliver matrix:<room id>`.
+- **General hermes alerts** — the Infra Alerts room, so a failure lands where every other fleet
+  alert does. `--failure-deliver matrix:<infra-alerts room id>`.
 
 Routine output stays out of Infra Alerts: that room is kept scannable and muteable, and a daily
 "nothing moved" erodes it.
+
+### The delivery grammar, which is easy to get wrong
+
+`--deliver` takes `platform:chat_id`, split on the **first** colon — so
+`matrix:!OLqXbk…` reads as platform `matrix`, room `!OLqXbk…`. Four traps:
+
+- **Pass the room id exactly as the marker file holds it.** From room version 12 an id is a
+  hash with **no `:server` suffix**, and adding one by hand (because that is what older room
+  ids look like) gets a send rejected with `cannot create a non-create event in a room with no forward extremities` — which reads like a broken room rather than a mistyped target.
+
+- **`--deliver room:<id>` is NOT a Matrix room.** `room:` is a hermes-internal *Bot Mode Group
+  Chat*, appended to the gateway's own room store in `state.db`
+  (`cron/scheduler_delivery_room.py`). It delivers nowhere a person can see.
+
+- **A room ALIAS does not work.** The adapter hands the chat id straight to
+  `send_message_event(RoomID(chat_id))` — `PUT /rooms/{id}/send/…` — and resolves no alias
+  anywhere in the plugin. It must be the `!…` id.
+
+- **Bare `--deliver matrix`** means `MATRIX_HOME_ROOM`, which this fleet deliberately leaves
+  unset (`modules/nixos/profiles/hermes.nix`): every job names its room, so nothing can fall
+  back into a room it was not pointed at.
+
+**Where the room ids are.** Rooms are declared on kelpy
+(`custom.profiles.matrix.hermesRooms.rooms.<job>`) and created by
+`matrix-hermes-rooms.service`, which persists each id:
+
+```sh
+ssh kelpy cat /var/lib/matrix-hermes-rooms/<job>.room-id   # the per-job room
+ssh kelpy cat /var/lib/matrix-infra-alerts/room-id         # Infra Alerts
+```
+
+Ids are minted by the homeserver and die with a `matrix-reset`, so they are not in the repo and
+are not sops values — pointing a job at one is a `hermes cron edit`, like every other thing
+about a job:
+
+```sh
+hermes cron edit <job> --deliver "matrix:<per-job id>" --failure-deliver "matrix:<infra-alerts id>"
+```
+
+The room itself IS declared, on kelpy: add `custom.profiles.matrix.hermesRooms.rooms.<job>`
+with a name and topic, deploy kelpy, then read the id it wrote.
 
 ## Where things live
 
 | | |
 | --- | --- |
-| Jobs | `jobs.json` under `$HERMES_HOME` — state, created by hand, backed up |
+| Jobs | `$HERMES_HOME/cron/jobs.json` — state, created by hand, backed up |
 | Source scripts | `$HERMES_HOME/scripts/` |
 | Operator skills | a store path, via `skills.external_dirs` |
 | Agent's own skills | `$HERMES_HOME/skills/` — the learning loop, left alone |
 | Per-job durable state | `hermes cron notepad` |
 | The index of what exists | `docs/agent-jobs.md` |
+
+### Boards
+
+A **board** is a page a job produces so a human can look at what it found — a job speaks into
+a room and has nowhere to receive a click. Boards share one vhost, path-routed:
+`boards.<domain>/property`, `boards.<domain>/<next>`. The registry entry `boards` in
+`parts/settings.nix` carries a `paths` attrset of prefix → port, and that is the whole
+declaration — the Caddy routes, the index at the vhost root and the per-board uptime probe are
+all generated from it (`parts/checks/boards-vhost` holds the three to each other).
+
+Adding one is **a line here and a port**: one process per board on `origin`, one deploy of that
+host. No DNS record, no DNS push, no blocky entry, no nameserver deploy — those are what a name
+costs, and a board no longer spends one.
+
+The price is that **a board must tolerate being served under a path prefix**. Caddy forwards the
+prefix rather than stripping it, so the process is told its own base path (`--base-path` in
+`property-board.py`), routes on it, and emits every link under it. A third-party app that cannot
+do that keeps its own name; this is a convention for our own boards, not a fleet-wide rule.
 
 A source script is **mutable by default**, so the agent can improve it. Declare it through
 `hermesHomeFiles` only when its job writes outside the agent's own state or acts on the fleet —
@@ -66,10 +125,35 @@ A job is ready to hand to hermes when every line is evidenced:
 1. Its per-job Matrix room exists, and `--failure-deliver` points at Infra Alerts.
 1. A source script exists, and its declared-or-mutable status is a stated choice, not a default.
 1. An entry is in `docs/agent-jobs.md` naming the job, its issue, its channel and that status.
-1. The overdue-job check knows about it, so its silence is noticed.
+1. The overdue-job check covers it — which needs nothing done, see below, but confirm the
+   job is `enabled` and not paused, because the check skips both.
 1. `hermes cron create …` has been run **by a human**, and `cron.preflight` passed — it verifies
    the provider key resolves, attached skills are ready and delivery is configured, failing to
    `last_status=blocked_config` with one alert and no model call.
+
+## The overdue-job check
+
+`modules/nixos/profiles/monitoring/hermes-overdue.nix`, enabled on rk1b. A quarter-hourly
+systemd check in the ordinary watcher tier, alongside the DMARC and secret-expiry ones.
+
+It needs no registration: it reads whatever `cron/jobs.json` holds, so a new job is covered
+from the moment it is created. What it reads is **only hermes's schedule bookkeeping** — each
+enabled, unpaused job's `next_run_at`, and the ticker's own `ticker_last_success` — never
+output. That is the point. A `--monitor-script` job says nothing on a quiet day, so a check
+that watched output would page every quiet morning and be muted within a week.
+
+| It alerts when | It stays silent for |
+| --- | --- |
+| a job's `next_run_at` is more than an hour in the past | a job that ran and printed nothing |
+| the cron ticker has not completed a pass in 15 minutes | a disabled or paused job |
+| | lateness inside the grace window, and having no jobs at all |
+
+One message per episode and a ✅ when it recovers, to Infra Alerts **by hookshot webhook, not
+through hermes** — a hermes failure must not depend on hermes being healthy to be reported.
+A job that fires and *fails* is not its business: hermes already delivers that through the
+job's own `--failure-deliver`.
+
+Both files live under `$HERMES_HOME/cron/`, not at the top of `$HERMES_HOME`.
 
 ## Gotchas
 
@@ -94,6 +178,11 @@ A job is ready to hand to hermes when every line is evidenced:
   else fails however the file modes read — and the failure does NOT reproduce when you
   test the script by hand as the hermes user. Grant the specific directory via
   `systemd.services.hermes-agent.serviceConfig.ReadWritePaths`.
+- **A changed env secret needs a unit restart too, for the same reason.** `restartTriggers`
+  hash `settings` only (a trigger on the rendered env would put the LiteLLM key in a
+  world-readable unit file), so a deploy that only edits `sops.templates."hermes-env"` leaves
+  the gateway running the old `.env` — and `.env` itself is only rewritten when
+  `hermes-state-dirs` re-runs, which is on a unit start. `systemctl restart hermes-agent`.
 - **Adding hermes to a group needs a unit restart.** Supplementary groups are fixed at
   process start, and `nixos-rebuild switch` does not restart a unit whose own definition
   is unchanged. The deploy goes green and the service still cannot reach the tree.
