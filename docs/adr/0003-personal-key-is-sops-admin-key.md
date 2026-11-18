@@ -10,7 +10,13 @@ This record previously said *"`git.nix` keys off `osConfig.sops.secrets ? inkpot
 
 It cannot work that way either, for a reason worth recording: a home **cannot** read NixOS sops (the confinement invariant makes `sops.*` unexpressible in a home), and homes are built per **mode**, not per host — so a home can neither branch on which host it is on nor point `signing.key` at a path only one host has.
 
-The delivery is therefore entirely host-side, in `profiles/agent-signing.nix`: the host places the dedicated key at `~/.ssh/id_ed25519` with its public half beside it, via a sops secret plus a `systemd.tmpfiles` `L+` symlink (the same self-healing shape `forge-client.nix` uses, which survives an impermanence tmpfs home). The home is left completely unchanged and its existing assumption — that the key is at `~/.ssh/id_ed25519` — is simply made true on that host.
+The **private** half's delivery is therefore entirely host-side, in `profiles/agent-signing.nix`: the host places the dedicated key at `~/.ssh/id_ed25519` via a sops secret plus a `systemd.tmpfiles` `L+` symlink (the same self-healing shape `forge-client.nix` uses, which survives an impermanence tmpfs home).
+
+**The public half could not be, and the first attempt at this was wrong.** It was written on the premise that the home could be left completely alone, with its existing assumption — that the key is at `~/.ssh/id_ed25519` — merely made true on that host. That premise was false: the home *declares* `~/.ssh/id_ed25519.pub` itself (`home.file`, from `identity.sshKey`), so the host's private key landed beside the home's **personal** public key. `ssh-keygen -Y sign` neither falls back nor warns on a mismatch — it fails every commit with `Public key … doesn't match private …`. The configuration evaluated and deployed green throughout; only an actual `git commit` on the host surfaced it.
+
+So the home does change, and the change is a mode split rather than a host condition, since a home cannot know which host binds it: `users/inkpotmonkey/cli.nix` joins `gui.nix` as a mode root, and each declares its own `.pub` — the personal key for a desktop seat that holds it, the agent key for a headless one that must not. The key's public half is declared once in `users/inkpotmonkey/agent-signing-key.nix` and read twice (that `.pub`, and `git.nix`'s `allowed_signers`), because those two disagreeing is precisely the failure above.
+
+Verified the way it should have been the first time — a real signed commit on `rk1b`, reporting `G` against `allowed_signers`.
 
 Two consequences of that choice, both deliberate:
 
