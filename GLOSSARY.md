@@ -205,7 +205,9 @@ Logging the bridge in *as the real user* (not a ghost) so the user's own Matrix 
 
 **Server-side session**:
 An agent session that runs inside the **opencode** server's instance on `rk1b` and is owned by that server rather than by whichever client started it. It outlives every client — a command can be sent, the laptop closed, the work continues — and any client (phone browser, Emacs, `opencode attach` over ssh) can reach the same session afterwards. Its working tree is on `rk1b`, addressed by the `x-opencode-directory` header; its status is read from the server's event stream, because there is no local process to watch.
-_Avoid_: detached session (names a transient state, not where it runs — see **Detached**), remote session (true from the laptop, false from the phone).
+
+It runs **as the operator**, not as a service account, and that is part of what the term means rather than an implementation detail: a session has the same account, tools, git identity and reach the operator has at the laptop. Nothing above the session asks before it acts — so what a session may do is bounded by what that account may do, and by nothing else.
+_Avoid_: detached session (names a transient state, not where it runs — see **Detached**), remote session (true from the laptop, false from the phone), sandboxed session (nothing here is sandboxed; saying so would claim a boundary that does not exist).
 
 **Laptop-local session**:
 An agent session that *is* a process in an Emacs buffer on `sawtoothShark` — today a `claude` CLI in a `ghostel` PTY. It cannot outlive its client, because the process is the session. Retained as the fallback for trees `rk1b` does not have, for work needing a seat or a GUI, and for `claude`-only affordances.
@@ -216,12 +218,18 @@ The state of a **server-side session** that has no client attached right now. It
 _Avoid_: backgrounded, headless, orphaned (nothing is unowned — the server owns it).
 
 **Server-side tree**:
-A working tree on `rk1b` that a **server-side session** can be started in. Trees are drawn from a small declared set rather than from every repository the operator owns, because a session is only findable if a client already knows the directory to ask about — an undeclared tree yields sessions nobody can get back to. A server-side tree carries the **same path as the laptop's tree for the same repository**, so one directory string names the same tree from every client.
-_Avoid_: remote tree (true from the laptop, false from the phone), checkout (a session's tree is usually a worktree of one).
+A working tree on `rk1b` that a **server-side session** can be started in, owned by the operator's account like any tree they work in themselves. Trees are drawn from a small declared set rather than from every repository the operator owns, because a session is only findable if a client already knows the directory to ask about — an undeclared tree yields sessions nobody can get back to.
+
+A server-side tree carries the **same path as the laptop's tree for the same repository**, so one directory string names the same tree from every client. That rule is load-bearing rather than tidy: a client maps a local directory to a server-side session by the path alone, so a tree at a different path is addressed correctly by nobody and silently addressed *wrongly* by anything that assumes the rule holds. It is enforced by where the tree is kept rather than by convention.
+
+A server-side tree is **not** where the authoritative copy of a repository lives — the forge is. What a tree holds that nothing else does is the work of a session that has not committed yet.
+_Avoid_: remote tree (true from the laptop, false from the phone), checkout (a session's tree is usually a worktree of one), mirror (names a copy that is kept in step; a tree diverges on purpose).
 
 **Session branch**:
 The branch a **server-side session**'s commits land on, named for the session itself. It is what makes a session's work identifiable after the fact and lets concurrent sessions share a repository without contending. A session branch always starts from an **explicitly named ref**, never from whatever its tree happened to be on, so a stale tree cannot silently become the basis of new work.
-_Avoid_: agent branch (names the actor, not the unit of work), feature branch (a session branch is neither scoped to a feature nor meant to be long-lived).
+
+It is **pushed by the session itself**, and its commits are **signed** — with a key that is the operator's but not the operator's personal one, so `git log --show-signature` distinguishes work done on `rk1b` from work done at the laptop while attributing both to the same person. A session may also merge, because the value asked of this arrangement is speed and recoverability rather than gatekeeping: what is defended is history, not the branch tip. A session branch is therefore the unit at which a session's work becomes **reviewable**, not the unit at which it becomes permitted.
+_Avoid_: agent branch (names the actor, not the unit of work), feature branch (a session branch is neither scoped to a feature nor meant to be long-lived), proposed change (nothing gates it — calling it a proposal implies an approval step that does not exist).
 
 **Agent job**:
 Scheduled work owned by the **hermes** gateway on `rk1b`, which may invoke a model. Distinct from everything in **Monitoring & alerting**: a **watcher** probes a live service and alerts, a **unit-state check** asserts a unit is `active`, and both are deterministic systemd-tier work with an alert behind them — an agent job exists precisely where a *judgement* is wanted about something that already changed. Each run is an isolated session with its own run record, so a job's history is readable after the fact (`hermes cron runs`, `hermes cron incidents`). Jobs live in `jobs.json` under the state directory and are created with the CLI or the dashboard, not from the flake: the schedule is state, not configuration, which is why a job's reasoning belongs in its issue rather than only in the row.
