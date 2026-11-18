@@ -418,6 +418,13 @@ in
           # The rule and the per-host `forgejo/token_rk1b` landed in the stash first.
           custom.profiles.forge-client.enable = true;
 
+          # The dedicated non-admin signing key (ADR-0003), without which a session cannot
+          # commit AT ALL — not "commits unsigned": git.nix signs by default in both modes
+          # and `ssh-keygen -Y sign` needs a private half this seat does not otherwise have.
+          # Commits are the agent's entire output, so this is a prerequisite rather than a
+          # finishing touch. Reads users/inkpotmonkey.yaml, which rk1b already decrypts.
+          custom.profiles.agent-signing.enable = true;
+
           # Music Assistant — the library-plane brain (ADR-0031). Reads Navidrome (over loopback,
           # co-located here) and pushes audio to porcupineFish's snapserver in external-server mode,
           # so the Navidrome library plays out the Pi's speakers, controlled from Home Assistant on

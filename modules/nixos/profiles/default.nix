@@ -41,6 +41,7 @@
     litellm = ./litellm.nix;
     hermes = ./hermes.nix;
     opencode = ./opencode.nix;
+    agent-signing = ./agent-signing.nix;
     homeassistant = ./homeassistant.nix;
     navidrome = ./navidrome.nix;
     music-assistant = ./music-assistant.nix;

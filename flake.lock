@@ -1164,11 +1164,11 @@
     "secrets": {
       "flake": false,
       "locked": {
-        "lastModified": 1794939767,
-        "narHash": "sha256-xfZhjbeubsrYeSzAl1Nasv6bxBNHuRzQT0/RDV6VNSk=",
+        "lastModified": 1794991017,
+        "narHash": "sha256-ehwdO0goNsZlSDCVN7NN2FJg4/t3iqKubzI+UBdPSRQ=",
         "ref": "refs/heads/main",
-        "rev": "e80109196697b66ef4de54710d49f2040760ca6a",
-        "revCount": 97,
+        "rev": "a4db831739a95a774e2d8b551f9a05e21bfaef10",
+        "revCount": 98,
         "type": "git",
         "url": "ssh://git@github.com/inkpot-monkey/stash.git"
       },
@@ -1340,11 +1340,11 @@
         "nixpkgs": "nixpkgs_12"
       },
       "locked": {
-        "lastModified": 1794954763,
-        "narHash": "sha256-sMoPnnhaegCU6/D/mjLomzDFFLx6kVYgWTHEtkJGARM=",
+        "lastModified": 1794991129,
+        "narHash": "sha256-56eMMu0e+YHOgHRRgsEPIfuBpMmCZhtMzu042UxhHYM=",
         "ref": "refs/heads/main",
-        "rev": "1a9d7d328e0abfd77668ea451ebb8403c902f8de",
-        "revCount": 252,
+        "rev": "c36262ed25191bd9ad1375ab88aa18d6f015b9ce",
+        "revCount": 253,
         "type": "git",
         "url": "ssh://git@github.com/palebluebytes/users"
       },
